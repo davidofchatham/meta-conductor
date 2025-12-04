@@ -1,0 +1,550 @@
+/**
+ * BWS Taxonomy Manager Admin JavaScript
+ * Handles admin interface interactions
+ */
+
+(function($) {
+    'use strict';
+    
+    var BWSTaxManager = {
+        
+        init: function() {
+            this.bindEvents();
+            this.initTabs();
+            this.initRuleManagement();
+        },
+        
+        bindEvents: function() {
+            $(document).on('click', '.nav-tab', this.switchTab);
+            $(document).on('click', '.add-rule-btn', this.addRule);
+            $(document).on('click', '.delete-rule', this.deleteRule);
+            $(document).on('click', '.process-existing-btn', this.processExisting);
+            $(document).on('change', '.rule-field', this.validateRule);
+            $(document).on('change', '.taxonomy-select', this.updateTaxonomyFields);
+            $(document).on('change', '.post-type-select', this.updatePostTypeFields);
+            $(document).on('change', '.trigger-type-radio', this.toggleTriggerFields);
+            $(document).on('focus', '.term-select', this.loadAllTerms);
+        },
+        
+        initTabs: function() {
+            // Show the active tab (determined by PHP)
+            var $activeTab = $('.nav-tab-active');
+            var $activeContent = $('.tab-content.active');
+            
+            // Hide all tab content except active
+            $('.tab-content').not('.active').hide();
+            
+            // Show active content
+            $activeContent.show();
+            
+            // If no active tab found, default to first
+            if ($activeTab.length === 0) {
+                $('.nav-tab').first().addClass('nav-tab-active');
+                $('.tab-content').first().addClass('active').show();
+            }
+        },
+        
+        switchTab: function(e) {
+            e.preventDefault();
+            
+            var $tab = $(this);
+            var target = $tab.attr('href');
+            var tabName = $tab.data('tab');
+            
+            // Update tab navigation
+            $('.nav-tab').removeClass('nav-tab-active');
+            $tab.addClass('nav-tab-active');
+            
+            // Show target tab content
+            $('.tab-content').removeClass('active').hide();
+            $(target).addClass('active').show();
+            
+            // Update the current tab input for form persistence
+            $('#current_tab').val(tabName);
+        },
+        
+        initRuleManagement: function() {
+            this.updateRuleIndexes();
+            this.bindRuleEvents();
+            this.initializeExistingRules();
+        },
+        
+        initializeExistingRules: function() {
+            // Initialize trigger type visibility for existing related rules
+            $('.bws-rule-item[data-rule-type="related"]').each(function() {
+                var $rule = $(this);
+                var $checkedRadio = $rule.find('.trigger-type-radio:checked');
+                if ($checkedRadio.length > 0) {
+                    BWSTaxManager.toggleTriggerFieldsForRule($rule, $checkedRadio.val());
+                }
+            });
+        },
+        
+        toggleTriggerFieldsForRule: function($rule, triggerType) {
+            if (triggerType === 'term') {
+                $rule.find('.trigger-term-row').show();
+                $rule.find('.trigger-taxonomy-row').hide();
+            } else if (triggerType === 'taxonomy') {
+                $rule.find('.trigger-term-row').hide();
+                $rule.find('.trigger-taxonomy-row').show();
+            }
+        },
+        
+        bindRuleEvents: function() {
+            // Add rule buttons
+            $('#add-hierarchical-rule').on('click', function() {
+                BWSTaxManager.addRule('hierarchical');
+            });
+            
+            $('#add-propagation-rule').on('click', function() {
+                BWSTaxManager.addRule('propagation');
+            });
+            
+            $('#add-related-rule').on('click', function() {
+                BWSTaxManager.addRule('related');
+            });
+            
+            $('#add-time-based-rule').on('click', function() {
+                BWSTaxManager.addRule('time_based');
+            });
+        },
+        
+        addRule: function(ruleType) {
+            var template = $('#' + ruleType.replace('_', '-') + '-rule-template').html();
+            var container = $('#' + ruleType.replace('_', '-') + '-rules-container');
+            var index = container.find('.bws-rule-item').length;
+            
+            // Replace placeholder index
+            template = template.replace(/\{\{INDEX\}\}/g, index);
+            
+            var $newRule = $(template);
+            container.append($newRule);
+            
+            // Initialize new rule
+            this.initializeRule($newRule, ruleType);
+            
+            // Update indexes
+            this.updateRuleIndexes();
+        },
+        
+        deleteRule: function(e) {
+            e.preventDefault();
+            
+            if (confirm(bwsTaxManager.strings.confirm_delete || 'Are you sure you want to delete this rule?')) {
+                var $rule = $(this).closest('.bws-rule-item');
+                var ruleType = $rule.data('rule-type');
+                
+                $rule.remove();
+                
+                // Update indexes for this rule type
+                BWSTaxManager.updateRuleIndexes(ruleType);
+            }
+        },
+        
+        initializeRule: function($rule, ruleType) {
+            // Initialize select2 or chosen if available
+            if ($.fn.select2) {
+                $rule.find('select').select2({
+                    width: '100%'
+                });
+            }
+            
+            // Initialize date pickers for time-based rules
+            if (ruleType === 'time_based' && $.fn.datepicker) {
+                $rule.find('input[type="date"]').datepicker({
+                    dateFormat: 'yy-mm-dd'
+                });
+            }
+            
+            // Initialize trigger fields for related rules
+            if (ruleType === 'related') {
+                var $checkedRadio = $rule.find('.trigger-type-radio:checked');
+                if ($checkedRadio.length > 0) {
+                    BWSTaxManager.toggleTriggerFieldsForRule($rule, $checkedRadio.val());
+                } else {
+                    // Default to 'term' if nothing is selected
+                    $rule.find('.trigger-type-radio[value="term"]').prop('checked', true);
+                    BWSTaxManager.toggleTriggerFieldsForRule($rule, 'term');
+                }
+            }
+            
+            // Show the rule content
+            $rule.find('.bws-rule-content').show();
+        },
+        
+        updateRuleIndexes: function(ruleType) {
+            var selector = ruleType ? 
+                '.bws-rule-item[data-rule-type="' + ruleType + '"]' : 
+                '.bws-rule-item';
+            
+            $(selector).each(function(index) {
+                var $rule = $(this);
+                var currentRuleType = $rule.data('rule-type');
+                
+                // Update all input names and IDs
+                $rule.find('input, select, textarea').each(function() {
+                    var $field = $(this);
+                    var name = $field.attr('name');
+                    var id = $field.attr('id');
+                    
+                    if (name) {
+                        // Replace the index in the name
+                        name = name.replace(/\[\d+\]/, '[' + index + ']');
+                        $field.attr('name', name);
+                    }
+                    
+                    if (id) {
+                        // Update ID if it contains an index
+                        id = id.replace(/_\d+_/, '_' + index + '_');
+                        $field.attr('id', id);
+                    }
+                });
+                
+                // Update labels
+                $rule.find('label').each(function() {
+                    var $label = $(this);
+                    var forAttr = $label.attr('for');
+                    
+                    if (forAttr) {
+                        forAttr = forAttr.replace(/_\d+_/, '_' + index + '_');
+                        $label.attr('for', forAttr);
+                    }
+                });
+            });
+        },
+        
+        processExisting: function(e) {
+            e.preventDefault();
+            
+            var $btn = $(this);
+            var ruleType = $btn.data('rule-type');
+            
+            if (!confirm(bwsTaxManager.strings.confirm_process)) {
+                return;
+            }
+            
+            $btn.prop('disabled', true).text(bwsTaxManager.strings.processing);
+            
+            BWSTaxManager.runBatchProcess(ruleType, 0, $btn);
+        },
+        
+        runBatchProcess: function(ruleType, offset, $btn) {
+            $.ajax({
+                url: bwsTaxManager.ajaxurl,
+                type: 'POST',
+                data: {
+                    action: 'bws_process_existing_posts',
+                    rule_type: ruleType,
+                    offset: offset,
+                    batch_size: 50,
+                    nonce: bwsTaxManager.nonce
+                },
+                success: function(response) {
+                    if (response.success) {
+                        var data = response.data;
+                        
+                        // Update progress
+                        $btn.text(data.message);
+                        
+                        if (!data.complete) {
+                            // Continue processing
+                            setTimeout(function() {
+                                BWSTaxManager.runBatchProcess(ruleType, data.offset, $btn);
+                            }, 1000);
+                        } else {
+                            // Processing complete
+                            $btn.text(bwsTaxManager.strings.complete);
+                            setTimeout(function() {
+                                $btn.prop('disabled', false).text('Process Existing Posts');
+                            }, 3000);
+                        }
+                    } else {
+                        BWSTaxManager.showError($btn, response.data);
+                    }
+                },
+                error: function() {
+                    BWSTaxManager.showError($btn, bwsTaxManager.strings.error);
+                }
+            });
+        },
+        
+        showError: function($btn, message) {
+            $btn.text(message).addClass('error');
+            setTimeout(function() {
+                $btn.prop('disabled', false)
+                    .removeClass('error')
+                    .text('Process Existing Posts');
+            }, 3000);
+        },
+        
+        validateRule: function(e) {
+            var $field = $(this);
+            var $rule = $field.closest('.bws-rule-item');
+            var ruleType = $rule.data('rule-type');
+            
+            // Clear previous validation messages
+            $rule.find('.validation-message').remove();
+            
+            // Collect rule data
+            var ruleData = BWSTaxManager.collectRuleData($rule);
+            
+            // Validate via AJAX
+            $.ajax({
+                url: bwsTaxManager.ajaxurl,
+                type: 'POST',
+                data: {
+                    action: 'bws_validate_rule',
+                    rule_type: ruleType,
+                    rule_data: ruleData,
+                    nonce: bwsTaxManager.nonce
+                },
+                success: function(response) {
+                    if (!response.success && response.data.errors) {
+                        BWSTaxManager.showValidationErrors($rule, response.data.errors);
+                    }
+                }
+            });
+        },
+        
+        collectRuleData: function($rule) {
+            var data = {};
+            
+            $rule.find('input, select, textarea').each(function() {
+                var $field = $(this);
+                var name = $field.attr('name');
+                
+                if (name) {
+                    // Extract field name from the full name
+                    var fieldName = name.match(/\[([^\]]+)\]$/);
+                    if (fieldName) {
+                        if ($field.attr('type') === 'checkbox') {
+                            if ($field.is(':checked')) {
+                                if (!data[fieldName[1]]) {
+                                    data[fieldName[1]] = [];
+                                }
+                                data[fieldName[1]].push($field.val());
+                            }
+                        } else {
+                            data[fieldName[1]] = $field.val();
+                        }
+                    }
+                }
+            });
+            
+            return data;
+        },
+        
+        showValidationErrors: function($rule, errors) {
+            var $container = $('<div class="validation-message error"></div>');
+            
+            $.each(errors, function(index, error) {
+                $container.append('<p>' + error + '</p>');
+            });
+            
+            $rule.find('.bws-rule-content').prepend($container);
+        },
+        
+        updateTaxonomyFields: function(e) {
+            var $select = $(this);
+            var taxonomy = $select.val();
+            var $rule = $select.closest('.bws-rule-item');
+            
+            if (!taxonomy) {
+                return;
+            }
+            
+            // Load terms for this taxonomy via AJAX
+            BWSTaxManager.loadTaxonomyTerms(taxonomy, $rule);
+        },
+        
+        loadTaxonomyTerms: function(taxonomy, $rule) {
+            $.ajax({
+                url: bwsTaxManager.ajaxurl,
+                type: 'POST',
+                data: {
+                    action: 'bws_get_taxonomy_terms',
+                    taxonomy: taxonomy,
+                    nonce: bwsTaxManager.nonce
+                },
+                success: function(response) {
+                    if (response.success) {
+                        BWSTaxManager.updateTermSelects($rule, response.data.terms);
+                    }
+                }
+            });
+        },
+        
+        updateTermSelects: function($rule, terms) {
+            var $termSelects = $rule.find('select.term-select');
+            
+            $termSelects.each(function() {
+                var $select = $(this);
+                var currentValue = $select.val();
+                
+                // Clear current options except the first
+                $select.find('option:not(:first)').remove();
+                
+                // Add new options
+                $.each(terms, function(id, term) {
+                    var $option = $('<option></option>')
+                        .attr('value', term.term_id)
+                        .text(term.name);
+                    
+                    if (currentValue == term.term_id) {
+                        $option.prop('selected', true);
+                    }
+                    
+                    $select.append($option);
+                });
+            });
+        },
+        
+        updatePostTypeFields: function(e) {
+            var $select = $(this);
+            var postType = $select.val();
+            var $rule = $select.closest('.bws-rule-item');
+            
+            if (!postType) {
+                return;
+            }
+            
+            // Update available taxonomies for this post type
+            BWSTaxManager.loadPostTypeTaxonomies(postType, $rule);
+        },
+        
+        loadPostTypeTaxonomies: function(postType, $rule) {
+            $.ajax({
+                url: bwsTaxManager.ajaxurl,
+                type: 'POST',
+                data: {
+                    action: 'bws_get_post_type_taxonomies',
+                    post_type: postType,
+                    nonce: bwsTaxManager.nonce
+                },
+                success: function(response) {
+                    if (response.success) {
+                        BWSTaxManager.updateTaxonomySelects($rule, response.data.taxonomies);
+                    }
+                }
+            });
+        },
+        
+        updateTaxonomySelects: function($rule, taxonomies) {
+            var $taxonomySelects = $rule.find('select.taxonomy-select:not(.post-type-select)');
+            
+            $taxonomySelects.each(function() {
+                var $select = $(this);
+                var currentValue = $select.val();
+                
+                // Clear current options except the first
+                $select.find('option:not(:first)').remove();
+                
+                // Add new options
+                $.each(taxonomies, function(name, taxonomy) {
+                    var $option = $('<option></option>')
+                        .attr('value', taxonomy.name)
+                        .text(taxonomy.label);
+                    
+                    if (currentValue === taxonomy.name) {
+                        $option.prop('selected', true);
+                    }
+                    
+                    $select.append($option);
+                });
+            });
+        },
+        
+        /**
+         * Toggle trigger type fields for related rules
+         */
+        toggleTriggerFields: function() {
+            var $radio = $(this);
+            var $rule = $radio.closest('.bws-rule-item');
+            var triggerType = $radio.val();
+            
+            BWSTaxManager.toggleTriggerFieldsForRule($rule, triggerType);
+        },
+        
+        /**
+         * Load all terms for term select dropdowns
+         */
+        loadAllTerms: function() {
+            var $select = $(this);
+            
+            // Skip if already loaded
+            if ($select.data('terms-loaded')) {
+                return;
+            }
+            
+            // Show loading
+            $select.prop('disabled', true);
+            
+            $.ajax({
+                url: bwsTaxManager.ajaxurl,
+                type: 'POST',
+                data: {
+                    action: 'bws_search_terms',
+                    search: '',
+                    nonce: bwsTaxManager.nonce
+                },
+                success: function(response) {
+                    if (response.success) {
+                        BWSTaxManager.populateTermSelect($select, response.data.terms);
+                        $select.data('terms-loaded', true);
+                    }
+                },
+                complete: function() {
+                    $select.prop('disabled', false);
+                }
+            });
+        },
+        
+        /**
+         * Populate term select with options
+         */
+        populateTermSelect: function($select, terms) {
+            var currentValue = $select.val();
+            var isMultiple = $select.prop('multiple');
+            var currentValues = isMultiple ? $select.val() || [] : [currentValue];
+            
+            // Clear existing options except selected ones
+            $select.find('option').each(function() {
+                var $option = $(this);
+                if ($option.val() && !currentValues.includes($option.val())) {
+                    $option.remove();
+                }
+            });
+            
+            // Add new options
+            $.each(terms, function(index, term) {
+                // Skip if option already exists
+                if ($select.find('option[value="' + term.term_id + '"]').length > 0) {
+                    return;
+                }
+                
+                var optionText = term.name + ' (' + term.taxonomy_label + ')';
+                var $option = $('<option></option>')
+                    .attr('value', term.term_id)
+                    .text(optionText);
+                
+                $select.append($option);
+            });
+            
+            // Restore selection
+            if (isMultiple) {
+                $select.val(currentValues);
+            } else {
+                $select.val(currentValue);
+            }
+        }
+    };
+    
+    // Initialize when document is ready
+    $(document).ready(function() {
+        BWSTaxManager.init();
+    });
+    
+    // Expose globally for debugging
+    window.BWSTaxManager = BWSTaxManager;
+    
+})(jQuery);

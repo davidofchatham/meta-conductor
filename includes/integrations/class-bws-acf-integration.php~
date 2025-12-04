@@ -1,0 +1,526 @@
+<?php
+/**
+ * BWS Taxonomy Manager ACF Integration
+ * Handles integration with Advanced Custom Fields Pro taxonomy fields
+ * 
+ * @since 1.0.0
+ */
+
+// Prevent direct access
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+class BWS_ACF_Integration {
+    
+    /**
+     * Handler instances
+     */
+    private $handlers;
+    
+    /**
+     * Constructor
+     */
+    public function __construct($handlers) {
+        $this->handlers = $handlers;
+        
+        // Only initialize if ACF is active
+        if ($this->is_acf_active()) {
+            $this->init_hooks();
+        }
+    }
+    
+    /**
+     * Check if ACF Pro is active
+     */
+    private function is_acf_active() {
+        return function_exists('get_field') && function_exists('update_field');
+    }
+    
+    /**
+     * Initialize hooks
+     */
+    private function init_hooks() {
+        // Hook into ACF field updates
+        add_action('acf/save_post', array($this, 'on_acf_save_post'), 15);
+        
+        // Hook into ACF field value updates
+        add_filter('acf/update_value/type=taxonomy', array($this, 'on_taxonomy_field_update'), 10, 3);
+        
+        // Add custom ACF field settings
+        add_action('acf/render_field_settings/type=taxonomy', array($this, 'add_taxonomy_field_settings'));
+        
+        // Modify ACF taxonomy field choices if needed
+        add_filter('acf/fields/taxonomy/query', array($this, 'modify_taxonomy_field_query'), 10, 2);
+    }
+    
+    /**
+     * Handle ACF post save
+     */
+    public function on_acf_save_post($post_id) {
+        // Skip if not a real post ID
+        if (!is_numeric($post_id)) {
+            return;
+        }
+        
+        $post = get_post($post_id);
+        if (!$post) {
+            return;
+        }
+        
+        // Get all ACF taxonomy fields for this post
+        $taxonomy_fields = $this->get_acf_taxonomy_fields($post_id);
+        
+        if (empty($taxonomy_fields)) {
+            return;
+        }
+        
+        // Process each handler
+        foreach ($this->handlers as $handler_type => $handler) {
+            $this->process_handler_for_acf_fields($post_id, $post, $handler, $taxonomy_fields);
+        }
+    }
+    
+    /**
+     * Handle ACF taxonomy field value updates
+     */
+    public function on_taxonomy_field_update($value, $post_id, $field) {
+        // Skip if not a real post ID
+        if (!is_numeric($post_id)) {
+            return $value;
+        }
+        
+        // Store the field update for processing
+        if (!isset($GLOBALS['bws_acf_field_updates'])) {
+            $GLOBALS['bws_acf_field_updates'] = array();
+        }
+        
+        $GLOBALS['bws_acf_field_updates'][$post_id][$field['name']] = array(
+            'field' => $field,
+            'value' => $value,
+            'taxonomy' => $field['taxonomy']
+        );
+        
+        return $value;
+    }
+    
+    /**
+     * Get ACF taxonomy fields for a post
+     */
+    private function get_acf_taxonomy_fields($post_id) {
+        if (!function_exists('get_field_objects')) {
+            return array();
+        }
+        
+        $field_objects = get_field_objects($post_id);
+        if (!$field_objects) {
+            return array();
+        }
+        
+        $taxonomy_fields = array();
+        
+        foreach ($field_objects as $field_name => $field) {
+            if ($field['type'] === 'taxonomy' && !empty($field['taxonomy'])) {
+                $taxonomy_fields[$field_name] = $field;
+            }
+        }
+        
+        return $taxonomy_fields;
+    }
+    
+    /**
+     * Process handler for ACF fields
+     */
+    private function process_handler_for_acf_fields($post_id, $post, $handler, $taxonomy_fields) {
+        $handler_type = $this->get_handler_type($handler);
+        
+        switch ($handler_type) {
+            case 'hierarchical':
+                $this->process_hierarchical_acf($post_id, $post, $handler, $taxonomy_fields);
+                break;
+                
+            case 'propagation':
+                $this->process_propagation_acf($post_id, $post, $handler, $taxonomy_fields);
+                break;
+                
+            case 'related':
+                $this->process_related_acf($post_id, $post, $handler, $taxonomy_fields);
+                break;
+                
+            case 'time_based':
+                // Time-based rules don't typically interact with ACF fields directly
+                break;
+        }
+    }
+    
+    /**
+     * Process hierarchical rules for ACF fields
+     */
+    private function process_hierarchical_acf($post_id, $post, $handler, $taxonomy_fields) {
+        $rules = $handler->get_enabled_rules();
+        
+        foreach ($rules as $rule) {
+            if (!$this->rule_applies_to_post($rule, $post)) {
+                continue;
+            }
+            
+            $taxonomy = $rule['taxonomy'];
+            
+            // Find ACF fields for this taxonomy
+            foreach ($taxonomy_fields as $field_name => $field) {
+                if ($field['taxonomy'] === $taxonomy) {
+                    $this->apply_hierarchical_terms_to_acf_field($post_id, $field, $rule);
+                }
+            }
+        }
+    }
+    
+    /**
+     * Apply hierarchical terms to ACF field
+     */
+    private function apply_hierarchical_terms_to_acf_field($post_id, $field, $rule) {
+        $current_terms = $this->get_acf_field_terms($post_id, $field);
+        
+        if (empty($current_terms)) {
+            return;
+        }
+        
+        $terms_to_add = array();
+        $taxonomy = $field['taxonomy'];
+        
+        // Get ancestors for each current term
+        foreach ($current_terms as $term_id) {
+            $ancestors = $this->get_term_ancestors($term_id, $taxonomy, $rule);
+            $terms_to_add = array_merge($terms_to_add, $ancestors);
+        }
+        
+        // Remove duplicates and current terms
+        $terms_to_add = array_unique($terms_to_add);
+        $terms_to_add = array_diff($terms_to_add, $current_terms);
+        
+        if (!empty($terms_to_add)) {
+            $all_terms = array_merge($current_terms, $terms_to_add);
+            $this->update_acf_field_terms($post_id, $field, $all_terms);
+            
+            // Also update native taxonomy
+            wp_set_object_terms($post_id, $all_terms, $taxonomy);
+        }
+    }
+    
+    /**
+     * Process propagation rules for ACF fields
+     */
+    private function process_propagation_acf($post_id, $post, $handler, $taxonomy_fields) {
+        $rules = $handler->get_enabled_rules();
+        
+        foreach ($rules as $rule) {
+            if (!$this->rule_applies_to_post($rule, $post)) {
+                continue;
+            }
+            
+            $taxonomy = $rule['taxonomy'];
+            
+            // Check if this post has children or parent
+            if ($post->post_parent > 0) {
+                // Child post - inherit from parent
+                $this->inherit_acf_terms_from_parent($post_id, $post, $rule, $taxonomy_fields);
+            } else {
+                // Potential parent - propagate to children
+                $this->propagate_acf_terms_to_children($post_id, $post, $rule, $taxonomy_fields);
+            }
+        }
+    }
+    
+    /**
+     * Inherit ACF terms from parent
+     */
+    private function inherit_acf_terms_from_parent($post_id, $post, $rule, $taxonomy_fields) {
+        $parent_id = $post->post_parent;
+        $taxonomy = $rule['taxonomy'];
+        $conflict_handling = $rule['conflict_handling'] ?? 'merge';
+        
+        // Get parent's ACF taxonomy field values
+        $parent_taxonomy_fields = $this->get_acf_taxonomy_fields($parent_id);
+        
+        foreach ($taxonomy_fields as $field_name => $field) {
+            if ($field['taxonomy'] !== $taxonomy) {
+                continue;
+            }
+            
+            // Find corresponding field in parent
+            $parent_field = $parent_taxonomy_fields[$field_name] ?? null;
+            if (!$parent_field) {
+                continue;
+            }
+            
+            $parent_terms = $this->get_acf_field_terms($parent_id, $parent_field);
+            
+            if (!empty($parent_terms)) {
+                $current_terms = $this->get_acf_field_terms($post_id, $field);
+                $new_terms = $this->merge_terms_by_conflict_handling($current_terms, $parent_terms, $conflict_handling);
+                
+                $this->update_acf_field_terms($post_id, $field, $new_terms);
+                
+                // Sync with native taxonomy
+                wp_set_object_terms($post_id, $new_terms, $taxonomy);
+            }
+        }
+    }
+    
+    /**
+     * Propagate ACF terms to children
+     */
+    private function propagate_acf_terms_to_children($post_id, $post, $rule, $taxonomy_fields) {
+        $children = $this->get_child_posts($post_id, $rule['post_type']);
+        
+        if (empty($children)) {
+            return;
+        }
+        
+        $taxonomy = $rule['taxonomy'];
+        $conflict_handling = $rule['conflict_handling'] ?? 'merge';
+        
+        foreach ($taxonomy_fields as $field_name => $field) {
+            if ($field['taxonomy'] !== $taxonomy) {
+                continue;
+            }
+            
+            $parent_terms = $this->get_acf_field_terms($post_id, $field);
+            
+            if (empty($parent_terms)) {
+                continue;
+            }
+            
+            foreach ($children as $child_id) {
+                $child_taxonomy_fields = $this->get_acf_taxonomy_fields($child_id);
+                $child_field = $child_taxonomy_fields[$field_name] ?? null;
+                
+                if ($child_field) {
+                    $current_terms = $this->get_acf_field_terms($child_id, $child_field);
+                    $new_terms = $this->merge_terms_by_conflict_handling($current_terms, $parent_terms, $conflict_handling);
+                    
+                    $this->update_acf_field_terms($child_id, $child_field, $new_terms);
+                    
+                    // Sync with native taxonomy
+                    wp_set_object_terms($child_id, $new_terms, $taxonomy);
+                }
+            }
+        }
+    }
+    
+    /**
+     * Process related rules for ACF fields
+     */
+    private function process_related_acf($post_id, $post, $handler, $taxonomy_fields) {
+        $rules = $handler->get_enabled_rules();
+        
+        foreach ($rules as $rule) {
+            if (!$this->rule_applies_to_post($rule, $post)) {
+                continue;
+            }
+            
+            $this->apply_related_terms_for_acf($post_id, $rule, $taxonomy_fields);
+        }
+    }
+    
+    /**
+     * Apply related terms for ACF fields
+     */
+    private function apply_related_terms_for_acf($post_id, $rule, $taxonomy_fields) {
+        $trigger_found = false;
+        
+        // Check if trigger conditions are met in ACF fields
+        if ($rule['trigger_type'] === 'taxonomy') {
+            $trigger_taxonomy = $rule['trigger_taxonomy'];
+            
+            foreach ($taxonomy_fields as $field_name => $field) {
+                if ($field['taxonomy'] === $trigger_taxonomy) {
+                    $terms = $this->get_acf_field_terms($post_id, $field);
+                    if (!empty($terms)) {
+                        $trigger_found = true;
+                        break;
+                    }
+                }
+            }
+        } elseif ($rule['trigger_type'] === 'term') {
+            $trigger_term = get_term($rule['trigger_term_id']);
+            if ($trigger_term && !is_wp_error($trigger_term)) {
+                $trigger_taxonomy = $trigger_term->taxonomy;
+                
+                foreach ($taxonomy_fields as $field_name => $field) {
+                    if ($field['taxonomy'] === $trigger_taxonomy) {
+                        $terms = $this->get_acf_field_terms($post_id, $field);
+                        if (in_array($trigger_term->term_id, $terms)) {
+                            $trigger_found = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Apply or remove target term
+        $target_term = get_term($rule['target_term_id']);
+        if ($target_term && !is_wp_error($target_term)) {
+            if ($trigger_found) {
+                // Apply target term
+                wp_set_object_terms($post_id, array($target_term->term_id), $target_term->taxonomy, true);
+            } elseif (!empty($rule['bidirectional'])) {
+                // Remove target term
+                $current_terms = wp_get_object_terms($post_id, $target_term->taxonomy, array('fields' => 'ids'));
+                if (!is_wp_error($current_terms)) {
+                    $remaining_terms = array_diff($current_terms, array($target_term->term_id));
+                    wp_set_object_terms($post_id, $remaining_terms, $target_term->taxonomy);
+                }
+            }
+        }
+    }
+    
+    /**
+     * Get terms from ACF field
+     */
+    private function get_acf_field_terms($post_id, $field) {
+        $value = get_field($field['name'], $post_id);
+        
+        if (empty($value)) {
+            return array();
+        }
+        
+        $terms = array();
+        
+        if (is_array($value)) {
+            foreach ($value as $item) {
+                if (is_object($item) && isset($item->term_id)) {
+                    $terms[] = $item->term_id;
+                } elseif (is_numeric($item)) {
+                    $terms[] = absint($item);
+                }
+            }
+        } elseif (is_object($value) && isset($value->term_id)) {
+            $terms[] = $value->term_id;
+        } elseif (is_numeric($value)) {
+            $terms[] = absint($value);
+        }
+        
+        return array_unique(array_filter($terms));
+    }
+    
+    /**
+     * Update ACF field with terms
+     */
+    private function update_acf_field_terms($post_id, $field, $terms) {
+        if (!is_array($terms)) {
+            $terms = array($terms);
+        }
+        
+        $terms = array_unique(array_filter($terms));
+        
+        return update_field($field['name'], $terms, $post_id);
+    }
+    
+    /**
+     * Get term ancestors based on rule
+     */
+    private function get_term_ancestors($term_id, $taxonomy, $rule) {
+        $inheritance_depth = $rule['inheritance_depth'] ?? 'all';
+        
+        if ($inheritance_depth === 'immediate') {
+            $term = get_term($term_id, $taxonomy);
+            if ($term && !is_wp_error($term) && $term->parent > 0) {
+                return array($term->parent);
+            }
+            return array();
+        } else {
+            return get_ancestors($term_id, $taxonomy);
+        }
+    }
+    
+    /**
+     * Get child posts
+     */
+    private function get_child_posts($parent_id, $post_type) {
+        return get_posts(array(
+            'post_type' => $post_type,
+            'post_parent' => $parent_id,
+            'post_status' => array('publish', 'draft', 'private'),
+            'numberposts' => -1,
+            'fields' => 'ids'
+        ));
+    }
+    
+    /**
+     * Merge terms based on conflict handling
+     */
+    private function merge_terms_by_conflict_handling($current_terms, $new_terms, $conflict_handling) {
+        switch ($conflict_handling) {
+            case 'replace':
+                return $new_terms;
+                
+            case 'merge':
+                return array_unique(array_merge($current_terms, $new_terms));
+                
+            case 'skip':
+                return empty($current_terms) ? $new_terms : $current_terms;
+                
+            default:
+                return $current_terms;
+        }
+    }
+    
+    /**
+     * Check if rule applies to post
+     */
+    private function rule_applies_to_post($rule, $post) {
+        if (!empty($rule['post_type']) && $rule['post_type'] !== $post->post_type) {
+            return false;
+        }
+        
+        if (!empty($rule['post_types']) && !in_array($post->post_type, $rule['post_types'])) {
+            return false;
+        }
+        
+        return true;
+    }
+    
+    /**
+     * Get handler type
+     */
+    private function get_handler_type($handler) {
+        $class_name = get_class($handler);
+        
+        if (strpos($class_name, 'Hierarchical') !== false) {
+            return 'hierarchical';
+        } elseif (strpos($class_name, 'Propagation') !== false) {
+            return 'propagation';
+        } elseif (strpos($class_name, 'Related') !== false) {
+            return 'related';
+        } elseif (strpos($class_name, 'Time_Based') !== false) {
+            return 'time_based';
+        }
+        
+        return 'unknown';
+    }
+    
+    /**
+     * Add custom settings to ACF taxonomy fields
+     */
+    public function add_taxonomy_field_settings($field) {
+        acf_render_field_setting($field, array(
+            'label' => __('BWS Taxonomy Manager', 'bws-taxonomy-manager'),
+            'instructions' => __('This field will be processed by BWS Taxonomy Manager rules.', 'bws-taxonomy-manager'),
+            'name' => 'bws_taxonomy_manager_enabled',
+            'type' => 'true_false',
+            'ui' => 1,
+            'default_value' => 1
+        ));
+    }
+    
+    /**
+     * Modify taxonomy field query if needed
+     */
+    public function modify_taxonomy_field_query($args, $field) {
+        // Add any modifications to the taxonomy query if needed
+        // For now, just return the args as-is
+        return $args;
+    }
+}
