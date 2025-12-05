@@ -1,13 +1,13 @@
 <?php
 /**
- * Plugin Name: BWS Taxonomy Manager
- * Description: Advanced taxonomy management with hierarchical inheritance, parent-child propagation, related terms, and time-based term application
- * Version: 1.0.1
+ * Plugin Name: BWS Meta Manager
+ * Description: Unified meta and taxonomy management with hierarchical inheritance, entity relationships, data conversion, and intelligent automation
+ * Version: 2.0.0
  * Author: Bridge Web Solutions
  * Author URI: https://bridgewebsolutions.com
  * License: GPL-3.0-or-later
  * License URI: https://www.gnu.org/licenses/gpl-3.0.html
- * Text Domain: bws-taxonomy-manager
+ * Text Domain: bws-meta-manager
  * Requires PHP: 8.1
  */
 
@@ -17,43 +17,67 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('BWS_TAX_MANAGER_VERSION', '1.0.1');
+define('BWS_META_MANAGER_VERSION', '2.0.0');
+define('BWS_META_MANAGER_PLUGIN_DIR', plugin_dir_path(__FILE__));
+define('BWS_META_MANAGER_PLUGIN_URL', plugin_dir_url(__FILE__));
+
+// Backward compatibility constants
+define('BWS_TAX_MANAGER_VERSION', '2.0.0'); // For legacy code
 define('BWS_TAX_MANAGER_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('BWS_TAX_MANAGER_PLUGIN_URL', plugin_dir_url(__FILE__));
 
 /**
- * Check if BWS Taxonomy Manager class exists to prevent conflicts
+ * Check if BWS Meta Manager class exists to prevent conflicts
  */
-if (!function_exists('bws_taxonomy_manager_init')) {
-    
+if (!function_exists('bws_meta_manager_init')) {
+
     /**
-     * Initialize the BWS Taxonomy Manager
+     * Initialize the BWS Meta Manager
      */
-    function bws_taxonomy_manager_init() {
+    function bws_meta_manager_init() {
         // Check PHP version
         if (version_compare(PHP_VERSION, '8.1', '<')) {
-            add_action('admin_notices', 'bws_taxonomy_manager_php_version_notice');
+            add_action('admin_notices', 'bws_meta_manager_php_version_notice');
             return;
         }
-        
+
+        // Load core unified framework classes
+        require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/core/class-bws-entity.php';
+        require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/core/class-bws-condition-evaluator.php';
+        require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/core/class-bws-action-executor.php';
+        require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/core/class-bws-rule-engine.php';
+
+        // Load unified handler base
+        require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/abstracts/class-bws-unified-handler-base.php';
+
+        // Load legacy handler base (for backward compatibility)
+        if (file_exists(BWS_META_MANAGER_PLUGIN_DIR . 'includes/abstracts/class-bws-handler-base.php')) {
+            require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/abstracts/class-bws-handler-base.php';
+        }
+
         // Load the main class
-        require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/class-bws-taxonomy-manager.php';
-        
+        require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/class-bws-taxonomy-manager.php';
+
         // Initialize the plugin
         BWS_Taxonomy_Manager::get_instance();
     }
-    
+
     /**
      * Display PHP version notice
      */
-    function bws_taxonomy_manager_php_version_notice() {
+    function bws_meta_manager_php_version_notice() {
         echo '<div class="notice notice-error"><p>';
-        echo esc_html__('BWS Taxonomy Manager requires PHP 8.1 or higher. Please update your PHP version.', 'bws-taxonomy-manager');
+        echo esc_html__('BWS Meta Manager requires PHP 8.1 or higher. Please update your PHP version.', 'bws-meta-manager');
         echo '</p></div>';
     }
-    
+
     // Initialize the plugin
-    add_action('plugins_loaded', 'bws_taxonomy_manager_init');
+    add_action('plugins_loaded', 'bws_meta_manager_init');
+
+    // Legacy function name for backward compatibility
+    function bws_taxonomy_manager_init() {
+        bws_meta_manager_init();
+    }
     
     /**
      * Plugin activation hook
@@ -151,17 +175,101 @@ if (!function_exists('bws_taxonomy_manager_init')) {
 	}
 	
 	/**
-	 * Create database tables (for future extensions)
+	 * Create database tables for unified system
 	 */
 	function bws_taxonomy_manager_create_tables() {
 		global $wpdb;
-		
+
 		$charset_collate = $wpdb->get_charset_collate();
-		
-		// Table for logging rule applications (optional feature)
-		$table_name = $wpdb->prefix . 'bws_taxonomy_manager_log';
-		
-		$sql = "CREATE TABLE $table_name (
+
+		// Enhanced log table with entity support (v2.0)
+		$log_table = $wpdb->prefix . 'bws_meta_manager_log';
+		$log_sql = "CREATE TABLE $log_table (
+			id bigint(20) NOT NULL AUTO_INCREMENT,
+			rule_id varchar(100) NOT NULL,
+			handler_type varchar(50) NOT NULL,
+			source_entity_type varchar(20) NOT NULL,
+			source_entity_id bigint(20) NOT NULL,
+			target_entity_type varchar(20) NOT NULL,
+			target_entity_id bigint(20) NOT NULL,
+			action_type varchar(50) NOT NULL,
+			action_data text,
+			result varchar(20) NOT NULL,
+			applied_at datetime DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (id),
+			KEY rule_id (rule_id),
+			KEY handler_type (handler_type),
+			KEY source_entity (source_entity_type, source_entity_id),
+			KEY target_entity (target_entity_type, target_entity_id),
+			KEY applied_at (applied_at)
+		) $charset_collate;";
+
+		// ACF conversion preview table
+		$preview_table = $wpdb->prefix . 'bws_acf_conversion_preview';
+		$preview_sql = "CREATE TABLE $preview_table (
+			id mediumint(9) NOT NULL AUTO_INCREMENT,
+			session_id varchar(32) NOT NULL,
+			post_id bigint(20) NOT NULL,
+			field_key varchar(255) NOT NULL,
+			old_value longtext,
+			new_value longtext,
+			conversion_type varchar(50) NOT NULL,
+			created_at datetime DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (id),
+			KEY session_id (session_id),
+			KEY post_id (post_id),
+			KEY created_at (created_at)
+		) $charset_collate;";
+
+		// ACF conversion sessions table
+		$sessions_table = $wpdb->prefix . 'bws_acf_conversion_sessions';
+		$sessions_sql = "CREATE TABLE $sessions_table (
+			id bigint(20) NOT NULL AUTO_INCREMENT,
+			session_id varchar(32) NOT NULL,
+			session_data longtext NOT NULL,
+			created_at datetime NOT NULL,
+			updated_at datetime NOT NULL,
+			PRIMARY KEY (id),
+			UNIQUE KEY session_id (session_id),
+			KEY created_at (created_at)
+		) $charset_collate;";
+
+		// Relationship tracking table
+		$relationship_table = $wpdb->prefix . 'bws_relationship_log';
+		$relationship_sql = "CREATE TABLE $relationship_table (
+			id bigint(20) NOT NULL AUTO_INCREMENT,
+			post_id bigint(20) NOT NULL,
+			parent_id bigint(20),
+			child_ids text,
+			updated_at datetime DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (id),
+			KEY post_id (post_id),
+			KEY parent_id (parent_id),
+			KEY updated_at (updated_at)
+		) $charset_collate;";
+
+		// Batch queue table
+		$queue_table = $wpdb->prefix . 'bws_batch_queue';
+		$queue_sql = "CREATE TABLE $queue_table (
+			id bigint(20) NOT NULL AUTO_INCREMENT,
+			job_id varchar(32) NOT NULL,
+			job_type varchar(50) NOT NULL,
+			job_data longtext NOT NULL,
+			status varchar(20) NOT NULL DEFAULT 'pending',
+			progress int(11) DEFAULT 0,
+			total int(11) DEFAULT 0,
+			created_at datetime NOT NULL,
+			started_at datetime,
+			completed_at datetime,
+			PRIMARY KEY (id),
+			UNIQUE KEY job_id (job_id),
+			KEY status (status),
+			KEY created_at (created_at)
+		) $charset_collate;";
+
+		// Legacy log table (for backward compatibility - will be migrated)
+		$legacy_log_table = $wpdb->prefix . 'bws_taxonomy_manager_log';
+		$legacy_log_sql = "CREATE TABLE $legacy_log_table (
 			id bigint(20) NOT NULL AUTO_INCREMENT,
 			post_id bigint(20) NOT NULL,
 			rule_type varchar(50) NOT NULL,
@@ -175,9 +283,14 @@ if (!function_exists('bws_taxonomy_manager_init')) {
 			KEY taxonomy (taxonomy),
 			KEY applied_at (applied_at)
 		) $charset_collate;";
-		
+
 		require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
-		dbDelta($sql);
+		dbDelta($log_sql);
+		dbDelta($preview_sql);
+		dbDelta($sessions_sql);
+		dbDelta($relationship_sql);
+		dbDelta($queue_sql);
+		dbDelta($legacy_log_sql);
 	}
 	
 	/**
