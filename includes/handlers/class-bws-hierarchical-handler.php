@@ -180,14 +180,14 @@ class BWS_Hierarchical_Handler extends BWS_Unified_Handler_Base {
     }
 
     /**
-     * Validate rule configuration
+     * Validate rule configuration (internal method)
      *
      * @param array $rule Rule configuration
      * @return bool Valid
      */
-    protected function validate_rule($rule) {
+    protected function validate_rule_internal($rule) {
         // Call parent validation first
-        if (!parent::validate_rule($rule)) {
+        if (!parent::validate_rule_internal($rule)) {
             return false;
         }
 

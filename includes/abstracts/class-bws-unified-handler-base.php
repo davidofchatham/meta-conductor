@@ -30,9 +30,19 @@ abstract class BWS_Unified_Handler_Base {
     protected $handler_type;
 
     /**
-     * Constructor
+     * Settings instance (for backward compatibility)
+     *
+     * @var BWS_Settings|null
      */
-    public function __construct() {
+    protected $settings;
+
+    /**
+     * Constructor
+     *
+     * @param BWS_Settings|null $settings Settings instance (optional, for backward compatibility)
+     */
+    public function __construct($settings = null) {
+        $this->settings = $settings;
         $this->rule_engine = new BWS_Rule_Engine();
         $this->handler_type = $this->get_handler_type();
         $this->init_hooks();
@@ -68,7 +78,7 @@ abstract class BWS_Unified_Handler_Base {
      */
     public function process_rule($rule) {
         // Validate rule
-        if (!$this->validate_rule($rule)) {
+        if (!$this->validate_rule_internal($rule)) {
             return [
                 'processed' => 0,
                 'updated' => 0,
@@ -93,13 +103,13 @@ abstract class BWS_Unified_Handler_Base {
     }
 
     /**
-     * Validate rule configuration
+     * Validate rule configuration (internal method)
      * Can be overridden by child handlers for specific validation
      *
      * @param array $rule Rule configuration
      * @return bool Valid
      */
-    protected function validate_rule($rule) {
+    protected function validate_rule_internal($rule) {
         // Basic validation
         if (!isset($rule['enabled']) || !$rule['enabled']) {
             return false;
@@ -424,5 +434,168 @@ abstract class BWS_Unified_Handler_Base {
         $unified_rule['name'] = $legacy_rule['name'] ?? '';
 
         return $unified_rule;
+    }
+
+    /**
+     * Process a single post (backward compatibility method)
+     *
+     * This method provides backward compatibility with the legacy BWS_Handler_Base interface.
+     * It processes a single post through all enabled rules.
+     *
+     * @param int $post_id Post ID
+     * @param WP_Post $post Post object
+     * @param bool $update Whether this is an update
+     */
+    public function process_post($post_id, $post, $update) {
+        // Get all enabled rules
+        $rules = $this->get_enabled_rules();
+
+        if (empty($rules)) {
+            return;
+        }
+
+        // Create entity for this post
+        $entity = new BWS_Entity('post', $post_id);
+
+        // Process each rule
+        foreach ($rules as $rule_id => $rule) {
+            // Check if rule applies to this post
+            if (!$this->should_process_post($post_id, $rule)) {
+                continue;
+            }
+
+            // Process using unified engine
+            $this->process_entity($entity, $rule);
+        }
+    }
+
+    /**
+     * Public validate_rule method for backward compatibility
+     *
+     * Wraps the protected validate_rule_internal method and returns array format
+     * expected by legacy BWS_Taxonomy_Manager code.
+     *
+     * @param array $rule_data Rule data to validate
+     * @return array Validation result with 'valid' boolean and 'errors' array
+     */
+    public function validate_rule($rule_data) {
+        $errors = [];
+
+        // Basic validation
+        if (empty($rule_data['name'])) {
+            $errors[] = __('Rule name is required.', 'bws-meta-manager');
+        }
+
+        // Call the protected validate_rule_internal for handler-specific validation
+        $temp_rule = $rule_data;
+        $temp_rule['enabled'] = $temp_rule['enabled'] ?? true;
+
+        try {
+            $is_valid = $this->validate_rule_internal($temp_rule);
+
+            if (!$is_valid) {
+                $errors[] = __('Rule configuration is invalid.', 'bws-meta-manager');
+            }
+        } catch (Exception $e) {
+            $errors[] = $e->getMessage();
+        }
+
+        return [
+            'valid' => empty($errors),
+            'errors' => $errors
+        ];
+    }
+
+    /**
+     * Process existing posts in batches (backward compatibility method)
+     *
+     * @param int $batch_size Number of posts to process per batch
+     * @param int $offset Starting offset
+     * @return array Processing results
+     */
+    public function process_existing_posts($batch_size = 50, $offset = 0) {
+        $rules = $this->get_enabled_rules();
+
+        if (empty($rules)) {
+            return [
+                'processed' => 0,
+                'total' => 0,
+                'complete' => true,
+                'message' => __('No rules configured for this handler.', 'bws-meta-manager')
+            ];
+        }
+
+        // Get post types from rules
+        $post_types = [];
+        foreach ($rules as $rule) {
+            $source_filters = $rule['source_filters'] ?? [];
+            $post_type = $source_filters['post_type'] ?? 'post';
+
+            if ($post_type === 'any') {
+                $post_types = get_post_types(['public' => true]);
+                break;
+            }
+
+            if (is_array($post_type)) {
+                $post_types = array_merge($post_types, $post_type);
+            } else {
+                $post_types[] = $post_type;
+            }
+        }
+
+        $post_types = array_unique($post_types);
+
+        if (empty($post_types)) {
+            return [
+                'processed' => 0,
+                'total' => 0,
+                'complete' => true,
+                'message' => __('No applicable post types found.', 'bws-meta-manager')
+            ];
+        }
+
+        // Get total count
+        $total_query = new WP_Query([
+            'post_type' => $post_types,
+            'post_status' => 'any',
+            'posts_per_page' => -1,
+            'fields' => 'ids',
+            'no_found_rows' => false
+        ]);
+
+        $total = $total_query->found_posts;
+
+        // Get batch of posts
+        $query = new WP_Query([
+            'post_type' => $post_types,
+            'post_status' => 'any',
+            'posts_per_page' => $batch_size,
+            'offset' => $offset,
+            'fields' => 'ids'
+        ]);
+
+        $processed = 0;
+
+        foreach ($query->posts as $post_id) {
+            $post = get_post($post_id);
+            if ($post) {
+                $this->process_post($post_id, $post, true);
+                $processed++;
+            }
+        }
+
+        $complete = ($offset + $batch_size) >= $total;
+
+        return [
+            'processed' => $processed,
+            'total' => $total,
+            'offset' => $offset + $batch_size,
+            'complete' => $complete,
+            'message' => sprintf(
+                __('Processed %d of %d posts.', 'bws-meta-manager'),
+                min($offset + $batch_size, $total),
+                $total
+            )
+        ];
     }
 }
