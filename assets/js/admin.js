@@ -78,6 +78,21 @@
                     BWSTaxManager.toggleTriggerFieldsForRule($rule, $checkedRadio.val());
                 }
             });
+
+            // Initialize hierarchy direction for existing hierarchical rules
+            $('.bws-rule-item[data-rule-type="hierarchical"]').each(function() {
+                var $rule = $(this);
+                var $directionSelect = $rule.find('.bws-hierarchy-direction');
+                if ($directionSelect.length > 0) {
+                    var direction = $directionSelect.val();
+                    BWSTaxManager.toggleExpansionBehavior($rule, direction);
+
+                    // Add change handler
+                    $directionSelect.on('change', function() {
+                        BWSTaxManager.toggleExpansionBehavior($rule, $(this).val());
+                    });
+                }
+            });
         },
         
         toggleTriggerFieldsForRule: function($rule, triggerType) {
@@ -87,6 +102,17 @@
             } else if (triggerType === 'taxonomy') {
                 $rule.find('.trigger-term-row').hide();
                 $rule.find('.trigger-taxonomy-row').show();
+            }
+        },
+
+        toggleExpansionBehavior: function($rule, direction) {
+            var $expansionRow = $rule.find('.bws-expansion-behavior-row');
+
+            // Show expansion behavior only for parent_to_child or both
+            if (direction === 'parent_to_child' || direction === 'both') {
+                $expansionRow.show();
+            } else {
+                $expansionRow.hide();
             }
         },
         
@@ -156,14 +182,30 @@
                     width: '100%'
                 });
             }
-            
+
             // Initialize date pickers for time-based rules
             if (ruleType === 'time_based' && $.fn.datepicker) {
                 $rule.find('input[type="date"]').datepicker({
                     dateFormat: 'yy-mm-dd'
                 });
             }
-            
+
+            // Initialize hierarchy direction handling for hierarchical rules
+            if (ruleType === 'hierarchical') {
+                var $directionSelect = $rule.find('.bws-hierarchy-direction');
+
+                // Set up change handler
+                $directionSelect.on('change', function() {
+                    BWSTaxManager.toggleExpansionBehavior($rule, $(this).val());
+                });
+
+                // Initialize on load
+                var currentDirection = $directionSelect.val();
+                if (currentDirection) {
+                    BWSTaxManager.toggleExpansionBehavior($rule, currentDirection);
+                }
+            }
+
             // Initialize trigger fields for related rules
             if (ruleType === 'related') {
                 var $checkedRadio = $rule.find('.trigger-type-radio:checked');

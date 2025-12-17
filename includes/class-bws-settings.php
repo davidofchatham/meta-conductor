@@ -500,20 +500,63 @@ class BWS_Settings {
                         </td>
                     </tr>
                     <tr>
+                        <th scope="row"><?php _e('Hierarchy Direction', 'bws-taxonomy-manager'); ?></th>
+                        <td>
+                            <select name="<?php echo self::OPTION_NAME; ?>[hierarchical_rules][<?php echo $index; ?>][hierarchy_direction]" class="bws-hierarchy-direction">
+                                <option value="child_to_parent" <?php selected($rule['hierarchy_direction'] ?? 'child_to_parent', 'child_to_parent'); ?>>
+                                    <?php _e('Child to Parent (Apply ancestor terms)', 'bws-taxonomy-manager'); ?>
+                                </option>
+                                <option value="parent_to_child" <?php selected($rule['hierarchy_direction'] ?? 'child_to_parent', 'parent_to_child'); ?>>
+                                    <?php _e('Parent to Child (Apply child terms)', 'bws-taxonomy-manager'); ?>
+                                </option>
+                                <option value="both" <?php selected($rule['hierarchy_direction'] ?? 'child_to_parent', 'both'); ?>>
+                                    <?php _e('Both Directions', 'bws-taxonomy-manager'); ?>
+                                </option>
+                            </select>
+                            <p class="description"><?php _e('Choose whether to apply parent terms to children, or child terms to parents.', 'bws-taxonomy-manager'); ?></p>
+                        </td>
+                    </tr>
+                    <tr>
                         <th scope="row"><?php _e('Inheritance Depth', 'bws-taxonomy-manager'); ?></th>
                         <td>
                             <label>
-                                <input type="radio" 
-                                       name="<?php echo self::OPTION_NAME; ?>[hierarchical_rules][<?php echo $index; ?>][inheritance_depth]" 
+                                <input type="radio"
+                                       name="<?php echo self::OPTION_NAME; ?>[hierarchical_rules][<?php echo $index; ?>][inheritance_depth]"
                                        value="immediate" <?php checked($rule['inheritance_depth'] ?? 'all', 'immediate'); ?>>
                                 <?php _e('Immediate parent only', 'bws-taxonomy-manager'); ?>
                             </label><br>
                             <label>
-                                <input type="radio" 
-                                       name="<?php echo self::OPTION_NAME; ?>[hierarchical_rules][<?php echo $index; ?>][inheritance_depth]" 
+                                <input type="radio"
+                                       name="<?php echo self::OPTION_NAME; ?>[hierarchical_rules][<?php echo $index; ?>][inheritance_depth]"
                                        value="all" <?php checked($rule['inheritance_depth'] ?? 'all', 'all'); ?>>
                                 <?php _e('All ancestors', 'bws-taxonomy-manager'); ?>
                             </label>
+                        </td>
+                    </tr>
+                    <tr class="bws-expansion-behavior-row" style="display: none;">
+                        <th scope="row"><?php _e('Child Expansion Behavior', 'bws-taxonomy-manager'); ?></th>
+                        <td>
+                            <select name="<?php echo self::OPTION_NAME; ?>[hierarchical_rules][<?php echo $index; ?>][expansion_behavior]">
+                                <option value="smart" <?php selected($rule['expansion_behavior'] ?? 'smart', 'smart'); ?>>
+                                    <?php _e('Smart - Only expand if no children selected', 'bws-taxonomy-manager'); ?>
+                                </option>
+                                <option value="always" <?php selected($rule['expansion_behavior'] ?? 'smart', 'always'); ?>>
+                                    <?php _e('Always - Always add all children', 'bws-taxonomy-manager'); ?>
+                                </option>
+                                <option value="merge" <?php selected($rule['expansion_behavior'] ?? 'smart', 'merge'); ?>>
+                                    <?php _e('Merge - Add only missing children', 'bws-taxonomy-manager'); ?>
+                                </option>
+                                <option value="never" <?php selected($rule['expansion_behavior'] ?? 'smart', 'never'); ?>>
+                                    <?php _e('Never - Manual selection only', 'bws-taxonomy-manager'); ?>
+                                </option>
+                                <option value="conditional" <?php selected($rule['expansion_behavior'] ?? 'smart', 'conditional'); ?>>
+                                    <?php _e('Conditional - Based on rules', 'bws-taxonomy-manager'); ?>
+                                </option>
+                            </select>
+                            <p class="description">
+                                <?php _e('When a parent term is selected, how should child terms be handled?', 'bws-taxonomy-manager'); ?><br>
+                                <strong><?php _e('Smart (Recommended):', 'bws-taxonomy-manager'); ?></strong> <?php _e('Automatically adds all child terms ONLY if no children are already selected. This prevents duplicate or conflicting selections.', 'bws-taxonomy-manager'); ?>
+                            </p>
                         </td>
                     </tr>
                     <tr>
@@ -521,8 +564,8 @@ class BWS_Settings {
                         <td>
                             <?php foreach ($post_types as $post_type): ?>
                                 <label>
-                                    <input type="checkbox" 
-                                           name="<?php echo self::OPTION_NAME; ?>[hierarchical_rules][<?php echo $index; ?>][post_types][]" 
+                                    <input type="checkbox"
+                                           name="<?php echo self::OPTION_NAME; ?>[hierarchical_rules][<?php echo $index; ?>][post_types][]"
                                            value="<?php echo esc_attr($post_type->name); ?>"
                                            <?php checked(in_array($post_type->name, $rule['post_types'] ?? array())); ?>>
                                     <?php echo esc_html($post_type->label); ?>
