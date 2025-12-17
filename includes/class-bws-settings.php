@@ -517,20 +517,23 @@ class BWS_Settings {
                         </td>
                     </tr>
                     <tr>
-                        <th scope="row"><?php _e('Inheritance Depth', 'bws-taxonomy-manager'); ?></th>
+                        <th scope="row"><?php _e('Hierarchy Depth', 'bws-taxonomy-manager'); ?></th>
                         <td>
                             <label>
                                 <input type="radio"
                                        name="<?php echo self::OPTION_NAME; ?>[hierarchical_rules][<?php echo $index; ?>][inheritance_depth]"
                                        value="immediate" <?php checked($rule['inheritance_depth'] ?? 'all', 'immediate'); ?>>
-                                <?php _e('Immediate parent only', 'bws-taxonomy-manager'); ?>
+                                <?php _e('One level only', 'bws-taxonomy-manager'); ?>
                             </label><br>
                             <label>
                                 <input type="radio"
                                        name="<?php echo self::OPTION_NAME; ?>[hierarchical_rules][<?php echo $index; ?>][inheritance_depth]"
                                        value="all" <?php checked($rule['inheritance_depth'] ?? 'all', 'all'); ?>>
-                                <?php _e('All ancestors', 'bws-taxonomy-manager'); ?>
+                                <?php _e('All levels (entire hierarchy)', 'bws-taxonomy-manager'); ?>
                             </label>
+                            <p class="description">
+                                <?php _e('One level: Direct parent or children only. All levels: All ancestors or descendants in the hierarchy.', 'bws-taxonomy-manager'); ?>
+                            </p>
                         </td>
                     </tr>
                     <tr class="bws-expansion-behavior-row" style="display: none;">
@@ -538,24 +541,28 @@ class BWS_Settings {
                         <td>
                             <select name="<?php echo self::OPTION_NAME; ?>[hierarchical_rules][<?php echo $index; ?>][expansion_behavior]">
                                 <option value="smart" <?php selected($rule['expansion_behavior'] ?? 'smart', 'smart'); ?>>
-                                    <?php _e('Smart - Only expand if no children selected', 'bws-taxonomy-manager'); ?>
+                                    <?php _e('Smart (Recommended)', 'bws-taxonomy-manager'); ?>
                                 </option>
                                 <option value="always" <?php selected($rule['expansion_behavior'] ?? 'smart', 'always'); ?>>
-                                    <?php _e('Always - Always add all children', 'bws-taxonomy-manager'); ?>
+                                    <?php _e('Always expand', 'bws-taxonomy-manager'); ?>
                                 </option>
                                 <option value="merge" <?php selected($rule['expansion_behavior'] ?? 'smart', 'merge'); ?>>
-                                    <?php _e('Merge - Add only missing children', 'bws-taxonomy-manager'); ?>
+                                    <?php _e('Merge with existing', 'bws-taxonomy-manager'); ?>
                                 </option>
                                 <option value="never" <?php selected($rule['expansion_behavior'] ?? 'smart', 'never'); ?>>
-                                    <?php _e('Never - Manual selection only', 'bws-taxonomy-manager'); ?>
+                                    <?php _e('Never expand (keep parent only)', 'bws-taxonomy-manager'); ?>
                                 </option>
                                 <option value="conditional" <?php selected($rule['expansion_behavior'] ?? 'smart', 'conditional'); ?>>
-                                    <?php _e('Conditional - Based on rules', 'bws-taxonomy-manager'); ?>
+                                    <?php _e('Conditional (advanced filters)', 'bws-taxonomy-manager'); ?>
                                 </option>
                             </select>
                             <p class="description">
-                                <?php _e('When a parent term is selected, how should child terms be handled?', 'bws-taxonomy-manager'); ?><br>
-                                <strong><?php _e('Smart (Recommended):', 'bws-taxonomy-manager'); ?></strong> <?php _e('Automatically adds all child terms ONLY if no children are already selected. This prevents duplicate or conflicting selections.', 'bws-taxonomy-manager'); ?>
+                                <?php _e('Controls whether child terms are automatically added when a parent is selected:', 'bws-taxonomy-manager'); ?><br>
+                                <strong><?php _e('Smart:', 'bws-taxonomy-manager'); ?></strong> <?php _e('Add all children only if none are selected (prevents duplicates)', 'bws-taxonomy-manager'); ?><br>
+                                <strong><?php _e('Always:', 'bws-taxonomy-manager'); ?></strong> <?php _e('Always add all children regardless of current selection', 'bws-taxonomy-manager'); ?><br>
+                                <strong><?php _e('Merge:', 'bws-taxonomy-manager'); ?></strong> <?php _e('Add only children that are not already selected', 'bws-taxonomy-manager'); ?><br>
+                                <strong><?php _e('Never:', 'bws-taxonomy-manager'); ?></strong> <?php _e('Do not automatically add children (users select manually)', 'bws-taxonomy-manager'); ?><br>
+                                <strong><?php _e('Conditional:', 'bws-taxonomy-manager'); ?></strong> <?php _e('Use custom rules (min children, max to add, exclusions)', 'bws-taxonomy-manager'); ?>
                             </p>
                         </td>
                     </tr>
