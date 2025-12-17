@@ -541,28 +541,19 @@ class BWS_Settings {
                         <td>
                             <select name="<?php echo self::OPTION_NAME; ?>[hierarchical_rules][<?php echo $index; ?>][expansion_behavior]">
                                 <option value="smart" <?php selected($rule['expansion_behavior'] ?? 'smart', 'smart'); ?>>
-                                    <?php _e('Smart (Recommended)', 'bws-taxonomy-manager'); ?>
-                                </option>
-                                <option value="always" <?php selected($rule['expansion_behavior'] ?? 'smart', 'always'); ?>>
-                                    <?php _e('Always expand', 'bws-taxonomy-manager'); ?>
+                                    <?php _e('Smart - Only if none selected', 'bws-taxonomy-manager'); ?>
                                 </option>
                                 <option value="merge" <?php selected($rule['expansion_behavior'] ?? 'smart', 'merge'); ?>>
-                                    <?php _e('Merge with existing', 'bws-taxonomy-manager'); ?>
+                                    <?php _e('Always - Merge with manual selections', 'bws-taxonomy-manager'); ?>
                                 </option>
                                 <option value="never" <?php selected($rule['expansion_behavior'] ?? 'smart', 'never'); ?>>
-                                    <?php _e('Never expand (keep parent only)', 'bws-taxonomy-manager'); ?>
-                                </option>
-                                <option value="conditional" <?php selected($rule['expansion_behavior'] ?? 'smart', 'conditional'); ?>>
-                                    <?php _e('Conditional (advanced filters)', 'bws-taxonomy-manager'); ?>
+                                    <?php _e('Manual only - No auto-expansion', 'bws-taxonomy-manager'); ?>
                                 </option>
                             </select>
                             <p class="description">
-                                <?php _e('Controls whether child terms are automatically added when a parent is selected:', 'bws-taxonomy-manager'); ?><br>
-                                <strong><?php _e('Smart:', 'bws-taxonomy-manager'); ?></strong> <?php _e('Add all children only if none are selected (prevents duplicates)', 'bws-taxonomy-manager'); ?><br>
-                                <strong><?php _e('Always:', 'bws-taxonomy-manager'); ?></strong> <?php _e('Always add all children regardless of current selection', 'bws-taxonomy-manager'); ?><br>
-                                <strong><?php _e('Merge:', 'bws-taxonomy-manager'); ?></strong> <?php _e('Add only children that are not already selected', 'bws-taxonomy-manager'); ?><br>
-                                <strong><?php _e('Never:', 'bws-taxonomy-manager'); ?></strong> <?php _e('Do not automatically add children (users select manually)', 'bws-taxonomy-manager'); ?><br>
-                                <strong><?php _e('Conditional:', 'bws-taxonomy-manager'); ?></strong> <?php _e('Use custom rules (min children, max to add, exclusions)', 'bws-taxonomy-manager'); ?>
+                                <strong><?php _e('Smart (Recommended):', 'bws-taxonomy-manager'); ?></strong> <?php _e('Automatically adds all child terms, but only if the user hasn\'t manually selected any children. This prevents confusion when users make specific child selections.', 'bws-taxonomy-manager'); ?><br><br>
+                                <strong><?php _e('Always:', 'bws-taxonomy-manager'); ?></strong> <?php _e('Always adds all child terms, even if some are already manually selected. New children will merge with existing selections.', 'bws-taxonomy-manager'); ?><br><br>
+                                <strong><?php _e('Manual only:', 'bws-taxonomy-manager'); ?></strong> <?php _e('Never automatically adds child terms. Users must manually select both parent and any desired children. Useful when combined with "Both" direction to get ancestors but not descendants.', 'bws-taxonomy-manager'); ?>
                             </p>
                         </td>
                     </tr>
