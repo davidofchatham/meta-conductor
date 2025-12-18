@@ -137,27 +137,74 @@ abstract class BWS_Unified_Handler_Base {
     /**
      * Get all enabled rules for this handler
      *
+     * Uses the storage abstraction layer to retrieve rules.
+     *
+     * @since 2.0.0 Updated to use storage abstraction
      * @return array Enabled rules
      */
     protected function get_enabled_rules() {
-        $settings = get_option('bws_meta_manager_settings', []);
+        $storage = BWS_Storage_Factory::get_instance();
         $rule_type = $this->get_rule_type();
-        $rules = $settings[$rule_type] ?? [];
 
-        return array_filter($rules, function($rule) {
-            return isset($rule['enabled']) && $rule['enabled'];
-        });
+        return $storage->get_rules($rule_type, ['enabled' => true]);
+    }
+
+    /**
+     * Get all rules (enabled and disabled) for this handler
+     *
+     * @since 2.0.0
+     * @return array All rules
+     */
+    protected function get_all_rules() {
+        $storage = BWS_Storage_Factory::get_instance();
+        $rule_type = $this->get_rule_type();
+
+        return $storage->get_rules($rule_type);
     }
 
     /**
      * Get a specific rule by ID
      *
-     * @param string $rule_id Rule ID
+     * Uses the storage abstraction layer to retrieve a single rule.
+     *
+     * @since 2.0.0 Updated to use storage abstraction
+     * @param int $rule_id Rule ID
      * @return array|null Rule configuration or null
      */
     protected function get_rule($rule_id) {
-        $rules = $this->get_enabled_rules();
-        return $rules[$rule_id] ?? null;
+        $storage = BWS_Storage_Factory::get_instance();
+        $rule_type = $this->get_rule_type();
+
+        return $storage->get_rule($rule_type, $rule_id);
+    }
+
+    /**
+     * Save a rule
+     *
+     * @since 2.0.0
+     * @param int   $rule_id Rule ID (-1 for new rule)
+     * @param array $data Rule data
+     * @return int Rule ID on success, 0 on failure
+     */
+    protected function save_rule($rule_id, array $data) {
+        $storage = BWS_Storage_Factory::get_instance();
+        $rule_type = $this->get_rule_type();
+
+        return $storage->save_rule($rule_type, $rule_id, $data);
+    }
+
+    /**
+     * Delete a rule
+     *
+     * @since 2.0.0
+     * @param int $rule_id Rule ID
+     * @return bool True on success, false on failure
+     */
+    protected function delete_rule($rule_id) {
+        $storage = BWS_Storage_Factory::get_instance();
+        $rule_type = $this->get_rule_type();
+
+        return $storage->delete_rule($rule_type, $rule_id);
     }
 
     /**

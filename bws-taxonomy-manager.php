@@ -41,6 +41,11 @@ if (!function_exists('bws_meta_manager_init')) {
             return;
         }
 
+        // Load storage abstraction layer (v2.0 - prepares for CPT migration)
+        require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/abstracts/interface-bws-rule-storage.php';
+        require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/storage/class-bws-option-rule-storage.php';
+        require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/storage/class-bws-storage-factory.php';
+
         // Load core unified framework classes
         require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/core/class-bws-entity.php';
         require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/core/class-bws-condition-evaluator.php';
