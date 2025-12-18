@@ -176,11 +176,14 @@ if (!function_exists('bws_meta_manager_init')) {
 	
 	/**
 	 * Create database tables for unified system
+	 *
+	 * @return array Array with 'success' bool and 'errors' array if any failures
 	 */
 	function bws_taxonomy_manager_create_tables() {
 		global $wpdb;
 
 		$charset_collate = $wpdb->get_charset_collate();
+		$errors = [];
 
 		// Enhanced log table with entity support (v2.0)
 		$log_table = $wpdb->prefix . 'bws_meta_manager_log';
@@ -284,6 +287,7 @@ if (!function_exists('bws_meta_manager_init')) {
 			KEY applied_at (applied_at)
 		) $charset_collate;";
 
+		// Execute dbDelta to create tables
 		require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
 		dbDelta($log_sql);
 		dbDelta($preview_sql);
@@ -291,6 +295,66 @@ if (!function_exists('bws_meta_manager_init')) {
 		dbDelta($relationship_sql);
 		dbDelta($queue_sql);
 		dbDelta($legacy_log_sql);
+
+		// Verify all tables were created successfully
+		$required_tables = [
+			'bws_meta_manager_log' => 'Enhanced log table with entity support',
+			'bws_acf_conversion_preview' => 'ACF conversion preview data',
+			'bws_acf_conversion_sessions' => 'Conversion session tracking',
+			'bws_relationship_log' => 'Relationship tracking',
+			'bws_batch_queue' => 'Background job queue',
+			'bws_taxonomy_manager_log' => 'Legacy log table (backward compatibility)',
+		];
+
+		foreach ($required_tables as $table => $description) {
+			$table_name = $wpdb->prefix . $table;
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+			if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table_name)) !== $table_name) {
+				$error_msg = sprintf('Failed to create table: %s (%s)', $table, $description);
+				$errors[] = $error_msg;
+				error_log('BWS Meta Manager: ' . $error_msg);
+			}
+		}
+
+		// Show admin notice if there were errors
+		if (!empty($errors)) {
+			set_transient('bws_meta_manager_table_errors', $errors, 300); // Store for 5 minutes
+			add_action('admin_notices', 'bws_meta_manager_table_creation_notice');
+
+			return [
+				'success' => false,
+				'errors' => $errors,
+			];
+		}
+
+		return [
+			'success' => true,
+			'errors' => [],
+		];
+	}
+
+	/**
+	 * Display admin notice if table creation failed
+	 */
+	function bws_meta_manager_table_creation_notice() {
+		$errors = get_transient('bws_meta_manager_table_errors');
+		if (!$errors) {
+			return;
+		}
+
+		echo '<div class="notice notice-error is-dismissible"><p>';
+		echo '<strong>' . esc_html__('BWS Meta Manager: Database table creation failed', 'bws-meta-manager') . '</strong><br>';
+		echo esc_html__('The following tables could not be created. Some features may not work correctly:', 'bws-meta-manager') . '<br>';
+		echo '<ul style="list-style: disc; margin-left: 20px;">';
+		foreach ($errors as $error) {
+			echo '<li>' . esc_html($error) . '</li>';
+		}
+		echo '</ul>';
+		echo esc_html__('Please check your database permissions and try reactivating the plugin.', 'bws-meta-manager');
+		echo '</p></div>';
+
+		// Clear the transient after displaying
+		delete_transient('bws_meta_manager_table_errors');
 	}
 	
 	/**

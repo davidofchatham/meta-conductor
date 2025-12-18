@@ -40,8 +40,33 @@ class BWS_Rule_Engine {
     /**
      * Process a unified rule
      *
-     * @param array $rule Rule configuration
-     * @return array Processing results
+     * This is the main entry point for rule processing. It orchestrates the
+     * complete rule execution pipeline:
+     * 1. Retrieves source entities based on rule filters
+     * 2. Evaluates conditions for each source entity
+     * 3. Determines target entities for sources that pass conditions
+     * 4. Executes actions on target entities
+     * 5. Collects and returns processing statistics
+     *
+     * The method includes comprehensive error handling and logging to ensure
+     * failures in individual entity processing don't halt the entire batch.
+     *
+     * @since 2.0.0
+     * @param array $rule Rule configuration array containing:
+     *                    - 'source_type' (string): Type of source entities ('post', 'term', 'user')
+     *                    - 'source_filters' (array): Filters to find source entities
+     *                    - 'condition' (array): Optional conditions to evaluate
+     *                    - 'target_type' (string): Type of target entities
+     *                    - 'target_filters' (array): Filters to find target entities
+     *                    - 'action' (array): Action to execute on targets
+     * @return array Processing results with keys:
+     *               - 'processed' (int): Total entities processed
+     *               - 'updated' (int): Entities successfully updated
+     *               - 'skipped' (int): Entities that failed conditions
+     *               - 'errors' (array): Error messages for failed operations
+     *
+     * @fires bws_meta_manager_before_process_rule Before processing starts
+     * @fires bws_meta_manager_after_process_rule After processing completes
      */
     public function process_rule($rule) {
         $results = [
@@ -310,9 +335,42 @@ class BWS_Rule_Engine {
     /**
      * Get target entities for a source entity
      *
-     * @param BWS_Entity $source_entity Source entity
-     * @param array $rule Rule configuration
-     * @return array BWS_Entity instances
+     * Determines which entities should receive the rule's action based on the
+     * relationship between source and targets. This is a core method that enables
+     * BWS Meta Manager's flexible entity relationship system.
+     *
+     * Target Resolution Logic:
+     * 1. If target_type is 'self', returns the source entity itself
+     * 2. If relationship is specified, resolves entities based on relationship type:
+     *    - 'children': Direct children of source (for hierarchical posts/terms)
+     *    - 'parent': Direct parent of source
+     *    - 'ancestors': All ancestors up to root (for hierarchical entities)
+     *    - 'descendants': All descendants down to leaves
+     *    - 'has_term': Posts that have the source term assigned
+     *    - 'has_meta': Entities with matching meta values
+     *    - 'acf_relationship': Entities connected via ACF relationship field
+     * 3. If no relationship, queries entities of target_type using target_filters
+     *
+     * @since 2.0.0
+     * @param BWS_Entity $source_entity The entity triggering the rule
+     * @param array      $rule Rule configuration containing:
+     *                         - 'target_type' (string): 'self', 'post', 'term', or 'user'
+     *                         - 'target_filters' (array): Filters to apply when finding targets
+     *                           - 'relationship' (string): Optional relationship type
+     *                           - Additional filters specific to relationship type
+     * @return BWS_Entity[] Array of target entities (may be empty if none found)
+     *
+     * @example
+     * // Get all posts that have a specific term
+     * $term_entity = new BWS_Entity('term', 123);
+     * $rule = [
+     *     'target_type' => 'post',
+     *     'target_filters' => [
+     *         'relationship' => 'has_term',
+     *         'post_type' => 'product'
+     *     ]
+     * ];
+     * $posts = $this->get_target_entities($term_entity, $rule);
      */
     protected function get_target_entities($source_entity, $rule) {
         $target_type = $rule['target_type'] ?? 'self';

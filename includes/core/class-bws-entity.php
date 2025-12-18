@@ -41,10 +41,34 @@ class BWS_Entity {
      *
      * @param string $entity_type Entity type (post, term, user, comment)
      * @param int $entity_id Entity ID
+     * @throws InvalidArgumentException If entity type is invalid or ID is not positive
      */
     public function __construct($entity_type, $entity_id) {
+        // Validate entity type
+        $valid_types = ['post', 'term', 'user', 'comment'];
+        if (!in_array($entity_type, $valid_types, true)) {
+            throw new InvalidArgumentException(
+                sprintf(
+                    'Invalid entity type "%s". Must be one of: %s',
+                    esc_html($entity_type),
+                    implode(', ', $valid_types)
+                )
+            );
+        }
+
+        // Validate entity ID is a positive integer
+        $entity_id = (int) $entity_id;
+        if ($entity_id <= 0) {
+            throw new InvalidArgumentException(
+                sprintf(
+                    'Invalid entity ID "%d". Must be a positive integer.',
+                    $entity_id
+                )
+            );
+        }
+
         $this->entity_type = $entity_type;
-        $this->entity_id = (int) $entity_id;
+        $this->entity_id = $entity_id;
         $this->load_entity();
     }
 
@@ -148,8 +172,21 @@ class BWS_Entity {
     /**
      * Get entity terms (for posts) or parent/children (for terms)
      *
-     * @param string|null $taxonomy Taxonomy name (for posts)
-     * @return array Terms or hierarchy info
+     * Behavior varies by entity type:
+     * - For posts: Returns array of WP_Term objects assigned to the post
+     * - For terms: Returns associative array with hierarchy information:
+     *   - 'parent': Parent term ID (int) or 0 if no parent
+     *   - 'children': Array of child term IDs (all descendants)
+     *   - 'ancestors': Array of ancestor term IDs (all parents up to root)
+     * - For other entities: Returns empty array
+     *
+     * @since 2.0.0
+     * @param string|null $taxonomy Taxonomy name. For posts, limits to specific taxonomy.
+     *                              If null for posts, returns terms from all taxonomies.
+     *                              Ignored for term entities.
+     * @return array|WP_Term[]|WP_Error For posts: Array of WP_Term objects or WP_Error on failure
+     *                                   For terms: Associative array with 'parent', 'children', 'ancestors'
+     *                                   For others: Empty array
      */
     public function get_terms($taxonomy = null) {
         if ($this->entity_type === 'post') {
@@ -230,12 +267,17 @@ class BWS_Entity {
      * Get ACF identifier for this entity
      *
      * ACF uses different formats for different entities:
-     * - Posts: just the ID
-     * - Terms: 'taxonomy_term_id' format
-     * - Users: 'user_id' format
-     * - Options: 'option' string
+     * - Posts: just the ID (int)
+     * - Terms: 'taxonomy_term_id' format (string)
+     * - Users: 'user_id' format (string)
+     * - Comments: 'comment_id' format (string)
      *
-     * @return string|int ACF identifier
+     * This method ensures compatibility with ACF's field value storage system
+     * which requires specific identifier formats for each entity type.
+     *
+     * @since 2.0.0
+     * @return string|int ACF identifier in the format expected by ACF functions
+     * @link https://www.advancedcustomfields.com/resources/get_field/
      */
     protected function get_acf_identifier() {
         switch ($this->entity_type) {
@@ -283,9 +325,24 @@ class BWS_Entity {
     }
 
     /**
-     * Check if entity exists
+     * Check if entity exists and was loaded successfully
      *
-     * @return bool Whether entity exists
+     * Verifies that:
+     * 1. The entity object is not null
+     * 2. The entity object is not a WP_Error (which indicates a failed load)
+     *
+     * This method should be called before attempting to access entity properties
+     * or perform operations on the entity to avoid errors with non-existent entities.
+     *
+     * @since 2.0.0
+     * @return bool True if entity exists and was loaded successfully, false otherwise
+     *
+     * @example
+     * $entity = new BWS_Entity('post', 123);
+     * if ($entity->exists()) {
+     *     // Safe to use entity
+     *     $title = $entity->get_title();
+     * }
      */
     public function exists() {
         return $this->entity_object !== null && !is_wp_error($this->entity_object);
