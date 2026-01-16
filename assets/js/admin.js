@@ -23,7 +23,6 @@
             $(document).on('change', '.taxonomy-select', this.updateTaxonomyFields);
             $(document).on('change', '.post-type-select', this.updatePostTypeFields);
             $(document).on('change', '.trigger-type-radio', this.toggleTriggerFields);
-            $(document).on('focus', '.term-select', this.loadAllTerms);
         },
         
         initTabs: function() {
@@ -176,12 +175,22 @@
         },
         
         initializeRule: function($rule, ruleType) {
-            // Initialize select2 or chosen if available
+            // Initialize select2 for all selects with basic styling
             if ($.fn.select2) {
                 $rule.find('select').select2({
-                    width: '100%'
+                    width: '100%',
+                    placeholder: 'Select...',
+                    allowClear: true
                 });
             }
+
+            // Pre-load terms for term-select dropdowns
+            $rule.find('.term-select').each(function() {
+                var $select = $(this);
+                if (!$select.hasClass('terms-loaded') && $select.find('option').length <= 1) {
+                    BWSTaxManager.loadAllTermsForSelect($select);
+                }
+            });
 
             // Initialize date pickers for time-based rules
             if (ruleType === 'time_based' && $.fn.datepicker) {
@@ -767,19 +776,23 @@
         },
         
         /**
-         * Load all terms for term select dropdowns
+         * Load all terms for a specific term select dropdown
          */
-        loadAllTerms: function() {
-            var $select = $(this);
-            
+        loadAllTermsForSelect: function($select) {
             // Skip if already loaded
-            if ($select.data('terms-loaded')) {
+            if ($select.hasClass('terms-loaded')) {
                 return;
             }
-            
+
+            // Debug: Check if bwsTaxManager is defined
+            if (typeof bwsTaxManager === 'undefined') {
+                console.error('BWS Meta Manager: bwsTaxManager is not defined. Scripts may not be loaded correctly.');
+                return;
+            }
+
             // Show loading
             $select.prop('disabled', true);
-            
+
             $.ajax({
                 url: bwsTaxManager.ajaxurl,
                 type: 'POST',
@@ -791,8 +804,21 @@
                 success: function(response) {
                     if (response.success) {
                         BWSTaxManager.populateTermSelect($select, response.data.terms);
-                        $select.data('terms-loaded', true);
+                        $select.addClass('terms-loaded');
+
+                        // Trigger Select2 to update with new options
+                        if ($.fn.select2 && $select.hasClass('select2-hidden-accessible')) {
+                            $select.trigger('change.select2');
+                        }
                     }
+                },
+                error: function(xhr, status, error) {
+                    console.error('BWS Meta Manager: AJAX error:', {
+                        status: xhr.status,
+                        statusText: xhr.statusText,
+                        responseText: xhr.responseText,
+                        error: error
+                    });
                 },
                 complete: function() {
                     $select.prop('disabled', false);
