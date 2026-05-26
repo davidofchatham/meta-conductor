@@ -112,14 +112,12 @@ class BWS_Taxonomy_Manager {
             add_action('admin_enqueue_scripts', array($this, 'enqueue_admin_scripts'));
         }
         
-        // AJAX hooks
-        add_action('wp_ajax_bws_toggle_rule_enabled', array($this, 'ajax_toggle_rule_enabled'));
-        add_action('wp_ajax_bws_delete_rule', array($this, 'ajax_delete_rule'));
-        add_action('wp_ajax_bws_process_existing_posts', array($this, 'ajax_process_existing_posts'));
-        add_action('wp_ajax_bws_validate_rule', array($this, 'ajax_validate_rule'));
+        // AJAX hooks — data-population endpoints used by Wireframe field
+        // options + Title/Slug preview/apply. Phase 2c dropped 5 rule-
+        // management endpoints (toggle/delete/validate/process/search)
+        // whose functionality is now in Wireframe's REST save path.
         add_action('wp_ajax_bws_get_taxonomy_terms', array($this, 'ajax_get_taxonomy_terms'));
         add_action('wp_ajax_bws_get_post_type_taxonomies', array($this, 'ajax_get_post_type_taxonomies'));
-        add_action('wp_ajax_bws_search_terms', array($this, 'ajax_search_terms'));
 		add_action('wp_ajax_bws_validate_acf_field', array($this, 'ajax_validate_acf_field'));
 		add_action('wp_ajax_bws_get_acf_fields', array($this, 'ajax_get_acf_fields'));
 		add_action('wp_ajax_bws_test_related_posts', array($this, 'ajax_test_related_posts'));
@@ -178,79 +176,51 @@ class BWS_Taxonomy_Manager {
     }
     
     /**
-     * Add admin menu
+     * Add admin menu — legacy stub.
+     *
+     * Phase 2c (Wireframe swap) moved the settings UI to the top-level
+     * "meta-conductor" menu. This function stays as a hook target to
+     * avoid breaking any remaining references but registers no page.
      */
     public function add_admin_menu() {
-        add_options_page(
-            __('BWS Taxonomy Manager', 'bws-taxonomy-manager'),
-            __('Taxonomy Manager', 'bws-taxonomy-manager'),
-            'manage_options',
-            'bws-taxonomy-manager',
-            array($this->settings, 'render_settings_page')
-        );
+        // Intentionally empty. Settings live at admin.php?page=meta-conductor.
     }
     
     /**
      * Enqueue admin scripts
      */
     public function enqueue_admin_scripts($hook) {
-        if ('settings_page_bws-taxonomy-manager' !== $hook) {
+        // Conversion subpage under meta-conductor menu. Wireframe handles
+        // its own asset enqueue for the settings page.
+        if ('meta-conductor_page_meta-conductor-conversion' !== $hook) {
             return;
         }
-        
-        wp_enqueue_script(
-            'bws-taxonomy-manager-admin',
-            BWS_TAX_MANAGER_PLUGIN_URL . 'assets/js/admin.js',
-            array('jquery', 'wp-util'),
-            BWS_TAX_MANAGER_VERSION,
-            true
-        );
-        
-        wp_enqueue_style(
-            'bws-taxonomy-manager-admin',
-            BWS_TAX_MANAGER_PLUGIN_URL . 'assets/css/admin.css',
-            array(),
-            BWS_TAX_MANAGER_VERSION
-        );
-        
-        wp_localize_script('bws-taxonomy-manager-admin', 'bwsTaxManager', array(
-            'ajaxurl' => admin_url('admin-ajax.php'),
-            'nonce' => wp_create_nonce('bws_taxonomy_manager_nonce'),
-            'strings' => array(
-                'processing' => __('Processing...', 'bws-taxonomy-manager'),
-                'complete' => __('Processing complete!', 'bws-taxonomy-manager'),
-                'error' => __('An error occurred. Please try again.', 'bws-taxonomy-manager'),
-                'confirm_process' => __('This will process existing posts. Continue?', 'bws-taxonomy-manager')
-            )
-        ));
 
-        // Enqueue conversion assets
         wp_enqueue_script(
             'bws-conversion-admin',
-            BWS_TAX_MANAGER_PLUGIN_URL . 'assets/js/conversion-admin.js',
+            BWS_META_MANAGER_PLUGIN_URL . 'assets/js/conversion-admin.js',
             array('jquery', 'wp-util'),
-            BWS_TAX_MANAGER_VERSION,
+            BWS_META_MANAGER_VERSION,
             true
         );
 
         wp_enqueue_style(
             'bws-conversion-admin',
-            BWS_TAX_MANAGER_PLUGIN_URL . 'assets/css/conversion-admin.css',
+            BWS_META_MANAGER_PLUGIN_URL . 'assets/css/conversion-admin.css',
             array(),
-            BWS_TAX_MANAGER_VERSION
+            BWS_META_MANAGER_VERSION
         );
 
-        // Localize conversion script (uses same bwsMetaManager object)
         wp_localize_script('bws-conversion-admin', 'bwsMetaManager', array(
             'ajaxUrl' => admin_url('admin-ajax.php'),
-            'nonce' => wp_create_nonce('bws_taxonomy_manager_nonce'),
+            'nonce'   => wp_create_nonce('bws_taxonomy_manager_nonce'),
             'strings' => array(
                 'confirm_conversion' => __('This will convert data. Continue?', 'bws-meta-manager'),
-                'confirm_preview' => __('Generate preview?', 'bws-meta-manager'),
-                'skip_unmapped' => __('Skip this value', 'bws-meta-manager'),
-                'processing' => __('Processing...', 'bws-meta-manager'),
-                'complete' => __('Conversion complete!', 'bws-meta-manager'),
-                'error' => __('An error occurred. Please try again.', 'bws-meta-manager')
+                'confirm_preview'    => __('Generate preview?', 'bws-meta-manager'),
+                'skip_unmapped'      => __('Skip this value', 'bws-meta-manager'),
+                'processing'         => __('Processing...', 'bws-meta-manager'),
+                'complete'           => __('Conversion complete!', 'bws-meta-manager'),
+                'error'              => __('An error occurred. Please try again.', 'bws-meta-manager'),
             )
         ));
     }
