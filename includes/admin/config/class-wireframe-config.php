@@ -31,13 +31,32 @@ class BWS_Wireframe_Config {
         require_once $dir . 'class-related-post-terms-config.php';
         require_once $dir . 'class-time-based-config.php';
         require_once $dir . 'class-level-restriction-config.php';
+        require_once $dir . 'class-title-slug-config.php';
+        require_once $dir . 'class-general-config.php';
+        require_once $dir . 'class-personalize-config.php';
 
         return [
             'title'    => __('Meta Conductor', 'bws-meta-manager'),
             'subtitle' => __('Unified meta and taxonomy management.', 'bws-meta-manager'),
             'tabs'     => [
                 self::auto_set_tab(),
+                self::format_transform_tab(),
                 self::restrict_tab(),
+                BWS_Personalize_Config::tab(),
+                BWS_General_Config::tab(),
+            ],
+        ];
+    }
+
+    /**
+     * Format & Transform tab — title/slug and future field transformations.
+     */
+    private static function format_transform_tab(): array {
+        return [
+            'id'       => 'format-transform',
+            'title'    => __('Format & Transform', 'bws-meta-manager'),
+            'sections' => [
+                BWS_Title_Slug_Config::section(),
             ],
         ];
     }
