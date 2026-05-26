@@ -67,14 +67,9 @@ class BWS_Level_Restriction_Config {
                                 'id'          => 'include_ancestors',
                                 'type'        => 'toggle',
                                 'label'       => __('Include ancestors', 'bws-meta-manager'),
-                                'description' => __('Include ancestor terms when using "deepest only" mode. Works with existing hierarchical inheritance rules.', 'bws-meta-manager'),
+                                'description' => __('Only relevant in "deepest only" mode. Works with existing hierarchical inheritance rules.', 'bws-meta-manager'),
                                 'default'     => false,
                                 'columns'     => 12,
-                                'conditions'  => [
-                                    'all' => [
-                                        ['field' => 'restriction_mode', 'operator' => 'equals', 'value' => 'deepest_only'],
-                                    ],
-                                ],
                             ],
                             [
                                 'id'          => 'post_types',

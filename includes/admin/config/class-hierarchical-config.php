@@ -46,7 +46,7 @@ class BWS_Hierarchical_Config {
                                         'label'    => __('Taxonomy', 'bws-meta-manager'),
                                         'default'  => '',
                                         'required' => true,
-                                        'columns'  => 6,
+                                        'columns'  => 12,
                                         'args'     => [
                                             'options' => self::get_taxonomy_options_with_placeholder(),
                                         ],
@@ -57,7 +57,7 @@ class BWS_Hierarchical_Config {
                                         'label'       => __('Hierarchy direction', 'bws-meta-manager'),
                                         'description' => __('Whether to apply parent terms to children, child terms to parents, or both.', 'bws-meta-manager'),
                                         'default'     => 'child_to_parent',
-                                        'columns'     => 6,
+                                        'columns'     => 12,
                                         'args'        => [
                                             'options' => [
                                                 'child_to_parent' => __('Child to Parent (Apply ancestor terms)', 'bws-meta-manager'),
@@ -81,40 +81,29 @@ class BWS_Hierarchical_Config {
                                         ],
                                     ],
                                     [
-                                        'id'         => 'expansion_behavior',
-                                        'type'       => 'select',
-                                        'label'      => __('Child expansion behavior', 'bws-meta-manager'),
-                                        'default'    => 'smart',
-                                        'columns'    => 12,
-                                        'args'       => [
+                                        'id'          => 'expansion_behavior',
+                                        'type'        => 'select',
+                                        'label'       => __('Child expansion behavior', 'bws-meta-manager'),
+                                        'description' => __('Applies when direction includes parent-to-child.', 'bws-meta-manager'),
+                                        'default'     => 'smart',
+                                        'columns'     => 12,
+                                        'args'        => [
                                             'options' => [
                                                 'smart' => __('Smart — Only if none selected', 'bws-meta-manager'),
                                                 'merge' => __('Always — Merge with manual selections', 'bws-meta-manager'),
                                                 'never' => __('Manual only — No auto-expansion', 'bws-meta-manager'),
                                             ],
                                         ],
-                                        'conditions' => [
-                                            'any' => [
-                                                ['field' => 'hierarchy_direction', 'operator' => 'equals', 'value' => 'parent_to_child'],
-                                                ['field' => 'hierarchy_direction', 'operator' => 'equals', 'value' => 'both'],
-                                            ],
-                                        ],
                                     ],
                                     [
-                                        'id'         => 'expansion_behavior_help',
-                                        'type'       => 'html',
-                                        'columns'    => 12,
-                                        'args'       => [
+                                        'id'      => 'expansion_behavior_help',
+                                        'type'    => 'html',
+                                        'columns' => 12,
+                                        'args'    => [
                                             'variant' => 'info',
                                             'content' => '<p><strong>' . esc_html__('Smart (recommended):', 'bws-meta-manager') . '</strong> ' . esc_html__('Adds all child terms only if no children are manually selected. Prevents overriding specific picks.', 'bws-meta-manager') . '</p>'
                                                        . '<p><strong>' . esc_html__('Always:', 'bws-meta-manager') . '</strong> ' . esc_html__('Adds all child terms even when some are manually selected. New children merge with existing picks.', 'bws-meta-manager') . '</p>'
                                                        . '<p><strong>' . esc_html__('Manual only:', 'bws-meta-manager') . '</strong> ' . esc_html__('Never auto-adds child terms. Useful with "Both" direction to get ancestors but not descendants.', 'bws-meta-manager') . '</p>',
-                                        ],
-                                        'conditions' => [
-                                            'any' => [
-                                                ['field' => 'hierarchy_direction', 'operator' => 'equals', 'value' => 'parent_to_child'],
-                                                ['field' => 'hierarchy_direction', 'operator' => 'equals', 'value' => 'both'],
-                                            ],
                                         ],
                                     ],
                                     [

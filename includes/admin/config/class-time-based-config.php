@@ -68,14 +68,14 @@ class BWS_Time_Based_Config {
                                 'type'     => 'date',
                                 'label'    => __('Start date', 'bws-meta-manager'),
                                 'required' => true,
-                                'columns'  => 6,
+                                'columns'  => 12,
                             ],
                             [
                                 'id'       => 'end_date',
                                 'type'     => 'date',
                                 'label'    => __('End date', 'bws-meta-manager'),
                                 'required' => true,
-                                'columns'  => 6,
+                                'columns'  => 12,
                             ],
                             [
                                 'id'          => 'filter_taxonomies',

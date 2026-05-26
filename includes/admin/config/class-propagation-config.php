@@ -38,13 +38,14 @@ class BWS_Propagation_Config {
                                 'columns' => 12,
                             ],
                             [
-                                'id'       => 'post_type',
-                                'type'     => 'select',
-                                'label'    => __('Post type', 'bws-meta-manager'),
-                                'default'  => '',
-                                'required' => true,
-                                'columns'  => 6,
-                                'args'     => [
+                                'id'          => 'post_type',
+                                'type'        => 'select',
+                                'label'       => __('Post type', 'bws-meta-manager'),
+                                'description' => __('Only hierarchical post types appear — propagation requires a parent/child relationship.', 'bws-meta-manager'),
+                                'default'     => '',
+                                'required'    => true,
+                                'columns'     => 12,
+                                'args'        => [
                                     'options' => BWS_Config_Helpers::hierarchical_post_type_options(),
                                 ],
                             ],
@@ -54,7 +55,7 @@ class BWS_Propagation_Config {
                                 'label'    => __('Taxonomy', 'bws-meta-manager'),
                                 'default'  => '',
                                 'required' => true,
-                                'columns'  => 6,
+                                'columns'  => 12,
                                 'args'     => [
                                     'options' => BWS_Config_Helpers::taxonomy_options(),
                                 ],

@@ -59,7 +59,7 @@ class BWS_Related_Post_Terms_Config {
                                 'description' => __('Taxonomy on the related posts to copy terms from.', 'bws-meta-manager'),
                                 'default'     => '',
                                 'required'    => true,
-                                'columns'     => 6,
+                                'columns'     => 12,
                                 'args'        => [
                                     'options' => BWS_Config_Helpers::taxonomy_options(),
                                 ],
@@ -71,7 +71,7 @@ class BWS_Related_Post_Terms_Config {
                                 'description' => __('Taxonomy on this post to apply terms to.', 'bws-meta-manager'),
                                 'default'     => '',
                                 'required'    => true,
-                                'columns'     => 6,
+                                'columns'     => 12,
                                 'args'        => [
                                     'options' => BWS_Config_Helpers::taxonomy_options(),
                                 ],
@@ -81,7 +81,7 @@ class BWS_Related_Post_Terms_Config {
                                 'type'    => 'select',
                                 'label'   => __('Conflict handling', 'bws-meta-manager'),
                                 'default' => 'merge',
-                                'columns' => 6,
+                                'columns' => 12,
                                 'args'    => [
                                     'options' => [
                                         'merge'   => __('Merge with existing terms', 'bws-meta-manager'),
@@ -96,7 +96,7 @@ class BWS_Related_Post_Terms_Config {
                                 'label'       => __('Bidirectional', 'bws-meta-manager'),
                                 'description' => __('Remove target terms when no related posts have source terms.', 'bws-meta-manager'),
                                 'default'     => false,
-                                'columns'     => 6,
+                                'columns'     => 12,
                             ],
                         ],
                     ],

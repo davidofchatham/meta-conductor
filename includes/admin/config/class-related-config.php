@@ -46,7 +46,7 @@ class BWS_Related_Config {
                                 'label'    => __('Post type', 'bws-meta-manager'),
                                 'default'  => '',
                                 'required' => true,
-                                'columns'  => 6,
+                                'columns'  => 12,
                                 'args'     => [
                                     'options' => BWS_Config_Helpers::post_type_options(),
                                 ],
@@ -56,7 +56,7 @@ class BWS_Related_Config {
                                 'type'    => 'radio',
                                 'label'   => __('Trigger', 'bws-meta-manager'),
                                 'default' => 'term',
-                                'columns' => 6,
+                                'columns' => 12,
                                 'args'    => [
                                     'options' => [
                                         'term'     => __('Specific term', 'bws-meta-manager'),
@@ -65,35 +65,27 @@ class BWS_Related_Config {
                                 ],
                             ],
                             [
-                                'id'         => 'trigger_term_id',
-                                'type'       => 'select',
-                                'label'      => __('Trigger term', 'bws-meta-manager'),
-                                'default'    => '',
-                                'columns'    => 12,
-                                'args'       => [
+                                'id'          => 'trigger_term_id',
+                                'type'        => 'select',
+                                'label'       => __('Trigger term', 'bws-meta-manager'),
+                                'description' => __('Used when Trigger is "Specific term".', 'bws-meta-manager'),
+                                'default'     => '',
+                                'columns'     => 12,
+                                'args'        => [
                                     'multiple' => true,
                                     'max'      => 1,
                                     'options'  => BWS_Config_Helpers::all_term_options(),
                                 ],
-                                'conditions' => [
-                                    'all' => [
-                                        ['field' => 'trigger_type', 'operator' => 'equals', 'value' => 'term'],
-                                    ],
-                                ],
                             ],
                             [
-                                'id'         => 'trigger_taxonomy',
-                                'type'       => 'select',
-                                'label'      => __('Trigger taxonomy', 'bws-meta-manager'),
-                                'default'    => '',
-                                'columns'    => 12,
-                                'args'       => [
+                                'id'          => 'trigger_taxonomy',
+                                'type'        => 'select',
+                                'label'       => __('Trigger taxonomy', 'bws-meta-manager'),
+                                'description' => __('Used when Trigger is "Any term from taxonomy".', 'bws-meta-manager'),
+                                'default'     => '',
+                                'columns'     => 12,
+                                'args'        => [
                                     'options' => BWS_Config_Helpers::taxonomy_options(),
-                                ],
-                                'conditions' => [
-                                    'all' => [
-                                        ['field' => 'trigger_type', 'operator' => 'equals', 'value' => 'taxonomy'],
-                                    ],
                                 ],
                             ],
                             [
