@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to BWS Meta Manager are documented in this file.
+All notable changes to Meta Conductor (formerly BWS Meta Manager, formerly BWS Taxonomy Manager) are documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -48,7 +48,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **PHP 8.1 enforcement** at activation, on `plugins_loaded`, and via syntax usage; deactivates with notice on older versions.
 
 ### Changed
-- Branding migration toward "Meta Manager": new constants `BWS_META_MANAGER_*` alongside backward-compatible `BWS_TAX_MANAGER_*` aliases for third-party code.
+- Intermediate branding rename from "BWS Taxonomy Manager" to "BWS Meta Manager": new constants `BWS_META_MANAGER_*` alongside backward-compatible `BWS_TAX_MANAGER_*` aliases for third-party code. (A further rename to "Meta Conductor" is planned for 3.0.0.)
 - Settings UI labels and descriptions reworked from user feedback.
 - Expansion behavior simplified to three clear options.
 
