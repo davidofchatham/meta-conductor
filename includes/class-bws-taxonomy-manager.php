@@ -26,7 +26,12 @@ class BWS_Taxonomy_Manager {
      * Handler instances
      */
     private $handlers = array();
-    
+
+    /**
+     * Conversion manager instance
+     */
+    private $conversion_manager;
+
     /**
      * Get singleton instance
      */
@@ -36,7 +41,14 @@ class BWS_Taxonomy_Manager {
         }
         return self::$instance;
     }
-    
+
+    /**
+     * Get conversion manager instance
+     */
+    public function get_conversion_manager() {
+        return $this->conversion_manager;
+    }
+
     /**
      * Constructor
      */
@@ -61,14 +73,33 @@ class BWS_Taxonomy_Manager {
         require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/handlers/class-bws-time-based-handler.php';
 		require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/handlers/class-bws-related-post-terms-handler.php';
 		require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/handlers/class-bws-hierarchical-level-restriction-handler.php';
+        require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/handlers/class-bws-title-slug-handler.php';
         
         // Load integrations
         require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/integrations/class-bws-acf-integration.php';
-        
+
         // Load Admin Columns Pro integration if available
         if (class_exists('AC\\Plugin')) {
             require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/integrations/class-bws-admin-columns-integration.php';
         }
+
+        // Load conversion libraries (plugin-agnostic)
+        require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/lib/term-migration/interface-term-migrator.php';
+        require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/lib/term-migration/class-term-migrator.php';
+        require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/lib/field-conversion/interface-field-converter.php';
+        require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/lib/field-conversion/class-field-converter.php';
+        require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/lib/data-mapper/interface-value-mapper.php';
+        require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/lib/data-mapper/class-value-mapper.php';
+        require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/lib/batch-processor/interface-batch-processor.php';
+        require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/lib/batch-processor/class-batch-processor.php';
+
+        // Load conversion integration layer
+        require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/conversion/class-bws-field-mapper.php';
+        require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/conversion/class-bws-data-processor.php';
+        require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/conversion/class-bws-preview-system.php';
+        require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/conversion/class-bws-conversion-manager.php';
+        require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/conversion/class-bws-conversion-ui.php';
+        require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/conversion/class-bws-conversion-cli.php';
     }
     
     /**
@@ -82,6 +113,8 @@ class BWS_Taxonomy_Manager {
         }
         
         // AJAX hooks
+        add_action('wp_ajax_bws_toggle_rule_enabled', array($this, 'ajax_toggle_rule_enabled'));
+        add_action('wp_ajax_bws_delete_rule', array($this, 'ajax_delete_rule'));
         add_action('wp_ajax_bws_process_existing_posts', array($this, 'ajax_process_existing_posts'));
         add_action('wp_ajax_bws_validate_rule', array($this, 'ajax_validate_rule'));
         add_action('wp_ajax_bws_get_taxonomy_terms', array($this, 'ajax_get_taxonomy_terms'));
@@ -91,7 +124,19 @@ class BWS_Taxonomy_Manager {
 		add_action('wp_ajax_bws_get_acf_fields', array($this, 'ajax_get_acf_fields'));
 		add_action('wp_ajax_bws_test_related_posts', array($this, 'ajax_test_related_posts'));
 		add_action('wp_ajax_bws_preview_level_restrictions', array($this, 'ajax_preview_level_restrictions'));
-		
+
+		// Conversion AJAX hooks
+		add_action('wp_ajax_bws_meta_manager_conversion_get_fields', array($this, 'ajax_conversion_get_fields'));
+		add_action('wp_ajax_bws_meta_manager_conversion_get_taxonomies', array($this, 'ajax_conversion_get_taxonomies'));
+		add_action('wp_ajax_bws_meta_manager_conversion_get_taxonomy_terms', array($this, 'ajax_conversion_get_taxonomy_terms'));
+		add_action('wp_ajax_bws_meta_manager_conversion_get_options', array($this, 'ajax_conversion_get_options'));
+		add_action('wp_ajax_bws_meta_manager_conversion_estimate_size', array($this, 'ajax_conversion_estimate_size'));
+		add_action('wp_ajax_bws_meta_manager_conversion_process_chunk', array($this, 'ajax_conversion_process_chunk'));
+		add_action('wp_ajax_bws_meta_manager_conversion_process', array($this, 'ajax_conversion_process'));
+		add_action('wp_ajax_bws_meta_manager_conversion_preview', array($this, 'ajax_conversion_preview'));
+        add_action('wp_ajax_bws_title_slug_preview',          array($this, 'ajax_title_slug_preview'));
+        add_action('wp_ajax_bws_title_slug_process_existing', array($this, 'ajax_title_slug_process_existing'));
+
         // Cleanup hook
         add_action('bws_taxonomy_manager_cleanup', array($this, 'cleanup_expired_rules'));
         
@@ -112,14 +157,23 @@ class BWS_Taxonomy_Manager {
 			'related' => new BWS_Related_Handler($this->settings),
 			'time_based' => new BWS_Time_Based_Handler($this->settings),
 			'related_post_terms' => new BWS_Related_Post_Terms_Handler($this->settings),
-			'hierarchical_level_restriction' => new BWS_Hierarchical_Level_Restriction_Handler($this->settings)
+			'hierarchical_level_restriction' => new BWS_Hierarchical_Level_Restriction_Handler($this->settings),
+			'title_slug' => new BWS_Title_Slug_Handler($this->settings),
         );
         
         // Initialize integrations
         new BWS_ACF_Integration($this->handlers);
-        
+
         if (class_exists('AC\\Plugin')) {
             new BWS_Admin_Columns_Integration($this->handlers);
+        }
+
+        // Initialize conversion manager
+        $this->conversion_manager = new BWS_Conversion_Manager();
+
+        // Register WP-CLI commands if available
+        if (defined('WP_CLI') && WP_CLI) {
+            WP_CLI::add_command('bws-conversion', new BWS_Conversion_CLI($this->conversion_manager));
         }
     }
     
@@ -169,6 +223,36 @@ class BWS_Taxonomy_Manager {
                 'confirm_process' => __('This will process existing posts. Continue?', 'bws-taxonomy-manager')
             )
         ));
+
+        // Enqueue conversion assets
+        wp_enqueue_script(
+            'bws-conversion-admin',
+            BWS_TAX_MANAGER_PLUGIN_URL . 'assets/js/conversion-admin.js',
+            array('jquery', 'wp-util'),
+            BWS_TAX_MANAGER_VERSION,
+            true
+        );
+
+        wp_enqueue_style(
+            'bws-conversion-admin',
+            BWS_TAX_MANAGER_PLUGIN_URL . 'assets/css/conversion-admin.css',
+            array(),
+            BWS_TAX_MANAGER_VERSION
+        );
+
+        // Localize conversion script (uses same bwsMetaManager object)
+        wp_localize_script('bws-conversion-admin', 'bwsMetaManager', array(
+            'ajaxUrl' => admin_url('admin-ajax.php'),
+            'nonce' => wp_create_nonce('bws_taxonomy_manager_nonce'),
+            'strings' => array(
+                'confirm_conversion' => __('This will convert data. Continue?', 'bws-meta-manager'),
+                'confirm_preview' => __('Generate preview?', 'bws-meta-manager'),
+                'skip_unmapped' => __('Skip this value', 'bws-meta-manager'),
+                'processing' => __('Processing...', 'bws-meta-manager'),
+                'complete' => __('Conversion complete!', 'bws-meta-manager'),
+                'error' => __('An error occurred. Please try again.', 'bws-meta-manager')
+            )
+        ));
     }
     
     /**
@@ -206,24 +290,107 @@ class BWS_Taxonomy_Manager {
      */
     public function ajax_process_existing_posts() {
         check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
-        
+
         if (!current_user_can('manage_options')) {
             wp_die(__('You do not have sufficient permissions to access this page.', 'bws-taxonomy-manager'));
         }
-        
+
         $rule_type = sanitize_text_field($_POST['rule_type'] ?? '');
         $batch_size = absint($_POST['batch_size'] ?? 50);
         $offset = absint($_POST['offset'] ?? 0);
-        
+
         if (!isset($this->handlers[$rule_type])) {
             wp_send_json_error(__('Invalid rule type.', 'bws-taxonomy-manager'));
         }
-        
+
         $result = $this->handlers[$rule_type]->process_existing_posts($batch_size, $offset);
-        
+
         wp_send_json_success($result);
     }
-    
+
+    /**
+     * AJAX handler to toggle rule enabled state
+     */
+    public function ajax_toggle_rule_enabled() {
+        check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => __('Insufficient permissions', 'bws-taxonomy-manager')));
+        }
+
+        $rule_type = sanitize_text_field($_POST['rule_type'] ?? '');
+        $rule_index = intval($_POST['rule_index'] ?? -1);
+        $enabled = filter_var($_POST['enabled'], FILTER_VALIDATE_BOOLEAN);
+
+        if (empty($rule_type) || $rule_index < 0) {
+            wp_send_json_error(array('message' => __('Invalid rule parameters', 'bws-taxonomy-manager')));
+        }
+
+        // Get current settings
+        $settings = get_option('bws_taxonomy_manager_settings', array());
+
+        if (!isset($settings[$rule_type][$rule_index])) {
+            wp_send_json_error(array('message' => __('Rule not found', 'bws-taxonomy-manager')));
+        }
+
+        // Update enabled state
+        $settings[$rule_type][$rule_index]['enabled'] = $enabled;
+
+        // Save to database
+        $updated = update_option('bws_taxonomy_manager_settings', $settings);
+
+        if ($updated || get_option('bws_taxonomy_manager_settings') === $settings) {
+            // Clear cache
+            wp_cache_delete('bws_taxonomy_manager_settings', 'options');
+
+            do_action('bws_meta_manager_rule_toggled', $rule_type, $rule_index, $enabled);
+
+            wp_send_json_success(array(
+                'message' => $enabled
+                    ? __('Rule enabled successfully', 'bws-taxonomy-manager')
+                    : __('Rule disabled successfully', 'bws-taxonomy-manager'),
+                'enabled' => $enabled
+            ));
+        } else {
+            wp_send_json_error(array('message' => __('Failed to save changes', 'bws-taxonomy-manager')));
+        }
+    }
+
+    /**
+     * AJAX handler for rule deletion
+     */
+    public function ajax_delete_rule() {
+        check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => __('Insufficient permissions', 'bws-taxonomy-manager')));
+        }
+
+        $rule_type = sanitize_text_field($_POST['rule_type'] ?? '');
+        $rule_index = intval($_POST['rule_index'] ?? -1);
+
+        if (empty($rule_type) || $rule_index < 0) {
+            wp_send_json_error(array('message' => __('Invalid rule parameters', 'bws-taxonomy-manager')));
+        }
+
+        // Use storage abstraction layer
+        $storage = BWS_Storage_Factory::get_instance();
+        $deleted = $storage->delete_rule($rule_type, $rule_index);
+
+        if ($deleted) {
+            // Clear cache
+            wp_cache_delete('bws_taxonomy_manager_settings', 'options');
+
+            do_action('bws_meta_manager_rule_deleted', $rule_type, $rule_index);
+
+            wp_send_json_success(array(
+                'message' => __('Rule deleted successfully', 'bws-taxonomy-manager')
+            ));
+        } else {
+            wp_send_json_error(array('message' => __('Failed to delete rule', 'bws-taxonomy-manager')));
+        }
+    }
+
     /**
 	 * Updated AJAX handler for rule validation
 	 */
@@ -918,14 +1085,255 @@ class BWS_Taxonomy_Manager {
 	 */
 	public function ajax_get_dashboard_stats() {
 		check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
-		
+
 		if (!current_user_can('manage_options')) {
 			wp_die(__('You do not have sufficient permissions to access this page.', 'bws-taxonomy-manager'));
 		}
-		
+
 		$stats = $this->get_dashboard_stats();
-		
+
 		wp_send_json_success($stats);
 	}
+
+	// ========================================
+	// Conversion AJAX Handlers
+	// ========================================
+
+	/**
+	 * AJAX handler: Get ACF fields
+	 */
+	public function ajax_conversion_get_fields() {
+		check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
+
+		if (!current_user_can('manage_options')) {
+			wp_send_json_error(['message' => __('Insufficient permissions', 'bws-meta-manager')]);
+		}
+
+		// Get all field groups
+		$field_groups = $this->conversion_manager->get_field_groups();
+
+		// Filter by field_type_filter if provided
+		$field_type_filter = sanitize_text_field($_POST['field_type_filter'] ?? '');
+		if ($field_type_filter === 'option_fields') {
+			// Only include fields that support options
+			$option_types = ['select', 'checkbox', 'radio', 'button_group'];
+
+			// Filter fields within each group
+			foreach ($field_groups as &$group) {
+				if (isset($group['fields']) && is_array($group['fields'])) {
+					$group['fields'] = array_filter($group['fields'], function($field) use ($option_types) {
+						return in_array($field['type'] ?? '', $option_types);
+					});
+					// Re-index array
+					$group['fields'] = array_values($group['fields']);
+				}
+			}
+			unset($group); // Break reference
+		}
+
+		// Convert to numeric array (Field Mapper uses associative array with keys)
+		// JavaScript needs a proper array, not an object
+		wp_send_json_success(array_values($field_groups));
+	}
+
+	/**
+	 * AJAX handler: Get taxonomies
+	 */
+	public function ajax_conversion_get_taxonomies() {
+		check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
+
+		if (!current_user_can('manage_options')) {
+			wp_send_json_error(['message' => __('Insufficient permissions', 'bws-meta-manager')]);
+		}
+
+		$taxonomies = $this->conversion_manager->get_taxonomies();
+
+		// Convert to numeric array (Field Mapper uses associative array)
+		wp_send_json_success(['taxonomies' => array_values($taxonomies)]);
+	}
+
+	/**
+	 * AJAX handler: Get taxonomy terms
+	 */
+	public function ajax_conversion_get_taxonomy_terms() {
+		check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
+
+		if (!current_user_can('manage_options')) {
+			wp_send_json_error(['message' => __('Insufficient permissions', 'bws-meta-manager')]);
+		}
+
+		$taxonomy = sanitize_text_field($_POST['taxonomy'] ?? '');
+
+		if (empty($taxonomy)) {
+			wp_send_json_error(['message' => __('Taxonomy is required', 'bws-meta-manager')]);
+		}
+
+		$terms = get_terms([
+			'taxonomy' => $taxonomy,
+			'hide_empty' => false,
+		]);
+
+		if (is_wp_error($terms)) {
+			wp_send_json_error(['message' => $terms->get_error_message()]);
+		}
+
+		wp_send_json_success(['terms' => $terms]);
+	}
+
+	/**
+	 * AJAX handler: Get field options
+	 */
+	public function ajax_conversion_get_options() {
+		check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
+
+		if (!current_user_can('manage_options')) {
+			wp_send_json_error(['message' => __('Insufficient permissions', 'bws-meta-manager')]);
+		}
+
+		$field_key = sanitize_text_field($_POST['field_key'] ?? '');
+
+		if (empty($field_key)) {
+			wp_send_json_error(['message' => __('Field key is required', 'bws-meta-manager')]);
+		}
+
+		$field_data = $this->conversion_manager->get_field_by_key($field_key);
+
+		if (!$field_data || empty($field_data['choices'])) {
+			wp_send_json_error(['message' => __('Field has no options', 'bws-meta-manager')]);
+		}
+
+		wp_send_json_success(['options' => $field_data['choices']]);
+	}
+
+	/**
+	 * AJAX handler: Estimate conversion size
+	 */
+	public function ajax_conversion_estimate_size() {
+		check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
+
+		if (!current_user_can('manage_options')) {
+			wp_send_json_error(['message' => __('Insufficient permissions', 'bws-meta-manager')]);
+		}
+
+		// For now, return a simple estimate
+		// TODO: Implement actual size estimation
+		wp_send_json_success([
+			'estimated_items' => 0,
+			'estimated_batches' => 0
+		]);
+	}
+
+	/**
+	 * AJAX handler: Process conversion chunk
+	 */
+	public function ajax_conversion_process_chunk() {
+		check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
+
+		if (!current_user_can('manage_options')) {
+			wp_send_json_error(['message' => __('Insufficient permissions', 'bws-meta-manager')]);
+		}
+
+		// For now, return success
+		// TODO: Implement chunk processing
+		wp_send_json_success([
+			'processed' => 0,
+			'total' => 0,
+			'complete' => true
+		]);
+	}
+
+	/**
+	 * AJAX handler: Process conversion
+	 */
+	public function ajax_conversion_process() {
+		check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
+
+		if (!current_user_can('manage_options')) {
+			wp_send_json_error(['message' => __('Insufficient permissions', 'bws-meta-manager')]);
+		}
+
+		$conversion_type = sanitize_text_field($_POST['conversion_type'] ?? '');
+		$config = $_POST['config'] ?? [];
+
+		if (empty($conversion_type)) {
+			wp_send_json_error(['message' => __('Conversion type is required', 'bws-meta-manager')]);
+		}
+
+		try {
+			if ($conversion_type === 'copy_data') {
+				$result = $this->conversion_manager->execute_copy_conversion($config);
+			} elseif ($conversion_type === 'map_data') {
+				$result = $this->conversion_manager->execute_map_conversion($config);
+			} else {
+				wp_send_json_error(['message' => __('Invalid conversion type', 'bws-meta-manager')]);
+				return;
+			}
+
+			wp_send_json_success($result);
+		} catch (Exception $e) {
+			wp_send_json_error(['message' => $e->getMessage()]);
+		}
+	}
+
+	/**
+	 * AJAX handler: Generate preview
+	 */
+	public function ajax_conversion_preview() {
+		check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
+
+		if (!current_user_can('manage_options')) {
+			wp_send_json_error(['message' => __('Insufficient permissions', 'bws-meta-manager')]);
+		}
+
+		$conversion_type = sanitize_text_field($_POST['conversion_type'] ?? '');
+		$config = $_POST['config'] ?? [];
+		$sample_count = intval($_POST['sample_count'] ?? 10);
+
+		if (empty($conversion_type)) {
+			wp_send_json_error(['message' => __('Conversion type is required', 'bws-meta-manager')]);
+		}
+
+		try {
+			if ($conversion_type === 'copy_data') {
+				$result = $this->conversion_manager->generate_copy_preview($config, $sample_count);
+			} elseif ($conversion_type === 'map_data') {
+				$result = $this->conversion_manager->generate_map_preview($config, $sample_count);
+			} else {
+				wp_send_json_error(['message' => __('Invalid conversion type', 'bws-meta-manager')]);
+				return;
+			}
+
+			wp_send_json_success($result);
+		} catch (Exception $e) {
+			wp_send_json_error(['message' => $e->getMessage()]);
+		}
+	}
+
+    public function ajax_title_slug_preview() {
+        check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => __('Insufficient permissions', 'bws-taxonomy-manager')]);
+        }
+        $rule_index = intval($_POST['rule_index'] ?? -1);
+        $storage    = BWS_Storage_Factory::get_instance();
+        $rules      = $storage->get_rules('title_slug_rules');
+        $rule       = $rules[$rule_index] ?? null;
+        if (!$rule) {
+            wp_send_json_error(['message' => __('Rule not found', 'bws-taxonomy-manager')]);
+        }
+        $result = $this->handlers['title_slug']->preview_rule($rule);
+        isset($result['error']) ? wp_send_json_error($result) : wp_send_json_success($result);
+    }
+
+    public function ajax_title_slug_process_existing() {
+        check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => __('Insufficient permissions', 'bws-taxonomy-manager')]);
+        }
+        $batch_size = intval($_POST['batch_size'] ?? 50);
+        $offset     = intval($_POST['offset'] ?? 0);
+        $result     = $this->handlers['title_slug']->process_existing_posts($batch_size, $offset);
+        wp_send_json_success($result);
+    }
 
 }
