@@ -68,7 +68,8 @@ class BWS_Conversion_UI {
     /**
      * Render tab content for BWS Meta Manager settings page
      *
-     * This method is called by BWS_Settings to render the conversion tab.
+     * Legacy entry point — called by BWS_Settings::render_conversion_tab()
+     * when conversion is a tab inside the old settings page.
      */
     public function render_tab_content(): void {
         ?>
@@ -85,6 +86,24 @@ class BWS_Conversion_UI {
                 <?php $this->display_progress_modal(); ?>
                 <?php $this->display_report_modal(); ?>
             </div>
+        </div>
+        <?php
+    }
+
+    /**
+     * Render as a standalone admin page (subpage under Meta Conductor).
+     *
+     * Adds the wp-admin .wrap chrome that render_tab_content() omitted
+     * because it expected to live inside a tab container.
+     */
+    public function render_page(): void {
+        ?>
+        <div class="wrap">
+            <h1><?php esc_html_e('Data Conversion', 'bws-meta-manager'); ?></h1>
+            <p class="description">
+                <?php esc_html_e('Convert ACF field data into taxonomy terms or between field types.', 'bws-meta-manager'); ?>
+            </p>
+            <?php $this->render_tab_content(); ?>
         </div>
         <?php
     }
