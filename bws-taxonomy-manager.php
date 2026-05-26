@@ -50,13 +50,14 @@ if (!function_exists('bws_meta_manager_init')) {
         // Must register on both admin requests (for menu) and REST requests (for save endpoint),
         // so no is_admin() gate.
         if (class_exists(\Wireframe\App::class)) {
-            require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/admin/class-bws-wireframe-bootstrap.php';
+            require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/admin/class-wireframe-bootstrap.php';
             BWS_Wireframe_Bootstrap::init();
 
-            // Phase 2c debug page (REMOVE before merge).
+            // Diagnostics subpage. Dev sections gated on WP_DEBUG; future
+            // user-level sections gated on filter `bws_meta_conductor_show_diagnostics`.
             if (is_admin()) {
-                require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/admin/class-bws-wireframe-debug.php';
-                BWS_Wireframe_Debug::init();
+                require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/admin/class-diagnostics.php';
+                BWS_Diagnostics::init();
             }
         }
 

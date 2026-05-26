@@ -16,7 +16,9 @@
       "Bash(find ./includes -name \"*.php\" -type f -exec wc -l {})",
       "Bash(find /d/David/Google Drive - david@bridgewebsolutions.com/Projects/Plugins/bws-meta-manager/includes -name \"*.php\" -exec wc -l {})",
       "Bash(find 'd:/David/Google Drive - david@bridgewebsolutions.com/Projects/Plugins/bws-meta-manager/includes/conversion' -type f -name *.php)",
-      "Bash(gh issue:*)"
+      "Bash(gh issue:*)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
     ]
   },
   "plansDirectory": ".claude/plans"

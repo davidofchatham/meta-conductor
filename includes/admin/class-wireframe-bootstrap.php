@@ -30,7 +30,7 @@ class BWS_Wireframe_Bootstrap {
             return;
         }
 
-        require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/admin/config/class-bws-wireframe-config.php';
+        require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/admin/config/class-wireframe-config.php';
 
         // Multi-page mode with one page — single-page mode ignores menu_slug
         // override (Wireframe 1.0.5 bug at src/App.php:135). Multi-page path

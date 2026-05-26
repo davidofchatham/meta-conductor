@@ -21,7 +21,7 @@ class BWS_Wireframe_Config {
      * @return array
      */
     public static function build(): array {
-        require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/admin/config/class-bws-hierarchical-config.php';
+        require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/admin/config/class-hierarchical-config.php';
 
         return [
             'title'    => __('Meta Conductor', 'bws-meta-manager'),
