@@ -1,0 +1,41 @@
+<?php return array(
+    'root' => array(
+        'name' => 'bridgewebsolutions/bws-meta-manager',
+        'pretty_version' => 'dev-main',
+        'version' => 'dev-main',
+        'reference' => 'e13ad3cc5fc42643627ed00723b3e7c80fa1b580',
+        'type' => 'wordpress-plugin',
+        'install_path' => __DIR__ . '/../../',
+        'aliases' => array(),
+        'dev' => false,
+    ),
+    'versions' => array(
+        'bridgewebsolutions/bws-meta-manager' => array(
+            'pretty_version' => 'dev-main',
+            'version' => 'dev-main',
+            'reference' => 'e13ad3cc5fc42643627ed00723b3e7c80fa1b580',
+            'type' => 'wordpress-plugin',
+            'install_path' => __DIR__ . '/../../',
+            'aliases' => array(),
+            'dev_requirement' => false,
+        ),
+        'rakit/validation' => array(
+            'pretty_version' => 'v1.4.0',
+            'version' => '1.4.0.0',
+            'reference' => 'ff003a35cdf5030a5f2482299f4c93f344a35b29',
+            'type' => 'library',
+            'install_path' => __DIR__ . '/../rakit/validation',
+            'aliases' => array(),
+            'dev_requirement' => false,
+        ),
+        'tdrayson/wp-wireframe' => array(
+            'pretty_version' => 'v1.0.5',
+            'version' => '1.0.5.0',
+            'reference' => 'd309333fd4ee4b9005a5673aecae83f4d4cb7dbe',
+            'type' => 'library',
+            'install_path' => __DIR__ . '/../tdrayson/wp-wireframe',
+            'aliases' => array(),
+            'dev_requirement' => false,
+        ),
+    ),
+);
