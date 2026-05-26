@@ -48,6 +48,7 @@ class BWS_Option_Rule_Storage implements BWS_Rule_Storage {
         'time_based_rules',
         'related_post_terms_rules',
         'hierarchical_level_restriction_rules',
+        'title_slug_rules',
     ];
 
     /**
@@ -503,6 +504,21 @@ class BWS_Option_Rule_Storage implements BWS_Rule_Storage {
                 }
                 if (empty($data['restriction_mode'])) {
                     $errors[] = 'Restriction mode is required';
+                }
+                break;
+
+            case 'title_slug_rules':
+                if (empty($data['post_type'])) {
+                    $errors[] = 'Post type is required for title/slug rules';
+                } elseif (!post_type_exists($data['post_type'])) {
+                    $errors[] = 'Invalid post type: ' . $data['post_type'];
+                }
+                if (empty($data['title_pattern']) && empty($data['slug_pattern'])) {
+                    $errors[] = 'At least one of title pattern or slug pattern is required';
+                }
+                if (!empty($data['slug_pattern']) && !empty($data['slug_mode'])
+                    && !in_array($data['slug_mode'], ['replace', 'prefix', 'suffix'], true)) {
+                    $errors[] = 'Invalid slug mode';
                 }
                 break;
         }

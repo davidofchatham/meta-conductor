@@ -108,6 +108,7 @@ if (!function_exists('bws_meta_manager_init')) {
 				// NEW rule types
 				'related_post_terms_rules' => array(),
 				'hierarchical_level_restriction_rules' => array(),
+				'title_slug_rules' => array(),
 				'conflict_handling' => array(),
 				'manual_processing_enabled' => true
 			));
@@ -123,7 +124,11 @@ if (!function_exists('bws_meta_manager_init')) {
 			if (!isset($existing_settings['hierarchical_level_restriction_rules'])) {
 				$existing_settings['hierarchical_level_restriction_rules'] = array();
 			}
-			
+
+			if (!isset($existing_settings['title_slug_rules'])) {
+				$existing_settings['title_slug_rules'] = array();
+			}
+
 			update_option('bws_taxonomy_manager_settings', $existing_settings);
 		}
 		

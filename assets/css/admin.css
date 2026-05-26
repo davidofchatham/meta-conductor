@@ -2,6 +2,19 @@
  * BWS Taxonomy Manager Admin Styles
  */
 
+/* Screen Reader Only Content */
+.bws-sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border-width: 0;
+}
+
 /* Main Settings Page Layout */
 .bws-taxonomy-manager-tabs {
 	margin-top: 20px;
@@ -61,6 +74,33 @@
 	background: #f5f5f5;
 }
 
+/* Disabled Rule State */
+.bws-rule-item.rule-disabled {
+	opacity: 0.6;
+}
+
+.bws-rule-item.rule-disabled .bws-rule-content {
+	position: relative;
+	pointer-events: none;
+	filter: grayscale(40%);
+}
+
+.bws-rule-item.rule-disabled .bws-rule-content::after {
+	content: 'Disabled';
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	background: rgba(0, 0, 0, 0.85);
+	color: #fff;
+	padding: 10px 20px;
+	border-radius: 4px;
+	font-weight: 600;
+	font-size: 14px;
+	z-index: 10;
+	pointer-events: none;
+}
+
 /* Rule Header */
 .bws-rule-header {
 	background: #fff;
@@ -72,10 +112,21 @@
 	border-radius: 4px 4px 0 0;
 }
 
-.bws-rule-header label {
+.bws-rule-header-left {
+	flex: 1;
+}
+
+.bws-rule-header-left strong {
 	margin: 0;
 	font-weight: 600;
 	color: #23282d;
+	font-size: 14px;
+}
+
+.bws-rule-header-actions {
+	display: flex;
+	gap: 8px;
+	align-items: center;
 }
 
 .bws-rule-header .delete-rule {
@@ -90,6 +141,74 @@
 .bws-rule-header .delete-rule:hover {
 	background: #a00;
 	color: #fff;
+}
+
+/* Enable/Disable Buttons */
+.enable-rule-btn,
+.disable-rule-btn {
+	min-height: 30px;
+	line-height: 28px;
+	padding: 0 10px;
+	font-size: 13px;
+}
+
+/* Tab Actions Container - Add + Save on same line */
+.bws-tab-actions-container {
+	margin-top: 30px;
+	padding: 20px;
+	background: #f9f9f9;
+	border: 1px solid #ddd;
+	border-radius: 4px;
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 15px;
+}
+
+.bws-tab-actions-left {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+
+.bws-tab-actions-right {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+
+.bws-tab-actions-container .button-primary {
+	font-size: 14px;
+	padding: 8px 20px;
+	height: auto;
+}
+
+.bws-tab-actions-container .spinner {
+	float: none;
+	margin: 0;
+}
+
+/* Legacy support for old class name */
+.bws-tab-save-actions {
+	margin-top: 30px;
+	padding: 20px;
+	background: #f9f9f9;
+	border: 1px solid #ddd;
+	border-radius: 4px;
+	display: flex;
+	align-items: center;
+	gap: 15px;
+}
+
+.bws-tab-save-actions .button-primary {
+	font-size: 14px;
+	padding: 8px 20px;
+	height: auto;
+}
+
+.bws-tab-save-actions .spinner {
+	float: none;
+	margin: 0;
 }
 
 /* Rule Content */
@@ -113,64 +232,96 @@
 
 .bws-rule-content select,
 .bws-rule-content input[type="text"],
-.bws-rule-content input[type="date"] {
+.bws-rule-content input[type="date"],
+.bws-rule-content input[type="number"] {
 	min-width: 200px;
 	max-width: 400px;
+	width: 100%;
+}
+
+/* Specific field width standardization */
+.bws-rule-content select.post-type-select,
+.bws-rule-content input[type="text"].post-type-input {
+	min-width: 200px;
+	max-width: 300px;
+	width: 100%;
+}
+
+.bws-rule-content select.taxonomy-select {
+	min-width: 200px;
+	max-width: 300px;
+	width: 100%;
+}
+
+.bws-rule-content select.term-select,
+.bws-rule-content .select2-container {
+	min-width: 250px;
+	max-width: 400px;
+	width: 100%;
+}
+
+/* Responsive adjustments */
+@media (min-width: 782px) {
+	.bws-rule-content select.post-type-select,
+	.bws-rule-content input[type="text"].post-type-input {
+		max-width: 300px;
+	}
+
+	.bws-rule-content select.taxonomy-select {
+		max-width: 300px;
+	}
+
+	.bws-rule-content select.term-select,
+	.bws-rule-content .select2-container {
+		max-width: 400px;
+	}
 }
 
 .bws-rule-content label {
 	display: block;
 	margin-bottom: 5px;
+	font-weight: 600;
+	color: #23282d;
 }
 
-.bws-rule-content small {
+.bws-rule-content small,
+.bws-rule-content .description {
 	color: #666;
 	font-style: italic;
+	font-size: 13px;
+	display: block;
+	margin-top: 5px;
 }
 
-/* Add Rule Button */
+/* Add Rule Button - Use WordPress default secondary button styling */
 .add-rule-btn,
 button[id*="add-"][id*="-rule"] {
-	background: #0073aa;
-	color: #fff;
-	border: none;
-	padding: 10px 15px;
-	border-radius: 4px;
-	cursor: pointer;
+	/* Let WordPress default button-secondary styles apply */
 	font-size: 14px;
-	margin-top: 15px;
-	transition: background 0.2s ease;
+	height: auto;
 }
 
-.add-rule-btn:hover,
-button[id*="add-"][id*="-rule"]:hover {
-	background: #005a87;
-}
-
-/* Process Existing Posts Button */
+/* Process Existing Posts Button - Consistent with WordPress buttons */
 .process-existing-btn {
-	background: #00a32a;
-	color: #fff;
-	border: none;
-	padding: 8px 12px;
-	border-radius: 3px;
-	cursor: pointer;
+	/* Use WordPress default button-secondary styling */
 	font-size: 13px;
+	height: auto;
 	margin-left: 10px;
-	transition: background 0.2s ease;
 }
 
-.process-existing-btn:hover {
-	background: #008a20;
-}
-
-.process-existing-btn:disabled {
-	background: #ccc;
-	cursor: not-allowed;
+/* State-based styling - minimal overrides */
+.process-existing-btn.processing {
+	opacity: 0.7;
 }
 
 .process-existing-btn.error {
-	background: #d63638;
+	border-color: #d63638;
+	color: #d63638;
+}
+
+.process-existing-btn.success {
+	border-color: #00a32a;
+	color: #00a32a;
 }
 
 /* Validation Messages */
@@ -506,51 +657,6 @@ button[id*="add-"][id*="-rule"]:hover {
 	color: #721c24;
 }
 
-/* Related Post Terms Rule Styling */
-.bws-rule-item[data-rule-type="related_post_terms"] {
-	border-left: 4px solid #17a2b8;
-}
-
-.bws-rule-item[data-rule-type="related_post_terms"] .bws-rule-header {
-	background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);
-	color: white;
-}
-
-.bws-rule-item[data-rule-type="related_post_terms"] .bws-rule-header label {
-	color: white;
-}
-
-.bws-rule-item[data-rule-type="related_post_terms"] .bws-rule-header .delete-rule {
-	color: rgba(255, 255, 255, 0.8);
-}
-
-.bws-rule-item[data-rule-type="related_post_terms"] .bws-rule-header .delete-rule:hover {
-	background: rgba(255, 255, 255, 0.2);
-	color: white;
-}
-
-/* Hierarchical Level Restriction Rule Styling */
-.bws-rule-item[data-rule-type="hierarchical_level_restriction"] {
-	border-left: 4px solid #6f42c1;
-}
-
-.bws-rule-item[data-rule-type="hierarchical_level_restriction"] .bws-rule-header {
-	background: linear-gradient(135deg, #6f42c1 0%, #5a2d91 100%);
-	color: white;
-}
-
-.bws-rule-item[data-rule-type="hierarchical_level_restriction"] .bws-rule-header label {
-	color: white;
-}
-
-.bws-rule-item[data-rule-type="hierarchical_level_restriction"] .bws-rule-header .delete-rule {
-	color: rgba(255, 255, 255, 0.8);
-}
-
-.bws-rule-item[data-rule-type="hierarchical_level_restriction"] .bws-rule-header .delete-rule:hover {
-	background: rgba(255, 255, 255, 0.2);
-	color: white;
-}
 
 /* Enhanced Select2 Integration */
 .bws-rule-content .select2-container {
@@ -695,64 +801,7 @@ input[name*="[acf_field_name]"]:focus {
 	background: #dba617;
 }
 
-/* Rule Type Badges */
-.rule-type-badge {
-	display: inline-block;
-	padding: 2px 8px;
-	border-radius: 12px;
-	font-size: 10px;
-	font-weight: 600;
-	text-transform: uppercase;
-	letter-spacing: 0.5px;
-	margin-left: 8px;
-}
 
-.rule-type-badge.related-post-terms {
-	background: #17a2b8;
-	color: white;
-}
-
-.rule-type-badge.hierarchical-level-restriction {
-	background: #6f42c1;
-	color: white;
-}
-
-/* Tab Enhancements for New Rule Types */
-.nav-tab[data-tab="related-post-terms"] {
-	position: relative;
-}
-
-.nav-tab[data-tab="related-post-terms"]::after {
-	content: 'NEW';
-	position: absolute;
-	top: -8px;
-	right: -8px;
-	background: #17a2b8;
-	color: white;
-	font-size: 9px;
-	font-weight: 600;
-	padding: 2px 4px;
-	border-radius: 8px;
-	line-height: 1;
-}
-
-.nav-tab[data-tab="level-restriction"] {
-	position: relative;
-}
-
-.nav-tab[data-tab="level-restriction"]::after {
-	content: 'NEW';
-	position: absolute;
-	top: -8px;
-	right: -8px;
-	background: #6f42c1;
-	color: white;
-	font-size: 9px;
-	font-weight: 600;
-	padding: 2px 4px;
-	border-radius: 8px;
-	line-height: 1;
-}
 
 /* Advanced Features Toggle */
 .advanced-features-toggle {
@@ -780,25 +829,98 @@ input[name*="[acf_field_name]"]:focus {
 	border-top: 1px solid #ddd;
 }
 
-/* Process Button Variations */
-.process-existing-btn[data-rule-type="related_post_terms"] {
-	background: #17a2b8;
-	border-color: #138496;
-}
+/* Mobile Responsiveness - WCAG 2.1 AA Compliance */
+@media (max-width: 782px) {
+	/* Minimum touch target size: 44x44px */
+	.nav-tab,
+	.button,
+	.delete-rule,
+	.enable-rule-btn,
+	.disable-rule-btn,
+	.process-existing-btn {
+		min-height: 44px;
+		min-width: 44px;
+		padding: 12px 16px;
+		line-height: 1.2;
+	}
 
-.process-existing-btn[data-rule-type="related_post_terms"]:hover {
-	background: #138496;
-	border-color: #117a8b;
-}
+	/* Prevent iOS zoom on focus - 16px minimum font size */
+	select,
+	input[type="text"],
+	input[type="number"],
+	input[type="date"],
+	textarea {
+		font-size: 16px;
+	}
 
-.process-existing-btn[data-rule-type="hierarchical_level_restriction"] {
-	background: #6f42c1;
-	border-color: #5a2d91;
-}
+	/* Stack form fields vertically */
+	.form-table th,
+	.form-table td {
+		display: block;
+		width: 100%;
+		padding: 10px 0;
+	}
 
-.process-existing-btn[data-rule-type="hierarchical_level_restriction"]:hover {
-	background: #5a2d91;
-	border-color: #4c2479;
+	.form-table th {
+		padding-top: 20px;
+		font-weight: 600;
+	}
+
+	/* Horizontal scrolling for tabs */
+	.nav-tab-wrapper {
+		overflow-x: auto;
+		overflow-y: hidden;
+		white-space: nowrap;
+		-webkit-overflow-scrolling: touch;
+		margin-bottom: 15px;
+	}
+
+	.nav-tab {
+		display: inline-block;
+		margin-right: 4px;
+	}
+
+	/* Stack button layouts vertically on mobile */
+	.bws-tab-actions-container {
+		flex-direction: column;
+		gap: 15px;
+	}
+
+	.bws-tab-actions-left,
+	.bws-tab-actions-right {
+		width: 100%;
+		justify-content: stretch;
+	}
+
+	.bws-tab-actions-left button,
+	.bws-tab-actions-right button,
+	.bws-tab-actions-right input[type="submit"] {
+		width: 100%;
+	}
+
+	/* Rule items spacing */
+	.bws-rule-item {
+		margin-bottom: 20px;
+	}
+
+	.bws-rule-header {
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 10px;
+	}
+
+	.bws-rule-header-actions {
+		width: 100%;
+		justify-content: flex-start;
+	}
+
+	/* Full width form controls */
+	.bws-rule-content select,
+	.bws-rule-content input[type="text"],
+	.bws-rule-content input[type="number"],
+	.bws-rule-content input[type="date"] {
+		max-width: 100%;
+	}
 }
 
 /* Mobile Responsiveness for New Fields */
@@ -807,18 +929,13 @@ input[name*="[acf_field_name]"]:focus {
 		flex-direction: column;
 		gap: 10px;
 	}
-	
+
 	.taxonomy-flow .flow-arrow::before {
 		content: '↓';
 	}
-	
+
 	.bws-rule-item[data-rule-type="hierarchical_level_restriction"] .radio-group {
 		padding: 8px;
-	}
-	
-	.nav-tab[data-tab="related-post-terms"]::after,
-	.nav-tab[data-tab="level-restriction"]::after {
-		display: none;
 	}
 }
 
@@ -852,4 +969,312 @@ input[name*="[acf_field_name]"]:focus {
 .rule-help-text .help-icon {
 	margin-right: 6px;
 	color: #0066cc;
+}
+
+/* ========================================
+   Empty States
+   ======================================== */
+
+.bws-empty-state {
+	text-align: center;
+	padding: 60px 20px;
+	margin: 40px auto;
+	max-width: 600px;
+	background: #fafafa;
+	border: 2px dashed #d0d0d0;
+	border-radius: 8px;
+}
+
+.bws-empty-state-icon {
+	font-size: 48px;
+	color: #a0a5aa;
+	margin-bottom: 20px;
+	line-height: 1;
+}
+
+.bws-empty-state-icon::before {
+	content: "\f120"; /* WordPress dashicon for 'post' */
+	font-family: dashicons;
+	display: inline-block;
+}
+
+.bws-empty-state h3 {
+	margin: 0 0 12px 0;
+	font-size: 20px;
+	font-weight: 600;
+	color: #1d2327;
+}
+
+.bws-empty-state p {
+	margin: 0 0 24px 0;
+	font-size: 14px;
+	line-height: 1.6;
+	color: #50575e;
+}
+
+.bws-empty-state .button {
+	font-size: 14px;
+	height: auto;
+	padding: 10px 24px;
+}
+
+.bws-empty-state .button-primary {
+	background: #2271b1;
+	border-color: #2271b1;
+	box-shadow: 0 1px 0 #135e96;
+}
+
+.bws-empty-state .button-primary:hover {
+	background: #135e96;
+	border-color: #135e96;
+}
+
+/* Hide empty state when rules exist */
+.bws-rules-section:has(.bws-rule-item) .bws-empty-state {
+	display: none;
+}
+
+/* Show empty state only when no rules */
+.bws-empty-state.hidden {
+	display: none;
+}
+
+/* ========================================
+   Field Validation & Error States
+   ======================================== */
+
+.bws-field-error {
+	display: block;
+	color: #d63638;
+	font-size: 13px;
+	margin-top: 5px;
+	font-style: italic;
+}
+
+.bws-field-error::before {
+	content: "\f534"; /* WordPress dashicon for warning */
+	font-family: dashicons;
+	display: inline-block;
+	margin-right: 4px;
+	font-size: 16px;
+	vertical-align: middle;
+}
+
+/* Invalid field styling */
+select.bws-invalid,
+input.bws-invalid {
+	border-color: #d63638;
+	box-shadow: 0 0 0 1px #d63638;
+}
+
+select.bws-invalid:focus,
+input.bws-invalid:focus {
+	border-color: #d63638;
+	box-shadow: 0 0 0 1px #d63638, 0 0 2px 1px rgba(214, 54, 56, 0.3);
+}
+
+/* Valid field styling (optional - shows after validation passes) */
+select.bws-valid,
+input.bws-valid {
+	border-color: #00a32a;
+}
+
+/* Rule-level validation message */
+.bws-rule-validation-message {
+	background: #fcf0f1;
+	border-left: 4px solid #d63638;
+	padding: 12px;
+	margin: 10px 0;
+	border-radius: 2px;
+}
+
+.bws-rule-validation-message.success {
+	background: #edfaef;
+	border-left-color: #00a32a;
+}
+
+.bws-rule-validation-message p {
+	margin: 0;
+	font-size: 13px;
+	color: #1d2327;
+}
+
+/* ========================================
+   Loading States
+   ======================================== */
+
+.bws-loading-overlay {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background: rgba(255, 255, 255, 0.8);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 10;
+	border-radius: 4px;
+}
+
+.bws-loading-spinner {
+	display: inline-block;
+	width: 24px;
+	height: 24px;
+	border: 3px solid #f3f3f3;
+	border-top: 3px solid #2271b1;
+	border-radius: 50%;
+	animation: bws-spin 0.8s linear infinite;
+}
+
+@keyframes bws-spin {
+	0% { transform: rotate(0deg); }
+	100% { transform: rotate(360deg); }
+}
+
+.bws-loading-text {
+	margin-left: 10px;
+	font-size: 14px;
+	color: #50575e;
+}
+
+/* Button loading state */
+button.is-loading,
+input[type="submit"].is-loading {
+	position: relative;
+	color: transparent !important;
+	pointer-events: none;
+	opacity: 0.7;
+}
+
+button.is-loading::after,
+input[type="submit"].is-loading::after {
+	content: '';
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	width: 16px;
+	height: 16px;
+	margin-top: -8px;
+	margin-left: -8px;
+	border: 2px solid #fff;
+	border-top-color: transparent;
+	border-radius: 50%;
+	animation: bws-spin 0.6s linear infinite;
+}
+
+/* Make rule items position relative for overlay */
+.bws-rule-item {
+	position: relative;
+}
+
+.bws-rule-item.is-loading {
+	pointer-events: none;
+}
+
+/* ========================================
+   Accessible Confirmation Modal
+   ======================================== */
+
+.bws-modal-overlay {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background: rgba(0, 0, 0, 0.7);
+	display: none;
+	align-items: center;
+	justify-content: center;
+	z-index: 100000;
+	animation: bws-fadeIn 0.2s ease-out;
+}
+
+.bws-modal-overlay.active {
+	display: flex;
+}
+
+@keyframes bws-fadeIn {
+	from { opacity: 0; }
+	to { opacity: 1; }
+}
+
+.bws-modal {
+	background: #fff;
+	border-radius: 4px;
+	box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+	max-width: 500px;
+	width: 90%;
+	padding: 0;
+	animation: bws-slideDown 0.3s ease-out;
+}
+
+@keyframes bws-slideDown {
+	from {
+		opacity: 0;
+		transform: translateY(-50px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+.bws-modal-header {
+	padding: 20px 24px;
+	border-bottom: 1px solid #ddd;
+	background: #f9f9f9;
+	border-radius: 4px 4px 0 0;
+}
+
+.bws-modal-title {
+	margin: 0;
+	font-size: 18px;
+	font-weight: 600;
+	color: #1d2327;
+}
+
+.bws-modal-body {
+	padding: 24px;
+	color: #50575e;
+	font-size: 14px;
+	line-height: 1.6;
+}
+
+.bws-modal-footer {
+	padding: 16px 24px;
+	border-top: 1px solid #ddd;
+	display: flex;
+	justify-content: flex-end;
+	gap: 10px;
+	background: #f9f9f9;
+	border-radius: 0 0 4px 4px;
+}
+
+.bws-modal-footer .button {
+	margin: 0;
+}
+
+.button-danger {
+	background: #d63638;
+	border-color: #d63638;
+	color: #fff;
+	text-shadow: none;
+}
+
+.button-danger:hover,
+.button-danger:focus {
+	background: #b32d2e;
+	border-color: #b32d2e;
+	color: #fff;
+}
+
+/* Focus trap for modal */
+.bws-modal-overlay:focus {
+	outline: none;
+}
+
+/* Ensure modal is on top of WordPress admin */
+.bws-modal-overlay {
+	z-index: 160000; /* Higher than WordPress admin bar (159900) */
 }

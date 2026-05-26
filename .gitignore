@@ -1,3 +1,9 @@
+# Temporary editor files
 *.php~
 *.css~
 *.js~
+
+# Claude working files
+CLAUDE.md
+*.code-workspace
+/.claude
