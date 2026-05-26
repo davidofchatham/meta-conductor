@@ -13,18 +13,14 @@ if (!defined('ABSPATH')) {
 class BWS_Hierarchical_Config {
 
     /**
-     * Build the hierarchical_rules tab definition for Wireframe.
+     * Section definition for inclusion in the Auto-set Terms tab.
      */
-    public static function tab(): array {
+    public static function section(): array {
         return [
-            'id'       => 'hierarchical',
-            'title'    => __('Hierarchical Rules', 'bws-meta-manager'),
-            'sections' => [
-                [
-                    'id'          => 'hierarchical_main',
-                    'title'       => __('Hierarchical Rules', 'bws-meta-manager'),
-                    'description' => __('Inherit terms across hierarchical taxonomy structures.', 'bws-meta-manager'),
-                    'fields'      => [
+            'id'          => 'hierarchical',
+            'title'       => __('Hierarchical taxonomy inheritance', 'bws-meta-manager'),
+            'description' => __('Inherit terms up or down a hierarchical taxonomy tree.', 'bws-meta-manager'),
+            'fields'      => [
                         [
                             'id'    => 'hierarchical_rules',
                             'type'  => 'repeater',
@@ -135,8 +131,17 @@ class BWS_Hierarchical_Config {
                             ],
                         ],
                     ],
-                ],
-            ],
+        ];
+    }
+
+    /**
+     * Wrap the section in a standalone tab (legacy use).
+     */
+    public static function tab(): array {
+        return [
+            'id'       => 'hierarchical',
+            'title'    => __('Hierarchical Rules', 'bws-meta-manager'),
+            'sections' => [self::section()],
         ];
     }
 
