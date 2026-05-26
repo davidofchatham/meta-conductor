@@ -183,25 +183,49 @@ Required before merging BWS User Based Terms. Also needed for `title_slug_rules`
 
 ---
 
-### Phase 5: Refactor Settings & Complete Conversion Integration
+### ~~Phase 5: Refactor Settings & Complete Conversion Integration~~ — CANCELLED
 
-Two related cleanup efforts — both address structural debt from bolted-on additions.
+Cancelled by **Phase 2c (Wireframe swap)**. The legacy `BWS_Settings` god class is fully replaced by Wireframe-driven config classes under `includes/admin/config/`; the old `class-bws-settings.php`, `admin.js`, and `admin.css` are scheduled for deletion. JS unification moot — the new UI has no custom JS to namespace.
 
-**Settings refactor:**
-- Keep thin `BWS_Settings` for global options + tab router
-- Create per-handler admin classes under `includes/admin/` (e.g., `Admin\HierarchicalAdmin`) for tab rendering and sanitization
-- Fix tab-aware save guard: preserve rule type keys not present in submitted form
-- Unify JS into `bwsMetaConductor` namespace (consolidate `admin.js` and `conversion-admin.js` patterns)
+Conversion integration completion (lib class delegation in `BWS_Data_Processor`) folds into **Phase 7 (Migration / Preview tool)** below.
 
-**Conversion integration completion:**
-- Make `BWS_Data_Processor` delegate to the lib classes it already instantiates:
-  - `process_taxonomy_to_taxonomy_batch()` → `Conversion\TermMigrator`
-  - `process_field_to_field_batch()` → `Conversion\FieldConverter`
-  - `process_map_data_conversion()` → `Conversion\ValueMapper`
-  - Batch sizing/monitoring → `Conversion\BatchProcessor`
-- Remove duplicate inline logic from `BWS_Data_Processor` once delegated
+---
 
-**End of phase**: Update CLAUDE.md
+### Phase 7: Unified Migration / Preview Tool
+
+Reframes the existing ACF "Data Conversion" page as a general-purpose Migration / Preview tool that hosts any one-time data transformation.
+
+**Why now:** Wireframe v1.0.5 has no JS-side field-type extension API. Inline Preview / Apply-to-Existing buttons inside a Wireframe repeater row are blocked. Routing those actions to a dedicated migration page sidesteps the blocker and provides a permanent home for bulk operations across rule types.
+
+**Architecture:**
+
+- Single admin subpage under Meta Conductor menu — replaces (or absorbs) the current Data Conversion subpage.
+- Recipes registered via filter `bws_meta_conductor_migrations`. Each recipe declares:
+  - `id`, `label`, `description`
+  - `source_query` callback — yields post IDs in chunks
+  - `transform` callback — computes the new state for one post
+  - `preview` renderer — shows before/after
+  - `commit` callback — writes the change
+- UI: recipe picker → parameter form → preview sample → run with chunked progress bar → completion summary.
+- Reuses existing infrastructure: `Conversion\BatchProcessor`, `Conversion\TermMigrator`, `Conversion\FieldConverter`, `Conversion\ValueMapper`. Lib class delegation (cancelled Phase 5 carry-over) happens here.
+
+**Recipes to ship at launch:**
+
+1. ACF → taxonomy term (current Copy Data flow)
+2. Field A → Field B value mapping (current Map Data flow)
+3. Apply Title/Slug rule to existing posts (replaces the inline button blocked in Phase 2c)
+
+**Recipes for future phases:**
+
+- Re-walk hierarchical inheritance against existing posts
+- Enforce level restriction across existing posts
+- Standardize date fields
+- Merge name fields
+- Format phone numbers
+
+**Storage:** none new. Recipes are registered code, not user-saved config.
+
+**End of phase**: Update CLAUDE.md, drop legacy Data Conversion submenu in favor of the unified one.
 
 ---
 

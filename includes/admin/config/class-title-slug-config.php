@@ -135,7 +135,7 @@ class BWS_Title_Slug_Config {
                     'args'    => [
                         'variant' => 'info',
                         'content' => '<p><strong>' . esc_html__('Preview & Apply to Existing Posts:', 'bws-meta-manager') . '</strong> '
-                                   . esc_html__('Inline Preview and Apply buttons return in a future update. For now, save rules here; preview/apply utility coming as a separate page.', 'bws-meta-manager') . '</p>',
+                                   . esc_html__('Coming as part of the unified Migration / Preview tool. Active rules still apply automatically when posts are saved.', 'bws-meta-manager') . '</p>',
                     ],
                 ],
             ],
