@@ -1,8 +1,8 @@
 # Meta Conductor: Strategic Assessment & Roadmap
 
-**Current Version**: 2.0.0
-**Target Version**: 3.0.0 (Meta Conductor rename)
-**Branch**: `claude/plan-plugin-integration-01J8Rqv5YTEfF1uXyx84SihV`
+**Current Version**: 2.0.0 (unreleased; never deployed)
+**Target Version**: 2.0.0 (absorbing Wireframe swap + rename + PSR-4 namespacing before first deploy)
+**Branch**: `claude/wireframe-swap-2c`
 
 ## Context
 
@@ -36,13 +36,13 @@ The core business logic is **working and worth keeping**. The problems are all s
 | **Legacy BWS_Handler_Base** | Delete after last handler migrates | No deprecation shim needed — private plugin |
 | **Tab-aware save bug** | Fix during Phase 5 settings refactor | Latent, not actively causing loss |
 | **CLAUDE.md updates** | End of each phase | Reflects completed architecture, not planned work |
-| **Version number** | 3.0.0 | Breaking changes: file rename, class names, option key |
+| **Version number** | 2.0.0 | Breaking changes: file rename, class names, option key |
 
-### Naming Surface (3.0.0)
+### Naming Surface (2.0.0)
 
 Split the rename by layer — public-facing identity drops `BWS`, code/storage layers keep `BWS`/`bws_` namespace for collision safety.
 
-| Layer | Value (3.0.0) | Rationale |
+| Layer | Value (2.0.0) | Rationale |
 |-------|---------------|-----------|
 | Plugin display name | `Meta Conductor` | Public identity |
 | Plugin folder | `meta-conductor` | WP convention: folder = slug |
@@ -128,7 +128,7 @@ Pure structural change — no behavior changes, no user-visible changes. Indepen
 
 Visible change — rename the plugin, migrate the option key, update all strings.
 
-Follow the **Naming Surface (3.0.0)** table in the decisions section above for which layers drop `bws-` and which keep `bws_`/`BWS\`.
+Follow the **Naming Surface (2.0.0)** table in the decisions section above for which layers drop `bws-` and which keep `bws_`/`BWS\`.
 
 - Rename plugin folder: `bws-meta-manager` → `meta-conductor`
 - Rename main file: `bws-taxonomy-manager.php` → `meta-conductor.php`
@@ -146,7 +146,7 @@ Follow the **Naming Surface (3.0.0)** table in the decisions section above for w
 
 **Files**: `meta-conductor.php`, `includes/class-bws-taxonomy-manager.php`, `includes/class-bws-settings.php`, `includes/storage/class-option-rule-storage.php`, `includes/handlers/class-unified-handler-base.php`, plus every file containing `__()` / `_e()` / `_x()` / `_n()` calls
 
-**End of phase**: Bump version to 3.0.0, update CLAUDE.md
+**End of phase**: Bump version to 2.0.0, update CLAUDE.md
 
 ---
 
