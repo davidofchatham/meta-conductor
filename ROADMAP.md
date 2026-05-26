@@ -1,591 +1,304 @@
-# BWS Meta Manager - Development Roadmap
+# Meta Conductor: Strategic Assessment & Roadmap
 
 **Current Version**: 2.0.0
+**Target Version**: 3.0.0 (Meta Conductor rename)
 **Branch**: `claude/plan-plugin-integration-01J8Rqv5YTEfF1uXyx84SihV`
-**Last Updated**: 2025-12-18
+
+## Context
+
+The plugin has accumulated friction: incomplete branding rename, a bolted-on conversion tool, only 2 of 7 handlers using the "unified" framework, a ~2,000-line god-class settings file, and an unresolved storage architecture question. This document captures the assessment and agreed decisions for moving forward.
 
 ---
 
-## Overview
+## Verdict: Incremental Major Refactor — Not a Rewrite
 
-This roadmap outlines the planned development for BWS Meta Manager, including the future merge with BWS User Based Terms plugin and migration to CPT-based rule storage.
-
----
-
-## ✅ Phase 1: Unified Framework Foundation (COMPLETED)
-
-**Status**: Merged to branch
-**Completed**: December 2025
-
-### Achievements
-- ✅ Created unified entity abstraction (`BWS_Entity`)
-- ✅ Built rule engine with condition/action system
-- ✅ Refactored hierarchical handler with v2.0 features
-- ✅ Added bidirectional hierarchy support
-- ✅ Implemented smart child expansion (3 modes)
-- ✅ Created 6 database tables for logging/tracking
-- ✅ Improved code quality (input validation, error handling, PHPDoc)
-- ✅ **NEW: Implemented storage abstraction layer**
-
-### New Files Added
-- `includes/abstracts/interface-bws-rule-storage.php` - Storage interface
-- `includes/storage/class-bws-option-rule-storage.php` - Options implementation
-- `includes/storage/class-bws-storage-factory.php` - Factory pattern
-
-### Architecture Improvements
-```
-Before:
-Handler → get_option() → wp_options table
-
-After:
-Handler → BWS_Storage_Factory → BWS_Rule_Storage Interface
-                                   ↓
-                         BWS_Option_Rule_Storage → wp_options table
-                         (Future: BWS_CPT_Rule_Storage → CPT)
-```
-
-**Benefits**:
-- Prepares for CPT migration without disrupting current code
-- Enables A/B testing of storage backends
-- Improves testability and maintainability
-- No functional changes - backward compatible
+The core business logic is **working and worth keeping**. The problems are all structural (incomplete migration, naming chaos, god class) rather than algorithmic. The unified framework (Entity, RuleEngine, storage abstraction) is well-designed and worth finishing — it stalled at 2 of 7 handlers.
 
 ---
 
-## 🔄 Phase 2: Testing & Stabilization (IN PROGRESS)
+## Confirmed Decisions
 
-**Status**: Active
-**Timeline**: December 2025 - January 2026
+| Decision | Choice | Notes |
+|----------|--------|-------|
+| **Plugin name** | **Meta Conductor** | Display name and slug both drop "BWS". See "Naming surface" table below. |
+| **Naming surface** | Split by layer | Plugin folder + main file + text domain drop `bws-`; PHP namespace and option keys keep `BWS`/`bws_` for collision safety. |
+| **PSR-4 namespacing** | Yes — Phase 2a | Custom `spl_autoload_register()` autoloader; namespace `BWS\MetaConductor\`; pattern from BWS Portal plugin |
+| **Abstracts directory** | Co-locate with implementations | `Storage\RuleStorage`, `Handlers\UnifiedHandlerBase` — `includes/abstracts/` eliminated |
+| **Interface file naming** | Use `class-` prefix for all | Autoloader generates `class-{name}.php`; interfaces follow same convention |
+| **lib/ classes** | Absorb into `Conversion\` namespace | BatchProcessor, FieldConverter, ValueMapper, TermMigrator move to `includes/conversion/` |
+| **lib/ integration** | Complete in Phase 5 | BWS_Data_Processor delegates to lib classes during conversion cleanup |
+| **Conversion tool** | Keep in this plugin | Operates on same entities/fields |
+| **CPT vs options** | Per-type routing | Storage factory routes by rule type; see framework below |
+| **CPT structure** | Single shared CPT: `bws_mc_rule` | Differentiated by `rule_type` meta field; one list table filterable by type |
+| **Plugin file rename** | Yes | All installs are controlled |
+| **Option key rename** | Yes — with data migration, test on InstaWP first | New key: `bws_meta_conductor_settings` |
+| **Handler migration order** | Simplest first | Related → Level Restriction → Propagation → Related Post Terms → Time Based |
+| **Legacy BWS_Handler_Base** | Delete after last handler migrates | No deprecation shim needed — private plugin |
+| **Tab-aware save bug** | Fix during Phase 5 settings refactor | Latent, not actively causing loss |
+| **CLAUDE.md updates** | End of each phase | Reflects completed architecture, not planned work |
+| **Version number** | 3.0.0 | Breaking changes: file rename, class names, option key |
 
-### High Priority ✅ (COMPLETED)
-- ✅ Add input validation in BWS_Entity constructor
-- ✅ Add error handling to database table creation
-- ✅ Security audit (nonce verification)
-- ✅ Add comprehensive PHPDoc documentation
-- ✅ Implement storage abstraction layer
+### Naming Surface (3.0.0)
 
-### Current Tasks
-- ⏸️ Verify database tables on test site
-- ⏸️ Test smart child expansion with real data
-- ⏸️ Performance test with 100+ posts
-- ⏸️ Test deep hierarchies (10+ levels)
+Split the rename by layer — public-facing identity drops `BWS`, code/storage layers keep `BWS`/`bws_` namespace for collision safety.
 
-### Testing Checklist
-See `TESTING_PLAN_V2.md` for complete testing procedures.
+| Layer | Value (3.0.0) | Rationale |
+|-------|---------------|-----------|
+| Plugin display name | `Meta Conductor` | Public identity |
+| Plugin folder | `meta-conductor` | WP convention: folder = slug |
+| Main file | `meta-conductor.php` | Matches folder |
+| Text domain | `meta-conductor` | WP convention: text domain = plugin slug; matters if plugin ever publishes to WP.org |
+| Plugin constants | `META_CONDUCTOR_*` (new) + `BWS_META_MANAGER_*`, `BWS_TAX_MANAGER_*` (back-compat aliases) | Code-internal; drop prefix on canonical names, keep aliases |
+| PHP namespace | `BWS\MetaConductor\` | Collision safety in autoloaded global namespace |
+| Option keys | `bws_meta_conductor_*` | Collision safety in shared `wp_options` table |
+| Nonce action prefix | `bws_meta_conductor_*` | Pairs with option keys |
+| JS localized object | `bwsMetaConductor` | Pairs with PHP constants/namespace |
+| Hook/filter prefix | `bws_meta_conductor_*` | Consistent with stored data + JS |
 
-**Key Tests**:
-1. Database table verification
-2. Smart expansion behavior validation
-3. Bulk processing performance
-4. Multi-taxonomy rule conflicts
-5. ACF integration testing
-
----
-
-## 📦 Phase 3: Plugin Integration Planning (Q1 2026)
-
-**Status**: Planning
-**Timeline**: February - March 2026
-
-### Goals
-Prepare for merging with `bws-user-based-terms` plugin.
-
-### Tasks
-1. **Analyze Feature Overlap**
-   - Map rule types between plugins
-   - Identify unique features in each
-   - Plan unified rule taxonomy
-
-2. **UI/UX Unification**
-   - Design combined settings interface
-   - Plan rule organization strategy
-   - Create migration wizard UI
-
-3. **Data Migration Planning**
-   - Design import tool for bws-user-based-terms rules
-   - Plan rule conflict resolution
-   - Create rollback mechanism
-
-### Deliverables
-- Feature comparison matrix
-- Unified data model design
-- Migration tool specification
-- UI mockups for combined plugin
+**Rule of thumb**: anything users / translators / the WP admin UI sees → drop `BWS`. Anything stored in a global PHP/JS/DB namespace where another plugin could collide → keep `BWS`.
 
 ---
 
-## 🚀 Phase 4: CPT Migration (Q2 2026)
+## What Is Actually Broken
 
-**Status**: Planned
-**Timeline**: April - June 2026
-**Prerequisite**: Phase 3 planning complete
+### MESSY — Not Breaking Runtime Behavior
 
-### Why Migrate to CPT?
-
-**Benefits** (from `ARCHITECTURE_DECISION_CPT_VS_OPTIONS.md`):
-- ✅ Native import/export via WordPress tools
-- ✅ Search, filter, bulk operations in list table
-- ✅ Post revisions for rule history
-- ✅ Trash/restore functionality
-- ✅ Post locking prevents concurrent edit conflicts
-- ✅ REST API auto-generated
-- ✅ WP-CLI support out of the box
-- ✅ Better performance with 100+ rules
-- ✅ Scales to 1000+ rules efficiently
-
-**Current Preparation**:
-- ✅ Storage abstraction layer implemented
-- ✅ Interface defined (`BWS_Rule_Storage`)
-- ✅ Factory pattern ready for backend switch
-
-### Implementation Steps
-
-#### Step 1: Create CPT Storage Implementation (2 weeks)
-```php
-// File: includes/storage/class-bws-cpt-rule-storage.php
-class BWS_CPT_Rule_Storage implements BWS_Rule_Storage {
-    // Implement all interface methods
-    // Map rule types to CPT taxonomy terms
-    // Convert between array format and post/meta format
-}
-```
-
-**Tasks**:
-- [ ] Register 'bws_meta_rule' custom post type
-- [ ] Register 'bws_rule_type' taxonomy
-- [ ] Implement meta box system for rule editing
-- [ ] Create CPT storage class (15 interface methods)
-- [ ] Add unit tests for CPT storage
-
-**Estimated Effort**: 32-40 hours
-
-#### Step 2: Build Migration Tool (1 week)
-```php
-// File: includes/admin/class-bws-storage-migrator.php
-class BWS_Storage_Migrator {
-    public function migrate_options_to_cpt() { }
-    public function rollback_migration() { }
-    public function verify_migration() { }
-}
-```
-
-**Tasks**:
-- [ ] Create migration admin page
-- [ ] Build migration progress tracker
-- [ ] Implement data verification
-- [ ] Add rollback capability
-- [ ] Create migration logs
-
-**Estimated Effort**: 16-24 hours
-
-#### Step 3: Update UI Components (1-2 weeks)
-**Tasks**:
-- [ ] Customize CPT list table columns
-- [ ] Add custom filters (taxonomy, status, priority)
-- [ ] Implement bulk actions (enable/disable, duplicate)
-- [ ] Create meta boxes for each rule type
-- [ ] Fix meta box ordering issues
-- [ ] Add inline editing capabilities
-
-**Estimated Effort**: 24-32 hours
-
-#### Step 4: Testing & Validation (1 week)
-**Tasks**:
-- [ ] Test migration with sample data
-- [ ] Verify rule execution with CPT storage
-- [ ] Performance benchmarks (100, 500, 1000 rules)
-- [ ] Test import/export workflows
-- [ ] Validate backward compatibility
-- [ ] User acceptance testing
-
-**Estimated Effort**: 16-24 hours
-
-**Total Phase 4 Effort**: 88-120 hours (11-15 days)
-
-### Configuration Switch
-
-Once CPT storage is ready, switching is trivial:
-
-**Option A: Via Configuration**
-```php
-// In wp-config.php or plugin settings
-define('BWS_RULE_STORAGE_TYPE', 'cpt');
-```
-
-**Option B: Via Filter**
-```php
-add_filter('bws_meta_manager_storage_type', function() {
-    return 'cpt';
-});
-```
-
-**Option C: Via Admin UI**
-```
-Settings → BWS Meta Manager → Advanced → Storage Backend
-○ WordPress Options (current)
-● Custom Post Type (recommended for 100+ rules)
-```
-
-### Migration Process
-
-**Step-by-Step Migration for Users**:
-
-1. **Pre-Migration Check**
-   ```
-   Dashboard notices:
-   "Your site has 127 rules. We recommend migrating to CPT storage
-   for better performance. [Run Migration Wizard]"
-   ```
-
-2. **Migration Wizard**
-   ```
-   Step 1: Backup
-   ✓ Current rules backed up to: wp_options (bws_storage_backup_1234567890)
-
-   Step 2: Migrate
-   ⏳ Migrating 127 rules to Custom Post Type storage...
-   ✓ Hierarchical rules: 42/42 migrated
-   ✓ Propagation rules: 23/23 migrated
-   ✓ Related rules: 18/18 migrated
-   ...
-
-   Step 3: Verify
-   ✓ All rules migrated successfully
-   ✓ Rule execution tested and working
-
-   Step 4: Complete
-   ✓ Storage backend switched to CPT
-   ✓ Old data retained for rollback (can be deleted after 30 days)
-   ```
-
-3. **Post-Migration**
-   ```
-   New features available:
-   • Import/Export: Tools → Export → Meta Rules
-   • Search/Filter: Meta Rules → Search box
-   • Revisions: Meta Rules → Edit → Revisions
-   • REST API: /wp-json/wp/v2/bws_meta_rule
-   ```
+| Issue | Addressed In |
+|-------|-------------|
+| Admin menu/page still says "Taxonomy Manager" | Phase 2b |
+| 5 of 7 handlers on legacy BWS_Handler_Base | Phase 3 |
+| BWS_Settings is a ~2,000-line god class | Phase 5 |
+| Mixed JS globals (bwsTaxManager / bwsMetaManager) | Phase 5 |
+| Mixed text domains | Phase 2b |
+| BWS_Rule_Engine unused by legacy handlers | Phase 3 |
+| lib/ classes instantiated but never called | Phase 5 |
 
 ---
 
-## 🔀 Phase 5: Plugin Merge (Q3 2026)
+## Phased Roadmap
 
-**Status**: Planned
-**Timeline**: July - September 2026
-**Prerequisite**: Phase 4 complete, both plugins on CPT storage
+### ✅ Phase 0: Title/Slug Rules + Conversion Tooling (COMPLETED)
 
-### Goals
-Merge BWS User Based Terms into BWS Meta Manager.
+Pre-refactor feature work landed on this branch.
 
-### Pre-Merge Requirements
-- ✅ BWS Meta Manager using CPT storage
-- ✅ BWS User Based Terms already using CPT storage
-- ✅ Feature parity analysis complete (Phase 3)
-- ✅ Data model unified
+- Title/Slug Rules: new rule type with token engine, idempotency, slug collision avoidance, preview, bulk apply, full settings UI. First handler on `BWS_Unified_Handler_Base`.
+- ACF Conversion Tooling: ConversionManager, DataProcessor, FieldMapper, PreviewSystem, ConversionCLI + dedicated JS/CSS.
+- Propagation Handler: term-removal propagation to children.
+- Generic AJAX rule helpers built on storage abstraction.
 
-### Merge Strategy
+### ✅ Phase 1: Fix Bugs (COMPLETED — commit `f16091e`)
 
-#### Option A: Soft Merge (Recommended)
-```
-BWS Meta Manager
-├─ Hierarchical Rules
-├─ Propagation Rules
-├─ Related Rules
-├─ Time-Based Rules
-├─ Related Post Terms Rules
-├─ Level Restriction Rules
-└─ User-Based Term Rules (NEW - from bws-user-based-terms)
-```
+1. ✅ Fix nonce mismatch in `class-bws-conversion-ui.php::verify_ajax_request()`
+2. ✅ Fix option key in `class-bws-unified-handler-base.php:305`
+3. ✅ Move `test-conversion-integration.php` → `debug/test-conversion-integration.php`
 
-**Benefits**:
-- Keep bws-user-based-terms as separate module
-- Can be enabled/disabled independently
-- Shared CPT infrastructure
-- Gradual transition for users
-
-#### Option B: Full Merge
-```
-BWS Meta Manager
-├─ All existing rule types
-└─ Enhanced with user-targeting from bws-user-based-terms
-    (add "User Conditions" to all rule types)
-```
-
-**Benefits**:
-- Simpler codebase
-- Unified UX
-- Less maintenance
-
-### Migration Tool for Users
-
-```php
-// File: includes/admin/class-bws-plugin-merger.php
-class BWS_Plugin_Merger {
-    /**
-     * Import rules from BWS User Based Terms
-     * Maps bws_user_term_rule CPT to bws_meta_rule CPT
-     */
-    public function import_user_terms_rules() { }
-}
-```
-
-**Wizard**:
-```
-BWS Plugin Merge Wizard
-─────────────────────────
-
-Step 1: Detect
-✓ BWS User Based Terms v1.2.0 detected
-✓ Found 23 user-based rules
-
-Step 2: Preview
-Rules to import:
-• "Auto-assign categories for editors" → Hierarchical Rule (user-filtered)
-• "Tag presets for contributors" → User-Based Term Rule
-...
-
-Step 3: Import
-⏳ Importing 23 rules...
-✓ 23 rules imported successfully
-
-Step 4: Complete
-✓ Rules migrated to BWS Meta Manager
-□ Deactivate BWS User Based Terms (recommended)
-□ Delete BWS User Based Terms data
-```
-
-### Estimated Effort
-- Soft Merge: 40-60 hours
-- Full Merge: 80-120 hours
+**Gate for Phase 2**: Title/slug handler testing must be complete on InstaWP before starting Phase 2a.
 
 ---
 
-## 📊 Phase 6: Advanced Features (Q4 2026)
+### Phase 2a: PSR-4 Namespacing
 
-**Status**: Planned
-**Timeline**: October - December 2026
+Pure structural change — no behavior changes, no user-visible changes. Independently revertable.
 
-### Planned Features
+- Add `autoload.php` to plugin root — adapt from BWS Portal: change `BWS\\Portal\\` → `BWS\\MetaConductor\\`, `BWS_PORTAL_PATH` → `BWS_META_CONDUCTOR_PATH`
+- Require `autoload.php` in main plugin file; remove all manual `require_once` chains
+- **Namespace structure** (matches existing directories):
+  - `BWS\MetaConductor\Core\` → `includes/core/`
+  - `BWS\MetaConductor\Handlers\` → `includes/handlers/` (includes abstract base classes)
+  - `BWS\MetaConductor\Storage\` → `includes/storage/` (includes interface)
+  - `BWS\MetaConductor\Conversion\` → `includes/conversion/` + absorbs `includes/lib/` classes
+  - `BWS\MetaConductor\Admin\` → `includes/admin/` (new directory, for Phase 5 settings split)
+- **Abstracts co-located**: `includes/abstracts/` is eliminated
+  - `BWS_Unified_Handler_Base` → `includes/handlers/class-unified-handler-base.php` (`Handlers\UnifiedHandlerBase`)
+  - `BWS_Rule_Storage` interface → `includes/storage/class-rule-storage.php` (`Storage\RuleStorage`)
+  - `BWS_Handler_Base` stays in `includes/handlers/` until deleted at end of Phase 3
+- **File renames**: strip `bws-` prefix — `class-bws-hierarchical-handler.php` → `class-hierarchical-handler.php`
+- **Class renames**: drop `BWS_` prefix — `BWS_Hierarchical_Handler` → `Handlers\HierarchicalHandler`
+- Add `namespace` declaration to each file; add `use` statements where classes reference each other
+- **Naming convention**: use `CptRuleStorage` not `CPTRuleStorage` — the autoloader's kebab converter breaks on consecutive capitals
+- **Interface files**: use `class-` prefix (same as classes) — autoloader expects `class-{name}.php` for everything
 
-#### 1. Rule Templates & Presets
-```
-Quick Start Templates:
-• E-commerce Product Categories
-• Event Management Hierarchies
-• Location-Based Taxonomies
-• Multi-Author Publishing Workflows
-```
+**Files**: all PHP class files, `autoload.php` (new), main plugin file
 
-#### 2. Visual Rule Builder
-```
-[Drag & Drop Interface]
-  Source: [Posts] where [Category] is [Electronics]
-  ↓
-  Action: [Apply Terms] to [Category]
-  ↓
-  Target: [Child Posts]
-```
-
-#### 3. Rule Analytics Dashboard
-```
-Rule Performance:
-• "Category Hierarchy" - 1,234 executions, 98% success rate
-• "Auto Tags" - 456 executions, 100% success rate
-
-Most Active Rules:
-• Category Hierarchy (342 executions this week)
-• Tag Propagation (156 executions)
-```
-
-#### 4. Conditional Logic Builder
-```
-IF [Post Type] is [Product]
-AND [Price] > [100]
-THEN [Apply Term] "Premium Products"
-```
-
-#### 5. WP-CLI Commands
-```bash
-# Export rules
-wp bws-meta rule export --type=hierarchical --format=json > rules.json
-
-# Import rules
-wp bws-meta rule import rules.json
-
-# Process rules
-wp bws-meta rule process --type=hierarchical --batch=50
-
-# Statistics
-wp bws-meta stats
-```
+**End of phase**: Update CLAUDE.md
 
 ---
 
-## 🧪 Phase 7: Performance Optimization (Q1 2027)
+### Phase 2b: Rename & Branding
 
-**Status**: Planned
-**Timeline**: January - March 2027
+Visible change — rename the plugin, migrate the option key, update all strings.
 
-### Planned Optimizations
+Follow the **Naming Surface (3.0.0)** table in the decisions section above for which layers drop `bws-` and which keep `bws_`/`BWS\`.
 
-#### 1. Query Optimization
-- Add database indexes for frequent queries
-- Implement query result caching
-- Optimize term hierarchy lookups
+- Rename plugin folder: `bws-meta-manager` → `meta-conductor`
+- Rename main file: `bws-taxonomy-manager.php` → `meta-conductor.php`
+- Update plugin header: `Plugin Name: Meta Conductor`, `Text Domain: meta-conductor`
+- Rename option key: `bws_taxonomy_manager_settings` → `bws_meta_conductor_settings`
+  - Add data migration in activation/upgrade hook: read old key → write new key → delete old key
+  - Test on InstaWP site before deploying
+- Update all nonce action strings to `bws_meta_conductor_*` pattern
+- Update admin menu label and page title
+- Update settings page H1
+- Unify text domain to `meta-conductor` throughout (~600 calls to convert)
+- Update constants to `META_CONDUCTOR_*` (keep backward-compat aliases for `BWS_TAX_MANAGER_*` and `BWS_META_MANAGER_*`)
+- Update JS localized object key to `bwsMetaConductor` in PHP enqueue
+- Update hook/filter prefix to `bws_meta_conductor_*` (paired with option keys)
 
-#### 2. Background Processing
-```php
-// Use Action Scheduler for large batches
-class BWS_Background_Processor {
-    public function process_rules_batch($batch_id) {
-        // Process 100 posts at a time
-        // Queue next batch
-    }
-}
-```
+**Files**: `meta-conductor.php`, `includes/class-bws-taxonomy-manager.php`, `includes/class-bws-settings.php`, `includes/storage/class-option-rule-storage.php`, `includes/handlers/class-unified-handler-base.php`, plus every file containing `__()` / `_e()` / `_x()` / `_n()` calls
 
-#### 3. Selective Rule Loading
-```php
-// Only load rules needed for current context
-add_filter('bws_load_rules_for_post_type', function($rules, $post_type) {
-    // Filter rules by post type before loading
-    return $rules;
-});
-```
-
-#### 4. Performance Benchmarks
-- Target: < 0.5s processing time for 100 posts
-- Target: < 50MB memory for 1000 rules loaded
-- Target: < 5 database queries per rule execution
+**End of phase**: Bump version to 3.0.0, update CLAUDE.md
 
 ---
 
-## 🎯 Success Metrics
+### Phase 3: Migrate Legacy Handlers (One at a Time)
 
-### Technical Metrics
-- **Code Quality**: 90%+ test coverage
-- **Performance**: < 0.5s average rule processing
-- **Scalability**: Support 1000+ rules efficiently
-- **Reliability**: 99.9% rule execution success rate
+Migrate each handler from `BWS_Handler_Base` to `UnifiedHandlerBase`. Template: `includes/handlers/class-hierarchical-handler.php`.
 
-### User Metrics
-- **Ease of Use**: < 10 minutes to create first rule
-- **Migration Success**: 95%+ successful CPT migrations
-- **Adoption**: 50%+ users on CPT storage by end of 2026
+**Order** (simplest first):
+1. `class-related-handler.php`
+2. `class-hierarchical-level-restriction-handler.php`
+3. `class-propagation-handler.php`
+4. `class-related-post-terms-handler.php`
+5. `class-time-based-handler.php`
 
-### Business Metrics
-- **Plugin Consolidation**: Merge complete by Q3 2026
-- **Maintenance**: 50% reduction in support tickets
-- **Performance**: 80% of users report faster load times
+**For each**: Change `extends` → implement `get_rule_type()` + `get_handler_type()` → replace `process_post()` with `init_hooks()` → replace direct settings reads with `$this->get_enabled_rules()` → test on InstaWP before next.
 
----
+**After last handler**: Delete `class-handler-base.php` (`BWS_Handler_Base`).
 
-## 🚧 Known Limitations & Technical Debt
-
-### Current Limitations
-1. **Storage**: wp_options doesn't scale past 200 rules efficiently
-2. **No Import/Export**: Custom implementation required
-3. **Limited Search**: Must iterate through PHP arrays
-4. **No Revisions**: Lost rule history if overwritten
-
-### Will Be Resolved By
-- ✅ **Storage Abstraction** (Phase 1 - DONE)
-- 🔄 **CPT Migration** (Phase 4 - Q2 2026)
-- 🔄 **Plugin Merge** (Phase 5 - Q3 2026)
+**End of phase**: Update CLAUDE.md
 
 ---
 
-## 📚 Documentation Roadmap
+### Phase 4: Implement CPT Storage
 
-### To Be Created
-- [ ] User Guide: Rule Types & Use Cases
-- [ ] Developer Guide: Creating Custom Handlers
-- [ ] Migration Guide: wp_options → CPT
-- [ ] API Reference: Storage Interface
-- [ ] Video Tutorials: Getting Started
+Required before merging BWS User Based Terms. Also needed for `title_slug_rules` and `time_based_rules` migration from options.
 
-### To Be Updated
-- [ ] TESTING_PLAN_V2.md (post-CPT migration)
-- [ ] README.md (feature list)
-- [ ] CHANGELOG.md (version history)
+- Implement `includes/storage/class-cpt-rule-storage.php` (implements `Storage\RuleStorage` interface, 15 methods)
+- CPT: `bws_mc_rule`, differentiated by `rule_type` meta field — single list table filterable by type
+- Update `Storage\StorageFactory` to route CPT-type rule types to CPT implementation, options-type to options implementation
+- Build migration tool: options → CPT for `title_slug_rules` and `time_based_rules` (dry-run mode first)
+- Test per-type routing with all handlers
+
+**End of phase**: Update CLAUDE.md
 
 ---
 
-## 🔄 Version History
+### Phase 5: Refactor Settings & Complete Conversion Integration
 
-| Version | Release Date | Status | Key Features |
-|---------|-------------|--------|--------------|
-| 1.0.0 | 2024 | Deprecated | Legacy handlers, wp_options only |
-| 2.0.0 | Dec 2025 | Current | Unified framework, storage abstraction |
-| 2.1.0 | Q2 2026 | Planned | CPT storage, migration tool |
-| 2.5.0 | Q3 2026 | Planned | Plugin merge complete |
-| 3.0.0 | Q4 2026 | Planned | Advanced features, visual builder |
+Two related cleanup efforts — both address structural debt from bolted-on additions.
 
----
+**Settings refactor:**
+- Keep thin `BWS_Settings` for global options + tab router
+- Create per-handler admin classes under `includes/admin/` (e.g., `Admin\HierarchicalAdmin`) for tab rendering and sanitization
+- Fix tab-aware save guard: preserve rule type keys not present in submitted form
+- Unify JS into `bwsMetaConductor` namespace (consolidate `admin.js` and `conversion-admin.js` patterns)
 
-## 📞 Decision Points
+**Conversion integration completion:**
+- Make `BWS_Data_Processor` delegate to the lib classes it already instantiates:
+  - `process_taxonomy_to_taxonomy_batch()` → `Conversion\TermMigrator`
+  - `process_field_to_field_batch()` → `Conversion\FieldConverter`
+  - `process_map_data_conversion()` → `Conversion\ValueMapper`
+  - Batch sizing/monitoring → `Conversion\BatchProcessor`
+- Remove duplicate inline logic from `BWS_Data_Processor` once delegated
 
-### When to Migrate to CPT?
-
-**Migrate Now If**:
-- You have 100+ rules
-- Import/export is critical
-- You need REST API access
-- Performance is a concern
-
-**Wait for Phase 4 If**:
-- You have < 50 rules
-- Current system works fine
-- Limited development time
-- Uncertain about merge timing
-
-### Configuration Options
-
-**Development Mode** (test CPT without migrating):
-```php
-// wp-config.php
-define('BWS_RULE_STORAGE_TYPE', 'cpt');
-define('BWS_STORAGE_TEST_MODE', true); // Doesn't migrate, just tests
-```
-
-**Gradual Rollout** (migrate rule types one at a time):
-```php
-add_filter('bws_storage_type_for_rule', function($type, $rule_type) {
-    // Use CPT only for hierarchical rules
-    if ($rule_type === 'hierarchical_rules') {
-        return 'cpt';
-    }
-    return 'options';
-}, 10, 2);
-```
+**End of phase**: Update CLAUDE.md
 
 ---
 
-## 🎓 Lessons Learned
+### Phase 6a: Options-Compatible Integrations (After Phase 3)
 
-### From Phase 1 (Unified Framework)
-- ✅ Abstraction layers enable future flexibility
-- ✅ Backward compatibility prevents user disruption
-- ✅ Comprehensive testing catches edge cases early
+These do not require CPT storage.
 
-### To Apply in Phase 4 (CPT Migration)
-- Use feature flags for gradual rollout
-- Provide rollback mechanism
-- Test with real user data
-- Monitor performance metrics
+**ACF Post Relationship Manager**
+- Sets hierarchical parent/child post relationships based on ACF post object/relationship fields
+- Distinct from `related_post_terms_rules`: same data source (ACF relationship field), different output (post parent vs taxonomy terms)
+- New rule type `acf_relationship_rules` → Options storage
 
----
+**Date-Based Taxonomy Updater**
+- New rule type alongside (not replacing) existing `time_based_rules`
+- New rule type `date_based_taxonomy_rules` → CPT storage (requires Phase 4)
 
-## 🤝 Contributing
+**Field Transformation Rules** (from existing snippet)
+- Combines multiple fields into a formatted output field (e.g. athlete stats → bio string, date + time → sortable datetime)
+- New rule type `field_transformation_rules` → CPT storage (requires Phase 4)
 
-This is a planning document. For actual development tasks, see:
-- `TESTING_PLAN_V2.md` - Current testing priorities
-- `ARCHITECTURE_DECISION_CPT_VS_OPTIONS.md` - Storage decision rationale
-- GitHub Issues - Active development tasks
+**End of phase**: Update CLAUDE.md
 
 ---
 
-**Last Reviewed**: 2025-12-18
-**Next Review**: 2026-03-01 (Post Phase 3 completion)
-**Maintained By**: David (Bridge Web Solutions)
+### Phase 6b: BWS User Based Terms (Requires Phase 4 CPT)
+
+- User-based term filtering as a new rule type
+- Currently uses CPT `bws_user_term_rule` — data migrated into `bws_mc_rule` CPT on merge
+- Largest integration; tackle last
+
+**End of phase**: Update CLAUDE.md
+
+---
+
+## Storage Model Decision Framework
+
+**Run every new rule type through this before implementation.**
+
+### Criteria
+
+Choose **CPT** if any of these are true:
+- The rule defines a specific named recipe or pattern (not just enabling a behavior)
+- Multiple rules of this type can apply to the same post type or taxonomy
+- Rules accumulate as the site grows — not bounded by taxonomy/post type count
+- Rules benefit from a draft/test/active lifecycle
+
+Choose **Options** if all of these are true:
+- The rule enables or configures a behavior for a specific taxonomy or post type
+- Count is bounded — roughly one rule per taxonomy or post type
+- The rule has no meaningful standalone identity or name
+- Managing them in a settings form never becomes unwieldy
+
+### Assignments
+
+| Rule Type | Storage | Reasoning |
+|-----------|---------|-----------|
+| `hierarchical_rules` | Options | Behavior toggle per taxonomy; bounded count |
+| `propagation_rules` | Options | Behavior toggle per post type; bounded count |
+| `related_rules` | Options | Cross-taxonomy config; bounded count |
+| `hierarchical_level_restriction_rules` | Options | One per taxonomy max |
+| `related_post_terms_rules` | Options | ACF sync config; bounded count |
+| `acf_relationship_rules` (new) | Options | Parent/child relationship config; bounded count |
+| `title_slug_rules` | **CPT** | Named patterns per post type; accumulate; benefit from enable/disable per rule — migrate from options in Phase 4 |
+| `time_based_rules` | **CPT** | Schedule rules multiply; benefit from individual management — migrate from options in Phase 4 |
+| `date_based_taxonomy_rules` (new) | **CPT** | Date-window rules accumulate; benefit from list UI |
+| `field_transformation_rules` (new) | **CPT** | Named computed-field recipes; can be numerous per post type |
+| `user_based_rules` (UBT) | **CPT** | User-specific; entity-like; was built on CPT |
+
+> Document storage decision and reasoning here before implementing any new rule type.
+
+---
+
+## Critical Files Reference
+
+| File | Role | Phase |
+|------|------|-------|
+| `includes/abstracts/class-bws-unified-handler-base.php` | Becomes `includes/handlers/class-unified-handler-base.php` | 2a |
+| `bws-taxonomy-manager.php` | Main file; becomes `meta-conductor.php` | 2b |
+| `includes/class-bws-taxonomy-manager.php` | Menu registration, AJAX hooks | 2b |
+| `includes/class-bws-settings.php` | God class; branding strings | 2b, 5 |
+| `includes/storage/class-bws-option-rule-storage.php` | Option key constant | 2b |
+| `includes/storage/class-bws-storage-factory.php` | Per-type routing factory | 4 |
+| `includes/abstracts/interface-bws-rule-storage.php` | Interface; becomes `includes/storage/class-rule-storage.php` | 2a, 4 |
+| `includes/handlers/class-bws-hierarchical-handler.php` | Migration template | 3 |
+| `includes/handlers/class-bws-title-slug-handler.php` | New unified handler (Phase 0) | — |
+| `includes/conversion/class-bws-data-processor.php` | Delegates to lib classes in Phase 5 | 5 |
+| `assets/js/admin.js` | JS namespace unification | 2b, 5 |
+| `assets/js/conversion-admin.js` | Separate conversion JS | 5 |
+
+---
+
+## Hard Constraints
+
+- Don't start Phase 2a until title/slug handler testing is complete on InstaWP
+- Don't start Phase 2b until Phase 2a is stable on InstaWP
+- Don't start Phase 6a integrations until Phase 3 handler migration is done
+- Don't start `date_based_taxonomy_rules` or `field_transformation_rules` (CPT types) until Phase 4 CPT storage is working
+- Don't start Phase 6b (UBT) until Phase 4 CPT storage is working
+- Don't refactor BWS_Settings until handler migration is done (cleaner split once handlers own their logic)
+- Update CLAUDE.md at the end of every phase
