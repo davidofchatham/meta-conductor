@@ -28,35 +28,59 @@ class BWS_General_Config {
     /**
      * Per-taxonomy default conflict handling.
      *
-     * Each public taxonomy gets a select field stored at
-     * `conflict_handling.{taxonomy_slug}`.
+     * Wireframe doesn't sanitize dot-notation field IDs (its Sanitizer
+     * explicitly skips them, src/Framework/Sanitizer.php). So the per-
+     * taxonomy overrides ride on a repeater whose rows hold {taxonomy,
+     * mode} pairs. The storage adapter coerces back to the canonical
+     * {taxonomy_slug: mode} dict that handlers consume.
      */
     private static function conflict_handling_section(): array {
-        $fields     = [];
-        $taxonomies = get_taxonomies(['public' => true], 'objects');
-
-        $options = [
-            'merge'   => __('Merge with existing terms', 'bws-meta-manager'),
-            'replace' => __('Replace existing terms', 'bws-meta-manager'),
-            'skip'    => __('Skip if terms exist', 'bws-meta-manager'),
-        ];
-
-        foreach ($taxonomies as $taxonomy) {
-            $fields[] = [
-                'id'      => 'conflict_handling.' . $taxonomy->name,
-                'type'    => 'select',
-                'label'   => sprintf('%s (%s)', $taxonomy->label, $taxonomy->name),
-                'default' => 'merge',
-                'columns' => 12,
-                'args'    => ['options' => $options],
-            ];
-        }
-
         return [
             'id'          => 'conflict_handling',
             'title'       => __('Global conflict handling', 'bws-meta-manager'),
-            'description' => __('Default behavior when an existing post already has terms in a taxonomy and a rule wants to apply more. Individual rules can override these defaults.', 'bws-meta-manager'),
-            'fields'      => $fields,
+            'description' => __('Default behavior when an existing post already has terms in a taxonomy and a rule wants to apply more. Individual rules can override these defaults. Taxonomies without an entry default to "Merge".', 'bws-meta-manager'),
+            'fields'      => [
+                [
+                    'id'    => 'conflict_handling_overrides',
+                    'type'  => 'repeater',
+                    'label' => __('Conflict handling per taxonomy', 'bws-meta-manager'),
+                    'args'  => [
+                        'sortable'       => true,
+                        'collapsible'    => true,
+                        'duplicate_row'  => false,
+                        'add_label'      => __('Add taxonomy override', 'bws-meta-manager'),
+                        'empty_message'  => __('No overrides — all taxonomies default to "Merge".', 'bws-meta-manager'),
+                        'title_template' => '{taxonomy}: {mode}',
+                        'subfields'      => [
+                            [
+                                'id'       => 'taxonomy',
+                                'type'     => 'select',
+                                'label'    => __('Taxonomy', 'bws-meta-manager'),
+                                'default'  => '',
+                                'required' => true,
+                                'columns'  => 12,
+                                'args'     => [
+                                    'options' => BWS_Config_Helpers::taxonomy_options(),
+                                ],
+                            ],
+                            [
+                                'id'      => 'mode',
+                                'type'    => 'select',
+                                'label'   => __('Conflict handling mode', 'bws-meta-manager'),
+                                'default' => 'merge',
+                                'columns' => 12,
+                                'args'    => [
+                                    'options' => [
+                                        'merge'   => __('Merge with existing terms', 'bws-meta-manager'),
+                                        'replace' => __('Replace existing terms', 'bws-meta-manager'),
+                                        'skip'    => __('Skip if terms exist', 'bws-meta-manager'),
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
         ];
     }
 

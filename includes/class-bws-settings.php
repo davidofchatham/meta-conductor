@@ -46,9 +46,24 @@ class BWS_Settings {
 
         // Non-rule global settings live alongside rule arrays in the same option.
         $raw = get_option(self::OPTION_NAME, []);
-        $out['conflict_handling']         = $raw['conflict_handling'] ?? [];
+        $out['conflict_handling']         = self::flatten_conflict_overrides($raw['conflict_handling_overrides'] ?? []);
         $out['manual_processing_enabled'] = $raw['manual_processing_enabled'] ?? true;
 
+        return $out;
+    }
+
+    /**
+     * Coerce the conflict-handling repeater rows [{taxonomy, mode}, ...]
+     * into the canonical {taxonomy_slug: mode} dict that handlers consume.
+     */
+    private static function flatten_conflict_overrides(array $rows): array {
+        $out = [];
+        foreach ($rows as $row) {
+            if (empty($row['taxonomy']) || empty($row['mode'])) {
+                continue;
+            }
+            $out[$row['taxonomy']] = $row['mode'];
+        }
         return $out;
     }
 
