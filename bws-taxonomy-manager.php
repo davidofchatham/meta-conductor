@@ -41,6 +41,17 @@ if (!function_exists('bws_meta_manager_init')) {
             return;
         }
 
+        // Composer autoloader (WP Wireframe + rakit/validation)
+        if (file_exists(BWS_META_MANAGER_PLUGIN_DIR . 'vendor/autoload.php')) {
+            require_once BWS_META_MANAGER_PLUGIN_DIR . 'vendor/autoload.php';
+        }
+
+        // Wireframe bootstrap (Phase 2c pilot — runs alongside legacy UI until verified)
+        if (is_admin() && class_exists(\Wireframe\App::class)) {
+            require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/admin/class-bws-wireframe-bootstrap.php';
+            BWS_Wireframe_Bootstrap::init();
+        }
+
         // Load storage abstraction layer (v2.0 - prepares for CPT migration)
         require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/abstracts/interface-bws-rule-storage.php';
         require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/storage/class-bws-option-rule-storage.php';
