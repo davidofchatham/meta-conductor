@@ -57,6 +57,7 @@ Composer pulls `tdrayson/wp-wireframe` (~1.0.5) and `rakit/validation`. The `ven
 |---|---|
 | [README.md](README.md) | You are here. Landing + install. |
 | [docs/architecture.md](docs/architecture.md) | How the rule engine, handlers, storage, and Wireframe UI fit together. |
+| [docs/future-features.md](docs/future-features.md) | Ideas / planned / blocked features. Canonical list. |
 | [ROADMAP.md](ROADMAP.md) | Phase plan, decisions, what comes next. |
 | [CHANGELOG.md](CHANGELOG.md) | Release log. |
 | [.claude/plans/](.claude/plans/) | Per-feature implementation plans. |
