@@ -46,10 +46,18 @@ if (!function_exists('bws_meta_manager_init')) {
             require_once BWS_META_MANAGER_PLUGIN_DIR . 'vendor/autoload.php';
         }
 
-        // Wireframe bootstrap (Phase 2c pilot — runs alongside legacy UI until verified)
-        if (is_admin() && class_exists(\Wireframe\App::class)) {
+        // Wireframe bootstrap (Phase 2c pilot — runs alongside legacy UI until verified).
+        // Must register on both admin requests (for menu) and REST requests (for save endpoint),
+        // so no is_admin() gate.
+        if (class_exists(\Wireframe\App::class)) {
             require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/admin/class-bws-wireframe-bootstrap.php';
             BWS_Wireframe_Bootstrap::init();
+
+            // Phase 2c debug page (REMOVE before merge).
+            if (is_admin()) {
+                require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/admin/class-bws-wireframe-debug.php';
+                BWS_Wireframe_Debug::init();
+            }
         }
 
         // Load storage abstraction layer (v2.0 - prepares for CPT migration)

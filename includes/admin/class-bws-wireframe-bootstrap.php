@@ -19,22 +19,7 @@ class BWS_Wireframe_Bootstrap {
      * Initialize hooks.
      */
     public static function init(): void {
-        add_filter('wp-wireframe/field_types', [self::class, 'register_field_types']);
         add_action('init', [self::class, 'boot'], 10);
-    }
-
-    /**
-     * Register custom field type handlers via Wireframe's filter.
-     *
-     * @param array<string, string> $types
-     * @return array<string, string>
-     */
-    public static function register_field_types(array $types): array {
-        require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/admin/fields/class-bws-wp-select-field.php';
-
-        $types['bws_wp_select'] = BWS_WP_Select_Field::class;
-
-        return $types;
     }
 
     /**
