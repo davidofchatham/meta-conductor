@@ -118,38 +118,20 @@ if (!function_exists('bws_meta_manager_init')) {
 			);
 		}
 		
-		// Create default options with new rule types
-		if (!get_option('bws_taxonomy_manager_settings')) {
-			add_option('bws_taxonomy_manager_settings', array(
+		// Seed default options. Key must match BWS_Option_Rule_Storage::OPTION_NAME.
+		// Hard-coded literal because storage class isn't loaded during activation hook.
+		if (!get_option('bws_meta_conductor_settings')) {
+			add_option('bws_meta_conductor_settings', array(
 				'hierarchical_rules' => array(),
 				'propagation_rules' => array(),
 				'related_rules' => array(),
 				'time_based_rules' => array(),
-				// NEW rule types
 				'related_post_terms_rules' => array(),
 				'hierarchical_level_restriction_rules' => array(),
 				'title_slug_rules' => array(),
 				'conflict_handling' => array(),
-				'manual_processing_enabled' => true
+				'manual_processing_enabled' => true,
 			));
-		} else {
-			// Update existing settings to include new rule types
-			$existing_settings = get_option('bws_taxonomy_manager_settings');
-			
-			// Add new rule types if they don't exist
-			if (!isset($existing_settings['related_post_terms_rules'])) {
-				$existing_settings['related_post_terms_rules'] = array();
-			}
-			
-			if (!isset($existing_settings['hierarchical_level_restriction_rules'])) {
-				$existing_settings['hierarchical_level_restriction_rules'] = array();
-			}
-
-			if (!isset($existing_settings['title_slug_rules'])) {
-				$existing_settings['title_slug_rules'] = array();
-			}
-
-			update_option('bws_taxonomy_manager_settings', $existing_settings);
 		}
 		
 		// Schedule cleanup for expired time-based rules
@@ -188,7 +170,8 @@ if (!function_exists('bws_meta_manager_init')) {
 	 * Plugin uninstall hook (for complete removal)
 	 */
 	function bws_taxonomy_manager_uninstall() {
-		// Remove all options
+		// Remove all options (new key + legacy key)
+		delete_option('bws_meta_conductor_settings');
 		delete_option('bws_taxonomy_manager_settings');
 		
 		// Remove any transients

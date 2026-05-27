@@ -27,7 +27,7 @@ class BWS_Option_Rule_Storage implements BWS_Rule_Storage {
      *
      * @var string
      */
-    const OPTION_NAME = 'bws_taxonomy_manager_settings';
+    const OPTION_NAME = 'bws_meta_conductor_settings';
 
     /**
      * Cached settings array

@@ -240,7 +240,7 @@ class BWS_Storage_Factory {
 
         // Estimate storage size
         if ($storage->get_storage_type() === 'options') {
-            $option_value = get_option('bws_taxonomy_manager_settings', []);
+            $option_value = get_option(BWS_Option_Rule_Storage::OPTION_NAME, []);
             $stats['storage_size'] = strlen(serialize($option_value));
         }
 
@@ -289,7 +289,7 @@ class BWS_Storage_Factory {
         // Create backup if requested
         if ($options['backup'] ?? true) {
             $backup_key = 'bws_storage_backup_' . time();
-            $current_data = get_option('bws_taxonomy_manager_settings');
+            $current_data = get_option(BWS_Option_Rule_Storage::OPTION_NAME);
             update_option($backup_key, $current_data);
             $results['backup_created'] = true;
             $results['backup_key'] = $backup_key;
@@ -321,7 +321,7 @@ class BWS_Storage_Factory {
                 if ($options['delete_source'] ?? false) {
                     // For options storage, clear the option
                     if ($from_type === 'options') {
-                        delete_option('bws_taxonomy_manager_settings');
+                        delete_option(BWS_Option_Rule_Storage::OPTION_NAME);
                     }
                     // For CPT, would delete all posts (implement when CPT ready)
                 }
@@ -341,7 +341,7 @@ class BWS_Storage_Factory {
             // Restore from backup if migration failed
             if ($results['backup_created']) {
                 $backup_data = get_option($results['backup_key']);
-                update_option('bws_taxonomy_manager_settings', $backup_data);
+                update_option(BWS_Option_Rule_Storage::OPTION_NAME, $backup_data);
                 $results['errors'][] = 'Restored from backup';
             }
         }
