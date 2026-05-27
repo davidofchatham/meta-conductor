@@ -96,7 +96,7 @@ class BWS_Title_Slug_Config {
                                 'id'          => 'slug_mode',
                                 'type'        => 'select',
                                 'label'       => __('Slug mode', 'bws-meta-manager'),
-                                'description' => __('How the slug pattern combines with the default slug. Only used when a slug pattern is set.', 'bws-meta-manager'),
+                                'description' => __('How the slug pattern combines with the default slug. Only used when a slug pattern is set. Automatically forced to Replace when the pattern contains {default_slug}.', 'bws-meta-manager'),
                                 'default'     => 'prefix',
                                 'columns'     => 12,
                                 'args'        => [
