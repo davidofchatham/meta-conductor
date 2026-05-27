@@ -106,29 +106,25 @@ class BWS_Related_Handler extends BWS_Handler_Base {
     }
     
     /**
-     * Process related terms for a post
+     * Process related terms for a post.
+     *
+     * Only ADDS the target term when the trigger is present.
+     * Removal is handled exclusively by apply_related_terms() which has
+     * the old/new term-taxonomy-ID diff needed to know the trigger was
+     * actually removed — not just absent.
      */
     private function process_related_terms($post_id, $rule) {
         $trigger_terms = $this->get_trigger_terms($post_id, $rule);
-        
+
         if (!empty($trigger_terms)) {
-            // Add target term
             $target_term = get_term($rule['target_term_id']);
             if ($target_term && !is_wp_error($target_term)) {
                 $this->apply_terms_to_post($post_id, $target_term->taxonomy, array($target_term->term_id), 'merge');
-                
+
                 $this->debug_log(
                     sprintf('Applied related term %d to post %d', $rule['target_term_id'], $post_id),
                     array('trigger_terms' => $trigger_terms)
                 );
-            }
-        } else {
-            // Remove target term if no trigger terms and bidirectional
-            if (!empty($rule['bidirectional'])) {
-                $target_term = get_term($rule['target_term_id']);
-                if ($target_term && !is_wp_error($target_term)) {
-                    $this->remove_terms_from_post($post_id, $target_term->taxonomy, array($target_term->term_id));
-                }
             }
         }
     }

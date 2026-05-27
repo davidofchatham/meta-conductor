@@ -361,7 +361,11 @@ abstract class BWS_Unified_Handler_Base {
 
         if (!empty($post_types)) {
             $post_types = (array)$post_types;
-            if ($post_types[0] !== 'any' && !in_array($post->post_type, $post_types)) {
+            // Wireframe checkboxes store {slug: bool}; extract truthy keys.
+            if (!array_is_list($post_types)) {
+                $post_types = array_keys(array_filter($post_types));
+            }
+            if (!empty($post_types) && $post_types[0] !== 'any' && !in_array($post->post_type, $post_types)) {
                 return false;
             }
         }
