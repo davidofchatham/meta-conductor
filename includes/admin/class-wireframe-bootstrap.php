@@ -21,6 +21,28 @@ class BWS_Wireframe_Bootstrap {
     public static function init(): void {
         add_action('init', [self::class, 'boot'], 10);
         add_action('admin_menu', [self::class, 'register_subpages'], 11);
+        add_action('admin_head', [self::class, 'subpage_padding_fix']);
+    }
+
+    /**
+     * Temporary workaround: restore #wpcontent padding on subpages.
+     *
+     * Wireframe adds body class `wireframe-admin` to every screen whose ID
+     * contains its menu_slug — including our subpages. Its CSS sets
+     * `#wpcontent { padding-left: 0 }` which its React layout compensates
+     * for, but our non-Wireframe subpages need the standard 20px back.
+     *
+     * Remove when upstream fix lands: https://github.com/tdrayson/wp-wireframe/issues/6
+     */
+    public static function subpage_padding_fix(): void {
+        $screen = get_current_screen();
+        if (!$screen) {
+            return;
+        }
+        $subpages = ['meta-conductor_page_meta-conductor-conversion', 'meta-conductor_page_meta-conductor-diagnostics'];
+        if (in_array($screen->id, $subpages, true)) {
+            echo '<style>.wireframe-admin #wpcontent { padding-left: 20px; }</style>' . "\n";
+        }
     }
 
     /**
