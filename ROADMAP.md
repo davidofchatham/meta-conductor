@@ -67,11 +67,11 @@ Split the rename by layer — public-facing identity drops `BWS`, code/storage l
 |-------|-------------|
 | Admin menu/page still says "Taxonomy Manager" | Phase 2b |
 | 5 of 7 handlers on legacy BWS_Handler_Base | Phase 3 |
-| BWS_Settings is a ~2,000-line god class | Phase 5 |
-| Mixed JS globals (bwsTaxManager / bwsMetaManager) | Phase 5 |
+| BWS_Settings is a ~2,000-line god class | ~~Phase 5~~ Resolved by Phase 2c (shrunk to ~60-line compat shell) |
+| Mixed JS globals (bwsTaxManager / bwsMetaManager) | ~~Phase 5~~ Resolved by Phase 2c (legacy JS deleted) |
 | Mixed text domains | Phase 2b |
-| BWS_Rule_Engine unused by legacy handlers | Phase 3 |
-| lib/ classes instantiated but never called | Phase 5 |
+| BWS_Rule_Engine unused by legacy handlers | Phase 3 (hierarchical already bypasses engine post-2c) |
+| lib/ classes instantiated but never called | Phase 7 |
 
 ---
 
@@ -92,7 +92,40 @@ Pre-refactor feature work landed on this branch.
 2. ✅ Fix option key in `class-bws-unified-handler-base.php:305`
 3. ✅ Move `test-conversion-integration.php` → `debug/test-conversion-integration.php`
 
-**Gate for Phase 2**: Title/slug handler testing must be complete on InstaWP before starting Phase 2a.
+---
+
+### ✅ Phase 2c: Wireframe UI Swap (COMPLETED — branch `claude/wireframe-swap-2c`)
+
+Full admin UI replacement. Hand-rolled settings UI (~5,000 lines across `class-bws-settings.php`, `admin.js`, `admin.css`) replaced by WP Wireframe (`tdrayson/wp-wireframe ~1.0.5`).
+
+**Completed:**
+- Wireframe boots under top-level `meta-conductor` menu; settings save via REST to `bws_meta_conductor_settings`
+- Per-tab config builders for all 7 rule types + General, organized into 5 user-facing tabs (Auto-Set Terms, Format & Transform, Restrict, Personalize by User, General)
+- Data Conversion promoted to subpage under Meta Conductor menu
+- Diagnostics dev subpage (gated on `WP_DEBUG`)
+- Storage option key migrated from `bws_taxonomy_manager_settings` to `bws_meta_conductor_settings`
+- `normalize_rule_shape()` canonical-shape adapter in storage layer
+- Hierarchical handler rewritten: flat-field processing, auto-term tracking via `_bws_auto_terms` post meta, promotion logic for user-kept terms
+- Related handler fix: spurious target-term removal on unrelated saves
+- `should_process_post()` checkbox normalization for Wireframe's `{slug: bool}` format
+- Title/Slug handler: hybrid pre-write processing, date escalation fixes, engine bypass
+- Dead AJAX methods removed (6 methods, ~250 lines)
+- Legacy `admin.js` and `admin.css` deleted; `class-bws-settings.php` reduced to ~60-line compat shell
+- Doc reorganization: README.md, readme.txt, docs/architecture.md, docs/future-features.md
+- Subpage padding workaround for Wireframe body class bug (upstream: wp-wireframe#6)
+
+**Descoped / deferred:**
+- Custom client-side field types (`bws_wp_select`, `bws_action_button`) — Wireframe v1.0.5 has no client-side extension API. Replaced with stock selects + server-side option builders.
+- Title/Slug inline Preview/Apply buttons → Phase 7 Migration tool
+- Subfield conditional visibility → blocked upstream (Wireframe `RepeaterEdit.js` doesn't evaluate subfield conditions)
+
+**Known issues:**
+- Conversion subpage: taxonomy selectors not populating (AJAX endpoints likely broken under new menu structure). Resolve in Phase 7 migration tool rewrite or earlier if Conversion is needed before then.
+
+**Untested on InstaWP:**
+- Propagation, Level Restriction, Related Post Terms handler runtime
+
+**Plan file:** [.claude/plans/i-want-to-switch-lovely-wren.md](.claude/plans/i-want-to-switch-lovely-wren.md)
 
 ---
 
@@ -163,7 +196,9 @@ Migrate each handler from `BWS_Handler_Base` to `UnifiedHandlerBase`. Template: 
 
 **For each**: Change `extends` → implement `get_rule_type()` + `get_handler_type()` → replace `process_post()` with `init_hooks()` → replace direct settings reads with `$this->get_enabled_rules()` → test on InstaWP before next.
 
-**After last handler**: Delete `class-handler-base.php` (`BWS_Handler_Base`).
+**After last handler**:
+- Delete `class-handler-base.php` (`BWS_Handler_Base`).
+- Remove `on_post_save()` loop in `class-bws-taxonomy-manager.php` — it calls `process_post()` on every handler, but unified-base handlers register their own hooks and don't need it. Currently causes `process_post()` no-op overrides in hierarchical + title_slug handlers to prevent the base class from routing flat Wireframe rules through `BWS_Rule_Engine`.
 
 **End of phase**: Update CLAUDE.md
 
@@ -319,8 +354,8 @@ Choose **Options** if all of these are true:
 
 ## Hard Constraints
 
-- Don't start Phase 2a until title/slug handler testing is complete on InstaWP
-- Don't start Phase 2b until Phase 2a is stable on InstaWP
+- ~~Don't start Phase 2a until title/slug handler testing is complete on InstaWP~~ (Phase 2c completed; Title/Slug tested)
+- Don't start Phase 2b until Phase 2a is stable on InstaWP (Phase 2c is done; 2a is next)
 - Don't start Phase 6a integrations until Phase 3 handler migration is done
 - Don't start `date_based_taxonomy_rules` or `field_transformation_rules` (CPT types) until Phase 4 CPT storage is working
 - Don't start Phase 6b (UBT) until Phase 4 CPT storage is working

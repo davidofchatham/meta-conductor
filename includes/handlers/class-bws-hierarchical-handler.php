@@ -39,6 +39,10 @@ class BWS_Hierarchical_Handler extends BWS_Unified_Handler_Base {
         return 'hierarchical_rules';
     }
 
+    // Hierarchical rules use on_terms_set exclusively. Base class process_post
+    // routes through BWS_Rule_Engine which expects action/source_type keys.
+    public function process_post($post_id, $post, $update) {}
+
     public function on_terms_set($object_id, $terms, $tt_ids, $taxonomy, $append, $old_tt_ids) {
         if ($this->processing) {
             return;
