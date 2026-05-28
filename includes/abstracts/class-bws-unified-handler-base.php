@@ -302,7 +302,7 @@ abstract class BWS_Unified_Handler_Base {
         error_log($message);
 
         // Optionally store in database
-        if (get_option('bws_taxonomy_manager_settings')['enable_logging'] ?? false) {
+        if (get_option('bws_meta_conductor_settings')['enable_logging'] ?? false) {
             $this->store_log_entry($rule, $results);
         }
     }

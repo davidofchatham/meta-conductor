@@ -121,11 +121,13 @@ Full admin UI replacement. Hand-rolled settings UI (~5,000 lines across `class-b
 
 **Known issues:**
 - Conversion subpage: taxonomy selectors not populating (AJAX endpoints likely broken under new menu structure). Resolve in Phase 7 migration tool rewrite or earlier if Conversion is needed before then.
+- `BWS_Option_Rule_Storage::update_settings()` does a blunt top-level `array_merge`. If a legacy handler writes `['hierarchical_rules' => $rules]` it clobbers every other rule array. Live code path for 5 of 7 handlers. Resolve when those handlers migrate to `BWS_Unified_Handler_Base` in Phase 3.
+- Hierarchical handler `$this->processed` accumulates indefinitely within a request and silently skips legitimate double-saves. Replace with a clear-after-apply pattern in Phase 3 when the handler is touched again.
 
 **Untested on InstaWP:**
 - Propagation, Level Restriction, Related Post Terms handler runtime
 
-**Plan file:** [.claude/plans/i-want-to-switch-lovely-wren.md](.claude/plans/i-want-to-switch-lovely-wren.md)
+**Plan file:** deleted post-ship; see commit history on `claude/wireframe-swap-2c` and PR #17.
 
 ---
 

@@ -21,7 +21,7 @@ class BWS_Wireframe_Bootstrap {
     public static function init(): void {
         add_action('init', [self::class, 'boot'], 10);
         add_action('admin_menu', [self::class, 'register_subpages'], 11);
-        add_action('admin_head', [self::class, 'subpage_padding_fix']);
+        add_action('admin_enqueue_scripts', [self::class, 'subpage_padding_fix']);
     }
 
     /**
@@ -34,15 +34,21 @@ class BWS_Wireframe_Bootstrap {
      *
      * Remove when upstream fix lands: https://github.com/tdrayson/wp-wireframe/issues/6
      */
-    public static function subpage_padding_fix(): void {
-        $screen = get_current_screen();
-        if (!$screen) {
+    public static function subpage_padding_fix(string $hook_suffix): void {
+        $subpages = [
+            'meta-conductor_page_meta-conductor-conversion',
+            'meta-conductor_page_meta-conductor-diagnostics',
+        ];
+        if (!in_array($hook_suffix, $subpages, true)) {
             return;
         }
-        $subpages = ['meta-conductor_page_meta-conductor-conversion', 'meta-conductor_page_meta-conductor-diagnostics'];
-        if (in_array($screen->id, $subpages, true)) {
-            echo '<style>.wireframe-admin #wpcontent { padding-left: 20px; }</style>' . "\n";
-        }
+        wp_register_style('bws-meta-conductor-subpage', false);
+        wp_enqueue_style('bws-meta-conductor-subpage');
+        // `:not(:has(.wireframe-page))` scopes to subpages that share the
+        // `wireframe-admin` body class but don't actually render Wireframe's
+        // React root — higher specificity than the upstream rule, no
+        // `!important` needed. Remove when wp-wireframe#6 lands.
+        wp_add_inline_style('bws-meta-conductor-subpage', '.wireframe-admin #wpcontent:not(:has(.wireframe-page)) { padding-left: 20px; }');
     }
 
     /**
@@ -96,9 +102,25 @@ class BWS_Wireframe_Bootstrap {
 
     /**
      * Boot Wireframe\App with the assembled config.
+     *
+     * Gated to admin + REST contexts. Front-end requests skip boot entirely —
+     * BWS_Config_Helpers::all_term_options() does a full get_terms() scan
+     * across every public taxonomy, which is wasted work outside the
+     * settings UI and its save endpoint.
      */
     public static function boot(): void {
         if (!class_exists(\Wireframe\App::class)) {
+            return;
+        }
+
+        // `REST_REQUEST` constant isn't defined until `parse_request` (well
+        // after our `init` priority 10 boot), so detect REST via the URL
+        // prefix instead. Both forms of permalinks supported.
+        $rest_prefix = trailingslashit(rest_get_url_prefix());
+        $request_uri = isset($_SERVER['REQUEST_URI']) ? wp_unslash($_SERVER['REQUEST_URI']) : '';
+        $is_rest     = str_contains($request_uri, '/' . $rest_prefix) || str_contains($request_uri, '?rest_route=');
+
+        if (!is_admin() && !$is_rest) {
             return;
         }
 

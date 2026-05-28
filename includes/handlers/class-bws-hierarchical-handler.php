@@ -66,6 +66,14 @@ class BWS_Hierarchical_Handler extends BWS_Unified_Handler_Base {
      * 5. Final set = user terms + auto terms. Update meta + post terms.
      */
     protected function apply_rule(int $post_id, string $taxonomy, array $rule): void {
+        if (!taxonomy_exists($taxonomy)) {
+            return;
+        }
+        $tax_obj = get_taxonomy($taxonomy);
+        if (!$tax_obj || !$tax_obj->hierarchical) {
+            return;
+        }
+
         $key = "{$post_id}:{$taxonomy}";
         if (isset($this->processed[$key])) {
             return;
