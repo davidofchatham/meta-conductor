@@ -112,12 +112,12 @@ Full admin UI replacement. Hand-rolled settings UI (~5,000 lines across `class-b
 - Dead AJAX methods removed (6 methods, ~250 lines)
 - Legacy `admin.js` and `admin.css` deleted; `class-bws-settings.php` reduced to ~60-line compat shell
 - Doc reorganization: README.md, readme.txt, docs/architecture.md, docs/future-features.md
-- Subpage padding workaround for Wireframe body class bug (upstream: wp-wireframe#6)
+- Subpage padding workaround for Wireframe body class bug (upstream: wp-wireframe#6) — **removed in 1.0.6 upgrade**
 
 **Descoped / deferred:**
-- Custom client-side field types (`bws_wp_select`, `bws_action_button`) — Wireframe v1.0.5 has no client-side extension API. Replaced with stock selects + server-side option builders.
+- Custom client-side field types (`bws_wp_select`, `bws_action_button`) — Wireframe has no client-side extension API. Replaced with stock selects + server-side option builders.
 - Title/Slug inline Preview/Apply buttons → Phase 7 Migration tool
-- Subfield conditional visibility → blocked upstream (Wireframe `RepeaterEdit.js` doesn't evaluate subfield conditions)
+- Subfield conditional visibility → **unblocked in Wireframe 1.0.6 (#13)**; conversion of description-text workarounds to real `conditions` queued (see docs/future-features.md)
 
 **Known issues:**
 - Conversion subpage: taxonomy selectors not populating (AJAX endpoints likely broken under new menu structure). Resolve in Phase 7 migration tool rewrite or earlier if Conversion is needed before then.
@@ -275,9 +275,7 @@ These do not require CPT storage.
 - Distinct from `related_post_terms_rules`: same data source (ACF relationship field), different output (post parent vs taxonomy terms)
 - New rule type `acf_relationship_rules` → Options storage
 
-**Date-Based Taxonomy Updater**
-- New rule type alongside (not replacing) existing `time_based_rules`
-- New rule type `date_based_taxonomy_rules` → CPT storage (requires Phase 4)
+**Date-Based Taxonomy Updater** — *folded into the in-flight Temporal State Rule (2.0.0), not a separate type.* The per-post ACF-date comparison this described is now an Options-storage extension of `time_based_rules`. See docs/future-features.md → `time_based_rules`.
 
 **Field Transformation Rules** (from existing snippet)
 - Combines multiple fields into a formatted output field (e.g. athlete stats → bio string, date + time → sortable datetime)
@@ -327,7 +325,6 @@ Choose **Options** if all of these are true:
 | `acf_relationship_rules` (new) | Options | Parent/child relationship config; bounded count |
 | `title_slug_rules` | **CPT** | Named patterns per post type; accumulate; benefit from enable/disable per rule — migrate from options in Phase 4 |
 | `time_based_rules` | **CPT** | Schedule rules multiply; benefit from individual management — migrate from options in Phase 4 |
-| `date_based_taxonomy_rules` (new) | **CPT** | Date-window rules accumulate; benefit from list UI |
 | `field_transformation_rules` (new) | **CPT** | Named computed-field recipes; can be numerous per post type |
 | `user_based_rules` (UBT) | **CPT** | User-specific; entity-like; was built on CPT |
 
@@ -359,7 +356,7 @@ Choose **Options** if all of these are true:
 - ~~Don't start Phase 2a until title/slug handler testing is complete on InstaWP~~ (Phase 2c completed; Title/Slug tested)
 - Don't start Phase 2b until Phase 2a is stable on InstaWP (Phase 2c is done; 2a is next)
 - Don't start Phase 6a integrations until Phase 3 handler migration is done
-- Don't start `date_based_taxonomy_rules` or `field_transformation_rules` (CPT types) until Phase 4 CPT storage is working
+- Don't start `field_transformation_rules` (CPT type) until Phase 4 CPT storage is working
 - Don't start Phase 6b (UBT) until Phase 4 CPT storage is working
 - Don't refactor BWS_Settings until handler migration is done (cleaner split once handlers own their logic)
 - Update CLAUDE.md at the end of every phase

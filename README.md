@@ -49,7 +49,7 @@ cd bws-meta-manager
 composer install --no-dev
 ```
 
-Composer pulls `tdrayson/wp-wireframe` (~1.0.5) and `rakit/validation`. The `vendor/` folder is committed so deployments without Composer access still work.
+Composer pulls `tdrayson/wp-wireframe` (~1.0.6) and `rakit/validation`. The `vendor/` folder is committed so deployments without Composer access still work.
 
 ## Where the docs live
 

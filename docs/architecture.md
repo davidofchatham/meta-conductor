@@ -119,10 +119,10 @@ Replaces a ~2,000-line hand-rolled god class settings file plus 1,700-line jQuer
 
 ### Wireframe quirks worth knowing
 
-- **Single-page `App::boot()` ignores `menu_slug`** ([bug, src/App.php:135](../vendor/tdrayson/wp-wireframe/src/App.php)). Workaround: use multi-page mode with one page.
 - **No client-side field type extension API**. Custom field types declared via `wp-wireframe/field_types` filter handle sanitize/validate server-side but don't render in React. Use stock field types only.
-- **Subfield conditions don't evaluate client-side** ([RepeaterEdit.js:162](../vendor/tdrayson/wp-wireframe/js/components/fields/RepeaterEdit.js)). Conditional subfields render always. Workaround: drop `conditions` on subfields, add description text explaining when each applies.
 - **Dot-notation field IDs are skipped by Sanitizer** ([src/Framework/Sanitizer.php](../vendor/tdrayson/wp-wireframe/src/Framework/Sanitizer.php)). Don't use `field.subkey` syntax for save fields — use repeaters with subfields instead.
+
+Fixed upstream in 1.0.6 (no longer quirks): single-page `App::boot()` honors `menu_slug` (#5); subfield-level `conditions` evaluate client-side (#13); admin-screen body class anchors on the `_page_{menu_slug}` suffix instead of a substring (#6).
 
 ## Canonical shape adapter
 

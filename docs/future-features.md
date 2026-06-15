@@ -21,13 +21,20 @@ When an idea is promoted to in-flight, add a link to its plan file under `.claud
 - **Source**: `plugins-to-integrate/acf-post-relationship-manager/` (deleted in this commit; reference the prior commit if needed).
 - **Storage**: Options.
 
-### `date_based_taxonomy_rules` — Date-Based Taxonomy Updater
+### `time_based_rules` — Temporal State Rule (evolution of Date Window)
 
-- **Status**: planned (Phase 6a, requires Phase 4 CPT storage)
-- **Motivation**: alongside (not replacing) `time_based_rules`. The existing time-based rule uses a fixed start/end window stored on the rule itself; this new type compares an **ACF date field on each post** against the current date. Useful for "post expires N days after its publish_date meta" patterns.
-- **Sketch**: rule declares which meta key holds the date, an operator (before / after / within N days), and the target term. Cron job sweeps posts whose date crosses the threshold and applies/removes terms accordingly.
-- **Source**: `plugins-to-integrate/date-based-taxonomy-term-updater/` (deleted in this commit).
-- **Storage**: CPT (rules accumulate; benefit from individual management).
+- **Status**: in-flight (targeting 2.0.0). Supersedes the previously-planned `date_based_taxonomy_rules` (Phase 6a) — folded in here rather than built as a separate rule type. See grill-with-docs session → CONTEXT.md / docs/adr/.
+- **Motivation**: today's Date Window rule is binary (in-window → apply term, out → remove) with a fixed date-only window typed on the rule. Evolve it into a **three-state temporal machine** so one rule expresses future / current / past auto-tagging, and let the window come from a **per-post ACF/meta datetime field** instead of only a fixed typed value. Also absorbs the "post expires N days after its date meta" pattern via offsets.
+- **Sketch**:
+  - **Three states**, evaluated against a datetime window: `future` (now < start), `current` (start ≤ now ≤ end), `past` (now > end). Each state carries its own action (v1: a target term; optional per state).
+  - **Window source** per rule: *typed* (date-only — Wireframe v1.0.5 has no datetime picker, don't #5) **or** *ACF/meta field* (full datetime; ACF provides the picker). Time-of-day precision is ACF-source-only by decision.
+  - **Boundary offsets**: each boundary shiftable ±X (days/hours), e.g. `current` begins "3 days before start" to tag "closing soon." Offsets are how "trigger X time before/after a date" is expressed.
+  - **Provenance**: per-rule applied-term tracked in post meta so state flips remove only *this rule's* prior term, never a manual tag. Fixes the existing blind-removal TODO in `class-bws-time-based-handler.php` (`cleanup_expired_rule` removes from all matching posts).
+  - **Triggers**: `save_post` (immediate re-eval) + cron. Cron tier hourly (ACF datetime precision; flag if daily preferred). Per-post ACF-source rules sweep via `meta_query` on the source field; typed-source rules keep the cheap rule-date sweep. Batch via existing `process_existing_posts` pattern.
+  - **Action dispatch**: term-apply now, designed for future action types (post status change, meta write) via an action-type switch.
+- **Source**: `plugins-to-integrate/date-based-taxonomy-term-updater/` (deleted; reference prior commit).
+- **Storage**: Options (current `time_based_rules` shape, extended subfields, normalized through the canonical-shape adapter — no dot-notation per don't #4). Migrates to CPT in Phase 4 alongside the existing migration plan; no longer gated *on* CPT.
+- **Open risks**: hourly cron load on large post sets (batch); `meta_query` on non-indexed/serialized ACF datetime fields is slow at scale (acceptable v1, document); state mutual-exclusion + offset boundary math are the invariant-heavy parts → SPEC.md before build.
 
 ### `field_transformation_rules` — Computed Field Output
 
@@ -111,17 +118,23 @@ When an idea is promoted to in-flight, add a link to its plan file under `.claud
 
 ### Subfield conditional visibility
 
-- **Status**: blocked upstream
-- **Motivation**: Wireframe v1.0.5's `RepeaterEdit.js` doesn't evaluate `conditions` on subfields client-side. Currently working around by always-rendering both conditional fields with description text explaining when each applies.
-- **Sketch**: when Wireframe upstream adds subfield condition support (or we fork the bundle), restore conditional visibility for: `related_rules.trigger_term_id` / `.trigger_taxonomy`, `level_restriction.include_ancestors`, `hierarchical_rules.expansion_behavior` + help text.
-- **Tracking**: upstream issue queued (see commit log).
+- **Status**: unblocked — ready to build
+- **Motivation**: Wireframe 1.0.6 (#13) added the conditions DSL to repeater subfields client-side. The current workaround (always-render both conditional subfields, explain via description text) can now be replaced with real show/hide `conditions`.
+- **Sketch**: convert description-text workarounds to `conditions` for: `related_rules.trigger_term_id` / `.trigger_taxonomy` (operator on `trigger` select), `level_restriction.include_ancestors`, `hierarchical_rules.expansion_behavior` + help text, `propagation`/`time_based`/`title_slug` "Only used when…" subfields. Verify each show/hide rule on the test site (subfield conditions evaluate against sibling subfields in the same row).
+- **Tracking**: upstream #13 closed; this is now plain implementation work.
 
 ### Client-side custom field types
 
-- **Status**: blocked upstream
-- **Motivation**: Wireframe v1.0.5 has no JS-side field-type extension API. Custom field types declared via `wp-wireframe/field_types` filter register server-side sanitize/validate handlers but render as nothing in the React UI. This blocks: inline Title/Slug Preview / Apply buttons (workaround = Phase 7 Migration tool), cascading dependent selects (workaround = static enumeration at boot time), AJAX-driven typeahead selects for large datasets.
-- **Sketch**: when upstream adds client-side extension, revisit each workaround.
-- **Tracking**: file upstream feature request.
+- **Status**: partially unblocked (1.0.6)
+- **Motivation**: Wireframe still has no JS-side field-type *extension* API — a custom type declared via the `wp-wireframe/field_types` filter registers server-side sanitize/validate but renders as nothing in React. 1.0.6's `action` field is a built-in escape hatch for the button case (real React button, posts in-flight form values to a server hook, returns `{status, message, html}`), so it doesn't need the extension API.
+- **Unblocked in 1.0.6**:
+  - **Page-level Title/Slug Preview / bulk Apply** — implementable now via the `action` field on the dedicated migration page (Phase 7). No custom field type needed.
+- **Still blocked** (need the missing JS extension API):
+  - **Inline Apply-to-Existing *inside a rule row*** — `action` works as a repeater subfield, but `ActionButton` posts page-level `useSettings()` values and routes by `fieldId` only (`action/{pageId}/{fieldId}/{actionId}` — no row index). The handler can't tell which rule row fired. Workaround stays = route per-rule actions through the Phase 7 migration page.
+  - **Cascading dependent selects** (taxonomy → narrowed term list). Workaround = static enumeration at boot.
+  - **AJAX typeahead selects** for large datasets. Workaround = static enumeration at boot.
+- **Sketch**: use `action` for all page-level buttons now. Revisit row-level + select cases when/if upstream adds the field-type extension API.
+- **Tracking**: no upstream issue exists yet for (a) per-row `action` context or (b) the JS field-type extension API. File both. Upstream PR direction (≤ 2026-06-11) is *extending* the action mechanism (downloads #23, file upload #21), not adding the extension API — so don't expect the row/select cases soon.
 
 ### Conflict-handling option propagation
 

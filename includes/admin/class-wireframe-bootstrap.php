@@ -21,34 +21,6 @@ class BWS_Wireframe_Bootstrap {
     public static function init(): void {
         add_action('init', [self::class, 'boot'], 10);
         add_action('admin_menu', [self::class, 'register_subpages'], 11);
-        add_action('admin_enqueue_scripts', [self::class, 'subpage_padding_fix']);
-    }
-
-    /**
-     * Temporary workaround: restore #wpcontent padding on subpages.
-     *
-     * Wireframe adds body class `wireframe-admin` to every screen whose ID
-     * contains its menu_slug — including our subpages. Its CSS sets
-     * `#wpcontent { padding-left: 0 }` which its React layout compensates
-     * for, but our non-Wireframe subpages need the standard 20px back.
-     *
-     * Remove when upstream fix lands: https://github.com/tdrayson/wp-wireframe/issues/6
-     */
-    public static function subpage_padding_fix(string $hook_suffix): void {
-        $subpages = [
-            'meta-conductor_page_meta-conductor-conversion',
-            'meta-conductor_page_meta-conductor-diagnostics',
-        ];
-        if (!in_array($hook_suffix, $subpages, true)) {
-            return;
-        }
-        wp_register_style('bws-meta-conductor-subpage', false);
-        wp_enqueue_style('bws-meta-conductor-subpage');
-        // `:not(:has(.wireframe-page))` scopes to subpages that share the
-        // `wireframe-admin` body class but don't actually render Wireframe's
-        // React root — higher specificity than the upstream rule, no
-        // `!important` needed. Remove when wp-wireframe#6 lands.
-        wp_add_inline_style('bws-meta-conductor-subpage', '.wireframe-admin #wpcontent:not(:has(.wireframe-page)) { padding-left: 20px; }');
     }
 
     /**
@@ -126,9 +98,9 @@ class BWS_Wireframe_Bootstrap {
 
         require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/admin/config/class-wireframe-config.php';
 
-        // Multi-page mode with one page — single-page mode ignores menu_slug
-        // override (Wireframe 1.0.5 bug at src/App.php:135). Multi-page path
-        // honors per-page menu_slug.
+        // Multi-page mode with one page. The single-page menu_slug bug
+        // (wp-wireframe#5) is fixed as of 1.0.6, but the `pages[]` form stays
+        // — it's the natural shape for adding more Wireframe pages later.
         \Wireframe\App::boot([
             'prefix'     => 'bws-meta-conductor',
             'capability' => 'manage_options',

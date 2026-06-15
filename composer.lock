@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "f2c48613fb40738cd39fca8751d9f153",
+    "content-hash": "641045cb7ada41b418f18ea7f64d9047",
     "packages": [
         {
             "name": "rakit/validation",
@@ -54,16 +54,16 @@
         },
         {
             "name": "tdrayson/wp-wireframe",
-            "version": "v1.0.5",
+            "version": "v1.0.6",
             "source": {
                 "type": "git",
                 "url": "https://github.com/tdrayson/wp-wireframe.git",
-                "reference": "d309333fd4ee4b9005a5673aecae83f4d4cb7dbe"
+                "reference": "b8367e7913f52292127d97b284d5ef9644cd4d7c"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/tdrayson/wp-wireframe/zipball/d309333fd4ee4b9005a5673aecae83f4d4cb7dbe",
-                "reference": "d309333fd4ee4b9005a5673aecae83f4d4cb7dbe",
+                "url": "https://api.github.com/repos/tdrayson/wp-wireframe/zipball/b8367e7913f52292127d97b284d5ef9644cd4d7c",
+                "reference": "b8367e7913f52292127d97b284d5ef9644cd4d7c",
                 "shasum": ""
             },
             "require": {
@@ -88,10 +88,10 @@
                 "wordpress"
             ],
             "support": {
-                "source": "https://github.com/tdrayson/wp-wireframe/tree/v1.0.5",
+                "source": "https://github.com/tdrayson/wp-wireframe/tree/v1.0.6",
                 "issues": "https://github.com/tdrayson/wp-wireframe/issues"
             },
-            "time": "2026-04-23T10:34:38+00:00"
+            "time": "2026-06-04T11:48:51+00:00"
         }
     ],
     "packages-dev": [],

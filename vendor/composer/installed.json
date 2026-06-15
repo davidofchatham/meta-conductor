@@ -51,24 +51,24 @@
         },
         {
             "name": "tdrayson/wp-wireframe",
-            "version": "v1.0.5",
-            "version_normalized": "1.0.5.0",
+            "version": "v1.0.6",
+            "version_normalized": "1.0.6.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/tdrayson/wp-wireframe.git",
-                "reference": "d309333fd4ee4b9005a5673aecae83f4d4cb7dbe"
+                "reference": "b8367e7913f52292127d97b284d5ef9644cd4d7c"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/tdrayson/wp-wireframe/zipball/d309333fd4ee4b9005a5673aecae83f4d4cb7dbe",
-                "reference": "d309333fd4ee4b9005a5673aecae83f4d4cb7dbe",
+                "url": "https://api.github.com/repos/tdrayson/wp-wireframe/zipball/b8367e7913f52292127d97b284d5ef9644cd4d7c",
+                "reference": "b8367e7913f52292127d97b284d5ef9644cd4d7c",
                 "shasum": ""
             },
             "require": {
                 "php": ">=8.1",
                 "rakit/validation": "^1.4"
             },
-            "time": "2026-04-23T10:34:38+00:00",
+            "time": "2026-06-04T11:48:51+00:00",
             "type": "library",
             "installation-source": "dist",
             "autoload": {
@@ -88,12 +88,12 @@
                 "wordpress"
             ],
             "support": {
-                "source": "https://github.com/tdrayson/wp-wireframe/tree/v1.0.5",
+                "source": "https://github.com/tdrayson/wp-wireframe/tree/v1.0.6",
                 "issues": "https://github.com/tdrayson/wp-wireframe/issues"
             },
             "install-path": "../tdrayson/wp-wireframe"
         }
     ],
-    "dev": false,
+    "dev": true,
     "dev-package-names": []
 }
