@@ -52,14 +52,23 @@ class BWS_Time_Based_Config {
                                 ],
                             ],
                             [
-                                'id'      => 'target_term_id',
-                                'type'    => 'select',
-                                'label'   => __('Target term to apply', 'bws-meta-manager'),
-                                'default' => '',
-                                'columns' => 12,
-                                'args'    => [
+                                'id'          => 'filter_taxonomies',
+                                'type'        => 'checkboxes',
+                                'label'       => __('Filter by taxonomies (optional)', 'bws-meta-manager'),
+                                'description' => __('Only apply to posts with terms in these taxonomies. Leave empty for all posts.', 'bws-meta-manager'),
+                                'columns'     => 12,
+                                'args'        => [
+                                    'options' => self::taxonomy_options_no_placeholder(),
+                                ],
+                            ],
+                            [
+                                'id'          => 'filter_terms',
+                                'type'        => 'select',
+                                'label'       => __('Filter by specific terms (optional)', 'bws-meta-manager'),
+                                'description' => __('Only apply to posts with these terms. Leave empty to use taxonomy filter only.', 'bws-meta-manager'),
+                                'columns'     => 12,
+                                'args'        => [
                                     'multiple' => true,
-                                    'max'      => 1,
                                     'options'  => BWS_Config_Helpers::all_term_options(),
                                 ],
                             ],
@@ -78,23 +87,14 @@ class BWS_Time_Based_Config {
                                 'columns'  => 12,
                             ],
                             [
-                                'id'          => 'filter_taxonomies',
-                                'type'        => 'checkboxes',
-                                'label'       => __('Filter by taxonomies (optional)', 'bws-meta-manager'),
-                                'description' => __('Only apply to posts with terms in these taxonomies. Leave empty for all posts.', 'bws-meta-manager'),
-                                'columns'     => 12,
-                                'args'        => [
-                                    'options' => self::taxonomy_options_no_placeholder(),
-                                ],
-                            ],
-                            [
-                                'id'          => 'filter_terms',
-                                'type'        => 'select',
-                                'label'       => __('Filter by specific terms (optional)', 'bws-meta-manager'),
-                                'description' => __('Only apply to posts with these terms. Leave empty to use taxonomy filter only.', 'bws-meta-manager'),
-                                'columns'     => 12,
-                                'args'        => [
+                                'id'      => 'target_term_id',
+                                'type'    => 'select',
+                                'label'   => __('Target term to apply', 'bws-meta-manager'),
+                                'default' => '',
+                                'columns' => 12,
+                                'args'    => [
                                     'multiple' => true,
+                                    'max'      => 1,
                                     'options'  => BWS_Config_Helpers::all_term_options(),
                                 ],
                             ],
