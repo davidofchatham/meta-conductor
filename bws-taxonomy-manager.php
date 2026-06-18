@@ -2,7 +2,7 @@
 /**
  * Plugin Name: BWS Meta Manager
  * Description: Unified meta and taxonomy management with hierarchical inheritance, entity relationships, data conversion, and intelligent automation
- * Version: 2.0.0
+ * Version: 0.3.0
  * Author: Bridge Web Solutions
  * Author URI: https://bridgewebsolutions.com
  * License: GPL-3.0-or-later
@@ -17,12 +17,12 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('BWS_META_MANAGER_VERSION', '2.0.0');
+define('BWS_META_MANAGER_VERSION', '0.3.0');
 define('BWS_META_MANAGER_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('BWS_META_MANAGER_PLUGIN_URL', plugin_dir_url(__FILE__));
 
 // Backward compatibility constants
-define('BWS_TAX_MANAGER_VERSION', '2.0.0'); // For legacy code
+define('BWS_TAX_MANAGER_VERSION', '0.3.0'); // For legacy code
 define('BWS_TAX_MANAGER_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('BWS_TAX_MANAGER_PLUGIN_URL', plugin_dir_url(__FILE__));
 
@@ -61,7 +61,7 @@ if (!function_exists('bws_meta_manager_init')) {
             }
         }
 
-        // Load storage abstraction layer (v2.0 - prepares for CPT migration)
+        // Load storage abstraction layer (unified-framework layer - prepares for CPT migration)
         require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/abstracts/interface-bws-rule-storage.php';
         require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/storage/class-bws-option-rule-storage.php';
         require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/storage/class-bws-storage-factory.php';
@@ -134,8 +134,8 @@ if (!function_exists('bws_meta_manager_init')) {
 			));
 		}
 
-		// Clean up legacy option keys from pre-2.0.0 dev builds. 2.0.0 is the
-		// first deployed release; no data migration needed.
+		// Clean up legacy option keys from old dev builds. Nothing has shipped
+		// to a deployment yet, so no data migration is needed.
 		delete_option('bws_taxonomy_manager_settings');
 		delete_option('bws_taxonomy_manager_version');
 		
@@ -205,7 +205,7 @@ if (!function_exists('bws_meta_manager_init')) {
 		$charset_collate = $wpdb->get_charset_collate();
 		$errors = [];
 
-		// Enhanced log table with entity support (v2.0)
+		// Enhanced log table with entity support (unified-framework layer)
 		$log_table = $wpdb->prefix . 'bws_meta_manager_log';
 		$log_sql = "CREATE TABLE $log_table (
 			id bigint(20) NOT NULL AUTO_INCREMENT,
@@ -402,7 +402,7 @@ if (!function_exists('bws_meta_manager_init')) {
 	 * Check for plugin updates and migrations.
 	 *
 	 * Tracks the installed version under `bws_meta_conductor_version`. No
-	 * upgrade branches yet — 2.0.0 is the first deployed release. Add
+	 * upgrade branches yet — nothing has shipped to a deployment. Add
 	 * version_compare branches here when shipping schema changes.
 	 */
 	function bws_taxonomy_manager_check_version() {

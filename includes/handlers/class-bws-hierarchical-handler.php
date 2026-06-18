@@ -13,7 +13,7 @@
  * promoted to a user term and becomes eligible for expansion.
  *
  * @package BWS_Meta_Manager
- * @since 2.0.0
+ * @since 0.2.0
  */
 
 if (!defined('ABSPATH')) {

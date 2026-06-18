@@ -6,7 +6,7 @@
  * Uses a singleton pattern to ensure only one storage instance exists.
  *
  * @package BWS_Meta_Manager
- * @since 2.0.0
+ * @since 0.2.0
  */
 
 // Prevent direct access
@@ -41,7 +41,7 @@ class BWS_Storage_Factory {
     /**
      * Get the rule storage instance
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @return BWS_Rule_Storage Storage implementation instance
      *
      * @example
@@ -90,7 +90,7 @@ class BWS_Storage_Factory {
     /**
      * Set storage configuration
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @param array $config Configuration array:
      *                      - 'type' (string): Storage type ('options', 'cpt')
      *                      - 'cache_enabled' (bool): Whether to enable caching
@@ -111,7 +111,7 @@ class BWS_Storage_Factory {
      *
      * Useful for testing or when switching storage backends.
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @return void
      */
     public static function reset(): void {
@@ -124,7 +124,7 @@ class BWS_Storage_Factory {
     /**
      * Get current storage configuration
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @return array Current configuration
      */
     public static function get_config(): array {
@@ -134,7 +134,7 @@ class BWS_Storage_Factory {
     /**
      * Get information about the current storage backend
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @return array Storage info with keys:
      *               - 'type': Storage type identifier
      *               - 'class': Storage class name
@@ -189,7 +189,7 @@ class BWS_Storage_Factory {
     /**
      * Check if a feature is supported by current storage
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @param string $feature Feature name (e.g., 'native_export', 'revisions')
      * @return bool True if supported, false otherwise
      *
@@ -206,7 +206,7 @@ class BWS_Storage_Factory {
     /**
      * Get statistics about stored rules
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @return array Statistics with keys:
      *               - 'total_rules': Total number of rules
      *               - 'enabled_rules': Number of enabled rules
@@ -250,7 +250,7 @@ class BWS_Storage_Factory {
     /**
      * Migrate rules from one storage backend to another
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @param string $from_type Source storage type ('options' or 'cpt')
      * @param string $to_type Target storage type
      * @param array  $options Migration options:

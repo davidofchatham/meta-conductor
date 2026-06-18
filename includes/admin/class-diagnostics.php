@@ -10,7 +10,7 @@
  *     surfaced without dev mode
  *
  * @package BWS_Meta_Manager
- * @since 3.0.0
+ * @since 0.3.0
  */
 
 if (!defined('ABSPATH')) {

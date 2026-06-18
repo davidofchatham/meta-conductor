@@ -3,7 +3,7 @@
  * BWS Taxonomy Manager Related Terms Handler
  * Handles linking terms so applying one automatically applies another
  * 
- * @since 1.0.0
+ * @since 0.1.0
  */
 
 // Prevent direct access

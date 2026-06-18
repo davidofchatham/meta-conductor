@@ -6,7 +6,7 @@
  * This is the current storage method used by BWS Meta Manager.
  *
  * @package BWS_Meta_Manager
- * @since 2.0.0
+ * @since 0.2.0
  */
 
 // Prevent direct access
@@ -403,7 +403,7 @@ class BWS_Option_Rule_Storage implements BWS_Rule_Storage {
      */
     public function export_rules(array $filters = []): array {
         $export = [
-            'version' => '2.0.0',
+            'version' => defined('BWS_META_MANAGER_VERSION') ? BWS_META_MANAGER_VERSION : '0.3.0',
             'storage_type' => 'options',
             'exported_at' => current_time('mysql'),
             'rules' => [],

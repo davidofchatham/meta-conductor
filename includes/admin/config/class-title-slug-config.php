@@ -8,7 +8,7 @@
  * via the existing AJAX endpoints.
  *
  * @package BWS_Meta_Manager
- * @since 2.0.0
+ * @since 0.2.0
  */
 
 if (!defined('ABSPATH')) {

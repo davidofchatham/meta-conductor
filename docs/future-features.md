@@ -23,18 +23,14 @@ When an idea is promoted to in-flight, add a link to its plan file under `.claud
 
 ### `time_based_rules` — Temporal State Rule (evolution of Date Window)
 
-- **Status**: in-flight (targeting 2.0.0). Supersedes the previously-planned `date_based_taxonomy_rules` (Phase 6a) — folded in here rather than built as a separate rule type. See grill-with-docs session → CONTEXT.md / docs/adr/.
-- **Motivation**: today's Date Window rule is binary (in-window → apply term, out → remove) with a fixed date-only window typed on the rule. Evolve it into a **three-state temporal machine** so one rule expresses future / current / past auto-tagging, and let the window come from a **per-post ACF/meta datetime field** instead of only a fixed typed value. Also absorbs the "post expires N days after its date meta" pattern via offsets.
-- **Sketch**:
-  - **Three states**, evaluated against a datetime window: `future` (now < start), `current` (start ≤ now ≤ end), `past` (now > end). Each state carries its own action (v1: a target term; optional per state).
-  - **Window source** per rule: *typed* (date-only — Wireframe v1.0.5 has no datetime picker, don't #5) **or** *ACF/meta field* (full datetime; ACF provides the picker). Time-of-day precision is ACF-source-only by decision.
-  - **Boundary offsets**: each boundary shiftable ±X (days/hours), e.g. `current` begins "3 days before start" to tag "closing soon." Offsets are how "trigger X time before/after a date" is expressed.
-  - **Provenance**: per-rule applied-term tracked in post meta so state flips remove only *this rule's* prior term, never a manual tag. Fixes the existing blind-removal TODO in `class-bws-time-based-handler.php` (`cleanup_expired_rule` removes from all matching posts).
-  - **Triggers**: `save_post` (immediate re-eval) + cron. Cron tier hourly (ACF datetime precision; flag if daily preferred). Per-post ACF-source rules sweep via `meta_query` on the source field; typed-source rules keep the cheap rule-date sweep. Batch via existing `process_existing_posts` pattern.
-  - **Action dispatch**: term-apply now, designed for future action types (post status change, meta write) via an action-type switch.
+- **Status**: in-flight (targeting the 0.x line, before 1.0.0), scoping.
+- **Motivation**: today's Date Window rule is binary (in-window → apply term, out → remove) with a fixed date-only window typed on the rule. Evolve it so one rule expresses before/during/after auto-tagging across a datetime window, with boundaries that may be read from per-post ACF/meta fields (including a single combined `datetime` value as Pie Calendar stores), and "trigger X time before/after a date" support. Ships a **Pie Calendar source preset** (start/end/all-day meta keys pre-filled) and honours an **all-day boolean field** as a boundary-time override. Also absorbs the "post expires N after its date field" pattern and the previously-planned `date_based_taxonomy_rules` (Phase 6a), folded in rather than built as a separate type.
+- **Detail lives elsewhere** (this entry stays a pointer to avoid drift):
+  - Scoping plan + open questions: [.claude/plans/temporal-rule.md](../.claude/plans/temporal-rule.md)
+  - Domain vocab + invariants: [CONTEXT.md](../CONTEXT.md)
+  - Model decision (general model / constrained UI, no provenance): [docs/adr/0001](adr/0001-temporal-rule-general-model-constrained-ui.md)
 - **Source**: `plugins-to-integrate/date-based-taxonomy-term-updater/` (deleted; reference prior commit).
-- **Storage**: Options (current `time_based_rules` shape, extended subfields, normalized through the canonical-shape adapter — no dot-notation per don't #4). Migrates to CPT in Phase 4 alongside the existing migration plan; no longer gated *on* CPT.
-- **Open risks**: hourly cron load on large post sets (batch); `meta_query` on non-indexed/serialized ACF datetime fields is slow at scale (acceptable v1, document); state mutual-exclusion + offset boundary math are the invariant-heavy parts → SPEC.md before build.
+- **Storage**: Options. Migrates to CPT in Phase 4 alongside the existing plan; no longer gated *on* CPT.
 
 ### `field_transformation_rules` — Computed Field Output
 
@@ -148,7 +144,7 @@ When an idea is promoted to in-flight, add a link to its plan file under `.claud
 ## Where this list comes from
 
 - ROADMAP.md Phase 6+ assignments
-- Plan file `.claude/plans/i-want-to-switch-lovely-wren.md` (Phase 2c session)
+- Phase 2c session planning (the strategic roadmap that session produced now lives in ROADMAP.md; its working plan file is gone)
 - Deleted standalone plugins under `plugins-to-integrate/` (captured here at deletion time so the intent isn't lost)
 - Session discussion notes that didn't fit into a phase
 

@@ -5,7 +5,7 @@
  * New base class for handlers using unified entity-action framework
  *
  * @package BWS_Meta_Manager
- * @since 2.0.0
+ * @since 0.2.0
  */
 
 // Prevent direct access
@@ -139,7 +139,7 @@ abstract class BWS_Unified_Handler_Base {
      *
      * Uses the storage abstraction layer to retrieve rules.
      *
-     * @since 2.0.0 Updated to use storage abstraction
+     * @since 0.2.0 Updated to use storage abstraction
      * @return array Enabled rules
      */
     protected function get_enabled_rules() {
@@ -152,7 +152,7 @@ abstract class BWS_Unified_Handler_Base {
     /**
      * Get all rules (enabled and disabled) for this handler
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @return array All rules
      */
     protected function get_all_rules() {
@@ -167,7 +167,7 @@ abstract class BWS_Unified_Handler_Base {
      *
      * Uses the storage abstraction layer to retrieve a single rule.
      *
-     * @since 2.0.0 Updated to use storage abstraction
+     * @since 0.2.0 Updated to use storage abstraction
      * @param int $rule_id Rule ID
      * @return array|null Rule configuration or null
      */
@@ -181,7 +181,7 @@ abstract class BWS_Unified_Handler_Base {
     /**
      * Save a rule
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @param int   $rule_id Rule ID (-1 for new rule)
      * @param array $data Rule data
      * @return int Rule ID on success, 0 on failure
@@ -196,7 +196,7 @@ abstract class BWS_Unified_Handler_Base {
     /**
      * Delete a rule
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @param int $rule_id Rule ID
      * @return bool True on success, false on failure
      */
@@ -471,7 +471,7 @@ abstract class BWS_Unified_Handler_Base {
     }
 
     /**
-     * Convert legacy v1.0 rule to unified format
+     * Convert legacy (pre-unified-framework) rule to unified format
      *
      * @param array $legacy_rule Legacy rule configuration
      * @return array Unified rule configuration

@@ -5,7 +5,7 @@
  * Main orchestrator for processing unified rules
  *
  * @package BWS_Meta_Manager
- * @since 2.0.0
+ * @since 0.2.0
  */
 
 // Prevent direct access
@@ -51,7 +51,7 @@ class BWS_Rule_Engine {
      * The method includes comprehensive error handling and logging to ensure
      * failures in individual entity processing don't halt the entire batch.
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @param array $rule Rule configuration array containing:
      *                    - 'source_type' (string): Type of source entities ('post', 'term', 'user')
      *                    - 'source_filters' (array): Filters to find source entities
@@ -351,7 +351,7 @@ class BWS_Rule_Engine {
      *    - 'acf_relationship': Entities connected via ACF relationship field
      * 3. If no relationship, queries entities of target_type using target_filters
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @param BWS_Entity $source_entity The entity triggering the rule
      * @param array      $rule Rule configuration containing:
      *                         - 'target_type' (string): 'self', 'post', 'term', or 'user'

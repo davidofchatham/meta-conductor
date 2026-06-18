@@ -6,7 +6,7 @@
  * Wireframe\App for the Meta Conductor admin page.
  *
  * @package BWS_Meta_Manager
- * @since 3.0.0
+ * @since 0.3.0
  */
 
 if (!defined('ABSPATH')) {
@@ -104,7 +104,7 @@ class BWS_Wireframe_Bootstrap {
         \Wireframe\App::boot([
             'prefix'     => 'bws-meta-conductor',
             'capability' => 'manage_options',
-            'version'    => defined('BWS_META_MANAGER_VERSION') ? BWS_META_MANAGER_VERSION : '3.0.0',
+            'version'    => defined('BWS_META_MANAGER_VERSION') ? BWS_META_MANAGER_VERSION : '0.3.0',
             'pages'      => [
                 [
                     'id'            => 'settings',

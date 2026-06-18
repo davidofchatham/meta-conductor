@@ -192,7 +192,7 @@ assets/
 
 - **PHP 8.1+ syntax** OK throughout (constructor promotion, enums, readonly, match expressions).
 - **WordPress coding standards** are not strictly followed — modern PHP idioms preferred where they conflict.
-- **No legacy compatibility code**: 2.0.0 was never deployed. Schema changes are fair game pending first deploy.
+- **No legacy compatibility code**: nothing has shipped to a deployment, and the `0.x` line is explicitly unstable. Schema changes are fair game until the first production release (`1.0.0`).
 - **Hooks naming**: `bws_meta_conductor_{context}_{action}` (the `bws_` prefix stays for global-namespace collision safety; see [ROADMAP.md](../ROADMAP.md) Naming Surface table).
 - **Option key**: `bws_meta_conductor_settings`. Legacy `bws_taxonomy_manager_settings` is dead and unread.
 

@@ -3,7 +3,7 @@
  * BWS Taxonomy Manager Hierarchical Level Restriction Handler
  * Restricts taxonomy terms to one per hierarchical level, removing siblings when new terms are applied
  * 
- * @since 1.0.0
+ * @since 0.1.0
  */
 
 // Prevent direct access

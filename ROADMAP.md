@@ -1,7 +1,7 @@
 # Meta Conductor: Strategic Assessment & Roadmap
 
-**Current Version**: 2.0.0 (unreleased; never deployed)
-**Target Version**: 2.0.0 (absorbing Wireframe swap + rename + PSR-4 namespacing before first deploy)
+**Current Version**: 0.3.0 (pre-release; never deployed; `0.x` unstable until `1.0.0`)
+**Target Version**: 1.0.0 (first production-ready cut, after Wireframe swap + rename + PSR-4 namespacing land)
 **Branch**: `claude/wireframe-swap-2c`
 
 ## Context
@@ -36,13 +36,13 @@ The core business logic is **working and worth keeping**. The problems are all s
 | **Legacy BWS_Handler_Base** | Delete after last handler migrates | No deprecation shim needed — private plugin |
 | **Tab-aware save bug** | Fix during Phase 5 settings refactor | Latent, not actively causing loss |
 | **CLAUDE.md updates** | End of each phase | Reflects completed architecture, not planned work |
-| **Version number** | 2.0.0 | Breaking changes: file rename, class names, option key |
+| **Version number** | 0.x → 1.0.0 | Pre-release line is `0.x`; breaking changes (file rename, class names, option key) are free pre-1.0. First production-ready cut is `1.0.0`. |
 
-### Naming Surface (2.0.0)
+### Naming Surface (0.x)
 
 Split the rename by layer — public-facing identity drops `BWS`, code/storage layers keep `BWS`/`bws_` namespace for collision safety.
 
-| Layer | Value (2.0.0) | Rationale |
+| Layer | Value (0.x) | Rationale |
 |-------|---------------|-----------|
 | Plugin display name | `Meta Conductor` | Public identity |
 | Plugin folder | `meta-conductor` | WP convention: folder = slug |
@@ -163,7 +163,7 @@ Pure structural change — no behavior changes, no user-visible changes. Indepen
 
 Visible change — rename the plugin, migrate the option key, update all strings.
 
-Follow the **Naming Surface (2.0.0)** table in the decisions section above for which layers drop `bws-` and which keep `bws_`/`BWS\`.
+Follow the **Naming Surface (0.x)** table in the decisions section above for which layers drop `bws-` and which keep `bws_`/`BWS\`.
 
 - Rename plugin folder: `bws-meta-manager` → `meta-conductor`
 - Rename main file: `bws-taxonomy-manager.php` → `meta-conductor.php`
@@ -181,7 +181,7 @@ Follow the **Naming Surface (2.0.0)** table in the decisions section above for w
 
 **Files**: `meta-conductor.php`, `includes/class-bws-taxonomy-manager.php`, `includes/class-bws-settings.php`, `includes/storage/class-option-rule-storage.php`, `includes/handlers/class-unified-handler-base.php`, plus every file containing `__()` / `_e()` / `_x()` / `_n()` calls
 
-**End of phase**: Bump version to 2.0.0, update CLAUDE.md
+**End of phase**: Keep version on the `0.x` line; graduate to `1.0.0` only when production-ready. Update CLAUDE.md
 
 ---
 
@@ -275,7 +275,7 @@ These do not require CPT storage.
 - Distinct from `related_post_terms_rules`: same data source (ACF relationship field), different output (post parent vs taxonomy terms)
 - New rule type `acf_relationship_rules` → Options storage
 
-**Date-Based Taxonomy Updater** — *folded into the in-flight Temporal State Rule (2.0.0), not a separate type.* The per-post ACF-date comparison this described is now an Options-storage extension of `time_based_rules`. See docs/future-features.md → `time_based_rules`.
+**Date-Based Taxonomy Updater** — *folded into the in-flight Temporal State Rule (0.x), not a separate type.* The per-post ACF-date comparison this described is now an Options-storage extension of `time_based_rules`. See docs/future-features.md → `time_based_rules`.
 
 **Field Transformation Rules** (from existing snippet)
 - Combines multiple fields into a formatted output field (e.g. athlete stats → bio string, date + time → sortable datetime)

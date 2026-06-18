@@ -3,7 +3,7 @@
  * BWS Taxonomy Manager Propagation Handler
  * Handles applying parent post terms to child posts
  * 
- * @since 1.0.0
+ * @since 0.1.0
  */
 
 // Prevent direct access
