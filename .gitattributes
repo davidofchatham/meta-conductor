@@ -1,2 +1,14 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Dev-only files excluded from distribution archives (git archive / release ZIP).
+# vendor/ and libs/ are runtime-required and intentionally NOT export-ignored.
+/.github            export-ignore
+/.gitignore         export-ignore
+/.gitattributes     export-ignore
+/docs               export-ignore
+/debug              export-ignore
+/ROADMAP.md         export-ignore
+/CONTEXT.md         export-ignore
+/composer.json      export-ignore
+/composer.lock      export-ignore
