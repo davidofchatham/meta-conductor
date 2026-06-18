@@ -1,8 +1,8 @@
 # Meta Conductor: Strategic Assessment & Roadmap
 
-**Current Version**: 2.0.0
-**Target Version**: 3.0.0 (Meta Conductor rename)
-**Branch**: `claude/plan-plugin-integration-01J8Rqv5YTEfF1uXyx84SihV`
+**Current Version**: 0.3.0 (pre-release; never deployed; `0.x` unstable until `1.0.0`)
+**Target Version**: 1.0.0 (first production-ready cut, after Wireframe swap + rename + PSR-4 namespacing land)
+**Branch**: `claude/wireframe-swap-2c`
 
 ## Context
 
@@ -36,13 +36,13 @@ The core business logic is **working and worth keeping**. The problems are all s
 | **Legacy BWS_Handler_Base** | Delete after last handler migrates | No deprecation shim needed — private plugin |
 | **Tab-aware save bug** | Fix during Phase 5 settings refactor | Latent, not actively causing loss |
 | **CLAUDE.md updates** | End of each phase | Reflects completed architecture, not planned work |
-| **Version number** | 3.0.0 | Breaking changes: file rename, class names, option key |
+| **Version number** | 0.x → 1.0.0 | Pre-release line is `0.x`; breaking changes (file rename, class names, option key) are free pre-1.0. First production-ready cut is `1.0.0`. |
 
-### Naming Surface (3.0.0)
+### Naming Surface (0.x)
 
 Split the rename by layer — public-facing identity drops `BWS`, code/storage layers keep `BWS`/`bws_` namespace for collision safety.
 
-| Layer | Value (3.0.0) | Rationale |
+| Layer | Value (0.x) | Rationale |
 |-------|---------------|-----------|
 | Plugin display name | `Meta Conductor` | Public identity |
 | Plugin folder | `meta-conductor` | WP convention: folder = slug |
@@ -67,11 +67,11 @@ Split the rename by layer — public-facing identity drops `BWS`, code/storage l
 |-------|-------------|
 | Admin menu/page still says "Taxonomy Manager" | Phase 2b |
 | 5 of 7 handlers on legacy BWS_Handler_Base | Phase 3 |
-| BWS_Settings is a ~2,000-line god class | Phase 5 |
-| Mixed JS globals (bwsTaxManager / bwsMetaManager) | Phase 5 |
+| BWS_Settings is a ~2,000-line god class | ~~Phase 5~~ Resolved by Phase 2c (shrunk to ~60-line compat shell) |
+| Mixed JS globals (bwsTaxManager / bwsMetaManager) | ~~Phase 5~~ Resolved by Phase 2c (legacy JS deleted) |
 | Mixed text domains | Phase 2b |
-| BWS_Rule_Engine unused by legacy handlers | Phase 3 |
-| lib/ classes instantiated but never called | Phase 5 |
+| BWS_Rule_Engine unused by legacy handlers | Phase 3 (hierarchical already bypasses engine post-2c) |
+| lib/ classes instantiated but never called | Phase 7 |
 
 ---
 
@@ -92,7 +92,42 @@ Pre-refactor feature work landed on this branch.
 2. ✅ Fix option key in `class-bws-unified-handler-base.php:305`
 3. ✅ Move `test-conversion-integration.php` → `debug/test-conversion-integration.php`
 
-**Gate for Phase 2**: Title/slug handler testing must be complete on InstaWP before starting Phase 2a.
+---
+
+### ✅ Phase 2c: Wireframe UI Swap (COMPLETED — branch `claude/wireframe-swap-2c`)
+
+Full admin UI replacement. Hand-rolled settings UI (~5,000 lines across `class-bws-settings.php`, `admin.js`, `admin.css`) replaced by WP Wireframe (`tdrayson/wp-wireframe ~1.0.5`).
+
+**Completed:**
+- Wireframe boots under top-level `meta-conductor` menu; settings save via REST to `bws_meta_conductor_settings`
+- Per-tab config builders for all 7 rule types + General, organized into 5 user-facing tabs (Auto-Set Terms, Format & Transform, Restrict, Personalize by User, General)
+- Data Conversion promoted to subpage under Meta Conductor menu
+- Diagnostics dev subpage (gated on `WP_DEBUG`)
+- Storage option key migrated from `bws_taxonomy_manager_settings` to `bws_meta_conductor_settings`
+- `normalize_rule_shape()` canonical-shape adapter in storage layer
+- Hierarchical handler rewritten: flat-field processing, auto-term tracking via `_bws_auto_terms` post meta, promotion logic for user-kept terms
+- Related handler fix: spurious target-term removal on unrelated saves
+- `should_process_post()` checkbox normalization for Wireframe's `{slug: bool}` format
+- Title/Slug handler: hybrid pre-write processing, date escalation fixes, engine bypass
+- Dead AJAX methods removed (6 methods, ~250 lines)
+- Legacy `admin.js` and `admin.css` deleted; `class-bws-settings.php` reduced to ~60-line compat shell
+- Doc reorganization: README.md, readme.txt, docs/architecture.md, docs/future-features.md
+- Subpage padding workaround for Wireframe body class bug (upstream: wp-wireframe#6) — **removed in 1.0.6 upgrade**
+
+**Descoped / deferred:**
+- Custom client-side field types (`bws_wp_select`, `bws_action_button`) — Wireframe has no client-side extension API. Replaced with stock selects + server-side option builders.
+- Title/Slug inline Preview/Apply buttons → Phase 7 Migration tool
+- Subfield conditional visibility → **unblocked in Wireframe 1.0.6 (#13)**; conversion of description-text workarounds to real `conditions` queued (see docs/future-features.md)
+
+**Known issues:**
+- Conversion subpage: taxonomy selectors not populating (AJAX endpoints likely broken under new menu structure). Resolve in Phase 7 migration tool rewrite or earlier if Conversion is needed before then.
+- `BWS_Option_Rule_Storage::update_settings()` does a blunt top-level `array_merge`. If a legacy handler writes `['hierarchical_rules' => $rules]` it clobbers every other rule array. Live code path for 5 of 7 handlers. Resolve when those handlers migrate to `BWS_Unified_Handler_Base` in Phase 3.
+- Hierarchical handler `$this->processed` accumulates indefinitely within a request and silently skips legitimate double-saves. Replace with a clear-after-apply pattern in Phase 3 when the handler is touched again.
+
+**Untested on InstaWP:**
+- Propagation, Level Restriction, Related Post Terms handler runtime
+
+**Plan file:** deleted post-ship; see commit history on `claude/wireframe-swap-2c` and PR #17.
 
 ---
 
@@ -128,7 +163,7 @@ Pure structural change — no behavior changes, no user-visible changes. Indepen
 
 Visible change — rename the plugin, migrate the option key, update all strings.
 
-Follow the **Naming Surface (3.0.0)** table in the decisions section above for which layers drop `bws-` and which keep `bws_`/`BWS\`.
+Follow the **Naming Surface (0.x)** table in the decisions section above for which layers drop `bws-` and which keep `bws_`/`BWS\`.
 
 - Rename plugin folder: `bws-meta-manager` → `meta-conductor`
 - Rename main file: `bws-taxonomy-manager.php` → `meta-conductor.php`
@@ -146,7 +181,7 @@ Follow the **Naming Surface (3.0.0)** table in the decisions section above for w
 
 **Files**: `meta-conductor.php`, `includes/class-bws-taxonomy-manager.php`, `includes/class-bws-settings.php`, `includes/storage/class-option-rule-storage.php`, `includes/handlers/class-unified-handler-base.php`, plus every file containing `__()` / `_e()` / `_x()` / `_n()` calls
 
-**End of phase**: Bump version to 3.0.0, update CLAUDE.md
+**End of phase**: Keep version on the `0.x` line; graduate to `1.0.0` only when production-ready. Update CLAUDE.md
 
 ---
 
@@ -163,7 +198,9 @@ Migrate each handler from `BWS_Handler_Base` to `UnifiedHandlerBase`. Template: 
 
 **For each**: Change `extends` → implement `get_rule_type()` + `get_handler_type()` → replace `process_post()` with `init_hooks()` → replace direct settings reads with `$this->get_enabled_rules()` → test on InstaWP before next.
 
-**After last handler**: Delete `class-handler-base.php` (`BWS_Handler_Base`).
+**After last handler**:
+- Delete `class-handler-base.php` (`BWS_Handler_Base`).
+- Remove `on_post_save()` loop in `class-bws-taxonomy-manager.php` — it calls `process_post()` on every handler, but unified-base handlers register their own hooks and don't need it. Currently causes `process_post()` no-op overrides in hierarchical + title_slug handlers to prevent the base class from routing flat Wireframe rules through `BWS_Rule_Engine`.
 
 **End of phase**: Update CLAUDE.md
 
@@ -183,25 +220,49 @@ Required before merging BWS User Based Terms. Also needed for `title_slug_rules`
 
 ---
 
-### Phase 5: Refactor Settings & Complete Conversion Integration
+### ~~Phase 5: Refactor Settings & Complete Conversion Integration~~ — CANCELLED
 
-Two related cleanup efforts — both address structural debt from bolted-on additions.
+Cancelled by **Phase 2c (Wireframe swap)**. The legacy `BWS_Settings` god class is fully replaced by Wireframe-driven config classes under `includes/admin/config/`; the old `class-bws-settings.php`, `admin.js`, and `admin.css` are scheduled for deletion. JS unification moot — the new UI has no custom JS to namespace.
 
-**Settings refactor:**
-- Keep thin `BWS_Settings` for global options + tab router
-- Create per-handler admin classes under `includes/admin/` (e.g., `Admin\HierarchicalAdmin`) for tab rendering and sanitization
-- Fix tab-aware save guard: preserve rule type keys not present in submitted form
-- Unify JS into `bwsMetaConductor` namespace (consolidate `admin.js` and `conversion-admin.js` patterns)
+Conversion integration completion (lib class delegation in `BWS_Data_Processor`) folds into **Phase 7 (Migration / Preview tool)** below.
 
-**Conversion integration completion:**
-- Make `BWS_Data_Processor` delegate to the lib classes it already instantiates:
-  - `process_taxonomy_to_taxonomy_batch()` → `Conversion\TermMigrator`
-  - `process_field_to_field_batch()` → `Conversion\FieldConverter`
-  - `process_map_data_conversion()` → `Conversion\ValueMapper`
-  - Batch sizing/monitoring → `Conversion\BatchProcessor`
-- Remove duplicate inline logic from `BWS_Data_Processor` once delegated
+---
 
-**End of phase**: Update CLAUDE.md
+### Phase 7: Unified Migration / Preview Tool
+
+Reframes the existing ACF "Data Conversion" page as a general-purpose Migration / Preview tool that hosts any one-time data transformation.
+
+**Why now:** Wireframe v1.0.5 has no JS-side field-type extension API. Inline Preview / Apply-to-Existing buttons inside a Wireframe repeater row are blocked. Routing those actions to a dedicated migration page sidesteps the blocker and provides a permanent home for bulk operations across rule types.
+
+**Architecture:**
+
+- Single admin subpage under Meta Conductor menu — replaces (or absorbs) the current Data Conversion subpage.
+- Recipes registered via filter `bws_meta_conductor_migrations`. Each recipe declares:
+  - `id`, `label`, `description`
+  - `source_query` callback — yields post IDs in chunks
+  - `transform` callback — computes the new state for one post
+  - `preview` renderer — shows before/after
+  - `commit` callback — writes the change
+- UI: recipe picker → parameter form → preview sample → run with chunked progress bar → completion summary.
+- Reuses existing infrastructure: `Conversion\BatchProcessor`, `Conversion\TermMigrator`, `Conversion\FieldConverter`, `Conversion\ValueMapper`. Lib class delegation (cancelled Phase 5 carry-over) happens here.
+
+**Recipes to ship at launch:**
+
+1. ACF → taxonomy term (current Copy Data flow)
+2. Field A → Field B value mapping (current Map Data flow)
+3. Apply Title/Slug rule to existing posts (replaces the inline button blocked in Phase 2c)
+
+**Recipes for future phases:**
+
+- Re-walk hierarchical inheritance against existing posts
+- Enforce level restriction across existing posts
+- Standardize date fields
+- Merge name fields
+- Format phone numbers
+
+**Storage:** none new. Recipes are registered code, not user-saved config.
+
+**End of phase**: Update CLAUDE.md, drop legacy Data Conversion submenu in favor of the unified one.
 
 ---
 
@@ -214,9 +275,7 @@ These do not require CPT storage.
 - Distinct from `related_post_terms_rules`: same data source (ACF relationship field), different output (post parent vs taxonomy terms)
 - New rule type `acf_relationship_rules` → Options storage
 
-**Date-Based Taxonomy Updater**
-- New rule type alongside (not replacing) existing `time_based_rules`
-- New rule type `date_based_taxonomy_rules` → CPT storage (requires Phase 4)
+**Date-Based Taxonomy Updater** — *folded into the in-flight Temporal State Rule (0.x), not a separate type.* The per-post ACF-date comparison this described is now an Options-storage extension of `time_based_rules`. See docs/future-features.md → `time_based_rules`.
 
 **Field Transformation Rules** (from existing snippet)
 - Combines multiple fields into a formatted output field (e.g. athlete stats → bio string, date + time → sortable datetime)
@@ -266,7 +325,6 @@ Choose **Options** if all of these are true:
 | `acf_relationship_rules` (new) | Options | Parent/child relationship config; bounded count |
 | `title_slug_rules` | **CPT** | Named patterns per post type; accumulate; benefit from enable/disable per rule — migrate from options in Phase 4 |
 | `time_based_rules` | **CPT** | Schedule rules multiply; benefit from individual management — migrate from options in Phase 4 |
-| `date_based_taxonomy_rules` (new) | **CPT** | Date-window rules accumulate; benefit from list UI |
 | `field_transformation_rules` (new) | **CPT** | Named computed-field recipes; can be numerous per post type |
 | `user_based_rules` (UBT) | **CPT** | User-specific; entity-like; was built on CPT |
 
@@ -295,10 +353,10 @@ Choose **Options** if all of these are true:
 
 ## Hard Constraints
 
-- Don't start Phase 2a until title/slug handler testing is complete on InstaWP
-- Don't start Phase 2b until Phase 2a is stable on InstaWP
+- ~~Don't start Phase 2a until title/slug handler testing is complete on InstaWP~~ (Phase 2c completed; Title/Slug tested)
+- Don't start Phase 2b until Phase 2a is stable on InstaWP (Phase 2c is done; 2a is next)
 - Don't start Phase 6a integrations until Phase 3 handler migration is done
-- Don't start `date_based_taxonomy_rules` or `field_transformation_rules` (CPT types) until Phase 4 CPT storage is working
+- Don't start `field_transformation_rules` (CPT type) until Phase 4 CPT storage is working
 - Don't start Phase 6b (UBT) until Phase 4 CPT storage is working
 - Don't refactor BWS_Settings until handler migration is done (cleaner split once handlers own their logic)
 - Update CLAUDE.md at the end of every phase

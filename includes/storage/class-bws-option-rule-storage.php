@@ -6,7 +6,7 @@
  * This is the current storage method used by BWS Meta Manager.
  *
  * @package BWS_Meta_Manager
- * @since 2.0.0
+ * @since 0.2.0
  */
 
 // Prevent direct access
@@ -27,7 +27,7 @@ class BWS_Option_Rule_Storage implements BWS_Rule_Storage {
      *
      * @var string
      */
-    const OPTION_NAME = 'bws_taxonomy_manager_settings';
+    const OPTION_NAME = 'bws_meta_conductor_settings';
 
     /**
      * Cached settings array
@@ -163,15 +163,63 @@ class BWS_Option_Rule_Storage implements BWS_Rule_Storage {
         $all_settings = $this->get_all_settings();
         $rules = $all_settings[$type] ?? [];
 
-        // Add IDs if not present
+        // Add IDs if not present + normalize Wireframe shape changes to legacy shape
         foreach ($rules as $index => &$rule) {
             if (!isset($rule['id'])) {
                 $rule['id'] = $index;
             }
+            $rule = self::normalize_rule_shape($type, $rule);
         }
         unset($rule);
 
         return $this->apply_filters($rules, $filters);
+    }
+
+    /**
+     * Coerce stored rule data into the canonical shape handlers consume.
+     *
+     * Storage is the adapter boundary between writers (current UI: WP
+     * Wireframe REST; future writers: CLI, import) and handlers. Each
+     * writer may serialize differently; handlers should see a single
+     * canonical shape and not care which writer produced the row.
+     *
+     * Current coercions:
+     *   - Single-value term IDs: [N] array (from FormTokenField max=1) → int N
+     *   - ACF relationship field: "post_type:field_name" prefix → split into
+     *     scalar post_type + bare acf_field_name
+     */
+    private static function normalize_rule_shape(string $type, array $rule): array {
+        $single_term_fields = [
+            'related_rules'    => ['trigger_term_id', 'target_term_id'],
+            'time_based_rules' => ['target_term_id'],
+        ];
+
+        if (isset($single_term_fields[$type])) {
+            foreach ($single_term_fields[$type] as $field) {
+                if (!isset($rule[$field])) {
+                    continue;
+                }
+                if (is_array($rule[$field])) {
+                    $first        = reset($rule[$field]);
+                    $rule[$field] = $first === false ? 0 : (int) $first;
+                } else {
+                    $rule[$field] = (int) $rule[$field];
+                }
+            }
+        }
+
+        if ($type === 'related_post_terms_rules' && !empty($rule['acf_field_name'])) {
+            $raw = (string) $rule['acf_field_name'];
+            if (str_contains($raw, ':')) {
+                [$pt, $bare]            = explode(':', $raw, 2);
+                $rule['post_type']      = $pt;
+                $rule['acf_field_name'] = $bare;
+            } elseif (!isset($rule['post_type'])) {
+                $rule['post_type'] = '';
+            }
+        }
+
+        return $rule;
     }
 
     /**
@@ -192,7 +240,7 @@ class BWS_Option_Rule_Storage implements BWS_Rule_Storage {
         $rule = $rules[$rule_id];
         $rule['id'] = $rule_id;
 
-        return $rule;
+        return self::normalize_rule_shape($type, $rule);
     }
 
     /**
@@ -355,7 +403,7 @@ class BWS_Option_Rule_Storage implements BWS_Rule_Storage {
      */
     public function export_rules(array $filters = []): array {
         $export = [
-            'version' => '2.0.0',
+            'version' => defined('BWS_META_MANAGER_VERSION') ? BWS_META_MANAGER_VERSION : '0.3.0',
             'storage_type' => 'options',
             'exported_at' => current_time('mysql'),
             'rules' => [],

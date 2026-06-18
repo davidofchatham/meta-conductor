@@ -5,7 +5,7 @@
  * Evaluates rule conditions against entities
  *
  * @package BWS_Meta_Manager
- * @since 2.0.0
+ * @since 0.2.0
  */
 
 // Prevent direct access

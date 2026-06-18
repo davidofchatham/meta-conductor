@@ -2,7 +2,7 @@
 /**
  * Plugin Name: BWS Meta Manager
  * Description: Unified meta and taxonomy management with hierarchical inheritance, entity relationships, data conversion, and intelligent automation
- * Version: 2.0.0
+ * Version: 0.3.0
  * Author: Bridge Web Solutions
  * Author URI: https://bridgewebsolutions.com
  * License: GPL-3.0-or-later
@@ -17,12 +17,12 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('BWS_META_MANAGER_VERSION', '2.0.0');
+define('BWS_META_MANAGER_VERSION', '0.3.0');
 define('BWS_META_MANAGER_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('BWS_META_MANAGER_PLUGIN_URL', plugin_dir_url(__FILE__));
 
 // Backward compatibility constants
-define('BWS_TAX_MANAGER_VERSION', '2.0.0'); // For legacy code
+define('BWS_TAX_MANAGER_VERSION', '0.3.0'); // For legacy code
 define('BWS_TAX_MANAGER_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('BWS_TAX_MANAGER_PLUGIN_URL', plugin_dir_url(__FILE__));
 
@@ -41,7 +41,27 @@ if (!function_exists('bws_meta_manager_init')) {
             return;
         }
 
-        // Load storage abstraction layer (v2.0 - prepares for CPT migration)
+        // Composer autoloader (WP Wireframe + rakit/validation)
+        if (file_exists(BWS_META_MANAGER_PLUGIN_DIR . 'vendor/autoload.php')) {
+            require_once BWS_META_MANAGER_PLUGIN_DIR . 'vendor/autoload.php';
+        }
+
+        // Wireframe bootstrap (Phase 2c pilot — runs alongside legacy UI until verified).
+        // Must register on both admin requests (for menu) and REST requests (for save endpoint),
+        // so no is_admin() gate.
+        if (class_exists(\Wireframe\App::class)) {
+            require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/admin/class-wireframe-bootstrap.php';
+            BWS_Wireframe_Bootstrap::init();
+
+            // Diagnostics subpage. Dev sections gated on WP_DEBUG; future
+            // user-level sections gated on filter `bws_meta_conductor_show_diagnostics`.
+            if (is_admin()) {
+                require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/admin/class-diagnostics.php';
+                BWS_Diagnostics::init();
+            }
+        }
+
+        // Load storage abstraction layer (unified-framework layer - prepares for CPT migration)
         require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/abstracts/interface-bws-rule-storage.php';
         require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/storage/class-bws-option-rule-storage.php';
         require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/storage/class-bws-storage-factory.php';
@@ -98,39 +118,26 @@ if (!function_exists('bws_meta_manager_init')) {
 			);
 		}
 		
-		// Create default options with new rule types
-		if (!get_option('bws_taxonomy_manager_settings')) {
-			add_option('bws_taxonomy_manager_settings', array(
+		// Seed default options. Key must match BWS_Option_Rule_Storage::OPTION_NAME.
+		// Hard-coded literal because storage class isn't loaded during activation hook.
+		if (!get_option('bws_meta_conductor_settings')) {
+			add_option('bws_meta_conductor_settings', array(
 				'hierarchical_rules' => array(),
 				'propagation_rules' => array(),
 				'related_rules' => array(),
 				'time_based_rules' => array(),
-				// NEW rule types
 				'related_post_terms_rules' => array(),
 				'hierarchical_level_restriction_rules' => array(),
 				'title_slug_rules' => array(),
 				'conflict_handling' => array(),
-				'manual_processing_enabled' => true
+				'manual_processing_enabled' => true,
 			));
-		} else {
-			// Update existing settings to include new rule types
-			$existing_settings = get_option('bws_taxonomy_manager_settings');
-			
-			// Add new rule types if they don't exist
-			if (!isset($existing_settings['related_post_terms_rules'])) {
-				$existing_settings['related_post_terms_rules'] = array();
-			}
-			
-			if (!isset($existing_settings['hierarchical_level_restriction_rules'])) {
-				$existing_settings['hierarchical_level_restriction_rules'] = array();
-			}
-
-			if (!isset($existing_settings['title_slug_rules'])) {
-				$existing_settings['title_slug_rules'] = array();
-			}
-
-			update_option('bws_taxonomy_manager_settings', $existing_settings);
 		}
+
+		// Clean up legacy option keys from old dev builds. Nothing has shipped
+		// to a deployment yet, so no data migration is needed.
+		delete_option('bws_taxonomy_manager_settings');
+		delete_option('bws_taxonomy_manager_version');
 		
 		// Schedule cleanup for expired time-based rules
 		if (!wp_next_scheduled('bws_taxonomy_manager_cleanup')) {
@@ -169,7 +176,10 @@ if (!function_exists('bws_meta_manager_init')) {
 	 */
 	function bws_taxonomy_manager_uninstall() {
 		// Remove all options
-		delete_option('bws_taxonomy_manager_settings');
+		delete_option('bws_meta_conductor_settings');
+		delete_option('bws_meta_conductor_version');
+		delete_option('bws_taxonomy_manager_settings'); // legacy
+		delete_option('bws_taxonomy_manager_version');  // legacy
 		
 		// Remove any transients
 		delete_transient('bws_taxonomy_manager_activated');
@@ -195,7 +205,7 @@ if (!function_exists('bws_meta_manager_init')) {
 		$charset_collate = $wpdb->get_charset_collate();
 		$errors = [];
 
-		// Enhanced log table with entity support (v2.0)
+		// Enhanced log table with entity support (unified-framework layer)
 		$log_table = $wpdb->prefix . 'bws_meta_manager_log';
 		$log_sql = "CREATE TABLE $log_table (
 			id bigint(20) NOT NULL AUTO_INCREMENT,
@@ -389,46 +399,19 @@ if (!function_exists('bws_meta_manager_init')) {
 	}
 	
 	/**
-	 * Check for plugin updates and migrations
+	 * Check for plugin updates and migrations.
+	 *
+	 * Tracks the installed version under `bws_meta_conductor_version`. No
+	 * upgrade branches yet — nothing has shipped to a deployment. Add
+	 * version_compare branches here when shipping schema changes.
 	 */
 	function bws_taxonomy_manager_check_version() {
-		$current_version = get_option('bws_taxonomy_manager_version');
-		
-		if ($current_version !== BWS_TAX_MANAGER_VERSION) {
-			bws_taxonomy_manager_upgrade($current_version);
-			update_option('bws_taxonomy_manager_version', BWS_TAX_MANAGER_VERSION);
+		$current_version = get_option('bws_meta_conductor_version');
+
+		if ($current_version !== BWS_META_MANAGER_VERSION) {
+			update_option('bws_meta_conductor_version', BWS_META_MANAGER_VERSION);
+			bws_taxonomy_manager_clear_caches();
 		}
-	}
-	
-	/**
-	 * Handle plugin upgrades
-	 */
-	function bws_taxonomy_manager_upgrade($from_version) {
-		// Migration logic for different versions
-		
-		if (version_compare($from_version, '1.0.0', '<')) {
-			// Initial version - no migration needed
-			return;
-		}
-		
-		// Example migration for future versions
-		if (version_compare($from_version, '1.1.0', '<')) {
-			// Add new rule types to existing settings
-			$settings = get_option('bws_taxonomy_manager_settings', array());
-			
-			if (!isset($settings['related_post_terms_rules'])) {
-				$settings['related_post_terms_rules'] = array();
-			}
-			
-			if (!isset($settings['hierarchical_level_restriction_rules'])) {
-				$settings['hierarchical_level_restriction_rules'] = array();
-			}
-			
-			update_option('bws_taxonomy_manager_settings', $settings);
-		}
-		
-		// Clear caches after upgrade
-		bws_taxonomy_manager_clear_caches();
 	}
 	
 	/**
@@ -454,10 +437,10 @@ if (!function_exists('bws_meta_manager_init')) {
 			?>
 			<div class="notice notice-success is-dismissible">
 				<p>
-					<strong><?php _e('BWS Taxonomy Manager', 'bws-taxonomy-manager'); ?></strong>
-					<?php _e('has been activated successfully!', 'bws-taxonomy-manager'); ?>
-					<a href="<?php echo admin_url('options-general.php?page=bws-taxonomy-manager'); ?>" class="button button-primary" style="margin-left: 10px;">
-						<?php _e('Configure Rules', 'bws-taxonomy-manager'); ?>
+					<strong><?php esc_html_e('Meta Conductor', 'bws-meta-manager'); ?></strong>
+					<?php esc_html_e('has been activated successfully!', 'bws-meta-manager'); ?>
+					<a href="<?php echo esc_url(admin_url('admin.php?page=meta-conductor')); ?>" class="button button-primary" style="margin-left: 10px;">
+						<?php esc_html_e('Configure Rules', 'bws-meta-manager'); ?>
 					</a>
 				</p>
 			</div>
@@ -469,12 +452,9 @@ if (!function_exists('bws_meta_manager_init')) {
 	 * Add action links to plugin page
 	 */
 	add_filter('plugin_action_links_' . plugin_basename(__FILE__), function($links) {
-		$settings_link = '<a href="' . admin_url('options-general.php?page=bws-taxonomy-manager') . '">' . __('Settings', 'bws-taxonomy-manager') . '</a>';
+		$settings_link = '<a href="' . esc_url(admin_url('admin.php?page=meta-conductor')) . '">' . esc_html__('Settings', 'bws-meta-manager') . '</a>';
 		array_unshift($links, $settings_link);
-		
-		$docs_link = '<a href="https://bridgewebsolutions.com/docs/bws-taxonomy-manager/" target="_blank">' . __('Documentation', 'bws-taxonomy-manager') . '</a>';
-		array_push($links, $docs_link);
-		
+
 		return $links;
 	});
 	
@@ -483,8 +463,7 @@ if (!function_exists('bws_meta_manager_init')) {
 	 */
 	add_filter('plugin_row_meta', function($plugin_meta, $plugin_file) {
 		if (plugin_basename(__FILE__) === $plugin_file) {
-			$plugin_meta[] = '<a href="https://bridgewebsolutions.com/support/" target="_blank">' . __('Support', 'bws-taxonomy-manager') . '</a>';
-			$plugin_meta[] = '<a href="https://github.com/bridgewebsolutions/bws-taxonomy-manager" target="_blank">' . __('GitHub', 'bws-taxonomy-manager') . '</a>';
+			$plugin_meta[] = '<a href="https://github.com/davidofchatham/bws-meta-manager" target="_blank">' . esc_html__('GitHub', 'bws-meta-manager') . '</a>';
 		}
 		return $plugin_meta;
 	}, 10, 2);

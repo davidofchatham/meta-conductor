@@ -3,7 +3,7 @@
  * BWS Taxonomy Manager Admin Columns Pro Integration
  * Handles integration with Admin Columns Pro Quick Edit functionality
  * 
- * @since 1.0.0
+ * @since 0.1.0
  */
 
 // Prevent direct access

@@ -5,7 +5,7 @@
  * Provides unified interface for posts, terms, and future entity types
  *
  * @package BWS_Meta_Manager
- * @since 2.0.0
+ * @since 0.2.0
  */
 
 // Prevent direct access
@@ -180,7 +180,7 @@ class BWS_Entity {
      *   - 'ancestors': Array of ancestor term IDs (all parents up to root)
      * - For other entities: Returns empty array
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @param string|null $taxonomy Taxonomy name. For posts, limits to specific taxonomy.
      *                              If null for posts, returns terms from all taxonomies.
      *                              Ignored for term entities.
@@ -275,7 +275,7 @@ class BWS_Entity {
      * This method ensures compatibility with ACF's field value storage system
      * which requires specific identifier formats for each entity type.
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @return string|int ACF identifier in the format expected by ACF functions
      * @link https://www.advancedcustomfields.com/resources/get_field/
      */
@@ -334,7 +334,7 @@ class BWS_Entity {
      * This method should be called before attempting to access entity properties
      * or perform operations on the entity to avoid errors with non-existent entities.
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @return bool True if entity exists and was loaded successfully, false otherwise
      *
      * @example

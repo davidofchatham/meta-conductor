@@ -1,0 +1,20 @@
+{
+    "name": "bridgewebsolutions/bws-meta-manager",
+    "description": "Meta Conductor (formerly BWS Meta Manager) — WordPress plugin for unified meta and taxonomy management with hierarchical inheritance, entity relationships, and rule-based automation.",
+    "type": "wordpress-plugin",
+    "license": "GPL-2.0-or-later",
+    "require": {
+        "php": ">=8.1",
+        "tdrayson/wp-wireframe": "~1.0.6"
+    },
+    "repositories": [
+        {
+            "type": "vcs",
+            "url": "https://github.com/tdrayson/wp-wireframe"
+        }
+    ],
+    "config": {
+        "optimize-autoloader": true,
+        "sort-packages": true
+    }
+}

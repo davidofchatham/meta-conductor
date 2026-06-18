@@ -12,6 +12,12 @@ class BWS_Title_Slug_Handler extends BWS_Unified_Handler_Base {
     /** @var array<int,string> Submitted post_title captured before DB write, keyed by post ID */
     private array $pending_submitted_titles = [];
 
+    /** @var array<int,true> Post IDs handled in wp_insert_post_data (skip post-write processing) */
+    private array $handled_pre_write = [];
+
+    /** @var array<int,string> Final slugs set during pre-write, for redirect_post_location fix */
+    private array $final_slugs = [];
+
     // -------------------------------------------------------------------------
     // Required abstracts
     // -------------------------------------------------------------------------
@@ -32,39 +38,99 @@ class BWS_Title_Slug_Handler extends BWS_Unified_Handler_Base {
         return !empty($rule['enabled']);
     }
 
+    // Title/slug rules use their own hook-based processing (on_insert_post_data,
+    // on_acf_save_post, on_save_post). The base class process_post routes through
+    // the generic rule engine which expects action/source_type keys we don't have.
+    public function process_post($post_id, $post, $update) {}
+
     // -------------------------------------------------------------------------
     // Hook registration
     // -------------------------------------------------------------------------
 
     protected function init_hooks(): void {
-        // Capture title before WordPress writes it (priority 1 = before everything).
-        // Skip when $is_updating_post so our own wp_update_post() call doesn't overwrite the raw title.
-        add_filter('wp_insert_post_data', [$this, 'capture_submitted_title'], 1, 2);
+        // Pre-write: capture submitted title and — for non-meta rules — compute
+        // final title+slug before WP writes, so the editor shows correct values.
+        add_filter('wp_insert_post_data', [$this, 'on_insert_post_data'], 1, 2);
 
-        // Process after ACF commits its fields to postmeta (priority 10).
+        // Post-write: handle meta-dependent rules after ACF saves fields.
         add_action('acf/save_post', [$this, 'on_acf_save_post'], 99);
 
         // Fallback for sites without ACF. Skipped if acf/save_post already ran.
         add_action('save_post', [$this, 'on_save_post'], 99, 3);
+
+        // Fix admin "View Post" link for meta-dependent rules processed post-write.
+        add_filter('redirect_post_location', [$this, 'fix_post_redirect'], 10, 2);
     }
 
     // -------------------------------------------------------------------------
     // Hook callbacks
     // -------------------------------------------------------------------------
 
-    public function capture_submitted_title(array $data, array $postarr): array {
+    public function on_insert_post_data(array $data, array $postarr): array {
         if ($this->is_updating_post) {
-            return $data; // Don't capture our own wp_update_post() writes.
+            return $data;
         }
+
         $post_id = (int) ($postarr['ID'] ?? 0);
-        if ($post_id > 0) {
-            $this->pending_submitted_titles[$post_id] = $data['post_title'];
+        if ($post_id <= 0) return $data;
+        if (in_array($data['post_status'] ?? '', ['auto-draft', 'trash'], true)) return $data;
+
+        $this->pending_submitted_titles[$post_id] = $data['post_title'];
+
+        $rules = $this->get_enabled_rules();
+        $mock_post = (object) array_merge($data, ['ID' => $post_id, 'post_date' => $data['post_date'] ?? current_time('mysql')]);
+        $rule = $this->find_matching_rule($mock_post, $rules);
+        if (!$rule || $this->rule_needs_postmeta($rule)) {
+            return $data;
         }
-        return $data; // Never modify — capture only.
+
+        // Non-meta rule: compute title+slug now, before WP writes.
+        $post = get_post($post_id);
+        $new_title = $data['post_title'];
+        if (!empty($rule['title_pattern'])) {
+            $default_title = $post ? $this->resolve_default_title($post_id, $post, $rule) : $data['post_title'];
+            $new_title = $this->resolve_pattern($rule['title_pattern'], $post_id, $mock_post, 'title', $default_title);
+            if ($new_title === '') $new_title = $data['post_title'];
+        }
+
+        $new_slug = null;
+        $default_slug = sanitize_title($new_title);
+        if (!empty($rule['slug_pattern'])) {
+            $built = $this->resolve_pattern($rule['slug_pattern'], $post_id, $mock_post, 'slug', $new_title);
+            $new_slug = $this->apply_slug_mode($built, $default_slug, $rule['slug_mode'] ?? 'prefix', $rule['slug_pattern'] ?? '');
+        } elseif (!empty($rule['title_pattern'])) {
+            $new_slug = $default_slug;
+        }
+
+        if ($new_slug !== null) {
+            $new_slug = $this->make_unique_slug($new_slug, $post_id, $mock_post, $rule);
+        }
+
+        $data['post_title'] = $new_title;
+        if ($new_slug !== null) {
+            $data['post_name'] = $new_slug;
+            $this->final_slugs[$post_id] = $new_slug;
+        }
+
+        // Store idempotency meta.
+        if (!empty($rule['title_pattern']) && $this->pattern_uses_default_title($rule['title_pattern'])) {
+            $raw_used = $this->pending_submitted_titles[$post_id] ?? $data['post_title'];
+            update_post_meta($post_id, '_bws_raw_title', $raw_used);
+            update_post_meta($post_id, '_bws_applied_title', $new_title);
+        }
+
+        $this->handled_pre_write[$post_id] = true;
+        $this->processed_in_request[$post_id] = true;
+
+        $rule_index = (int) ($rule['id'] ?? 0);
+        $this->write_rule_status($rule_index, $post_id, $new_title, $new_slug ?? $data['post_name'] ?? '', []);
+
+        return $data;
     }
 
     public function on_acf_save_post($post_id): void {
         $post_id = (int) $post_id;
+        if (isset($this->handled_pre_write[$post_id])) return;
         $post = get_post($post_id);
         if (!$post instanceof WP_Post) return;
         if ($this->should_skip($post_id, $post)) return;
@@ -73,11 +139,21 @@ class BWS_Title_Slug_Handler extends BWS_Unified_Handler_Base {
     }
 
     public function on_save_post(int $post_id, WP_Post $post, bool $update): void {
-        if (function_exists('acf')) return; // ACF active — on_acf_save_post handles it.
+        if (function_exists('acf')) return;
+        if (isset($this->handled_pre_write[$post_id])) return;
         if ($this->should_skip($post_id, $post)) return;
         if (isset($this->processed_in_request[$post_id])) return;
         $this->processed_in_request[$post_id] = true;
         $this->process_for_post($post_id, $post);
+    }
+
+    public function fix_post_redirect(string $location, int $post_id): string {
+        if (!isset($this->final_slugs[$post_id])) return $location;
+        // process_for_post updated the slug via wp_update_post() after the
+        // initial write. Flush the object cache so the "View Post" link on
+        // the redirect destination reads the final slug.
+        clean_post_cache($post_id);
+        return $location;
     }
 
     // -------------------------------------------------------------------------
@@ -117,7 +193,7 @@ class BWS_Title_Slug_Handler extends BWS_Unified_Handler_Base {
         $default_slug = sanitize_title($new_title);
         if (!empty($rule['slug_pattern'])) {
             $built = $this->resolve_pattern($rule['slug_pattern'], $post_id, $post, 'slug', $new_title);
-            $new_slug = $this->apply_slug_mode($built, $default_slug, $rule['slug_mode'] ?? 'prefix');
+            $new_slug = $this->apply_slug_mode($built, $default_slug, $rule['slug_mode'] ?? 'prefix', $rule['slug_pattern'] ?? '');
         } elseif (!empty($rule['title_pattern'])) {
             $new_slug = $default_slug; // implicit: derive slug from computed title
         }
@@ -137,7 +213,10 @@ class BWS_Title_Slug_Handler extends BWS_Unified_Handler_Base {
 
         $update_data = ['ID' => $post_id];
         if ($title_changed) $update_data['post_title'] = $new_title;
-        if ($slug_changed)  $update_data['post_name']  = $new_slug;
+        if ($slug_changed) {
+            $update_data['post_name'] = $new_slug;
+            $this->final_slugs[$post_id] = $new_slug;
+        }
         wp_update_post($update_data);
 
         remove_filter('wp_save_post_revision_post_has_changed', '__return_false');
@@ -157,7 +236,7 @@ class BWS_Title_Slug_Handler extends BWS_Unified_Handler_Base {
         $this->write_rule_status($rule_index, $post_id, $new_title, $new_slug ?? $post->post_name, []);
     }
 
-    private function find_matching_rule(WP_Post $post, array $rules): ?array {
+    private function find_matching_rule(object $post, array $rules): ?array {
         foreach ($rules as $rule) {
             if (!empty($rule['post_type']) && $rule['post_type'] === $post->post_type) {
                 return $rule;
@@ -170,11 +249,16 @@ class BWS_Title_Slug_Handler extends BWS_Unified_Handler_Base {
         return str_contains($pattern, '{default_title}');
     }
 
+    private function rule_needs_postmeta(array $rule): bool {
+        $patterns = ($rule['title_pattern'] ?? '') . ($rule['slug_pattern'] ?? '');
+        return (bool) preg_match('/\{(meta:|date_(?:year|month|day|hour|minute):)/', $patterns);
+    }
+
     // -------------------------------------------------------------------------
     // Token resolution engine
     // -------------------------------------------------------------------------
 
-    protected function resolve_pattern(string $pattern, int $post_id, WP_Post $post,
+    protected function resolve_pattern(string $pattern, int $post_id, object $post,
                                        string $context, string $computed_title = ''): string {
         $default_title = $computed_title;
         $default_slug  = sanitize_title($computed_title);
@@ -198,7 +282,7 @@ class BWS_Title_Slug_Handler extends BWS_Unified_Handler_Base {
         return $segments;
     }
 
-    private function build_from_segments(array $segments, int $post_id, WP_Post $post,
+    private function build_from_segments(array $segments, int $post_id, object $post,
                                           string $context, string $default_title,
                                           string $default_slug): string {
         $result = '';
@@ -230,7 +314,7 @@ class BWS_Title_Slug_Handler extends BWS_Unified_Handler_Base {
         return $result;
     }
 
-    private function resolve_token(string $token, int $post_id, WP_Post $post,
+    private function resolve_token(string $token, int $post_id, object $post,
                                     string $context, string $default_title,
                                     string $default_slug): string {
         // {default_title} and {default_slug} — never apply duplicate-insertion guard.
@@ -321,7 +405,7 @@ class BWS_Title_Slug_Handler extends BWS_Unified_Handler_Base {
         return $this->format_date_part($dt, $part);
     }
 
-    private function get_pub_part(WP_Post $post, string $part): string {
+    private function get_pub_part(object $post, string $part): string {
         // Uses post_date (local time), not post_date_gmt.
         $dt = new DateTime($post->post_date);
         return $this->format_date_part($dt, $part);
@@ -434,7 +518,10 @@ class BWS_Title_Slug_Handler extends BWS_Unified_Handler_Base {
     // Slug collision avoidance
     // -------------------------------------------------------------------------
 
-    protected function apply_slug_mode(string $built, string $default_slug, string $mode): string {
+    protected function apply_slug_mode(string $built, string $default_slug, string $mode, string $slug_pattern = ''): string {
+        if ($slug_pattern !== '' && str_contains($slug_pattern, '{default_slug}')) {
+            $mode = 'replace';
+        }
         return match($mode) {
             'prefix'  => trim($built . '-' . $default_slug, '-'),
             'suffix'  => trim($default_slug . '-' . $built, '-'),
@@ -442,7 +529,7 @@ class BWS_Title_Slug_Handler extends BWS_Unified_Handler_Base {
         };
     }
 
-    protected function make_unique_slug(string $slug, int $post_id, WP_Post $post, array $rule): string {
+    protected function make_unique_slug(string $slug, int $post_id, object $post, array $rule): string {
         if ($this->slug_is_unique($slug, $post_id, $post->post_type)) {
             return $slug;
         }
@@ -472,7 +559,7 @@ class BWS_Title_Slug_Handler extends BWS_Unified_Handler_Base {
         return 'none';
     }
 
-    private function get_date_parts_for_escalation(array $rule, int $post_id, WP_Post $post): array {
+    private function get_date_parts_for_escalation(array $rule, int $post_id, object $post): array {
         if (!empty($rule['date_field'])) {
             $raw = get_post_meta($post_id, $rule['date_field'], true);
             $dt  = $raw ? $this->parse_date_value((string)$raw) : null;
@@ -482,6 +569,7 @@ class BWS_Title_Slug_Handler extends BWS_Unified_Handler_Base {
         if (!$dt) return [];
 
         return [
+            'year'   => $dt->format('Y'),
             'month'  => $dt->format('m'),
             'day'    => $dt->format('d'),
             'hour'   => $dt->format('H'),
@@ -489,27 +577,50 @@ class BWS_Title_Slug_Handler extends BWS_Unified_Handler_Base {
         ];
     }
 
-    private function escalate_date_slug(string $slug, int $post_id, WP_Post $post, array $rule): string {
+    private function escalate_date_slug(string $slug, int $post_id, object $post, array $rule): string {
         $pattern   = $rule['slug_pattern'] ?? '';
         $precision = $this->detect_date_precision($pattern);
+        if ($precision === 'none' && !empty($rule['title_pattern'])) {
+            $precision = $this->detect_date_precision($rule['title_pattern']);
+        }
         $parts     = $this->get_date_parts_for_escalation($rule, $post_id, $post);
         if (empty($parts)) {
             return wp_unique_post_slug($slug, $post_id, $post->post_status, $post->post_type, $post->post_parent);
         }
 
         // Escalation ladder: add progressively more date precision until unique.
-        $ladder = match($precision) {
-            'year'  => ['month', 'day', 'hour', 'minute'],
-            'month' => ['day', 'hour', 'minute'],
-            'day'   => ['hour', 'minute'],
-            'hour'  => ['minute'],
-            default => [],
-        };
+        // Parts insert adjacent to existing date portion, not appended to end.
+        $precision_order = ['year', 'month', 'day', 'hour', 'minute'];
+        $precision_index = array_search($precision, $precision_order, true);
+        if ($precision_index === false) {
+            return wp_unique_post_slug($slug, $post_id, $post->post_status, $post->post_type, $post->post_parent);
+        }
 
+        // Build the anchor: the date string already present in the slug.
+        $anchor = '';
+        for ($i = 0; $i <= $precision_index; $i++) {
+            $key = $precision_order[$i];
+            if (!empty($parts[$key])) {
+                $anchor .= ($anchor !== '' ? '-' : '') . $parts[$key];
+            }
+        }
+
+        // Find anchor position in slug to splice after it.
+        $anchor_pos = strpos($slug, $anchor);
+        if ($anchor_pos === false) {
+            return wp_unique_post_slug($slug, $post_id, $post->post_status, $post->post_type, $post->post_parent);
+        }
+        $before = substr($slug, 0, $anchor_pos + strlen($anchor));
+        $after  = substr($slug, $anchor_pos + strlen($anchor));
+
+        // Escalate: insert next date parts between anchor and remainder.
+        $extra = '';
         $candidate = $slug;
-        foreach ($ladder as $part) {
-            if (empty($parts[$part])) continue;
-            $candidate = $slug . '-' . $parts[$part];
+        for ($i = $precision_index + 1; $i < count($precision_order); $i++) {
+            $key = $precision_order[$i];
+            if (empty($parts[$key])) continue;
+            $extra .= '-' . $parts[$key];
+            $candidate = $before . $extra . $after;
             if ($this->slug_is_unique($candidate, $post_id, $post->post_type)) {
                 return $candidate;
             }
@@ -577,7 +688,7 @@ class BWS_Title_Slug_Handler extends BWS_Unified_Handler_Base {
         $default_slug = sanitize_title($new_title);
         if (!empty($rule['slug_pattern'])) {
             $built = $this->resolve_pattern($rule['slug_pattern'], $post_id, $post, 'slug', $new_title);
-            $new_slug = $this->apply_slug_mode($built, $default_slug, $rule['slug_mode'] ?? 'prefix');
+            $new_slug = $this->apply_slug_mode($built, $default_slug, $rule['slug_mode'] ?? 'prefix', $rule['slug_pattern'] ?? '');
         } elseif (!empty($rule['title_pattern'])) {
             $new_slug = $default_slug;
         }

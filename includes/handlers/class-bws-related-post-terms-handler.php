@@ -3,7 +3,7 @@
  * BWS Taxonomy Manager Related Post Terms Handler
  * Syncs taxonomy terms from related posts via ACF relationship/post object fields
  * 
- * @since 1.0.0
+ * @since 0.1.0
  */
 
 // Prevent direct access

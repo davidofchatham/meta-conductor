@@ -6,7 +6,7 @@
  * Uses a singleton pattern to ensure only one storage instance exists.
  *
  * @package BWS_Meta_Manager
- * @since 2.0.0
+ * @since 0.2.0
  */
 
 // Prevent direct access
@@ -41,7 +41,7 @@ class BWS_Storage_Factory {
     /**
      * Get the rule storage instance
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @return BWS_Rule_Storage Storage implementation instance
      *
      * @example
@@ -90,7 +90,7 @@ class BWS_Storage_Factory {
     /**
      * Set storage configuration
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @param array $config Configuration array:
      *                      - 'type' (string): Storage type ('options', 'cpt')
      *                      - 'cache_enabled' (bool): Whether to enable caching
@@ -111,7 +111,7 @@ class BWS_Storage_Factory {
      *
      * Useful for testing or when switching storage backends.
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @return void
      */
     public static function reset(): void {
@@ -124,7 +124,7 @@ class BWS_Storage_Factory {
     /**
      * Get current storage configuration
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @return array Current configuration
      */
     public static function get_config(): array {
@@ -134,7 +134,7 @@ class BWS_Storage_Factory {
     /**
      * Get information about the current storage backend
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @return array Storage info with keys:
      *               - 'type': Storage type identifier
      *               - 'class': Storage class name
@@ -189,7 +189,7 @@ class BWS_Storage_Factory {
     /**
      * Check if a feature is supported by current storage
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @param string $feature Feature name (e.g., 'native_export', 'revisions')
      * @return bool True if supported, false otherwise
      *
@@ -206,7 +206,7 @@ class BWS_Storage_Factory {
     /**
      * Get statistics about stored rules
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @return array Statistics with keys:
      *               - 'total_rules': Total number of rules
      *               - 'enabled_rules': Number of enabled rules
@@ -240,7 +240,7 @@ class BWS_Storage_Factory {
 
         // Estimate storage size
         if ($storage->get_storage_type() === 'options') {
-            $option_value = get_option('bws_taxonomy_manager_settings', []);
+            $option_value = get_option(BWS_Option_Rule_Storage::OPTION_NAME, []);
             $stats['storage_size'] = strlen(serialize($option_value));
         }
 
@@ -250,7 +250,7 @@ class BWS_Storage_Factory {
     /**
      * Migrate rules from one storage backend to another
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @param string $from_type Source storage type ('options' or 'cpt')
      * @param string $to_type Target storage type
      * @param array  $options Migration options:
@@ -289,7 +289,7 @@ class BWS_Storage_Factory {
         // Create backup if requested
         if ($options['backup'] ?? true) {
             $backup_key = 'bws_storage_backup_' . time();
-            $current_data = get_option('bws_taxonomy_manager_settings');
+            $current_data = get_option(BWS_Option_Rule_Storage::OPTION_NAME);
             update_option($backup_key, $current_data);
             $results['backup_created'] = true;
             $results['backup_key'] = $backup_key;
@@ -321,7 +321,7 @@ class BWS_Storage_Factory {
                 if ($options['delete_source'] ?? false) {
                     // For options storage, clear the option
                     if ($from_type === 'options') {
-                        delete_option('bws_taxonomy_manager_settings');
+                        delete_option(BWS_Option_Rule_Storage::OPTION_NAME);
                     }
                     // For CPT, would delete all posts (implement when CPT ready)
                 }
@@ -341,7 +341,7 @@ class BWS_Storage_Factory {
             // Restore from backup if migration failed
             if ($results['backup_created']) {
                 $backup_data = get_option($results['backup_key']);
-                update_option('bws_taxonomy_manager_settings', $backup_data);
+                update_option(BWS_Option_Rule_Storage::OPTION_NAME, $backup_data);
                 $results['errors'][] = 'Restored from backup';
             }
         }

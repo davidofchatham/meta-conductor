@@ -11,7 +11,7 @@
  * while initializing library instances for future delegation. This "gradual refactor"
  * approach allows testing the integration without rewriting proven, complex code.
  *
- * ## Library Delegation Points (v2.1+ - Deep Refactor)
+ * ## Library Delegation Points (Deep Refactor — planned, unscheduled)
  *
  * Future refactoring will delegate to libraries:
  * - **BWS_Term_Migrator**: Taxonomy-to-taxonomy migrations (see process_taxonomy_to_taxonomy_batch)
@@ -28,7 +28,7 @@
  *
  * @package BWS_Meta_Manager
  * @subpackage Conversion
- * @since 2.0.0
+ * @since 0.2.0
  */
 
 if ( ! defined( 'ABSPATH' ) ) {

@@ -1,0 +1,99 @@
+{
+    "packages": [
+        {
+            "name": "rakit/validation",
+            "version": "v1.4.0",
+            "version_normalized": "1.4.0.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/rakit/validation.git",
+                "reference": "ff003a35cdf5030a5f2482299f4c93f344a35b29"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/rakit/validation/zipball/ff003a35cdf5030a5f2482299f4c93f344a35b29",
+                "reference": "ff003a35cdf5030a5f2482299f4c93f344a35b29",
+                "shasum": ""
+            },
+            "require": {
+                "ext-mbstring": "*",
+                "php": ">=7.0"
+            },
+            "require-dev": {
+                "php-coveralls/php-coveralls": "^2.2",
+                "phpunit/phpunit": "^6.5",
+                "squizlabs/php_codesniffer": "^3"
+            },
+            "time": "2020-08-27T05:07:01+00:00",
+            "type": "library",
+            "installation-source": "dist",
+            "autoload": {
+                "psr-4": {
+                    "Rakit\\Validation\\": "src"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Muhammad Syifa",
+                    "email": "emsifa@gmail.com"
+                }
+            ],
+            "description": "PHP Laravel like standalone validation library",
+            "support": {
+                "issues": "https://github.com/rakit/validation/issues",
+                "source": "https://github.com/rakit/validation/tree/v1.4.0"
+            },
+            "install-path": "../rakit/validation"
+        },
+        {
+            "name": "tdrayson/wp-wireframe",
+            "version": "v1.0.6",
+            "version_normalized": "1.0.6.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/tdrayson/wp-wireframe.git",
+                "reference": "b8367e7913f52292127d97b284d5ef9644cd4d7c"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/tdrayson/wp-wireframe/zipball/b8367e7913f52292127d97b284d5ef9644cd4d7c",
+                "reference": "b8367e7913f52292127d97b284d5ef9644cd4d7c",
+                "shasum": ""
+            },
+            "require": {
+                "php": ">=8.1",
+                "rakit/validation": "^1.4"
+            },
+            "time": "2026-06-04T11:48:51+00:00",
+            "type": "library",
+            "installation-source": "dist",
+            "autoload": {
+                "psr-4": {
+                    "Wireframe\\": "src/"
+                }
+            },
+            "license": [
+                "GPL-2.0-or-later"
+            ],
+            "description": "A fast, standardised way to build WordPress settings pages from a PHP array.",
+            "keywords": [
+                "admin",
+                "framework",
+                "react",
+                "settings",
+                "wordpress"
+            ],
+            "support": {
+                "source": "https://github.com/tdrayson/wp-wireframe/tree/v1.0.6",
+                "issues": "https://github.com/tdrayson/wp-wireframe/issues"
+            },
+            "install-path": "../tdrayson/wp-wireframe"
+        }
+    ],
+    "dev": true,
+    "dev-package-names": []
+}

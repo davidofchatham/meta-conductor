@@ -8,7 +8,7 @@
  *
  * @package BWS_Meta_Manager
  * @subpackage Libraries
- * @since 2.0.0
+ * @since 0.2.0
  */
 
 if ( ! defined( 'ABSPATH' ) ) {

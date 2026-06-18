@@ -7,7 +7,7 @@
  * (wp_options, CPT, external DB, etc.) without changing handler code.
  *
  * @package BWS_Meta_Manager
- * @since 2.0.0
+ * @since 0.2.0
  */
 
 // Prevent direct access
@@ -26,7 +26,7 @@ interface BWS_Rule_Storage {
     /**
      * Get all rules of a specific type
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @param string $type Rule type (hierarchical_rules, propagation_rules, etc.)
      * @param array  $filters Optional filters to apply:
      *                        - 'enabled' (bool): Filter by enabled status
@@ -48,7 +48,7 @@ interface BWS_Rule_Storage {
     /**
      * Get a single rule by type and ID
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @param string $type Rule type
      * @param int    $rule_id Rule ID (array index for options, post ID for CPT)
      * @return array|null Rule data array or null if not found
@@ -61,7 +61,7 @@ interface BWS_Rule_Storage {
     /**
      * Save a rule (create or update)
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @param string $type Rule type
      * @param int    $rule_id Rule ID (use -1 for new rule)
      * @param array  $data Rule data to save
@@ -83,7 +83,7 @@ interface BWS_Rule_Storage {
     /**
      * Delete a rule
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @param string $type Rule type
      * @param int    $rule_id Rule ID
      * @return bool True on success, false on failure
@@ -93,7 +93,7 @@ interface BWS_Rule_Storage {
     /**
      * Search rules across all types
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @param string $query Search query (searches in rule names, taxonomies, etc.)
      * @param array  $filters Optional additional filters
      * @return array Array of matching rules with 'type' and 'id' keys
@@ -110,7 +110,7 @@ interface BWS_Rule_Storage {
     /**
      * Get all supported rule types
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @return array Array of rule type identifiers
      *
      * @example
@@ -122,7 +122,7 @@ interface BWS_Rule_Storage {
     /**
      * Count rules of a specific type
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @param string $type Rule type
      * @param array  $filters Optional filters (same as get_rules)
      * @return int Number of matching rules
@@ -135,7 +135,7 @@ interface BWS_Rule_Storage {
     /**
      * Check if a rule exists
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @param string $type Rule type
      * @param int    $rule_id Rule ID
      * @return bool True if rule exists, false otherwise
@@ -145,7 +145,7 @@ interface BWS_Rule_Storage {
     /**
      * Duplicate a rule
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @param string $type Rule type
      * @param int    $rule_id Rule ID to duplicate
      * @param array  $overrides Optional data to override in the duplicate
@@ -163,7 +163,7 @@ interface BWS_Rule_Storage {
     /**
      * Bulk enable/disable rules
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @param string $type Rule type
      * @param array  $rule_ids Array of rule IDs
      * @param bool   $enabled True to enable, false to disable
@@ -176,7 +176,7 @@ interface BWS_Rule_Storage {
      *
      * Prepares rules for export (JSON, XML, etc.)
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @param array $filters Optional filters (type, ids, etc.)
      * @return array Exportable array of rules
      */
@@ -185,7 +185,7 @@ interface BWS_Rule_Storage {
     /**
      * Import rules from array format
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @param array $rules_data Array of rules to import
      * @param array $options Import options:
      *                       - 'overwrite' (bool): Overwrite existing rules
@@ -201,7 +201,7 @@ interface BWS_Rule_Storage {
      * Storage implementations that use caching should clear their cache
      * when this method is called.
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @param string|null $type Optional rule type to clear, null for all
      * @return void
      */
@@ -210,7 +210,7 @@ interface BWS_Rule_Storage {
     /**
      * Get storage backend identifier
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @return string Storage backend name ('options', 'cpt', 'external', etc.)
      */
     public function get_storage_type(): string;
@@ -218,7 +218,7 @@ interface BWS_Rule_Storage {
     /**
      * Validate rule data before saving
      *
-     * @since 2.0.0
+     * @since 0.2.0
      * @param string $type Rule type
      * @param array  $data Rule data to validate
      * @return array Array with 'valid' (bool) and 'errors' (array) keys
