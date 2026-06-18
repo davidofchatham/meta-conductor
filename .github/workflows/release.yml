@@ -40,17 +40,20 @@ jobs:
         run: |
           # git archive honors .gitattributes export-ignore, so dev-only files
           # are dropped and only committed runtime files ship. Prefix sets the
-          # extracted folder name to meta-conductor/.
+          # extracted folder name to meta-conductor/ (NOT versioned); the version
+          # lives only in the asset filename below.
+          zip_name="meta-conductor-${{ steps.ver.outputs.version }}.zip"
+          echo "zip_name=${zip_name}" >> "$GITHUB_ENV"
           git archive --format=zip --prefix=meta-conductor/ \
-            -o meta-conductor.zip "${GITHUB_REF_NAME}"
+            -o "${zip_name}" "${GITHUB_REF_NAME}"
           echo "--- archive contents (top level) ---"
-          unzip -l meta-conductor.zip | grep 'meta-conductor/[^/]*/\?$' || true
+          unzip -l "${zip_name}" | grep 'meta-conductor/[^/]*/\?$' || true
 
       - name: Create release and upload asset
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "${GITHUB_REF_NAME}" \
-            meta-conductor.zip \
+            "${zip_name}" \
             --title "Meta Conductor ${{ steps.ver.outputs.version }}" \
             --generate-notes
