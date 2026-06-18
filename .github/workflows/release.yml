@@ -1,0 +1,56 @@
+name: Release
+
+# Packages the plugin into a distributable ZIP and publishes a GitHub Release
+# whenever a v* tag is pushed. The ZIP is the asset Plugin Update Checker pulls
+# (release-assets mode), so its folder structure and version must be exact:
+#   - ZIP root dir = meta-conductor/  (WP extracts to wp-content/plugins/meta-conductor)
+#   - asset name   = meta-conductor.zip
+#   - plugin header Version: must equal the tag (minus the leading v)
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write   # required for gh release create / asset upload
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history for the tag)
+        uses: actions/checkout@v4
+
+      - name: Derive version from tag
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify plugin header matches tag
+        run: |
+          header_version=$(grep -m1 -oP '^\s*\*\s*Version:\s*\K[0-9][^\s]*' meta-conductor.php)
+          echo "Tag version:    ${{ steps.ver.outputs.version }}"
+          echo "Header version: ${header_version}"
+          if [ "${header_version}" != "${{ steps.ver.outputs.version }}" ]; then
+            echo "::error::Plugin header Version (${header_version}) does not match tag (${{ steps.ver.outputs.version }}). Bump the header before tagging."
+            exit 1
+          fi
+
+      - name: Build distribution ZIP
+        run: |
+          # git archive honors .gitattributes export-ignore, so dev-only files
+          # are dropped and only committed runtime files ship. Prefix sets the
+          # extracted folder name to meta-conductor/.
+          git archive --format=zip --prefix=meta-conductor/ \
+            -o meta-conductor.zip "${GITHUB_REF_NAME}"
+          echo "--- archive contents (top level) ---"
+          unzip -l meta-conductor.zip | grep 'meta-conductor/[^/]*/\?$' || true
+
+      - name: Create release and upload asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            meta-conductor.zip \
+            --title "Meta Conductor ${{ steps.ver.outputs.version }}" \
+            --generate-notes

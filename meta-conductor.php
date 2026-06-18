@@ -1,13 +1,13 @@
 <?php
 /**
- * Plugin Name: BWS Meta Manager
+ * Plugin Name: Meta Conductor
+ * Plugin URI: https://github.com/davidofchatham/meta-conductor
  * Description: Unified meta and taxonomy management with hierarchical inheritance, entity relationships, data conversion, and intelligent automation
  * Version: 0.3.0
- * Author: Bridge Web Solutions
- * Author URI: https://bridgewebsolutions.com
- * License: GPL-3.0-or-later
- * License URI: https://www.gnu.org/licenses/gpl-3.0.html
- * Text Domain: bws-meta-manager
+ * Author: David Mitchell (Bridge Web Solutions) and Claude AI
+ * License: GPL-2.0-or-later
+ * License URI: https://www.gnu.org/licenses/gpl-2.0.html
+ * Text Domain: meta-conductor
  * Requires PHP: 8.1
  */
 
@@ -44,6 +44,22 @@ if (!function_exists('bws_meta_manager_init')) {
         // Composer autoloader (WP Wireframe + rakit/validation)
         if (file_exists(BWS_META_MANAGER_PLUGIN_DIR . 'vendor/autoload.php')) {
             require_once BWS_META_MANAGER_PLUGIN_DIR . 'vendor/autoload.php';
+        }
+
+        // Plugin Update Checker — pulls updates from public GitHub releases.
+        // Matches the release ZIP attached by .github/workflows/release.yml on each
+        // `v*` tag. Slug must equal the installed plugin folder (meta-conductor).
+        if (file_exists(BWS_META_MANAGER_PLUGIN_DIR . 'libs/plugin-update-checker/load-v5p7.php')) {
+            require_once BWS_META_MANAGER_PLUGIN_DIR . 'libs/plugin-update-checker/load-v5p7.php';
+
+            $bws_mc_update_checker = \YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
+                'https://github.com/davidofchatham/meta-conductor/',
+                __FILE__,
+                'meta-conductor'
+            );
+
+            // Use GitHub Releases (not branch tips) and the attached ZIP asset.
+            $bws_mc_update_checker->getVcsApi()->enableReleaseAssets();
         }
 
         // Wireframe bootstrap (Phase 2c pilot — runs alongside legacy UI until verified).
@@ -463,7 +479,7 @@ if (!function_exists('bws_meta_manager_init')) {
 	 */
 	add_filter('plugin_row_meta', function($plugin_meta, $plugin_file) {
 		if (plugin_basename(__FILE__) === $plugin_file) {
-			$plugin_meta[] = '<a href="https://github.com/davidofchatham/bws-meta-manager" target="_blank">' . esc_html__('GitHub', 'bws-meta-manager') . '</a>';
+			$plugin_meta[] = '<a href="https://github.com/davidofchatham/meta-conductor" target="_blank">' . esc_html__('GitHub', 'bws-meta-manager') . '</a>';
 		}
 		return $plugin_meta;
 	}, 10, 2);

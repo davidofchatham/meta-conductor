@@ -165,9 +165,11 @@ Visible change — rename the plugin, migrate the option key, update all strings
 
 Follow the **Naming Surface (0.x)** table in the decisions section above for which layers drop `bws-` and which keep `bws_`/`BWS\`.
 
-- Rename plugin folder: `bws-meta-manager` → `meta-conductor`
-- Rename main file: `bws-taxonomy-manager.php` → `meta-conductor.php`
-- Update plugin header: `Plugin Name: Meta Conductor`, `Text Domain: meta-conductor`
+> **Partially landed early (release-infra branch):** main-file rename and header `Plugin Name`/`Text Domain` shipped ahead of the full phase to unblock the self-hosted release pipeline (PUC + GitHub Actions). The option key was already migrated in Phase 2c. Remaining 2b work: the ~600-call `__()` text-domain sweep, constant aliases, nonce/hook prefix rename, JS object rename — and these depend on Phase 2a (PSR-4) landing first per Hard Constraints.
+
+- Rename plugin folder: `bws-meta-manager` → `meta-conductor` *(repo + GitHub done; local dev folder + test-site install folder still legacy-named)*
+- ~~Rename main file: `bws-taxonomy-manager.php` → `meta-conductor.php`~~ ✅ done
+- ~~Update plugin header: `Plugin Name: Meta Conductor`, `Text Domain: meta-conductor`~~ ✅ done
 - Rename option key: `bws_taxonomy_manager_settings` → `bws_meta_conductor_settings`
   - Add data migration in activation/upgrade hook: read old key → write new key → delete old key
   - Test on InstaWP site before deploying
