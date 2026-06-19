@@ -26,6 +26,148 @@ class WireframeBootstrap {
     public static function init(): void {
         add_action('init', [self::class, 'boot'], 10);
         add_action('admin_menu', [self::class, 'register_subpages'], 11);
+
+        // Snapshot resolved term/taxonomy names into each related rule at save
+        // time so the repeater row title can read them (V11). Wireframe's
+        // title_template does raw value substitution only — it cannot resolve
+        // a stored term ID to a name — so the names must be persisted.
+        add_filter('wp-wireframe/save/payload', [self::class, 'snapshot_related_labels'], 10, 1);
+    }
+
+    /**
+     * Inject trigger_label / target_label into each related_rules row.
+     *
+     * Hooked on `wp-wireframe/save/payload`, which fires AFTER Wireframe's
+     * Sanitizer (so injected keys survive even though they are not declared
+     * editable) and right before the merge into saved state. Labels are a
+     * save-time snapshot: renaming a term later shows the stale name until
+     * the rule is re-saved (accepted, pre-1.0).
+     *
+     * @param array $clean_values Sanitized top-level field map.
+     * @return array
+     */
+    public static function snapshot_related_labels(array $clean_values): array {
+        if (empty($clean_values['related_rules']) || !is_array($clean_values['related_rules'])) {
+            return $clean_values;
+        }
+
+        foreach ($clean_values['related_rules'] as &$rule) {
+            if (!is_array($rule)) {
+                continue;
+            }
+
+            $trigger_type = $rule['trigger_type'] ?? 'term';
+
+            if ($trigger_type === 'taxonomy') {
+                $rule['trigger_label'] = self::taxonomy_label($rule['trigger_taxonomy'] ?? '');
+            } else {
+                $rule['trigger_label'] = self::term_label($rule['trigger_term_id'] ?? null);
+            }
+
+            $rule['target_label'] = self::term_label($rule['target_term_id'] ?? null);
+            $rule['scope_label']  = self::scope_label($rule['post_types'] ?? []);
+
+            // Escape at the point of injection: these labels are persisted and
+            // later substituted into the repeater row title. Wireframe renders
+            // the title as a React text child (auto-escaped), so this is
+            // defense-in-depth, not a known hole. WP already sanitizes term
+            // names on input.
+            $rule['trigger_label'] = \esc_html($rule['trigger_label']);
+            $rule['target_label']  = \esc_html($rule['target_label']);
+            $rule['scope_label']   = \esc_html($rule['scope_label']);
+        }
+        unset($rule);
+
+        return $clean_values;
+    }
+
+    /**
+     * Resolve a stored term ID to "<taxonomy label>: <term name>" (V11),
+     * mirroring the option-label shape of ConfigHelpers::all_term_options().
+     *
+     * Accepts the FormTokenField single-value shape `[N]` as well as a bare
+     * scalar `N`. Returns '' when unresolvable.
+     *
+     * @param mixed $stored Term ID, or single-element array of one.
+     * @return string
+     */
+    private static function term_label($stored): string {
+        $id = is_array($stored) ? ($stored[0] ?? 0) : $stored;
+        $id = (int) $id;
+        if ($id <= 0) {
+            return '';
+        }
+
+        $term = \get_term($id);
+        if (!$term || \is_wp_error($term)) {
+            return '';
+        }
+
+        $tax_label = self::taxonomy_label($term->taxonomy);
+
+        return $tax_label !== '' ? $tax_label . ': ' . $term->name : $term->name;
+    }
+
+    /**
+     * Build the post-type scope suffix " (Label, Label)" for the row title.
+     *
+     * Returns '' when the rule applies to all post types (empty post_types),
+     * so the dumb-concat title_template renders no trailing space. The " ("
+     * and ")" decoration lives here, not in the template. Accepts the
+     * Wireframe checkbox `{slug: bool}` map and a plain list of slugs.
+     *
+     * @param mixed $post_types Checkbox map or list of post-type slugs.
+     * @return string
+     */
+    private static function scope_label($post_types): string {
+        if (empty($post_types) || !is_array($post_types)) {
+            return '';
+        }
+
+        // Checkboxes store {slug: bool}; extract truthy keys. A plain list
+        // (array_is_list) is used as-is.
+        $slugs = array_is_list($post_types)
+            ? $post_types
+            : array_keys(array_filter($post_types));
+
+        $labels = [];
+        foreach ($slugs as $slug) {
+            $obj = \get_post_type_object((string) $slug);
+            if ($obj) {
+                $labels[] = $obj->label;
+            }
+            // A slug that no longer resolves (post type unregistered after
+            // save) is silently dropped — acceptable pre-1.0.
+        }
+
+        if (empty($labels)) {
+            return '';
+        }
+
+        return ' (' . implode(', ', $labels) . ')';
+    }
+
+    /**
+     * Resolve a taxonomy slug to its label.
+     *
+     * Uses the (plural) `label` to match the "Tax: Term" shape produced by
+     * ConfigHelpers::all_term_options() and the user-facing examples
+     * (e.g. "Shakers").
+     *
+     * @param string $slug
+     * @return string
+     */
+    private static function taxonomy_label(string $slug): string {
+        if ($slug === '') {
+            return '';
+        }
+
+        $tax = \get_taxonomy($slug);
+        if (!$tax) {
+            return '';
+        }
+
+        return $tax->label ?: $slug;
     }
 
     /**

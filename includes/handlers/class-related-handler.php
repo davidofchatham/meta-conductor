@@ -13,22 +13,21 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-// TODO(Phase 3): still on the legacy HandlerBase. The unified base
-// (UnifiedHandlerBase) has diverged — e.g. should_process_post()
-// normalizes Wireframe checkbox format only there. Fixes to one base may not
-// reach this one until migration. See ROADMAP Phase 3.
-class RelatedHandler extends HandlerBase {
-    
-    /**
-     * Handler type
-     */
-    protected $handler_type = 'related';
-    
+class RelatedHandler extends UnifiedHandlerBase {
+
     /**
      * Track if we're currently processing to prevent infinite loops
      */
     private $processing = false;
-    
+
+    public function get_handler_type(): string {
+        return 'related';
+    }
+
+    protected function get_rule_type(): string {
+        return 'related_rules';
+    }
+
     /**
      * Initialize hooks
      */
@@ -36,26 +35,12 @@ class RelatedHandler extends HandlerBase {
         add_action('set_object_terms', array($this, 'on_terms_set'), 10, 6);
         add_action('acf/save_post', array($this, 'on_acf_save_post'), 20);
     }
-    
-    /**
-     * Process a post
-     */
-    public function process_post($post_id, $post, $update) {
-        if ($this->processing) {
-            return;
-        }
-        
-        $enabled_rules = $this->get_enabled_rules();
-        
-        foreach ($enabled_rules as $rule) {
-            if (!$this->rule_applies_to_post($rule, $post)) {
-                continue;
-            }
-            
-            $this->process_related_terms($post_id, $rule);
-        }
-    }
-    
+
+    // Intentional no-op (not a forgotten implementation). Related rules fire
+    // via on_terms_set / on_acf_save_post; the base process_post routes
+    // through RuleEngine, which related does not use.
+    public function process_post($post_id, $post, $update) {}
+
     /**
      * Handle terms being set
      */
@@ -64,23 +49,28 @@ class RelatedHandler extends HandlerBase {
             return;
         }
         
-        $post = get_post($object_id);
+        $post = \get_post($object_id);
         if (!$post) {
             return;
         }
         
         $enabled_rules = $this->get_enabled_rules();
-        
+
         foreach ($enabled_rules as $rule) {
-            if (!$this->rule_applies_to_post($rule, $post)) {
+            if (!$this->should_process_post($object_id, $rule)) {
                 continue;
             }
-            
+
             // Check if this taxonomy change should trigger related terms
             if ($this->should_trigger_related_terms($rule, $taxonomy, $tt_ids, $old_tt_ids)) {
                 $this->processing = true;
-                $this->apply_related_terms($object_id, $rule, $tt_ids, $old_tt_ids);
-                $this->processing = false;
+                try {
+                    $this->apply_related_terms($object_id, $rule, $tt_ids, $old_tt_ids);
+                } finally {
+                    // Reset even if a downstream filter/hook throws, so later
+                    // rules in this request aren't silently skipped.
+                    $this->processing = false;
+                }
             }
         }
     }
@@ -93,21 +83,24 @@ class RelatedHandler extends HandlerBase {
             return;
         }
         
-        $post = get_post($post_id);
+        $post = \get_post($post_id);
         if (!$post) {
             return;
         }
         
         $enabled_rules = $this->get_enabled_rules();
-        
+
         foreach ($enabled_rules as $rule) {
-            if (!$this->rule_applies_to_post($rule, $post)) {
+            if (!$this->should_process_post($post_id, $rule)) {
                 continue;
             }
-            
+
             $this->processing = true;
-            $this->process_acf_related_terms($post_id, $rule);
-            $this->processing = false;
+            try {
+                $this->process_acf_related_terms($post_id, $rule);
+            } finally {
+                $this->processing = false;
+            }
         }
     }
     
@@ -259,65 +252,39 @@ class RelatedHandler extends HandlerBase {
     }
     
     /**
-     * Validate rule data
+     * Validate a related rule (V5).
+     *
+     * No post_type check — multi-PT now, empty post_types ⇒ all (V2).
+     * Field sanitization is handled by Wireframe's config-driven Sanitizer;
+     * this only enforces the trigger/target term/taxonomy relationships.
+     *
+     * Does NOT check `enabled` — that's the caller's concern
+     * (get_enabled_rules already filters), and conflating "disabled" with
+     * "malformed" would mislead any future validation-only caller.
+     *
+     * @param array $rule Rule configuration
+     * @return bool Valid
      */
-    public function validate_rule($rule_data) {
-        $errors = array();
-        
-        // Validate post type
-        if (empty($rule_data['post_type'])) {
-            $errors[] = __('Post type is required.', 'bws-taxonomy-manager');
-        } elseif (!post_type_exists($rule_data['post_type'])) {
-            $errors[] = __('Selected post type does not exist.', 'bws-taxonomy-manager');
+    protected function validate_rule_internal($rule) {
+        $trigger_type = $rule['trigger_type'] ?? '';
+        if (!in_array($trigger_type, array('term', 'taxonomy'), true)) {
+            return false;
         }
-        
-        // Validate trigger
-        if (empty($rule_data['trigger_type'])) {
-            $errors[] = __('Trigger type is required.', 'bws-taxonomy-manager');
-        } elseif (!in_array($rule_data['trigger_type'], array('term', 'taxonomy'))) {
-            $errors[] = __('Invalid trigger type.', 'bws-taxonomy-manager');
-        } else {
-            if ($rule_data['trigger_type'] === 'term') {
-                if (empty($rule_data['trigger_term_id'])) {
-                    $errors[] = __('Trigger term is required.', 'bws-taxonomy-manager');
-                } elseif (!get_term($rule_data['trigger_term_id'])) {
-                    $errors[] = __('Selected trigger term does not exist.', 'bws-taxonomy-manager');
-                }
-            } elseif ($rule_data['trigger_type'] === 'taxonomy') {
-                if (empty($rule_data['trigger_taxonomy'])) {
-                    $errors[] = __('Trigger taxonomy is required.', 'bws-taxonomy-manager');
-                } elseif (!taxonomy_exists($rule_data['trigger_taxonomy'])) {
-                    $errors[] = __('Selected trigger taxonomy does not exist.', 'bws-taxonomy-manager');
-                }
+
+        if ($trigger_type === 'term') {
+            if (empty($rule['trigger_term_id']) || !\get_term($rule['trigger_term_id'])) {
+                return false;
+            }
+        } else { // taxonomy
+            if (empty($rule['trigger_taxonomy']) || !\taxonomy_exists($rule['trigger_taxonomy'])) {
+                return false;
             }
         }
-        
-        // Validate target term
-        if (empty($rule_data['target_term_id'])) {
-            $errors[] = __('Target term is required.', 'bws-taxonomy-manager');
-        } elseif (!get_term($rule_data['target_term_id'])) {
-            $errors[] = __('Selected target term does not exist.', 'bws-taxonomy-manager');
+
+        if (empty($rule['target_term_id']) || !\get_term($rule['target_term_id'])) {
+            return false;
         }
-        
-        return array(
-            'valid' => empty($errors),
-            'errors' => $errors,
-            'sanitized_data' => $this->sanitize_rule_data($rule_data)
-        );
-    }
-    
-    /**
-     * Sanitize rule data
-     */
-    private function sanitize_rule_data($rule_data) {
-        return array(
-            'post_type' => sanitize_text_field($rule_data['post_type'] ?? ''),
-            'trigger_type' => sanitize_text_field($rule_data['trigger_type'] ?? ''),
-            'trigger_term_id' => $rule_data['trigger_type'] === 'term' ? absint($rule_data['trigger_term_id'] ?? 0) : null,
-            'trigger_taxonomy' => $rule_data['trigger_type'] === 'taxonomy' ? sanitize_text_field($rule_data['trigger_taxonomy'] ?? '') : null,
-            'target_term_id' => absint($rule_data['target_term_id'] ?? 0),
-            'bidirectional' => !empty($rule_data['bidirectional']),
-            'enabled' => !empty($rule_data['enabled'])
-        );
+
+        return true;
     }
 }

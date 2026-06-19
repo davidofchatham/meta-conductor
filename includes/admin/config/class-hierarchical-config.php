@@ -53,6 +53,7 @@ class HierarchicalConfig {
                                             'options' => self::get_taxonomy_options_with_placeholder(),
                                         ],
                                     ],
+                                    ConfigHelpers::post_types_field(),
                                     [
                                         'id'          => 'hierarchy_direction',
                                         'type'        => 'select',
@@ -108,16 +109,6 @@ class HierarchicalConfig {
                                                        . '<p><strong>' . esc_html__('Manual only:', 'bws-meta-manager') . '</strong> ' . esc_html__('Never auto-adds child terms. Useful with "Both" direction to get ancestors but not descendants.', 'bws-meta-manager') . '</p>',
                                         ],
                                     ],
-                                    [
-                                        'id'          => 'post_types',
-                                        'type'        => 'checkboxes',
-                                        'label'       => __('Post types (optional)', 'bws-meta-manager'),
-                                        'description' => __('Leave empty to apply to all post types using this taxonomy.', 'bws-meta-manager'),
-                                        'columns'     => 12,
-                                        'args'        => [
-                                            'options' => self::get_post_type_options(),
-                                        ],
-                                    ],
                                 ],
                             ],
                         ],
@@ -145,20 +136,6 @@ class HierarchicalConfig {
 
         foreach ($taxonomies as $taxonomy) {
             $options[$taxonomy->name] = $taxonomy->label;
-        }
-
-        return $options;
-    }
-
-    /**
-     * Public post types as id => label.
-     */
-    private static function get_post_type_options(): array {
-        $post_types = get_post_types(['public' => true], 'objects');
-        $options    = [];
-
-        foreach ($post_types as $post_type) {
-            $options[$post_type->name] = $post_type->label;
         }
 
         return $options;

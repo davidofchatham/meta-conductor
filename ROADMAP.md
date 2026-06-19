@@ -196,7 +196,7 @@ Follow the **Naming Surface (0.x)** table in the decisions section above for whi
 Migrate each handler from `BWS_Handler_Base` to `UnifiedHandlerBase`. Template: `includes/handlers/class-hierarchical-handler.php`.
 
 **Order** (simplest first):
-1. `class-related-handler.php`
+1. ~~`class-related-handler.php`~~ ✅ **done** (branch `claude/related-multi-pt-3a`) — also gained multi-post-type support (single `post_type` select → shared `post_types` checkboxes via `ConfigHelpers::post_types_field()`). Ported 4 term-utility helpers (`apply_terms_to_post`, `remove_terms_from_post`, `post_has_terms`, `debug_log`) from `BWS_Handler_Base` → `UnifiedHandlerBase`; **steps 2–5 now inherit these from the new base** rather than the legacy one.
 2. `class-hierarchical-level-restriction-handler.php`
 3. `class-propagation-handler.php`
 4. `class-related-post-terms-handler.php`

@@ -33,7 +33,7 @@ class RelatedConfig {
                         'duplicate_row'  => true,
                         'add_label'      => __('Add related term rule', 'bws-meta-manager'),
                         'empty_message'  => __('No related term rules configured.', 'bws-meta-manager'),
-                        'title_template' => '{post_type} → {target_term_id}',
+                        'title_template' => '{trigger_label} → {target_label}{scope_label}',
                         'subfields'      => [
                             [
                                 'id'      => 'enabled',
@@ -42,17 +42,7 @@ class RelatedConfig {
                                 'default' => true,
                                 'columns' => 12,
                             ],
-                            [
-                                'id'       => 'post_type',
-                                'type'     => 'select',
-                                'label'    => __('Post type', 'bws-meta-manager'),
-                                'default'  => '',
-                                'required' => true,
-                                'columns'  => 12,
-                                'args'     => [
-                                    'options' => ConfigHelpers::post_type_options(),
-                                ],
-                            ],
+                            ConfigHelpers::post_types_field(),
                             [
                                 'id'      => 'trigger_type',
                                 'type'    => 'radio',
@@ -109,6 +99,25 @@ class RelatedConfig {
                                 'description' => __('Remove the target term when the trigger term is removed.', 'bws-meta-manager'),
                                 'default'     => false,
                                 'columns'     => 12,
+                            ],
+                            // Snapshot labels for the row title (V11). Not user-editable;
+                            // populated at save by the wp-wireframe/save/payload filter
+                            // in WireframeBootstrap. Declared so title_template tokens
+                            // resolve and the row shape is documented.
+                            [
+                                'id'      => 'trigger_label',
+                                'type'    => 'hidden',
+                                'default' => '',
+                            ],
+                            [
+                                'id'      => 'target_label',
+                                'type'    => 'hidden',
+                                'default' => '',
+                            ],
+                            [
+                                'id'      => 'scope_label',
+                                'type'    => 'hidden',
+                                'default' => '',
                             ],
                         ],
                     ],
