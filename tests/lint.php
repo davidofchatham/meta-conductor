@@ -82,12 +82,16 @@ $gclass = 'WP_[A-Za-z_]+|DateTime|DateTimeImmutable|DateTimeInterface|DateTimeZo
         . '|RuntimeException|LogicException|stdClass|Closure|Generator|Iterator'
         . '|IteratorAggregate|Traversable|Countable|ArrayAccess|JsonSerializable|Stringable';
 // code positions: new/instanceof/extends/implements/catch X, X::, and type
-// hints `(X $v` `, X $v` `: X` `: ?X` `|X` `|?X`.
+// hints in any punctuation context — param `(X $v` `, X $v`, union `|X`,
+// return/property `: X` `: ?X` incl. when followed by `{`/`;`/newline, default
+// `= X`. The trailing negative-lookahead (?![A-Za-z0-9_\\]) ensures the global
+// name is a complete token, so we don't depend on the *next* char being a sigil
+// — that omission is what let a `: ?DateTime {` return type slip past (B4 redux).
 $v13re = '/(?:'
     . '\b(?:new|instanceof|extends|implements)\s+(?<!\\\\)(' . $gclass . ')\b'
     . '|catch\s*\(\s*(?<!\\\\)(' . $gclass . ')\b'
     . '|(?<![\\\\A-Za-z0-9_])(' . $gclass . ')::'
-    . '|[(,:|]\s*\??(?<!\\\\)(' . $gclass . ')\s*[\$&|)]'
+    . '|[(,:|=]\s*[?&]?\s*(?<![\\\\A-Za-z0-9_])(' . $gclass . ')(?![A-Za-z0-9_\\\\])'
     . ')/';
 $v13 = [];
 foreach ($targets as $file) {

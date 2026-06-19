@@ -395,7 +395,7 @@ class TitleSlugHandler extends UnifiedHandlerBase {
         return (string) $value;
     }
 
-    private function parse_date_value(string $value): ?DateTime {
+    private function parse_date_value(string $value): ?\DateTime {
         foreach (['Ymd', 'Y-m-d', 'Y-m-d H:i:s', 'd/m/Y'] as $format) {
             $dt = \DateTime::createFromFormat($format, $value);
             if ($dt !== false) return $dt;
