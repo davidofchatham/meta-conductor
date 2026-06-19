@@ -424,7 +424,7 @@ class TitleSlugHandler extends UnifiedHandlerBase {
         return $this->format_date_part($dt, $part);
     }
 
-    private function format_date_part(DateTimeInterface $dt, string $part): string {
+    private function format_date_part(\DateTimeInterface $dt, string $part): string {
         return match($part) {
             'year'       => $dt->format('Y'),
             'month'      => $dt->format('m'),

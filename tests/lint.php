@@ -71,5 +71,48 @@ if ($v1) {
     exit(1);
 }
 
-fwrite(STDOUT, "LINT OK — " . count($targets) . " files, no syntax errors. V1 clean (no manual requires).\n");
+// --- V13 static check (SPEC §V13 / §B2, §B4): global classes must be
+// leading-backslash qualified in CODE positions under a namespace. Unqualified
+// resolves into the plugin ns -> runtime fatal/TypeError, invisible to php -l
+// and the autoload harness. Docblocks (@var/@param/@return) are ignored — they
+// don't affect resolution (those are a Phase 2b cleanup). Strip // and # line
+// comments and skip * docblock lines before matching.
+$gclass = 'WP_[A-Za-z_]+|DateTime|DateTimeImmutable|DateTimeInterface|DateTimeZone'
+        . '|DateInterval|Exception|Throwable|Error|TypeError|InvalidArgumentException'
+        . '|RuntimeException|LogicException|stdClass|Closure|Generator|Iterator'
+        . '|IteratorAggregate|Traversable|Countable|ArrayAccess|JsonSerializable|Stringable';
+// code positions: new/instanceof/extends/implements/catch X, X::, and type
+// hints `(X $v` `, X $v` `: X` `: ?X` `|X` `|?X`.
+$v13re = '/(?:'
+    . '\b(?:new|instanceof|extends|implements)\s+(?<!\\\\)(' . $gclass . ')\b'
+    . '|catch\s*\(\s*(?<!\\\\)(' . $gclass . ')\b'
+    . '|(?<![\\\\A-Za-z0-9_])(' . $gclass . ')::'
+    . '|[(,:|]\s*\??(?<!\\\\)(' . $gclass . ')\s*[\$&|)]'
+    . ')/';
+$v13 = [];
+foreach ($targets as $file) {
+    $norm = str_replace('\\', '/', $file);
+    if (strpos($norm, '/includes/') === false) {
+        continue;
+    }
+    foreach (file($file) as $n => $line) {
+        $t = ltrim($line);
+        if ($t === '' || $t[0] === '*' || str_starts_with($t, '/*') || str_starts_with($t, '//') || str_starts_with($t, '#')) {
+            continue; // skip docblock / comment lines
+        }
+        $code = preg_replace('~//.*$~', '', $line); // strip trailing // line comment
+        if (preg_match($v13re, $code)) {
+            $v13[] = $rel($file) . ':' . ($n + 1) . '  ' . trim($line);
+        }
+    }
+}
+if ($v13) {
+    fwrite(STDERR, "\nV13 FAIL — unqualified global class in code (prefix with \\ e.g. \\WP_Query, \\DateTimeInterface):\n");
+    foreach ($v13 as $hit) {
+        fwrite(STDERR, "  ✗ $hit\n");
+    }
+    exit(1);
+}
+
+fwrite(STDOUT, "LINT OK — " . count($targets) . " files, no syntax errors. V1 + V13 clean.\n");
 exit(0);
