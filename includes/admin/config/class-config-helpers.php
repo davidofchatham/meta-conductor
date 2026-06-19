@@ -9,11 +9,13 @@
  * @since 0.2.0
  */
 
+namespace BWS\MetaConductor\Admin\Config;
+
 if (!defined('ABSPATH')) {
     exit;
 }
 
-class BWS_Config_Helpers {
+class ConfigHelpers {
 
     /**
      * All public taxonomies, with placeholder.

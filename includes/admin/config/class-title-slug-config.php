@@ -11,11 +11,13 @@
  * @since 0.2.0
  */
 
+namespace BWS\MetaConductor\Admin\Config;
+
 if (!defined('ABSPATH')) {
     exit;
 }
 
-class BWS_Title_Slug_Config {
+class TitleSlugConfig {
 
     public static function section(): array {
         return [

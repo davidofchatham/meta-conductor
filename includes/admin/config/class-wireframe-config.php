@@ -15,11 +15,13 @@
  * @since 0.2.0
  */
 
+namespace BWS\MetaConductor\Admin\Config;
+
 if (!defined('ABSPATH')) {
     exit;
 }
 
-class BWS_Wireframe_Config {
+class WireframeConfig {
 
     public static function build(): array {
         $dir = BWS_META_MANAGER_PLUGIN_DIR . 'includes/admin/config/';
@@ -42,8 +44,8 @@ class BWS_Wireframe_Config {
                 self::auto_set_tab(),
                 self::format_transform_tab(),
                 self::restrict_tab(),
-                BWS_Personalize_Config::tab(),
-                BWS_General_Config::tab(),
+                PersonalizeConfig::tab(),
+                GeneralConfig::tab(),
             ],
         ];
     }
@@ -56,7 +58,7 @@ class BWS_Wireframe_Config {
             'id'       => 'format-transform',
             'title'    => __('Format & Transform', 'bws-meta-manager'),
             'sections' => [
-                BWS_Title_Slug_Config::section(),
+                TitleSlugConfig::section(),
             ],
         ];
     }
@@ -70,13 +72,13 @@ class BWS_Wireframe_Config {
             'title'    => __('Auto-Set Terms', 'bws-meta-manager'),
             'sections' => [
                 // Group B: based on terms on a related post (highest deployment priority)
-                BWS_Propagation_Config::section(),
-                BWS_Related_Post_Terms_Config::section(),
+                PropagationConfig::section(),
+                RelatedPostTermsConfig::section(),
                 // Group C: based on date
-                BWS_Time_Based_Config::section(),
+                TimeBasedConfig::section(),
                 // Group A: based on terms already on this post
-                BWS_Related_Config::section(),
-                BWS_Hierarchical_Config::section(),
+                RelatedConfig::section(),
+                HierarchicalConfig::section(),
             ],
         ];
     }
@@ -89,7 +91,7 @@ class BWS_Wireframe_Config {
             'id'       => 'restrict',
             'title'    => __('Restrict', 'bws-meta-manager'),
             'sections' => [
-                BWS_Level_Restriction_Config::section(),
+                LevelRestrictionConfig::section(),
             ],
         ];
     }

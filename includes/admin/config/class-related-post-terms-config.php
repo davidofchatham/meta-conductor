@@ -9,11 +9,13 @@
  * @since 0.2.0
  */
 
+namespace BWS\MetaConductor\Admin\Config;
+
 if (!defined('ABSPATH')) {
     exit;
 }
 
-class BWS_Related_Post_Terms_Config {
+class RelatedPostTermsConfig {
 
     public static function section(): array {
         return [
@@ -49,7 +51,7 @@ class BWS_Related_Post_Terms_Config {
                                 'required'    => true,
                                 'columns'     => 12,
                                 'args'        => [
-                                    'options' => BWS_Config_Helpers::acf_relationship_field_options(),
+                                    'options' => ConfigHelpers::acf_relationship_field_options(),
                                 ],
                             ],
                             [
@@ -61,7 +63,7 @@ class BWS_Related_Post_Terms_Config {
                                 'required'    => true,
                                 'columns'     => 12,
                                 'args'        => [
-                                    'options' => BWS_Config_Helpers::taxonomy_options(),
+                                    'options' => ConfigHelpers::taxonomy_options(),
                                 ],
                             ],
                             [
@@ -73,7 +75,7 @@ class BWS_Related_Post_Terms_Config {
                                 'required'    => true,
                                 'columns'     => 12,
                                 'args'        => [
-                                    'options' => BWS_Config_Helpers::taxonomy_options(),
+                                    'options' => ConfigHelpers::taxonomy_options(),
                                 ],
                             ],
                             [

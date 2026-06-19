@@ -71,6 +71,8 @@ Replace manual `require_once` chains with PSR-4 autoloader. All `includes/` clas
   - Non-class `'BWS_*'` literals are constants (`BWS_RULE_STORAGE_TYPE`, `BWS_META_MANAGER_VERSION`) — safe, leave.
   - No `call_user_func`/`$class()` dynamic instantiation on plugin classes. `get_class()`/`::class`/`[self::class,...]` reference-safe under rename. Re-grep before commit: only the constants + (intentionally) FQN'd refs remain.
 - V11. `tests/verify-autoload.php` (H2) passes: every expected FQN per I.ns/I.move/I.support resolves via `autoload.php` (class_exists/interface_exists true), exit 0. Catches V2/V4/V5/V6 mechanically. `php -l` (H1) clean on all changed files.
+- V12. `namespace BWS\MetaConductor\…;` is the FIRST statement in every includes/ file — placed AFTER the top docblock but BEFORE the `if(!defined('ABSPATH'))exit;` guard. Only `declare()` may precede namespace. Assert: namespace line number < ABSPATH-guard line number in each file. Violation = php -l fatal (caught by H1).
+- V13. Inside a namespaced file, every GLOBAL class reference is leading-backslash qualified: `new \WP_Query`, `\WP_Error`, `new \DateTime`/`\DateTimeImmutable`, `catch (\Exception`, `instanceof \WP_Post`, `\WP_CLI::`, `new \stdClass`, etc. Unqualified `new WP_Query` resolves to `BWS\MetaConductor\…\WP_Query` -> runtime fatal NOT caught by php -l or the autoload harness (only fires when the method executes). NOTE: unqualified global FUNCTION calls (get_post, __, is_wp_error, wp_parse_args) are FINE — PHP auto-falls-back functions (not classes/statics/instanceof/catch) to global ns. Assert: `grep -rnE '\b(new|instanceof|catch \()\s*(WP_|DateTime|Exception|DateInterval|stdClass)' includes/ | grep -v '\\'` -> 0 (plus WP_CLI:: must be \WP_CLI::).
 
 ## §T — Tasks
 
@@ -78,20 +80,21 @@ Replace manual `require_once` chains with PSR-4 autoloader. All `includes/` clas
 id  | st | task                                                                 | cites
 T1  | x  | create autoload.php from Portal template; prefix+const swap          | I.autoload,C6,C7,V5
 T2  | x  | add BWS_META_CONDUCTOR_PATH + spl_autoload_register in meta-conductor.php | I.const,V9
-T3  | .  | rename includes/lib/ -> includes/support/ (git mv, keep/flatten subdirs) | I.support,V6
-T4  | .  | move abstracts: unified-base+handler-base->handlers/, rule-storage iface->storage/; rename files class- prefix | I.move,V5,V6
-T5  | .  | namespace + rename Support\ classes+ifaces (8 files); drop BWS_ prefix | I.support,V2,V4,V5
-T6  | .  | namespace Core\ (Entity,RuleEngine,ConditionEvaluator,ActionExecutor) + internal use stmts | I.ns,V2,V3
-T7  | .  | namespace Storage\ (RuleStorage iface, OptionRuleStorage, StorageFactory) | I.ns,V2,V3,V4
-T8  | .  | namespace Handlers\ (2 bases + 7 handlers incl 5 legacy); extends via use | I.ns,C9,V2,V3
-T9  | .  | namespace Conversion\ (Manager,Cli,Ui,FieldMapper,DataProcessor,PreviewSystem); ref Support\ via use | I.ns,V2,V3,V4
-T10 | .  | namespace Integrations\ (AcfIntegration,AdminColumnsIntegration)       | I.ns,V2,V4
-T11 | .  | namespace Admin\ (Diagnostics,WireframeBootstrap) + Admin\Config\ (11 config classes) | I.ns,V2,V3
+T3  | x  | rename includes/lib/ -> includes/support/ (git mv, FLATTEN subdirs — autoloader maps Support\X to flat support/class-x.php; rename interface-*.php -> class-*-interface.php) | I.support,V6
+T4  | x  | move abstracts: unified-base+handler-base->handlers/, rule-storage iface->storage/; rename files class- prefix. (Per-class bws- file renames done with their ns task T5-T12.) | I.move,V5,V6
+T5  | x  | namespace + rename Support\ classes+ifaces (8 files); drop BWS_ prefix | I.support,V2,V4,V5,V12
+T6 | x  | namespace Core\ (Entity,RuleEngine,ConditionEvaluator,ActionExecutor) + internal use stmts | I.ns,V2,V3
+T7 | x  | namespace Storage\ (RuleStorage iface, OptionRuleStorage, StorageFactory) | I.ns,V2,V3,V4
+T8 | x  | namespace Handlers\ (2 bases + 7 handlers incl 5 legacy); extends via use | I.ns,C9,V2,V3
+T9 | x  | namespace Conversion\ (Manager,Cli,Ui,FieldMapper,DataProcessor,PreviewSystem); ref Support\ via use | I.ns,V2,V3,V4
+T10| x  | namespace Integrations\ (AcfIntegration,AdminColumnsIntegration)       | I.ns,V2,V4
+T11| x  | namespace Admin\ (Diagnostics,WireframeBootstrap) + Admin\Config\ (11 config classes) | I.ns,V2,V3
 T12 | .  | namespace root TaxonomyManager + Settings; fix all `new BWS_*`/type hints via use | I.ns,V2,V3
-T13 | .  | update meta-conductor.php: drop 12 require_once includes/* ; drop bootstrap/diag requires; FQN the class refs (TaxonomyManager, WireframeBootstrap, Diagnostics) | V1,V9
-T14 | .  | build tests/verify-autoload.php (H2): WP stubs + vendor+autoload require + class_exists/interface_exists every FQN; build tests/lint helper (H1) | I.harness,V11
-T15 | .  | run H1+H2 (local php 8.5.1); grep checks V1/V3/V10; iterate til green     | V1,V3,V10,V11
-T16 | .  | add tests/ to .gitattributes export-ignore                              | C3,I.harness
+T12b| ~  | sweep: leading-backslash all global class refs in namespaced includes/ files (new \WP_Query, catch (\Exception, instanceof \WP_Post, \WP_CLI::, new \DateTime etc) | V13,B2
+T13 | x  | update meta-conductor.php: drop 12 require_once includes/* ; drop bootstrap/diag requires; FQN the class refs (TaxonomyManager, WireframeBootstrap, Diagnostics) | V1,V9
+T14 | x  | build tests/verify-autoload.php (H2): WP stubs + vendor+autoload require + class_exists/interface_exists every FQN; build tests/lint helper (H1) | I.harness,V11
+T15 | x  | run H1+H2 (local php 8.5.1); grep checks V1/V3/V10; iterate til green     | V1,V3,V10,V11
+T16 | x  | add tests/ to .gitattributes export-ignore                              | C3,I.harness
 T17 | .  | USER: robocopy sync to R: + manual InstaWP sweep per I.test (Claude never auto-syncs; V7 verified by user)  | I.test,V7
 T18 | .  | confirm revertable single-merge shape; update ROADMAP 2a (Support\ divergence, harness) + CLAUDE.md | V8
 ```
@@ -100,4 +103,6 @@ T18 | .  | confirm revertable single-merge shape; update ROADMAP 2a (Support\ di
 
 ```
 id | date | cause | fix
+B1 | 2026-06-19 | namespace decl placed after ABSPATH guard -> php -l fatal "must be very first statement" | V12 (namespace before guard); fixed in support/ T5
+B2 | 2026-06-19 | bare global classes (new WP_Query, catch Exception, instanceof WP_Post, WP_CLI::, new DateTime) left unqualified under namespace -> resolve to BWS\MetaConductor\... -> RUNTIME fatal, invisible to php -l + autoload harness | V13 (leading-backslash all global class refs); sweep task T12b
 ```

@@ -9,11 +9,16 @@
  * @since 0.3.0
  */
 
+namespace BWS\MetaConductor\Admin;
+
+use BWS\MetaConductor\TaxonomyManager;
+use BWS\MetaConductor\Conversion\ConversionUi;
+
 if (!defined('ABSPATH')) {
     exit;
 }
 
-class BWS_Wireframe_Bootstrap {
+class WireframeBootstrap {
 
     /**
      * Initialize hooks.
@@ -49,11 +54,11 @@ class BWS_Wireframe_Bootstrap {
      * Render callback for the Data Conversion subpage.
      */
     public static function render_conversion_page(): void {
-        if (!class_exists('BWS_Conversion_UI') || !class_exists('BWS_Taxonomy_Manager')) {
+        if (!class_exists(ConversionUi::class) || !class_exists(TaxonomyManager::class)) {
             wp_die(esc_html__('Conversion components unavailable.', 'bws-meta-manager'));
         }
 
-        $plugin             = BWS_Taxonomy_Manager::get_instance();
+        $plugin             = TaxonomyManager::get_instance();
         $conversion_manager = method_exists($plugin, 'get_conversion_manager') ? $plugin->get_conversion_manager() : null;
 
         if (!$conversion_manager) {
@@ -63,7 +68,7 @@ class BWS_Wireframe_Bootstrap {
             return;
         }
 
-        $conversion_ui = new BWS_Conversion_UI(
+        $conversion_ui = new ConversionUi(
             $conversion_manager->get_field_mapper(),
             $conversion_manager->get_data_processor(),
             $conversion_manager->get_preview_system()
@@ -114,7 +119,7 @@ class BWS_Wireframe_Bootstrap {
                     'menu_slug'     => 'meta-conductor',
                     'menu_icon'     => 'dashicons-category',
                     'menu_position' => 80,
-                    'config'        => BWS_Wireframe_Config::build(),
+                    'config'        => \BWS\MetaConductor\Admin\Config\WireframeConfig::build(),
                 ],
             ],
         ]);

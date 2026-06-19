@@ -13,11 +13,13 @@
  * @since 0.3.0
  */
 
+namespace BWS\MetaConductor\Admin;
+
 if (!defined('ABSPATH')) {
     exit;
 }
 
-class BWS_Diagnostics {
+class Diagnostics {
 
     public static function init(): void {
         add_action('admin_menu', [self::class, 'register_page'], 11);
