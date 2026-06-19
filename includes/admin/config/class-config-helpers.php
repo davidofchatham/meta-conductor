@@ -74,6 +74,47 @@ class ConfigHelpers {
     }
 
     /**
+     * Public post types as slug => label, with NO empty placeholder.
+     *
+     * Checkbox fields render one row per option and need no placeholder
+     * row (unlike a select). Use for the shared post_types_field().
+     */
+    public static function post_types_checkbox_options(): array {
+        $options    = [];
+        $post_types = get_post_types(['public' => true], 'objects');
+
+        foreach ($post_types as $post_type) {
+            $options[$post_type->name] = $post_type->label;
+        }
+
+        return $options;
+    }
+
+    /**
+     * Canonical "Limit to post types" checkboxes subfield, shared by every
+     * rule type that scopes by post type. Single source of truth: id,
+     * label, and empty-means-all semantics live here.
+     *
+     * Empty/all-unchecked ⇒ rule applies to every post type using the
+     * taxonomy. Handlers read the resulting `post_types` value via
+     * UnifiedHandlerBase::should_process_post (Wireframe {slug:bool} map).
+     *
+     * @param array $overrides Per-call field-definition overrides (e.g. columns).
+     */
+    public static function post_types_field(array $overrides = []): array {
+        return array_merge([
+            'id'          => 'post_types',
+            'type'        => 'checkboxes',
+            'label'       => __('Limit to post types', 'bws-meta-manager'),
+            'description' => __('Leave all unchecked to apply to every post type using this taxonomy.', 'bws-meta-manager'),
+            'columns'     => 12,
+            'args'        => [
+                'options' => self::post_types_checkbox_options(),
+            ],
+        ], $overrides);
+    }
+
+    /**
      * All terms across all public taxonomies, labelled "Taxonomy: Term".
      *
      * Designed for small sites (under ~500 terms). Result is cached for

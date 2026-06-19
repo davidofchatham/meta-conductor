@@ -22,7 +22,22 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **`tests/` dev harnesses** (export-ignored from the release ZIP): `verify-autoload.php` proves all class FQNs resolve without booting WordPress; `lint.php` runs a `php -l` sweep plus static checks that no manual plugin-file `require` survives and no global class is left unqualified in code.
 
-<!-- Ruleset configuration change: entry to be added when that work lands (next session). -->
+#### Phase 3a — multi-post-type Related Term Mapping
+
+- **Related Term Mapping rules now apply across multiple post types.** The single post-type dropdown became a "Limit to post types" checkbox set — leave all unchecked to apply to every post type using the taxonomy. One rule can now cover a cross-post-type term mapping instead of one rule per post type. **Existing related rules must be re-saved** (the stored scalar `post_type` key is no longer read; pre-1.0, no migration — see the `0.x` note above).
+- **`RelatedHandler` migrated off the legacy `BWS_Handler_Base` onto `UnifiedHandlerBase`** (Phase 3 step 1). Post-type gating now flows through the unified base's `should_process_post`, which reads the Wireframe checkbox shape natively.
+
+### Added
+
+- **`ConfigHelpers::post_types_field()`** — the canonical "Limit to post types" checkboxes subfield, shared by every rule type that scopes by post type. Single source of truth for the field id, label, and empty-means-all semantics.
+- **Term-utility primitives on `UnifiedHandlerBase`** (`apply_terms_to_post`, `remove_terms_from_post`, `post_has_terms`, `debug_log`), ported verbatim from `BWS_Handler_Base` so handlers migrated off the legacy base inherit them.
+- **Readable related-rule row titles** — collapsed rows now read "_Taxonomy_: _Trigger term_ → _Taxonomy_: _Target term_" (e.g. "Shakers: Parent 1 → Breakers: Grandchild ii") instead of a bare term ID; an "any term from taxonomy" trigger shows just the taxonomy name. Rules limited to specific post types get a suffix (e.g. "… (Posts, Pages)"); rules applying to all post types show none. Names are snapshot into the rule at save (via the `wp-wireframe/save/payload` filter); renaming a term shows the old name until the rule is re-saved.
+
+### Changed
+
+#### Hierarchical rules UX
+
+- **Post-types field relabeled** "Post types (optional)" → "Limit to post types" with a clearer empty-means-all description, and **moved up** to sit directly under Taxonomy (scope before behavior). Now uses the shared `ConfigHelpers::post_types_field()`.
 
 ## [0.3.1] — 2026-06-19
 

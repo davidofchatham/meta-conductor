@@ -371,6 +371,153 @@ abstract class UnifiedHandlerBase {
     }
 
     /**
+     * Apply terms to a post honoring conflict handling.
+     *
+     * Ported from legacy HandlerBase (V10) so handlers migrated onto this
+     * base inherit it. Behavior identical: merge/replace/skip.
+     *
+     * @param int    $post_id           Post ID
+     * @param string $taxonomy          Taxonomy
+     * @param array  $terms             Term IDs, objects, or arrays
+     * @param string $conflict_handling 'merge' | 'replace' | 'skip'
+     * @return array|false|\WP_Error wp_set_object_terms result, or false
+     */
+    protected function apply_terms_to_post($post_id, $taxonomy, $terms, $conflict_handling = 'merge') {
+        if (empty($terms)) {
+            return false;
+        }
+
+        // Ensure terms are term IDs
+        $term_ids = array();
+        foreach ($terms as $term) {
+            if (is_object($term)) {
+                $term_ids[] = $term->term_id;
+            } elseif (is_array($term)) {
+                $term_ids[] = $term['term_id'];
+            } else {
+                $term_ids[] = absint($term);
+            }
+        }
+
+        $term_ids = array_unique(array_filter($term_ids));
+
+        if (empty($term_ids)) {
+            return false;
+        }
+
+        switch ($conflict_handling) {
+            case 'replace':
+                return wp_set_object_terms($post_id, $term_ids, $taxonomy);
+
+            case 'merge':
+                $existing_terms = wp_get_object_terms($post_id, $taxonomy, array('fields' => 'ids'));
+                if (is_wp_error($existing_terms)) {
+                    $existing_terms = array();
+                }
+                $merged_terms = array_unique(array_merge($existing_terms, $term_ids));
+                return wp_set_object_terms($post_id, $merged_terms, $taxonomy);
+
+            case 'skip':
+                $existing_terms = wp_get_object_terms($post_id, $taxonomy, array('fields' => 'ids'));
+                if (is_wp_error($existing_terms)) {
+                    $existing_terms = array();
+                }
+
+                // Only apply if no existing terms
+                if (empty($existing_terms)) {
+                    return wp_set_object_terms($post_id, $term_ids, $taxonomy);
+                }
+                return false;
+
+            default:
+                return false;
+        }
+    }
+
+    /**
+     * Remove terms from a post.
+     *
+     * Ported from legacy HandlerBase (V10).
+     *
+     * @param int    $post_id  Post ID
+     * @param string $taxonomy Taxonomy
+     * @param array  $terms    Term IDs, objects, or arrays to remove
+     * @return array|false|\WP_Error wp_set_object_terms result, or false
+     */
+    protected function remove_terms_from_post($post_id, $taxonomy, $terms) {
+        if (empty($terms)) {
+            return false;
+        }
+
+        $existing_terms = wp_get_object_terms($post_id, $taxonomy, array('fields' => 'ids'));
+        if (is_wp_error($existing_terms)) {
+            return false;
+        }
+
+        // Ensure terms are term IDs
+        $term_ids_to_remove = array();
+        foreach ($terms as $term) {
+            if (is_object($term)) {
+                $term_ids_to_remove[] = $term->term_id;
+            } elseif (is_array($term)) {
+                $term_ids_to_remove[] = $term['term_id'];
+            } else {
+                $term_ids_to_remove[] = absint($term);
+            }
+        }
+
+        $remaining_terms = array_diff($existing_terms, $term_ids_to_remove);
+
+        return wp_set_object_terms($post_id, $remaining_terms, $taxonomy);
+    }
+
+    /**
+     * Check if a post has specific terms in a taxonomy.
+     *
+     * Ported from legacy HandlerBase (V10). Null $term_ids ⇒ "has any term".
+     *
+     * @param int        $post_id  Post ID
+     * @param string     $taxonomy Taxonomy
+     * @param array|int|null $term_ids Term IDs to check, or null for any
+     * @return bool
+     */
+    protected function post_has_terms($post_id, $taxonomy, $term_ids = null) {
+        $post_terms = wp_get_object_terms($post_id, $taxonomy, array('fields' => 'ids'));
+
+        if (is_wp_error($post_terms)) {
+            return false;
+        }
+
+        if ($term_ids === null) {
+            return !empty($post_terms);
+        }
+
+        if (!is_array($term_ids)) {
+            $term_ids = array($term_ids);
+        }
+
+        return !empty(array_intersect($post_terms, $term_ids));
+    }
+
+    /**
+     * Log a debug message when WP_DEBUG is on.
+     *
+     * Ported from legacy HandlerBase (V10).
+     *
+     * @param string $message
+     * @param mixed  $data Optional context appended via print_r
+     */
+    protected function debug_log($message, $data = null) {
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            $log_message = '[BWS Meta Manager] ' . $message;
+            if ($data !== null) {
+                $log_message .= ' - Data: ' . print_r($data, true);
+            }
+            error_log($log_message);
+        }
+    }
+
+    /**
      * Check if should process post (legacy compatibility)
      *
      * @param int $post_id Post ID
