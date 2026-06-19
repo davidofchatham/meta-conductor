@@ -20,11 +20,11 @@ class RelatedHandler extends UnifiedHandlerBase {
      */
     private $processing = false;
 
-    public function get_handler_type() {
+    public function get_handler_type(): string {
         return 'related';
     }
 
-    protected function get_rule_type() {
+    protected function get_rule_type(): string {
         return 'related_rules';
     }
 
@@ -49,7 +49,7 @@ class RelatedHandler extends UnifiedHandlerBase {
             return;
         }
         
-        $post = get_post($object_id);
+        $post = \get_post($object_id);
         if (!$post) {
             return;
         }
@@ -64,8 +64,13 @@ class RelatedHandler extends UnifiedHandlerBase {
             // Check if this taxonomy change should trigger related terms
             if ($this->should_trigger_related_terms($rule, $taxonomy, $tt_ids, $old_tt_ids)) {
                 $this->processing = true;
-                $this->apply_related_terms($object_id, $rule, $tt_ids, $old_tt_ids);
-                $this->processing = false;
+                try {
+                    $this->apply_related_terms($object_id, $rule, $tt_ids, $old_tt_ids);
+                } finally {
+                    // Reset even if a downstream filter/hook throws, so later
+                    // rules in this request aren't silently skipped.
+                    $this->processing = false;
+                }
             }
         }
     }
@@ -78,7 +83,7 @@ class RelatedHandler extends UnifiedHandlerBase {
             return;
         }
         
-        $post = get_post($post_id);
+        $post = \get_post($post_id);
         if (!$post) {
             return;
         }
@@ -91,8 +96,11 @@ class RelatedHandler extends UnifiedHandlerBase {
             }
 
             $this->processing = true;
-            $this->process_acf_related_terms($post_id, $rule);
-            $this->processing = false;
+            try {
+                $this->process_acf_related_terms($post_id, $rule);
+            } finally {
+                $this->processing = false;
+            }
         }
     }
     

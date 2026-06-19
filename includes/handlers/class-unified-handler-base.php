@@ -382,7 +382,7 @@ abstract class UnifiedHandlerBase {
      * @param string $conflict_handling 'merge' | 'replace' | 'skip'
      * @return array|false|\WP_Error wp_set_object_terms result, or false
      */
-    protected function apply_terms_to_post($post_id, $taxonomy, $terms, $conflict_handling = 'merge') {
+    protected function apply_terms_to_post(int $post_id, string $taxonomy, array $terms, string $conflict_handling = 'merge'): array|false|\WP_Error {
         if (empty($terms)) {
             return false;
         }
@@ -444,7 +444,7 @@ abstract class UnifiedHandlerBase {
      * @param array  $terms    Term IDs, objects, or arrays to remove
      * @return array|false|\WP_Error wp_set_object_terms result, or false
      */
-    protected function remove_terms_from_post($post_id, $taxonomy, $terms) {
+    protected function remove_terms_from_post(int $post_id, string $taxonomy, array $terms): array|false|\WP_Error {
         if (empty($terms)) {
             return false;
         }
@@ -481,7 +481,7 @@ abstract class UnifiedHandlerBase {
      * @param array|int|null $term_ids Term IDs to check, or null for any
      * @return bool
      */
-    protected function post_has_terms($post_id, $taxonomy, $term_ids = null) {
+    protected function post_has_terms(int $post_id, string $taxonomy, array|int|null $term_ids = null): bool {
         $post_terms = \wp_get_object_terms($post_id, $taxonomy, array('fields' => 'ids'));
 
         if (\is_wp_error($post_terms)) {
@@ -507,9 +507,9 @@ abstract class UnifiedHandlerBase {
      * @param string $message
      * @param mixed  $data Optional context appended via print_r
      */
-    protected function debug_log($message, $data = null) {
+    protected function debug_log(string $message, mixed $data = null): void {
         if (defined('WP_DEBUG') && WP_DEBUG) {
-            $log_message = '[BWS Meta Manager] ' . $message;
+            $log_message = '[Meta Conductor] ' . $message;
             if ($data !== null) {
                 $log_message .= ' - Data: ' . print_r($data, true);
             }
