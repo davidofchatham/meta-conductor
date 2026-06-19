@@ -139,6 +139,34 @@ When an idea is promoted to in-flight, add a link to its plan file under `.claud
 - **Sketch**: handler reads General-tab `conflict_handling[$taxonomy]` if rule's own `conflict_handling` is empty/unset.
 - **Phase**: small enough to tackle ad-hoc during Phase 3 handler migration.
 
+### Phase 3a code-review follow-ups (PR #19)
+
+Tracked from the PR #19 review (Related multi-PT + UnifiedHandlerBase migration). None were merge-blockers; all are pre-existing patterns carried forward or deferred test work.
+
+- **Re-entrancy window in `RelatedHandler::on_terms_set`** (review #1)
+  - **Status**: idea
+  - **Motivation**: the `$this->processing` guard is set/reset *per rule* inside the loop (correctly, via try/finally). Between two rules the flag is `false`, so a `set_object_terms` call from *outside* the handler in that window isn't guarded. Real only when multiple related rules fire in one request. Pre-existing (old `process_post` had it too) — not a regression.
+  - **Sketch**: set `processing` once around the whole rule loop, or use a re-entrancy depth counter. Verify it doesn't suppress legitimate cascades.
+  - **Phase**: revisit during Phase 3 handler migration when the loop is touched.
+
+- **`validate_rule_internal` term check ignores taxonomy** (review #2)
+  - **Status**: idea
+  - **Motivation**: `\get_term($id)` with no taxonomy returns a term from any taxonomy. A stale `trigger_term_id`/`target_term_id` could match a live term in the *wrong* taxonomy and silently pass validation, firing against it. The handler reads `trigger_taxonomy` separately, so the data to check against exists. Pre-existing.
+  - **Sketch**: validate the resolved term's `->taxonomy` matches the rule's expected taxonomy (trigger_taxonomy for trigger; target term's stored taxonomy for target).
+  - **Phase**: ad-hoc, low effort.
+
+- **`scope_label` bakes display delimiters into stored value** (review #4)
+  - **Status**: idea (or accept-as-is pre-1.0)
+  - **Motivation**: the stored `scope_label` is ` (Posts, Pages)` — a display string with `(`, `)`, `, ` baked in, not a raw slug list. If the row-title format ever changes, the persisted value won't match the new format until each rule is re-saved (same snapshot-staleness class as the term labels, V11).
+  - **Sketch**: if a structured value is ever needed, store raw slugs and format at render — but render-time formatting is exactly what Wireframe's `title_template` can't do (the reason the snapshot exists). Likely stays as-is; add a one-line comment noting the baked-in format.
+  - **Phase**: comment now if touched; structural change unlikely.
+
+- **Unit tests for `WireframeBootstrap` snapshot helpers** (review #6)
+  - **Status**: idea
+  - **Motivation**: `term_label()`, `scope_label()`, `taxonomy_label()`, `snapshot_related_labels()` are the highest-risk new code (two term-ID shapes, taxonomy-trigger path, empty-vs-populated post_types map, unresolvable → ''), covered only by manual InstaWP sweep. They're near-pure functions of WP data — testable with mock term/post-type objects.
+  - **Sketch**: add a unit harness (the project has no PHPUnit yet — only the static `tests/lint.php` + `tests/verify-autoload.php`). Worth standing up alongside CPT-storage work when schema stabilizes.
+  - **Phase**: Phase 4+ (per reviewer — when schema stability increases).
+
 ---
 
 ## Where this list comes from
