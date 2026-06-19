@@ -125,12 +125,12 @@ When an idea is promoted to in-flight, add a link to its plan file under `.claud
 - **Motivation**: Wireframe still has no JS-side field-type *extension* API — a custom type declared via the `wp-wireframe/field_types` filter registers server-side sanitize/validate but renders as nothing in React. 1.0.6's `action` field is a built-in escape hatch for the button case (real React button, posts in-flight form values to a server hook, returns `{status, message, html}`), so it doesn't need the extension API.
 - **Unblocked in 1.0.6**:
   - **Page-level Title/Slug Preview / bulk Apply** — implementable now via the `action` field on the dedicated migration page (Phase 7). No custom field type needed.
-- **Still blocked** (need the missing JS extension API):
-  - **Inline Apply-to-Existing *inside a rule row*** — `action` works as a repeater subfield, but `ActionButton` posts page-level `useSettings()` values and routes by `fieldId` only (`action/{pageId}/{fieldId}/{actionId}` — no row index). The handler can't tell which rule row fired. Workaround stays = route per-rule actions through the Phase 7 migration page.
-  - **Cascading dependent selects** (taxonomy → narrowed term list). Workaround = static enumeration at boot.
-  - **AJAX typeahead selects** for large datasets. Workaround = static enumeration at boot.
-- **Sketch**: use `action` for all page-level buttons now. Revisit row-level + select cases when/if upstream adds the field-type extension API.
-- **Tracking**: no upstream issue exists yet for (a) per-row `action` context or (b) the JS field-type extension API. File both. Upstream PR direction (≤ 2026-06-11) is *extending* the action mechanism (downloads #23, file upload #21), not adding the extension API — so don't expect the row/select cases soon.
+- **Gap A — no JS field-type extension API (root)** — **buildable by us, fork-releasable.** Three read sites all do `customEditComponents[type]` ([SettingsSection.js:49], [mapConfig.js:54], [RepeaterEdit.js:172]); the PR adds a registry + `registerFieldType()` global mirroring the existing PHP `field_types` filter. Additive, low risk. The **fork-release path** (fork Wireframe → build → tag → repoint our composer VCS dep → vendor the built fork) ships it without waiting on the upstream maintainer to merge. Once Gap A is in our vendored Wireframe it unblocks:
+  - **Taxonomy-first cascading term picker** (the named, wanted case — see Phase 3b follow-ups above). Custom field type reads its sibling taxonomy from row `data`; no sibling-update API needed.
+  - **AJAX typeahead selects** for large datasets (theoretical — static enumeration works; no rule type hits the scale yet).
+- **Gap B — `action` field has no repeater-row context** — **file upstream issue, don't build.** `ActionButton` posts page-level `useSettings()` values and routes by `fieldId` only (`action/{pageId}/{fieldId}/{actionId}` — no row index), so a button in row N can't tell the handler which row fired. Changing payload/route is a JS+PHP data-contract change the maintainer owns, and collides with in-flight action PRs (#19/#21/#23). **We don't need it** — inline Apply-to-Existing is covered by the Phase 7 migration page *by design*, not as a stopgap.
+- **Sketch**: use `action` for all page-level buttons now. For the cascading picker, do the Gap A PR + fork-release, then build a `taxonomy_term_picker` field type (~1 day). File the Gap B issue as goodwill.
+- **Tracking**: no upstream issue exists yet for (a) per-row `action` context or (b) the JS field-type extension API. PR Gap A (+ optionally self-release via fork); file Gap B as an issue. Full plan: [.claude/plans/wireframe-js-field-type-extension-blocker.md](../.claude/plans/wireframe-js-field-type-extension-blocker.md). Upstream PR direction (≤ 2026-06-11) is *extending* the action mechanism, not adding the extension API — which is exactly why the fork path matters for Gap A.
 
 ### Conflict-handling option propagation
 
@@ -166,6 +166,15 @@ Tracked from the PR #19 review (Related multi-PT + UnifiedHandlerBase migration)
   - **Motivation**: `term_label()`, `scope_label()`, `taxonomy_label()`, `snapshot_related_labels()` are the highest-risk new code (two term-ID shapes, taxonomy-trigger path, empty-vs-populated post_types map, unresolvable → ''), covered only by manual InstaWP sweep. They're near-pure functions of WP data — testable with mock term/post-type objects.
   - **Sketch**: add a unit harness (the project has no PHPUnit yet — only the static `tests/lint.php` + `tests/verify-autoload.php`). Worth standing up alongside CPT-storage work when schema stabilizes.
   - **Phase**: Phase 4+ (per reviewer — when schema stability increases).
+
+### Phase 3b follow-ups
+
+- **Taxonomy-first cascading term picker for Related Term Mapping** (deferred from Phase 3b)
+  - **Status**: idea
+  - **Motivation**: the trigger-term and target-term dropdowns list all terms across all taxonomies. Selecting a taxonomy first (e.g. "Athletics Team Connectors") then showing only its terms would dramatically reduce noise on sites with many taxonomies and many terms.
+  - **Sketch**: build a custom `taxonomy_term_picker` Wireframe field type. A custom Edit component receives full row context — RepeaterEdit passes `data={row}` to each subfield ([RepeaterEdit.js:189-193]), so the picker reads its sibling taxonomy value straight from `data` and fetches/filters its term list via REST. **No sibling-update API is needed** (the earlier "must update a sibling select → blocked" framing was wrong — one component owns both the taxonomy choice and the dependent term list, or reads the sibling from the row). The `action`-field round-trip idea is a dead end (action can't update a sibling).
+  - **Depends on**: Gap A — Wireframe's missing JS field-type extension API. See [.claude/plans/wireframe-js-field-type-extension-blocker.md](../.claude/plans/wireframe-js-field-type-extension-blocker.md). Gap A is small/additive and buildable by us; the **fork-release path** (fork → build → tag → repoint our composer VCS dep → vendor the built fork) lets us ship it without waiting on the upstream maintainer to merge. This is the one named, wanted use case that justifies doing the Gap A PR.
+  - **Phase**: unblocked once Gap A lands in our vendored Wireframe (own fork or upstream release). ~1-day build on our side after that. Until then: static boot-time enumeration holds.
 
 ---
 
