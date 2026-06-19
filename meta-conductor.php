@@ -21,6 +21,10 @@ define('BWS_META_MANAGER_VERSION', '0.3.1');
 define('BWS_META_MANAGER_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('BWS_META_MANAGER_PLUGIN_URL', plugin_dir_url(__FILE__));
 
+// PSR-4 autoloader base path (Phase 2a). Distinct from the legacy
+// BWS_META_MANAGER_PLUGIN_DIR; the kebab autoloader keys off this.
+define('BWS_META_CONDUCTOR_PATH', plugin_dir_path(__FILE__));
+
 // Backward compatibility constants
 define('BWS_TAX_MANAGER_VERSION', '0.3.1'); // For legacy code
 define('BWS_TAX_MANAGER_PLUGIN_DIR', plugin_dir_path(__FILE__));
@@ -46,6 +50,12 @@ if (!function_exists('bws_meta_manager_init')) {
             require_once BWS_META_MANAGER_PLUGIN_DIR . 'vendor/autoload.php';
         }
 
+        // PSR-4 autoloader for plugin classes (BWS\MetaConductor\). Loaded after
+        // the composer autoloader so namespaced classes that extend or implement
+        // vendor types (e.g. Wireframe) resolve. Replaces the former manual
+        // require_once chain — every includes/ class is now autoloaded on demand.
+        require_once BWS_META_CONDUCTOR_PATH . 'autoload.php';
+
         // Plugin Update Checker — pulls updates from public GitHub releases.
         // Matches the release ZIP attached by .github/workflows/release.yml on each
         // `v*` tag. Slug must equal the installed plugin folder (meta-conductor).
@@ -66,43 +76,21 @@ if (!function_exists('bws_meta_manager_init')) {
 
         // Wireframe bootstrap (Phase 2c pilot — runs alongside legacy UI until verified).
         // Must register on both admin requests (for menu) and REST requests (for save endpoint),
-        // so no is_admin() gate.
+        // so no is_admin() gate. Classes autoloaded via autoload.php (no manual require).
         if (class_exists(\Wireframe\App::class)) {
-            require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/admin/class-wireframe-bootstrap.php';
-            BWS_Wireframe_Bootstrap::init();
+            \BWS\MetaConductor\Admin\WireframeBootstrap::init();
 
             // Diagnostics subpage. Dev sections gated on WP_DEBUG; future
             // user-level sections gated on filter `bws_meta_conductor_show_diagnostics`.
             if (is_admin()) {
-                require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/admin/class-diagnostics.php';
-                BWS_Diagnostics::init();
+                \BWS\MetaConductor\Admin\Diagnostics::init();
             }
         }
 
-        // Load storage abstraction layer (unified-framework layer - prepares for CPT migration)
-        require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/abstracts/interface-bws-rule-storage.php';
-        require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/storage/class-bws-option-rule-storage.php';
-        require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/storage/class-bws-storage-factory.php';
-
-        // Load core unified framework classes
-        require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/core/class-bws-entity.php';
-        require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/core/class-bws-condition-evaluator.php';
-        require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/core/class-bws-action-executor.php';
-        require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/core/class-bws-rule-engine.php';
-
-        // Load unified handler base
-        require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/abstracts/class-bws-unified-handler-base.php';
-
-        // Load legacy handler base (for backward compatibility)
-        if (file_exists(BWS_META_MANAGER_PLUGIN_DIR . 'includes/abstracts/class-bws-handler-base.php')) {
-            require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/abstracts/class-bws-handler-base.php';
-        }
-
-        // Load the main class
-        require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/class-bws-taxonomy-manager.php';
-
-        // Initialize the plugin
-        BWS_Taxonomy_Manager::get_instance();
+        // Initialize the plugin. All includes/ classes resolve through the PSR-4
+        // autoloader registered above — storage, core, handlers, and the main
+        // class are pulled in on first reference.
+        \BWS\MetaConductor\TaxonomyManager::get_instance();
     }
 
     /**

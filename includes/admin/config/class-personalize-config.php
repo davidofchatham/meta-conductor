@@ -8,11 +8,13 @@
  * @since 0.2.0
  */
 
+namespace BWS\MetaConductor\Admin\Config;
+
 if (!defined('ABSPATH')) {
     exit;
 }
 
-class BWS_Personalize_Config {
+class PersonalizeConfig {
 
     public static function tab(): array {
         return [

@@ -9,11 +9,13 @@
  * @since 0.2.0
  */
 
+namespace BWS\MetaConductor\Admin\Config;
+
 if (!defined('ABSPATH')) {
     exit;
 }
 
-class BWS_Related_Config {
+class RelatedConfig {
 
     public static function section(): array {
         return [
@@ -48,7 +50,7 @@ class BWS_Related_Config {
                                 'required' => true,
                                 'columns'  => 12,
                                 'args'     => [
-                                    'options' => BWS_Config_Helpers::post_type_options(),
+                                    'options' => ConfigHelpers::post_type_options(),
                                 ],
                             ],
                             [
@@ -74,7 +76,7 @@ class BWS_Related_Config {
                                 'args'        => [
                                     'multiple' => true,
                                     'max'      => 1,
-                                    'options'  => BWS_Config_Helpers::all_term_options(),
+                                    'options'  => ConfigHelpers::all_term_options(),
                                 ],
                             ],
                             [
@@ -85,7 +87,7 @@ class BWS_Related_Config {
                                 'default'     => '',
                                 'columns'     => 12,
                                 'args'        => [
-                                    'options' => BWS_Config_Helpers::taxonomy_options(),
+                                    'options' => ConfigHelpers::taxonomy_options(),
                                 ],
                             ],
                             [
@@ -97,7 +99,7 @@ class BWS_Related_Config {
                                 'args'    => [
                                     'multiple' => true,
                                     'max'      => 1,
-                                    'options'  => BWS_Config_Helpers::all_term_options(),
+                                    'options'  => ConfigHelpers::all_term_options(),
                                 ],
                             ],
                             [

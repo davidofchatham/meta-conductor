@@ -6,11 +6,13 @@
  * @since 0.3.0
  */
 
+namespace BWS\MetaConductor\Admin\Config;
+
 if (!defined('ABSPATH')) {
     exit;
 }
 
-class BWS_Hierarchical_Config {
+class HierarchicalConfig {
 
     /**
      * Section definition for inclusion in the Auto-set Terms tab.

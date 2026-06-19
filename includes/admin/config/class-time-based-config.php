@@ -9,11 +9,13 @@
  * @since 0.2.0
  */
 
+namespace BWS\MetaConductor\Admin\Config;
+
 if (!defined('ABSPATH')) {
     exit;
 }
 
-class BWS_Time_Based_Config {
+class TimeBasedConfig {
 
     public static function section(): array {
         return [
@@ -48,7 +50,7 @@ class BWS_Time_Based_Config {
                                 'required' => true,
                                 'columns'  => 12,
                                 'args'     => [
-                                    'options' => BWS_Config_Helpers::post_type_options(),
+                                    'options' => ConfigHelpers::post_type_options(),
                                 ],
                             ],
                             [
@@ -69,7 +71,7 @@ class BWS_Time_Based_Config {
                                 'columns'     => 12,
                                 'args'        => [
                                     'multiple' => true,
-                                    'options'  => BWS_Config_Helpers::all_term_options(),
+                                    'options'  => ConfigHelpers::all_term_options(),
                                 ],
                             ],
                             [
@@ -95,7 +97,7 @@ class BWS_Time_Based_Config {
                                 'args'    => [
                                     'multiple' => true,
                                     'max'      => 1,
-                                    'options'  => BWS_Config_Helpers::all_term_options(),
+                                    'options'  => ConfigHelpers::all_term_options(),
                                 ],
                             ],
                         ],

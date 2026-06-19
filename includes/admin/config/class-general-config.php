@@ -8,11 +8,13 @@
  * @since 0.2.0
  */
 
+namespace BWS\MetaConductor\Admin\Config;
+
 if (!defined('ABSPATH')) {
     exit;
 }
 
-class BWS_General_Config {
+class GeneralConfig {
 
     public static function tab(): array {
         return [
@@ -60,7 +62,7 @@ class BWS_General_Config {
                                 'required' => true,
                                 'columns'  => 12,
                                 'args'     => [
-                                    'options' => BWS_Config_Helpers::taxonomy_options(),
+                                    'options' => ConfigHelpers::taxonomy_options(),
                                 ],
                             ],
                             [

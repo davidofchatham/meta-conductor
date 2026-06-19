@@ -6,11 +6,13 @@
  * @since 0.2.0
  */
 
+namespace BWS\MetaConductor\Admin\Config;
+
 if (!defined('ABSPATH')) {
     exit;
 }
 
-class BWS_Level_Restriction_Config {
+class LevelRestrictionConfig {
 
     public static function section(): array {
         return [
@@ -46,7 +48,7 @@ class BWS_Level_Restriction_Config {
                                 'required'    => true,
                                 'columns'     => 12,
                                 'args'        => [
-                                    'options' => BWS_Config_Helpers::hierarchical_taxonomy_options(),
+                                    'options' => ConfigHelpers::hierarchical_taxonomy_options(),
                                 ],
                             ],
                             [

@@ -6,11 +6,13 @@
  * @since 0.2.0
  */
 
+namespace BWS\MetaConductor\Admin\Config;
+
 if (!defined('ABSPATH')) {
     exit;
 }
 
-class BWS_Propagation_Config {
+class PropagationConfig {
 
     public static function section(): array {
         return [
@@ -46,7 +48,7 @@ class BWS_Propagation_Config {
                                 'required'    => true,
                                 'columns'     => 12,
                                 'args'        => [
-                                    'options' => BWS_Config_Helpers::hierarchical_post_type_options(),
+                                    'options' => ConfigHelpers::hierarchical_post_type_options(),
                                 ],
                             ],
                             [
@@ -57,7 +59,7 @@ class BWS_Propagation_Config {
                                 'required' => true,
                                 'columns'  => 12,
                                 'args'     => [
-                                    'options' => BWS_Config_Helpers::taxonomy_options(),
+                                    'options' => ConfigHelpers::taxonomy_options(),
                                 ],
                             ],
                             [
