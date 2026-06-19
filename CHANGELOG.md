@@ -5,9 +5,9 @@ All notable changes to Meta Conductor (formerly BWS Meta Manager, formerly BWS T
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.4.0] — Unreleased
+## [0.4.0] — 2026-06-19
 
-> Combined release: the Phase 2a PSR-4 restructure (internal, no behavior change) plus an in-flight ruleset configuration change. Version bumps to `0.4.0` and tags `v0.4.0` only once both land and are verified. Still the unstable `0.x` line — no migration path guaranteed pre-1.0.
+> Combined release: the Phase 2a PSR-4 restructure (internal, no behavior change) plus the Phase 3a multi-post-type Related Term Mapping work. Still the unstable `0.x` line — no migration path guaranteed pre-1.0.
 
 ### Changed
 

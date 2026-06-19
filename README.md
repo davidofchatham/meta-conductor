@@ -2,7 +2,7 @@
 
 WordPress plugin for unified meta and taxonomy management. Rule-based automation that auto-sets terms, formats fields, restricts taxonomy depth, and (planned) personalizes per user.
 
-> **Current version**: 0.3.1 (pre-release). The `0.x` line is unstable — schema, option keys, and public API may change between pre-releases until the first production cut ships as `1.0.0`. Wireframe UI swap (Phase 2c) shipped; PSR-4 namespacing (Phase 2a) is next. See [ROADMAP.md](ROADMAP.md) for the full phase plan.
+> **Status**: pre-release (`0.x`), **not production-ready**. Actively developed and in limited use by the author on their own sites — dogfooding to find what needs to change. The `0.x` line is unstable: schema, option keys, and public API may change between pre-releases, and **there is no guaranteed upgrade/migration path** — a breaking change may require you to re-enter rules. Use at your own risk. The first production-ready cut ships as `1.0.0`. See [ROADMAP.md](ROADMAP.md) for the phase plan.
 
 ## What it does
 
@@ -65,10 +65,11 @@ Composer pulls `tdrayson/wp-wireframe` (~1.0.6) and `rakit/validation`. The `ven
 
 ## Development conventions
 
-- **Storage abstraction**: handlers read rules via `BWS_Storage_Factory::get_instance()->get_rules(...)`. Never `get_option()` directly.
-- **Entity abstraction**: handlers use `BWS_Entity` for posts/terms/users/comments. Never `get_post()` / `get_term()` directly.
-- **Settings UI**: lives in WP Wireframe-driven config classes under `includes/admin/config/`. Each rule type has its own `section()` method composed into tabs by `BWS_Wireframe_Config::build()`.
-- **No legacy compatibility**: 2.0 was never deployed. Schema changes are fair game; no migration code needed until first deploy.
+- **PSR-4 namespacing**: all `includes/` classes live under `BWS\MetaConductor\…`, autoloaded via root `autoload.php` (kebab `class-{name}.php`). Reference global WordPress classes with a leading backslash (`\WP_Query`, `\WP_Post`).
+- **Storage abstraction**: handlers read rules via `Storage\StorageFactory::get_instance()->get_rules(...)`. Never `get_option()` directly.
+- **Entity abstraction**: handlers use `Core\Entity` for posts/terms/users/comments. Never `get_post()` / `get_term()` directly.
+- **Settings UI**: lives in WP Wireframe-driven config classes under `includes/admin/config/`. Each rule type has its own `section()` method composed into tabs by `Admin\Config\WireframeConfig::build()`.
+- **Schema stability is case-by-case (pre-1.0)**: no blanket backward-compatibility guarantee. For rule types not yet in real use, schema changes are fair game with no migration code. For a rule type the author is actively running on a live site, a breaking change is made deliberately — either with a migration step or an explicit manual re-save — to avoid silently destroying in-use data. Decide per change based on what's actually deployed.
 - **PHP 8.1+ syntax** OK throughout (constructor promotion, enums, readonly properties, etc.).
 
 ## Project status
@@ -77,10 +78,11 @@ Composer pulls `tdrayson/wp-wireframe` (~1.0.6) and `rakit/validation`. The `ven
 |---|---|
 | Unified framework (Entity, RuleEngine, Storage, ConditionEvaluator, ActionExecutor) | ✅ Built |
 | Storage abstraction (wp_options) | ✅ Built (CPT impl pending Phase 4) |
-| Handlers on unified base | 2 of 7 — hierarchical + title_slug. 5 legacy migrate in Phase 3. |
-| Wireframe-driven settings UI (Phase 2c) | 🔄 In progress on `claude/wireframe-swap-2c` |
-| Naming rename to Meta Conductor (Phase 2b) | ⏳ Queued after 2c |
-| PSR-4 namespacing (Phase 2a) | ⏳ Queued after 2b |
+| Handlers on unified base | 3 of 7 — hierarchical, title_slug, related. 4 legacy (level-restriction, propagation, related-post-terms, time-based) migrate in Phase 3. |
+| Wireframe-driven settings UI (Phase 2c) | ✅ Shipped |
+| PSR-4 namespacing (Phase 2a) | ✅ Shipped (0.4.0) |
+| Naming rename to Meta Conductor (Phase 2b) | 🔄 Main file + headers renamed; `__()` text-domain string args still read `bws-*` (cosmetic, private plugin) |
+| Multi-post-type Related rules (Phase 3a) | ✅ Shipped — Related rules span multiple post types |
 | CPT storage backend (Phase 4) | ⏳ |
 | Unified Migration/Preview tool (Phase 7) | ⏳ Hosts bulk operations: Title/Slug Apply, ACF conversion, future field transforms |
 
