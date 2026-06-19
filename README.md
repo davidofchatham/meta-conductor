@@ -45,7 +45,7 @@ Deep dive: [docs/architecture.md](docs/architecture.md).
 
 ```bash
 git clone <repo>
-cd bws-meta-manager
+cd meta-conductor
 composer install --no-dev
 ```
 
