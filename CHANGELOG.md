@@ -5,6 +5,25 @@ All notable changes to Meta Conductor (formerly BWS Meta Manager, formerly BWS T
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] — Unreleased
+
+> Combined release: the Phase 2a PSR-4 restructure (internal, no behavior change) plus an in-flight ruleset configuration change. Version bumps to `0.4.0` and tags `v0.4.0` only once both land and are verified. Still the unstable `0.x` line — no migration path guaranteed pre-1.0.
+
+### Changed
+
+#### Phase 2a — PSR-4 namespacing (internal; no user-visible or behavior change)
+
+- **All `includes/` classes namespaced under `BWS\MetaConductor\`** and loaded via a new root `autoload.php` (kebab `class-{name}.php` map). The 12 manual `require_once` chains in the main file — and surviving ones in method bodies — were removed; classes now autoload on demand.
+- **Class + file renames**: dropped the `BWS_` prefix, CamelCase with acronyms lowered (`Acf`/`Cli`/`Ui`) to satisfy the autoloader's no-consecutive-caps rule. Subnamespaces map to directories: `Core\`, `Handlers\`, `Storage\`, `Conversion\`, `Admin\`/`Admin\Config\`, `Integrations\`, and `Support\`.
+- **`includes/abstracts/` and `includes/lib/` eliminated**: abstract bases co-located into `handlers/`/`storage/`; the reusable modules (`BatchProcessor`, `TermMigrator`, `FieldConverter`, `ValueMapper` + interfaces) moved to `includes/support/` as their own `Support\` namespace (renamed from `lib/` to avoid collision with the vendored `libs/`).
+- **Global classes leading-backslash qualified** under the new namespaces (`\WP_Query`, `\DateTime`, `catch (\Exception`, `\WP_CLI::`, …).
+
+### Added
+
+- **`tests/` dev harnesses** (export-ignored from the release ZIP): `verify-autoload.php` proves all class FQNs resolve without booting WordPress; `lint.php` runs a `php -l` sweep plus static checks that no manual plugin-file `require` survives and no global class is left unqualified in code.
+
+<!-- Ruleset configuration change: entry to be added when that work lands (next session). -->
+
 ## [0.3.1] — 2026-06-19
 
 > Post-`0.3.0` review pass. Addresses correctness findings from the Phase 2c code review (PR #17).
