@@ -24,19 +24,8 @@ if (!defined('ABSPATH')) {
 class WireframeConfig {
 
     public static function build(): array {
-        $dir = BWS_META_MANAGER_PLUGIN_DIR . 'includes/admin/config/';
-
-        require_once $dir . 'class-config-helpers.php';
-        require_once $dir . 'class-hierarchical-config.php';
-        require_once $dir . 'class-propagation-config.php';
-        require_once $dir . 'class-related-config.php';
-        require_once $dir . 'class-related-post-terms-config.php';
-        require_once $dir . 'class-time-based-config.php';
-        require_once $dir . 'class-level-restriction-config.php';
-        require_once $dir . 'class-title-slug-config.php';
-        require_once $dir . 'class-general-config.php';
-        require_once $dir . 'class-personalize-config.php';
-
+        // Sibling config classes (ConfigHelpers, *Config) autoload via PSR-4
+        // (autoload.php); no manual require chain (Phase 2a).
         return [
             'title'    => __('Meta Conductor', 'bws-meta-manager'),
             'subtitle' => __('Unified meta and taxonomy management.', 'bws-meta-manager'),

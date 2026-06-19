@@ -21,7 +21,7 @@ Replace manual `require_once` chains with PSR-4 autoloader. All `includes/` clas
 
 ## §I — Surfaces
 
-- I.autoload — new `autoload.php` at plugin root. Adapted from `D:\...\bws-portal-system\autoload.php`. Changes: prefix `BWS\Portal\`→`BWS\MetaConductor\`, const `BWS_PORTAL_PATH`→`BWS_META_CONDUCTOR_PATH`, base dir `includes/`. Registered via `spl_autoload_register` in main file.
+- I.autoload — new `autoload.php` at plugin root. Adapted from a sibling BWS plugin's PSR-4 loader. Changes: prefix `→BWS\MetaConductor\`, const `→BWS_META_CONDUCTOR_PATH`, base dir `includes/`. Registered via `spl_autoload_register` in main file.
 - I.const — new `BWS_META_CONDUCTOR_PATH` = `plugin_dir_path(__FILE__)` in `meta-conductor.php`. (Distinct from existing `BWS_META_MANAGER_PLUGIN_DIR`; both may coexist this phase.)
 - I.ns — root namespace `BWS\MetaConductor\`. Subns map to dirs:
   - `Core\` → `includes/core/`
@@ -56,7 +56,7 @@ Replace manual `require_once` chains with PSR-4 autoloader. All `includes/` clas
 
 ## §V — Invariants
 
-- V1. After phase: ZERO `require_once`/`include` of `includes/*` class files anywhere except autoloader. (`meta-conductor.php` keeps `vendor/autoload.php`, PUC `load-v5p7.php` requires — those are C3 vendored.)
+- V1. After phase: ZERO `require_once`/`include` of `includes/*` class files anywhere except autoloader — INCLUDING inside method bodies (constructors, factories, ::build()). Manual requires in methods only run at call-time, so the H2 autoload harness (class_exists only) does NOT catch them → they fatal on the live site. STATIC assert baked into H1 (`tests/lint.php`): `grep -rnE "(require|include)(_once)?.*(includes/|PLUGIN_DIR|class-.*\.php')" includes/ | grep -v wp-admin/includes` -> 0. (`meta-conductor.php` keeps `vendor/autoload.php` + PUC `load-v5p7.php` — C3 vendored; WP-core `wp-admin/includes/upgrade.php` for dbDelta allowed.)
 - V2. Every file under `includes/` declares `namespace BWS\MetaConductor\…;` matching its dir per I.ns. No global-namespace class left under `includes/`.
 - V3. Every cross-class reference resolves: each file referencing another plugin class has a matching `use` stmt OR FQN. No bareword `BWS_*` survives anywhere (greppable check: `grep -rn '\bBWS_[A-Z]' includes/` → 0 class hits; constants like `BWS_META_*` allowed only in main file).
 - V4. No class name has consecutive capitals (C6). Audit: `RuleStorage` not `RuleStorage`-ok, watch acronyms (ACF→`Acf`, CLI→`Cli`, UI→`Ui`, CPT→`Cpt`). E.g. `BWS_ACF_Integration` → `Integrations\AcfIntegration`, `BWS_Conversion_CLI` → `Conversion\ConversionCli`, `BWS_Conversion_UI` → `Conversion\ConversionUi`.
@@ -78,7 +78,7 @@ Replace manual `require_once` chains with PSR-4 autoloader. All `includes/` clas
 
 ```
 id  | st | task                                                                 | cites
-T1  | x  | create autoload.php from Portal template; prefix+const swap          | I.autoload,C6,C7,V5
+T1  | x  | create autoload.php from sibling-plugin template; prefix+const swap   | I.autoload,C6,C7,V5
 T2  | x  | add BWS_META_CONDUCTOR_PATH + spl_autoload_register in meta-conductor.php | I.const,V9
 T3  | x  | rename includes/lib/ -> includes/support/ (git mv, FLATTEN subdirs — autoloader maps Support\X to flat support/class-x.php; rename interface-*.php -> class-*-interface.php) | I.support,V6
 T4  | x  | move abstracts: unified-base+handler-base->handlers/, rule-storage iface->storage/; rename files class- prefix. (Per-class bws- file renames done with their ns task T5-T12.) | I.move,V5,V6
@@ -105,4 +105,5 @@ T18 | x  | confirm revertable single-merge shape; update ROADMAP 2a (Support\ di
 id | date | cause | fix
 B1 | 2026-06-19 | namespace decl placed after ABSPATH guard -> php -l fatal "must be very first statement" | V12 (namespace before guard); fixed in support/ T5
 B2 | 2026-06-19 | bare global classes (new WP_Query, catch Exception, instanceof WP_Post, WP_CLI::, new DateTime) left unqualified under namespace -> resolve to BWS\MetaConductor\... -> RUNTIME fatal, invisible to php -l + autoload harness | V13 (leading-backslash all global class refs); sweep task T12b
+B3 | 2026-06-19 | manual require_once chains survived in METHOD BODIES (TaxonomyManager::load_dependencies required renamed class-bws-settings.php; WireframeConfig::build; wireframe-bootstrap) -> runtime fatal on live site. H2 harness missed: class_exists() never runs method bodies. | V1 strengthened + static grep baked into H1; gutted the 3 dead require chains (autoloaded)
 ```

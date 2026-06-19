@@ -3,7 +3,7 @@
  * PSR-4 Autoloader for Meta Conductor
  *
  * Maps the BWS\MetaConductor namespace to includes/ using WordPress file
- * naming conventions (class-{kebab}.php). Adapted from BWS Portal System.
+ * naming conventions (class-{kebab}.php).
  *
  * Kebab conversion only inserts a hyphen at a lower->upper boundary, so class
  * names MUST NOT contain consecutive capitals: use CptRuleStorage, not

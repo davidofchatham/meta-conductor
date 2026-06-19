@@ -68,55 +68,12 @@ class TaxonomyManager {
      * Constructor
      */
     private function __construct() {
-        $this->load_dependencies();
+        // Dependencies load on demand via the PSR-4 autoloader (autoload.php);
+        // no manual require chain (Phase 2a).
         $this->init_hooks();
         $this->init_handlers();
     }
-    
-    /**
-     * Load required files
-     */
-    private function load_dependencies() {
-        // Load base classes
-        require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/class-bws-settings.php';
-        require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/abstracts/class-bws-handler-base.php';
-        
-        // Load handlers
-        require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/handlers/class-bws-hierarchical-handler.php';
-        require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/handlers/class-bws-propagation-handler.php';
-        require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/handlers/class-bws-related-handler.php';
-        require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/handlers/class-bws-time-based-handler.php';
-		require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/handlers/class-bws-related-post-terms-handler.php';
-		require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/handlers/class-bws-hierarchical-level-restriction-handler.php';
-        require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/handlers/class-bws-title-slug-handler.php';
-        
-        // Load integrations
-        require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/integrations/class-bws-acf-integration.php';
 
-        // Load Admin Columns Pro integration if available
-        if (class_exists('AC\\Plugin')) {
-            require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/integrations/class-bws-admin-columns-integration.php';
-        }
-
-        // Load conversion libraries (plugin-agnostic)
-        require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/lib/term-migration/interface-term-migrator.php';
-        require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/lib/term-migration/class-term-migrator.php';
-        require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/lib/field-conversion/interface-field-converter.php';
-        require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/lib/field-conversion/class-field-converter.php';
-        require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/lib/data-mapper/interface-value-mapper.php';
-        require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/lib/data-mapper/class-value-mapper.php';
-        require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/lib/batch-processor/interface-batch-processor.php';
-        require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/lib/batch-processor/class-batch-processor.php';
-
-        // Load conversion integration layer
-        require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/conversion/class-bws-field-mapper.php';
-        require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/conversion/class-bws-data-processor.php';
-        require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/conversion/class-bws-preview-system.php';
-        require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/conversion/class-bws-conversion-manager.php';
-        require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/conversion/class-bws-conversion-ui.php';
-        require_once BWS_TAX_MANAGER_PLUGIN_DIR . 'includes/conversion/class-bws-conversion-cli.php';
-    }
-    
     /**
      * Initialize hooks
      */

@@ -101,7 +101,7 @@ class WireframeBootstrap {
             return;
         }
 
-        require_once BWS_META_MANAGER_PLUGIN_DIR . 'includes/admin/config/class-wireframe-config.php';
+        // WireframeConfig autoloads via PSR-4 (autoload.php) — no manual require (Phase 2a).
 
         // Multi-page mode with one page. The single-page menu_slug bug
         // (wp-wireframe#5) is fixed as of 1.0.6, but the `pages[]` form stays

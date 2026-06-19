@@ -41,7 +41,7 @@ Status column: ✅ = actioned · Pn = pending in that phase · standing = ongoin
 |----------|--------|--------|-------|
 | **Plugin name** | **Meta Conductor** | ✅ | Display name and slug both drop "BWS". See "Naming surface" table below. |
 | **Naming surface** | Split by layer | ◐ partial (P2b) | Folder/main-file/text-domain done; constants, hooks, JS, `__()` sweep remain in 2b. |
-| **PSR-4 namespacing** | Yes | P2a (next) | Custom `spl_autoload_register()` autoloader; namespace `BWS\MetaConductor\`; pattern from BWS Portal plugin |
+| **PSR-4 namespacing** | Yes | P2a (next) | Custom `spl_autoload_register()` autoloader; namespace `BWS\MetaConductor\`; pattern from a sibling BWS plugin |
 | **Abstracts directory** | Co-locate with implementations | P2a | `Storage\RuleStorage`, `Handlers\UnifiedHandlerBase` — `includes/abstracts/` eliminated |
 | **Interface file naming** | Use `class-` prefix for all | P2a | Autoloader generates `class-{name}.php`; interfaces follow same convention |
 | **lib/ classes** | Absorb into `Conversion\` namespace | P2a | BatchProcessor, FieldConverter, ValueMapper, TermMigrator move to `includes/conversion/` |
@@ -147,7 +147,7 @@ Correctness fixes from the PR #17 review (full list in CHANGELOG `[0.3.1]`). Roa
 
 Pure structural change — no behavior changes, no user-visible changes. Independently revertable (single merge). **Static verification (lint + autoload-resolution harness) green; behavior parity pending the manual InstaWP sweep before merge.**
 
-- ✅ `autoload.php` at plugin root, adapted from BWS Portal (`BWS\MetaConductor\`, `BWS_META_CONDUCTOR_PATH`)
+- ✅ `autoload.php` at plugin root, adapted from a sibling BWS plugin's loader (`BWS\MetaConductor\`, `BWS_META_CONDUCTOR_PATH`)
 - ✅ `autoload.php` required in main file; all 12 manual `require_once includes/*` lines removed
 - **Namespace structure**:
   - `Core\` → `includes/core/`, `Handlers\` → `includes/handlers/` (incl abstract bases), `Storage\` → `includes/storage/` (incl interface), `Conversion\` → `includes/conversion/`, `Admin\` + `Admin\Config\` → `includes/admin/` + `/config/`

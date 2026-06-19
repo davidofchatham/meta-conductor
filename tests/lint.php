@@ -46,5 +46,30 @@ if ($failures) {
     exit(1);
 }
 
-fwrite(STDOUT, "LINT OK — " . count($targets) . " files, no syntax errors.\n");
+// --- V1 static check (SPEC §V1 / §B3): no manual require/include of a plugin
+// file anywhere under includes/, including method bodies. Such requires only
+// run at call-time so the autoload harness can't see them — they fatal live.
+// WP-core requires (wp-admin/includes/*) are allowed.
+$v1 = [];
+foreach ($targets as $file) {
+    $norm = str_replace('\\', '/', $file);
+    if (strpos($norm, '/includes/') === false) {
+        continue; // only enforce inside includes/
+    }
+    foreach (file($file) as $n => $line) {
+        if (preg_match('/\b(require|include)(_once)?\b.*(includes\/|PLUGIN_DIR|class-[a-z-]+\.php)/', $line)
+            && strpos($line, 'wp-admin/includes') === false) {
+            $v1[] = $rel($file) . ':' . ($n + 1) . '  ' . trim($line);
+        }
+    }
+}
+if ($v1) {
+    fwrite(STDERR, "\nV1 FAIL — manual plugin-file require/include in includes/ (use the autoloader):\n");
+    foreach ($v1 as $hit) {
+        fwrite(STDERR, "  ✗ $hit\n");
+    }
+    exit(1);
+}
+
+fwrite(STDOUT, "LINT OK — " . count($targets) . " files, no syntax errors. V1 clean (no manual requires).\n");
 exit(0);
