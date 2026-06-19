@@ -96,7 +96,7 @@ T14 | x  | build tests/verify-autoload.php (H2): WP stubs + vendor+autoload requ
 T15 | x  | run H1+H2 (local php 8.5.1); grep checks V1/V3/V10; iterate til green     | V1,V3,V10,V11
 T16 | x  | add tests/ to .gitattributes export-ignore                              | C3,I.harness
 T17 | .  | USER: robocopy sync to R: + manual InstaWP sweep per I.test (Claude never auto-syncs; V7 verified by user)  | I.test,V7
-T18 | .  | confirm revertable single-merge shape; update ROADMAP 2a (Support\ divergence, harness) + CLAUDE.md | V8
+T18 | x  | confirm revertable single-merge shape; update ROADMAP 2a (Support\ divergence, harness) + CLAUDE.md | V8
 ```
 
 ## §B — Bugs

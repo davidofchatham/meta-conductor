@@ -143,31 +143,25 @@ Correctness fixes from the PR #17 review (full list in CHANGELOG `[0.3.1]`). Roa
 
 ---
 
-### Phase 2a: PSR-4 Namespacing
+### Phase 2a: PSR-4 Namespacing ✅ DONE (branch `claude/psr4-2a`)
 
-Pure structural change — no behavior changes, no user-visible changes. Independently revertable.
+Pure structural change — no behavior changes, no user-visible changes. Independently revertable (single merge). **Static verification (lint + autoload-resolution harness) green; behavior parity pending the manual InstaWP sweep before merge.**
 
-- Add `autoload.php` to plugin root — adapt from BWS Portal: change `BWS\\Portal\\` → `BWS\\MetaConductor\\`, `BWS_PORTAL_PATH` → `BWS_META_CONDUCTOR_PATH`
-- Require `autoload.php` in main plugin file; remove all manual `require_once` chains
-- **Namespace structure** (matches existing directories):
-  - `BWS\MetaConductor\Core\` → `includes/core/`
-  - `BWS\MetaConductor\Handlers\` → `includes/handlers/` (includes abstract base classes)
-  - `BWS\MetaConductor\Storage\` → `includes/storage/` (includes interface)
-  - `BWS\MetaConductor\Conversion\` → `includes/conversion/` + absorbs `includes/lib/` classes
-  - `BWS\MetaConductor\Admin\` → `includes/admin/` (already exists — Wireframe config/bootstrap live here)
-- **Abstracts co-located**: `includes/abstracts/` is eliminated
-  - `BWS_Unified_Handler_Base` → `includes/handlers/class-unified-handler-base.php` (`Handlers\UnifiedHandlerBase`)
-  - `BWS_Rule_Storage` interface → `includes/storage/class-rule-storage.php` (`Storage\RuleStorage`)
-  - `BWS_Handler_Base` stays in `includes/handlers/` until deleted at end of Phase 3
-- **File renames**: strip `bws-` prefix — `class-bws-hierarchical-handler.php` → `class-hierarchical-handler.php`
-- **Class renames**: drop `BWS_` prefix — `BWS_Hierarchical_Handler` → `Handlers\HierarchicalHandler`
-- Add `namespace` declaration to each file; add `use` statements where classes reference each other
-- **Naming convention**: use `CptRuleStorage` not `CPTRuleStorage` — the autoloader's kebab converter breaks on consecutive capitals
-- **Interface files**: use `class-` prefix (same as classes) — autoloader expects `class-{name}.php` for everything
+- ✅ `autoload.php` at plugin root, adapted from BWS Portal (`BWS\MetaConductor\`, `BWS_META_CONDUCTOR_PATH`)
+- ✅ `autoload.php` required in main file; all 12 manual `require_once includes/*` lines removed
+- **Namespace structure**:
+  - `Core\` → `includes/core/`, `Handlers\` → `includes/handlers/` (incl abstract bases), `Storage\` → `includes/storage/` (incl interface), `Conversion\` → `includes/conversion/`, `Admin\` + `Admin\Config\` → `includes/admin/` + `/config/`
+  - **`Support\` → `includes/support/`** — DIVERGENCE from original plan: the `includes/lib/` reusable modules (BatchProcessor, TermMigrator, FieldConverter, ValueMapper + interfaces) became their own top-level `Support\` namespace, NOT absorbed into `Conversion\`. They are interface-driven and zero-coupled, so the namespace advertises that. `lib/` renamed to `support/` to avoid collision with vendored `libs/` (PUC).
+- ✅ `includes/abstracts/` + `includes/lib/` eliminated; bases co-located in `handlers/`/`storage/`; `HandlerBase` stays until Phase 3
+- ✅ Files `class-{kebab}.php`, classes drop `BWS_`, `use`/FQN for cross-ns refs
+- **Naming**: `CptRuleStorage` not `CPTRuleStorage`; acronyms `Acf`/`Cli`/`Ui` (kebab converter breaks on consecutive caps); interface files use `class-` prefix
 
-**Files**: all PHP class files, `autoload.php` (new), main plugin file
+**Discoveries (logged as SPEC §V/§B, carry into Phase 2b/3):**
+- **§V12** — `namespace` must be the FIRST statement, *before* the `if(!defined('ABSPATH'))exit;` guard (only `declare()` may precede). Namespace-after-guard = php -l fatal.
+- **§V13** — under a namespace, every GLOBAL class ref must be leading-backslash qualified (`new \WP_Query`, `catch (\Exception`, `\WP_CLI::`, `new \DateTime`). Unqualified resolves into the plugin namespace → RUNTIME fatal, invisible to `php -l` AND the autoload harness. Global *function* calls (`get_post`, `__`) are fine — PHP auto-falls-back functions, not classes.
+- **Harnesses** (`tests/`, export-ignored): `verify-autoload.php` (H2) asserts all 47 FQNs resolve with no WP boot; `lint.php` (H1) is a `php -l` sweep. Reusable pattern for Phase 2b/3.
 
-**End of phase**: Update CLAUDE.md
+**End of phase**: ✅ CLAUDE.md updated. Merge gated on user's manual InstaWP behavior sweep.
 
 ---
 
