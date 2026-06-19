@@ -21,6 +21,10 @@ define('BWS_META_MANAGER_VERSION', '0.3.1');
 define('BWS_META_MANAGER_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('BWS_META_MANAGER_PLUGIN_URL', plugin_dir_url(__FILE__));
 
+// PSR-4 autoloader base path (Phase 2a). Distinct from the legacy
+// BWS_META_MANAGER_PLUGIN_DIR; the kebab autoloader keys off this.
+define('BWS_META_CONDUCTOR_PATH', plugin_dir_path(__FILE__));
+
 // Backward compatibility constants
 define('BWS_TAX_MANAGER_VERSION', '0.3.1'); // For legacy code
 define('BWS_TAX_MANAGER_PLUGIN_DIR', plugin_dir_path(__FILE__));
@@ -45,6 +49,12 @@ if (!function_exists('bws_meta_manager_init')) {
         if (file_exists(BWS_META_MANAGER_PLUGIN_DIR . 'vendor/autoload.php')) {
             require_once BWS_META_MANAGER_PLUGIN_DIR . 'vendor/autoload.php';
         }
+
+        // PSR-4 autoloader for plugin classes (BWS\MetaConductor\). Loaded after
+        // the composer autoloader so namespaced classes that extend or implement
+        // vendor types (e.g. Wireframe) resolve. The manual require_once chain
+        // below is removed in Phase 2a T13 once every class is namespaced.
+        require_once BWS_META_CONDUCTOR_PATH . 'autoload.php';
 
         // Plugin Update Checker — pulls updates from public GitHub releases.
         // Matches the release ZIP attached by .github/workflows/release.yml on each
