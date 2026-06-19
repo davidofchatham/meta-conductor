@@ -44,8 +44,10 @@ class BWS_Settings {
             $out[$type] = $storage->get_rules($type);
         }
 
-        // Non-rule global settings live alongside rule arrays in the same option.
-        $raw = get_option(self::OPTION_NAME, []);
+        // Non-rule global settings live alongside rule arrays in the same
+        // option. Read from the storage cache (already warmed by get_rules
+        // above) instead of issuing a second get_option().
+        $raw = $storage->get_raw_settings();
         $out['conflict_handling']         = self::flatten_conflict_overrides($raw['conflict_handling_overrides'] ?? []);
         $out['manual_processing_enabled'] = $raw['manual_processing_enabled'] ?? true;
 

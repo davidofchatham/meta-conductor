@@ -72,6 +72,18 @@ class BWS_Option_Rule_Storage implements BWS_Rule_Storage {
     }
 
     /**
+     * Read the raw, cached settings option — including non-rule global keys
+     * (e.g. conflict_handling_overrides, manual_processing_enabled) that the
+     * rule-typed accessors don't expose. Served from the same request cache as
+     * get_rules(), so callers needn't issue a second get_option().
+     *
+     * @return array Complete settings option.
+     */
+    public function get_raw_settings(): array {
+        return $this->get_all_settings();
+    }
+
+    /**
      * Save settings to options
      *
      * @param array $settings Complete settings array
@@ -247,8 +259,19 @@ class BWS_Option_Rule_Storage implements BWS_Rule_Storage {
      * {@inheritDoc}
      */
     public function save_rule(string $type, int $rule_id, array $data): int {
+        // Returns the saved rule's zero-based index on success, or -1 on
+        // failure. Index 0 is a valid first rule — callers must guard with
+        // `>= 0`, not `> 0`.
         if (!in_array($type, $this->valid_types, true)) {
-            return 0;
+            return -1;
+        }
+
+        // Guard: -1 is the only valid "create new" sentinel. Any other negative
+        // id means a caller round-tripped a failure return (-1 collides with
+        // the create sentinel only by value, not intent) or passed garbage.
+        // Fail loud rather than silently create or corrupt an index.
+        if ($rule_id < -1) {
+            return -1;
         }
 
         $all_settings = $this->get_all_settings();
@@ -267,7 +290,7 @@ class BWS_Option_Rule_Storage implements BWS_Rule_Storage {
         } else {
             // Update existing rule
             if (!isset($all_settings[$type][$rule_id])) {
-                return 0;
+                return -1;
             }
             $all_settings[$type][$rule_id] = $data;
             $new_id = $rule_id;
@@ -275,7 +298,7 @@ class BWS_Option_Rule_Storage implements BWS_Rule_Storage {
 
         $success = $this->save_all_settings($all_settings);
 
-        return $success ? $new_id : 0;
+        return $success ? $new_id : -1;
     }
 
     /**
@@ -453,10 +476,18 @@ class BWS_Option_Rule_Storage implements BWS_Rule_Storage {
                     $rule['name'] = $prefix_names . $rule['name'];
                 }
 
-                // Check for duplicates
+                // Check for duplicates by exact name (search_rules uses a
+                // fuzzy substring match — "Foo" would falsely match "Food").
                 if ($skip_duplicates) {
-                    $existing = $this->search_rules($rule['name'] ?? '', ['type' => $type]);
-                    if (!empty($existing)) {
+                    $import_name = $rule['name'] ?? '';
+                    $is_duplicate = false;
+                    foreach ($this->get_rules($type) as $existing_rule) {
+                        if (($existing_rule['name'] ?? '') === $import_name) {
+                            $is_duplicate = true;
+                            break;
+                        }
+                    }
+                    if ($is_duplicate) {
                         $results['skipped']++;
                         continue;
                     }
@@ -465,7 +496,7 @@ class BWS_Option_Rule_Storage implements BWS_Rule_Storage {
                 // Import the rule
                 $new_id = $this->save_rule($type, -1, $rule);
 
-                if ($new_id > 0) {
+                if ($new_id >= 0) {
                     $results['imported']++;
                 } else {
                     $results['errors'][] = "Failed to import rule: " . ($rule['name'] ?? 'Unnamed');

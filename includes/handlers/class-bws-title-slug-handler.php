@@ -236,6 +236,14 @@ class BWS_Title_Slug_Handler extends BWS_Unified_Handler_Base {
         $this->write_rule_status($rule_index, $post_id, $new_title, $new_slug ?? $post->post_name, []);
     }
 
+    /**
+     * Returns the first rule whose post_type matches. First-match-wins is by
+     * design: only one title/slug rule applies per post type.
+     *
+     * TODO(UI): the config layer should warn when a user creates a second rule
+     * for a post_type that already has one — silently ignored today. Add when
+     * we next revisit the title/slug config screen.
+     */
     private function find_matching_rule(object $post, array $rules): ?array {
         foreach ($rules as $rule) {
             if (!empty($rule['post_type']) && $rule['post_type'] === $post->post_type) {
@@ -406,12 +414,14 @@ class BWS_Title_Slug_Handler extends BWS_Unified_Handler_Base {
     }
 
     private function get_pub_part(object $post, string $part): string {
-        // Uses post_date (local time), not post_date_gmt.
-        $dt = new DateTime($post->post_date);
+        // post_date is stored in WP's configured timezone (not PHP's server
+        // tz). Bind wp_timezone() so date tokens are correct on hosts where
+        // the two differ.
+        $dt = new DateTimeImmutable($post->post_date, wp_timezone());
         return $this->format_date_part($dt, $part);
     }
 
-    private function format_date_part(DateTime $dt, string $part): string {
+    private function format_date_part(DateTimeInterface $dt, string $part): string {
         return match($part) {
             'year'       => $dt->format('Y'),
             'month'      => $dt->format('m'),

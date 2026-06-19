@@ -11,6 +11,10 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+// TODO(Phase 3): still on the legacy BWS_Handler_Base. The unified base
+// (BWS_Unified_Handler_Base) has diverged — e.g. should_process_post()
+// normalizes Wireframe checkbox format only there. Fixes to one base may not
+// reach this one until migration. See ROADMAP Phase 3.
 class BWS_Related_Post_Terms_Handler extends BWS_Handler_Base {
     
     /**

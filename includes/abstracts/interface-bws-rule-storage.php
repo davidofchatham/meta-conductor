@@ -46,6 +46,17 @@ interface BWS_Rule_Storage {
     public function get_rules(string $type, array $filters = []): array;
 
     /**
+     * Get the raw, cached settings option, including non-rule global keys
+     * (conflict_handling_overrides, manual_processing_enabled, etc.). Served
+     * from the same request cache as get_rules() so callers avoid a second
+     * get_option() round-trip.
+     *
+     * @since 0.3.1
+     * @return array Complete settings option (empty array if unset).
+     */
+    public function get_raw_settings(): array;
+
+    /**
      * Get a single rule by type and ID
      *
      * @since 0.2.0

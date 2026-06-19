@@ -37,6 +37,13 @@ abstract class BWS_Unified_Handler_Base {
     protected $settings;
 
     /**
+     * Memoized plugin settings option, loaded once per request.
+     *
+     * @var array|null
+     */
+    private $settings_option_cache = null;
+
+    /**
      * Constructor
      *
      * @param BWS_Settings|null $settings Settings instance (optional, for backward compatibility)
@@ -184,7 +191,8 @@ abstract class BWS_Unified_Handler_Base {
      * @since 0.2.0
      * @param int   $rule_id Rule ID (-1 for new rule)
      * @param array $data Rule data
-     * @return int Rule ID on success, 0 on failure
+     * @return int Zero-based rule index on success, -1 on failure. Index 0 is
+     *             a valid first rule — guard with `>= 0`, not `> 0`.
      */
     protected function save_rule($rule_id, array $data) {
         $storage = BWS_Storage_Factory::get_instance();
@@ -301,10 +309,23 @@ abstract class BWS_Unified_Handler_Base {
 
         error_log($message);
 
-        // Optionally store in database
-        if (get_option('bws_meta_conductor_settings')['enable_logging'] ?? false) {
+        // Optionally store in database. Memoized to avoid a fresh option read
+        // on every rule run when the object cache is unavailable.
+        if ($this->get_settings_option()['enable_logging'] ?? false) {
             $this->store_log_entry($rule, $results);
         }
+    }
+
+    /**
+     * Read the plugin settings option once per request.
+     *
+     * @return array Settings option (empty array if unset).
+     */
+    private function get_settings_option() {
+        if ($this->settings_option_cache === null) {
+            $this->settings_option_cache = get_option('bws_meta_conductor_settings', []);
+        }
+        return $this->settings_option_cache;
     }
 
     /**
