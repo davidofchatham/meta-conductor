@@ -66,6 +66,15 @@ class WireframeBootstrap {
 
             $rule['target_label'] = self::term_label($rule['target_term_id'] ?? null);
             $rule['scope_label']  = self::scope_label($rule['post_types'] ?? []);
+
+            // Escape at the point of injection: these labels are persisted and
+            // later substituted into the repeater row title. Wireframe renders
+            // the title as a React text child (auto-escaped), so this is
+            // defense-in-depth, not a known hole. WP already sanitizes term
+            // names on input.
+            $rule['trigger_label'] = \esc_html($rule['trigger_label']);
+            $rule['target_label']  = \esc_html($rule['target_label']);
+            $rule['scope_label']   = \esc_html($rule['scope_label']);
         }
         unset($rule);
 
@@ -89,8 +98,8 @@ class WireframeBootstrap {
             return '';
         }
 
-        $term = get_term($id);
-        if (!$term || is_wp_error($term)) {
+        $term = \get_term($id);
+        if (!$term || \is_wp_error($term)) {
             return '';
         }
 
@@ -123,10 +132,12 @@ class WireframeBootstrap {
 
         $labels = [];
         foreach ($slugs as $slug) {
-            $obj = get_post_type_object((string) $slug);
+            $obj = \get_post_type_object((string) $slug);
             if ($obj) {
                 $labels[] = $obj->label;
             }
+            // A slug that no longer resolves (post type unregistered after
+            // save) is silently dropped — acceptable pre-1.0.
         }
 
         if (empty($labels)) {
@@ -151,7 +162,7 @@ class WireframeBootstrap {
             return '';
         }
 
-        $tax = get_taxonomy($slug);
+        $tax = \get_taxonomy($slug);
         if (!$tax) {
             return '';
         }

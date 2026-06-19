@@ -36,8 +36,9 @@ class RelatedHandler extends UnifiedHandlerBase {
         add_action('acf/save_post', array($this, 'on_acf_save_post'), 20);
     }
 
-    // Related rules fire via on_terms_set / on_acf_save_post. The base
-    // process_post routes through RuleEngine, which related does not use.
+    // Intentional no-op (not a forgotten implementation). Related rules fire
+    // via on_terms_set / on_acf_save_post; the base process_post routes
+    // through RuleEngine, which related does not use.
     public function process_post($post_id, $post, $update) {}
 
     /**
@@ -249,30 +250,30 @@ class RelatedHandler extends UnifiedHandlerBase {
      * Field sanitization is handled by Wireframe's config-driven Sanitizer;
      * this only enforces the trigger/target term/taxonomy relationships.
      *
+     * Does NOT check `enabled` — that's the caller's concern
+     * (get_enabled_rules already filters), and conflating "disabled" with
+     * "malformed" would mislead any future validation-only caller.
+     *
      * @param array $rule Rule configuration
      * @return bool Valid
      */
     protected function validate_rule_internal($rule) {
-        if (empty($rule['enabled'])) {
-            return false;
-        }
-
         $trigger_type = $rule['trigger_type'] ?? '';
         if (!in_array($trigger_type, array('term', 'taxonomy'), true)) {
             return false;
         }
 
         if ($trigger_type === 'term') {
-            if (empty($rule['trigger_term_id']) || !get_term($rule['trigger_term_id'])) {
+            if (empty($rule['trigger_term_id']) || !\get_term($rule['trigger_term_id'])) {
                 return false;
             }
         } else { // taxonomy
-            if (empty($rule['trigger_taxonomy']) || !taxonomy_exists($rule['trigger_taxonomy'])) {
+            if (empty($rule['trigger_taxonomy']) || !\taxonomy_exists($rule['trigger_taxonomy'])) {
                 return false;
             }
         }
 
-        if (empty($rule['target_term_id']) || !get_term($rule['target_term_id'])) {
+        if (empty($rule['target_term_id']) || !\get_term($rule['target_term_id'])) {
             return false;
         }
 

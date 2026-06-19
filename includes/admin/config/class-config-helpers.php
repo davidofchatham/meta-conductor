@@ -102,8 +102,11 @@ class ConfigHelpers {
      * @param array $overrides Per-call field-definition overrides (e.g. columns).
      */
     public static function post_types_field(array $overrides = []): array {
+        // `id` is intentionally NOT overridable: UnifiedHandlerBase::should_process_post
+        // reads the `post_types` key by name, so renaming it would silently
+        // make the rule apply to all post types. Merge overrides first, then
+        // force the canonical id.
         return array_merge([
-            'id'          => 'post_types',
             'type'        => 'checkboxes',
             'label'       => __('Limit to post types', 'bws-meta-manager'),
             'description' => __('Leave all unchecked to apply to every post type using this taxonomy.', 'bws-meta-manager'),
@@ -111,7 +114,7 @@ class ConfigHelpers {
             'args'        => [
                 'options' => self::post_types_checkbox_options(),
             ],
-        ], $overrides);
+        ], $overrides, ['id' => 'post_types']);
     }
 
     /**

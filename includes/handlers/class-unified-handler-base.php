@@ -407,25 +407,25 @@ abstract class UnifiedHandlerBase {
 
         switch ($conflict_handling) {
             case 'replace':
-                return wp_set_object_terms($post_id, $term_ids, $taxonomy);
+                return \wp_set_object_terms($post_id, $term_ids, $taxonomy);
 
             case 'merge':
-                $existing_terms = wp_get_object_terms($post_id, $taxonomy, array('fields' => 'ids'));
-                if (is_wp_error($existing_terms)) {
+                $existing_terms = \wp_get_object_terms($post_id, $taxonomy, array('fields' => 'ids'));
+                if (\is_wp_error($existing_terms)) {
                     $existing_terms = array();
                 }
                 $merged_terms = array_unique(array_merge($existing_terms, $term_ids));
-                return wp_set_object_terms($post_id, $merged_terms, $taxonomy);
+                return \wp_set_object_terms($post_id, $merged_terms, $taxonomy);
 
             case 'skip':
-                $existing_terms = wp_get_object_terms($post_id, $taxonomy, array('fields' => 'ids'));
-                if (is_wp_error($existing_terms)) {
+                $existing_terms = \wp_get_object_terms($post_id, $taxonomy, array('fields' => 'ids'));
+                if (\is_wp_error($existing_terms)) {
                     $existing_terms = array();
                 }
 
                 // Only apply if no existing terms
                 if (empty($existing_terms)) {
-                    return wp_set_object_terms($post_id, $term_ids, $taxonomy);
+                    return \wp_set_object_terms($post_id, $term_ids, $taxonomy);
                 }
                 return false;
 
@@ -449,8 +449,8 @@ abstract class UnifiedHandlerBase {
             return false;
         }
 
-        $existing_terms = wp_get_object_terms($post_id, $taxonomy, array('fields' => 'ids'));
-        if (is_wp_error($existing_terms)) {
+        $existing_terms = \wp_get_object_terms($post_id, $taxonomy, array('fields' => 'ids'));
+        if (\is_wp_error($existing_terms)) {
             return false;
         }
 
@@ -468,7 +468,7 @@ abstract class UnifiedHandlerBase {
 
         $remaining_terms = array_diff($existing_terms, $term_ids_to_remove);
 
-        return wp_set_object_terms($post_id, $remaining_terms, $taxonomy);
+        return \wp_set_object_terms($post_id, $remaining_terms, $taxonomy);
     }
 
     /**
@@ -482,9 +482,9 @@ abstract class UnifiedHandlerBase {
      * @return bool
      */
     protected function post_has_terms($post_id, $taxonomy, $term_ids = null) {
-        $post_terms = wp_get_object_terms($post_id, $taxonomy, array('fields' => 'ids'));
+        $post_terms = \wp_get_object_terms($post_id, $taxonomy, array('fields' => 'ids'));
 
-        if (is_wp_error($post_terms)) {
+        if (\is_wp_error($post_terms)) {
             return false;
         }
 
