@@ -1,42 +1,61 @@
-# Meta Conductor: Strategic Assessment & Roadmap
+# Meta Conductor: Roadmap
 
-**Current Version**: 0.3.0 (pre-release; never deployed; `0.x` unstable until `1.0.0`)
-**Target Version**: 1.0.0 (first production-ready cut, after Wireframe swap + rename + PSR-4 namespacing land)
-**Branch**: `claude/wireframe-swap-2c`
+**Current Version**: 0.3.1 (pre-release; `0.x` unstable until `1.0.0`)
+**Target Version**: 1.0.0 (first production-ready cut, after rename + PSR-4 namespacing land)
+**Branch**: `main`
 
-## Context
-
-The plugin has accumulated friction: incomplete branding rename, a bolted-on conversion tool, only 2 of 7 handlers using the "unified" framework, a ~2,000-line god-class settings file, and an unresolved storage architecture question. This document captures the assessment and agreed decisions for moving forward.
+The refactor is an **incremental migration, not a rewrite** — the core business logic works; the remaining work is structural (finish the unified-framework handler migration, complete the rename, PSR-4 namespacing, CPT storage). This document tracks the phased plan and the decisions behind it.
 
 ---
 
-## Verdict: Incremental Major Refactor — Not a Rewrite
+## Status board
 
-The core business logic is **working and worth keeping**. The problems are all structural (incomplete migration, naming chaos, god class) rather than algorithmic. The unified framework (Entity, RuleEngine, storage abstraction) is well-designed and worth finishing — it stalled at 2 of 7 handlers.
+Phase numbers are **stable IDs, not execution order** — work has landed out of numeric sequence for pragmatic reasons (e.g. the Wireframe swap "2c" and release infra shipped before 2a/2b). This table is the single source of *where we are*; the numbered sections below keep their original IDs so cross-references (code `TODO(Phase N)`, CLAUDE.md, commits, PR #17) stay valid.
+
+| Phase | What | Status | Gated on | Open items it closes |
+|-------|------|--------|----------|----------------------|
+| 0 | Title/Slug rules + conversion tooling | ✅ done | — | — |
+| 1 | Bug fixes | ✅ done | — | — |
+| 2c | Wireframe UI swap | ✅ done | — | god-class `BWS_Settings` → 60-line shell; mixed JS globals (legacy JS deleted) |
+| 0.3.1 | PR #17 review pass | ✅ done | — | — |
+| **2a** | **PSR-4 namespacing** | **▶ NEXT** | — | — |
+| 3 | Migrate 5 legacy handlers → UnifiedHandlerBase | queued | 2a | 5 of 7 handlers on legacy `BWS_Handler_Base`; `BWS_Rule_Engine` unused by legacy handlers |
+| 2b | Rename sweep (`__()`, constants, hooks, JS) | queued | 2a | admin menu/page still says "Taxonomy Manager"; mixed text domains |
+| 4 | CPT storage | queued | 3 | — |
+| 7 | Unified migration / preview tool | queued | — (ungated; can run anytime) | `lib/` classes instantiated but never called; tab-aware save bug; Conversion subpage taxonomy selectors |
+| 6a | Options-compatible integrations | queued | 3 | — |
+| 6b | BWS User Based Terms | queued | 4 | — |
+| ~~5~~ | ~~Settings refactor~~ | cancelled | — | absorbed by 2c; lib delegation folded into 7 |
+
+**Recommended run order:** 2a → 3 → 2b → 4 → (6a, 7) → 6b. Phase 3 before 2b so the rename sweep touches already-migrated handlers once. Phase 7 is unblocked and can slot in whenever Conversion is needed.
+
+Live defects not yet scheduled to a phase are tracked under each phase section's **Known issues**; the "Open items it closes" column above is the at-a-glance index.
 
 ---
 
 ## Confirmed Decisions
 
-| Decision | Choice | Notes |
-|----------|--------|-------|
-| **Plugin name** | **Meta Conductor** | Display name and slug both drop "BWS". See "Naming surface" table below. |
-| **Naming surface** | Split by layer | Plugin folder + main file + text domain drop `bws-`; PHP namespace and option keys keep `BWS`/`bws_` for collision safety. |
-| **PSR-4 namespacing** | Yes — Phase 2a | Custom `spl_autoload_register()` autoloader; namespace `BWS\MetaConductor\`; pattern from BWS Portal plugin |
-| **Abstracts directory** | Co-locate with implementations | `Storage\RuleStorage`, `Handlers\UnifiedHandlerBase` — `includes/abstracts/` eliminated |
-| **Interface file naming** | Use `class-` prefix for all | Autoloader generates `class-{name}.php`; interfaces follow same convention |
-| **lib/ classes** | Absorb into `Conversion\` namespace | BatchProcessor, FieldConverter, ValueMapper, TermMigrator move to `includes/conversion/` |
-| **lib/ integration** | Complete in Phase 5 | BWS_Data_Processor delegates to lib classes during conversion cleanup |
-| **Conversion tool** | Keep in this plugin | Operates on same entities/fields |
-| **CPT vs options** | Per-type routing | Storage factory routes by rule type; see framework below |
-| **CPT structure** | Single shared CPT: `bws_mc_rule` | Differentiated by `rule_type` meta field; one list table filterable by type |
-| **Plugin file rename** | Yes | All installs are controlled |
-| **Option key rename** | Yes — with data migration, test on InstaWP first | New key: `bws_meta_conductor_settings` |
-| **Handler migration order** | Simplest first | Related → Level Restriction → Propagation → Related Post Terms → Time Based |
-| **Legacy BWS_Handler_Base** | Delete after last handler migrates | No deprecation shim needed — private plugin |
-| **Tab-aware save bug** | Fix during Phase 5 settings refactor | Latent, not actively causing loss |
-| **CLAUDE.md updates** | End of each phase | Reflects completed architecture, not planned work |
-| **Version number** | 0.x → 1.0.0 | Pre-release line is `0.x`; breaking changes (file rename, class names, option key) are free pre-1.0. First production-ready cut is `1.0.0`. |
+Status column: ✅ = actioned · Pn = pending in that phase · standing = ongoing policy.
+
+| Decision | Choice | Status | Notes |
+|----------|--------|--------|-------|
+| **Plugin name** | **Meta Conductor** | ✅ | Display name and slug both drop "BWS". See "Naming surface" table below. |
+| **Naming surface** | Split by layer | ◐ partial (P2b) | Folder/main-file/text-domain done; constants, hooks, JS, `__()` sweep remain in 2b. |
+| **PSR-4 namespacing** | Yes | P2a (next) | Custom `spl_autoload_register()` autoloader; namespace `BWS\MetaConductor\`; pattern from BWS Portal plugin |
+| **Abstracts directory** | Co-locate with implementations | P2a | `Storage\RuleStorage`, `Handlers\UnifiedHandlerBase` — `includes/abstracts/` eliminated |
+| **Interface file naming** | Use `class-` prefix for all | P2a | Autoloader generates `class-{name}.php`; interfaces follow same convention |
+| **lib/ classes** | Absorb into `Conversion\` namespace | P2a | BatchProcessor, FieldConverter, ValueMapper, TermMigrator move to `includes/conversion/` |
+| **lib/ integration** | Complete in Phase 7 | P7 | `BWS_Data_Processor` delegates to lib classes during the migration-tool build (was Phase 5, cancelled). |
+| **Conversion tool** | Keep in this plugin | ✅ decided | Operates on same entities/fields |
+| **CPT vs options** | Per-type routing | P4 | Storage factory routes by rule type; see framework below |
+| **CPT structure** | Single shared CPT: `bws_mc_rule` | P4 | Differentiated by `rule_type` meta field; one list table filterable by type |
+| **Plugin file rename** | Yes | ✅ | All installs are controlled |
+| **Option key rename** | Yes — with data migration, tested on InstaWP | ✅ (2c) | New key: `bws_meta_conductor_settings` |
+| **Handler migration order** | Simplest first | P3 | Related → Level Restriction → Propagation → Related Post Terms → Time Based |
+| **Legacy BWS_Handler_Base** | Delete after last handler migrates | P3 | No deprecation shim needed — private plugin |
+| **Tab-aware save bug** | Fix during the Phase 7 tool build | P7 | Latent, not actively causing loss (was Phase 5, cancelled). |
+| **CLAUDE.md updates** | End of each phase | standing | Reflects completed architecture, not planned work |
+| **Version number** | 0.x → 1.0.0 | ✅ in effect | Pre-release line is `0.x`; breaking changes (file rename, class names, option key) are free pre-1.0. First production-ready cut is `1.0.0`. |
 
 ### Naming Surface (0.x)
 
@@ -56,22 +75,6 @@ Split the rename by layer — public-facing identity drops `BWS`, code/storage l
 | Hook/filter prefix | `bws_meta_conductor_*` | Consistent with stored data + JS |
 
 **Rule of thumb**: anything users / translators / the WP admin UI sees → drop `BWS`. Anything stored in a global PHP/JS/DB namespace where another plugin could collide → keep `BWS`.
-
----
-
-## What Is Actually Broken
-
-### MESSY — Not Breaking Runtime Behavior
-
-| Issue | Addressed In |
-|-------|-------------|
-| Admin menu/page still says "Taxonomy Manager" | Phase 2b |
-| 5 of 7 handlers on legacy BWS_Handler_Base | Phase 3 |
-| BWS_Settings is a ~2,000-line god class | ~~Phase 5~~ Resolved by Phase 2c (shrunk to ~60-line compat shell) |
-| Mixed JS globals (bwsTaxManager / bwsMetaManager) | ~~Phase 5~~ Resolved by Phase 2c (legacy JS deleted) |
-| Mixed text domains | Phase 2b |
-| BWS_Rule_Engine unused by legacy handlers | Phase 3 (hierarchical already bypasses engine post-2c) |
-| lib/ classes instantiated but never called | Phase 7 |
 
 ---
 
@@ -128,6 +131,15 @@ Full admin UI replacement. Hand-rolled settings UI (~5,000 lines across `class-b
 - Propagation, Level Restriction, Related Post Terms handler runtime
 
 **Plan file:** deleted post-ship; see commit history on `claude/wireframe-swap-2c` and PR #17.
+
+---
+
+### ✅ Phase 2c review pass — 0.3.1 (COMPLETED — commit `4f1a439`)
+
+Correctness fixes from the PR #17 review (full list in CHANGELOG `[0.3.1]`). Roadmap-relevant carry-overs:
+
+- Established the **site-time invariant** (`{pub_*}` tokens bound to `wp_timezone()`) — later locked for Temporal rules (CONTEXT.md → *Site time*); the shared `parse_date_value` pull-up in the Temporal work must honor it.
+- `TODO(Phase 3)` markers added to all 5 legacy `BWS_Handler_Base` handlers flagging dual-base divergence — visible debt for the Phase 3 migration below.
 
 ---
 

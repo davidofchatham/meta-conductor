@@ -5,7 +5,7 @@ All notable changes to Meta Conductor (formerly BWS Meta Manager, formerly BWS T
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.1] — Unreleased
+## [0.3.1] — 2026-06-19
 
 > Post-`0.3.0` review pass. Addresses correctness findings from the Phase 2c code review (PR #17).
 

@@ -2,7 +2,7 @@
 
 WordPress plugin for unified meta and taxonomy management. Rule-based automation that auto-sets terms, formats fields, restricts taxonomy depth, and (planned) personalizes per user.
 
-> **Current version**: 0.3.0 (pre-release; never deployed). The `0.x` line is unstable — schema, option keys, and public API may change between pre-releases until the first production cut ships as `1.0.0`. Phase 2c (Wireframe UI swap) in progress. See [ROADMAP.md](ROADMAP.md) for the full phase plan.
+> **Current version**: 0.3.1 (pre-release). The `0.x` line is unstable — schema, option keys, and public API may change between pre-releases until the first production cut ships as `1.0.0`. Wireframe UI swap (Phase 2c) shipped; PSR-4 namespacing (Phase 2a) is next. See [ROADMAP.md](ROADMAP.md) for the full phase plan.
 
 ## What it does
 
