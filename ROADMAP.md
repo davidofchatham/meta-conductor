@@ -20,7 +20,7 @@ Phase numbers are **stable IDs, not execution order** — work has landed out of
 | 0.3.1 | PR #17 review pass | ✅ done | — | — |
 | **2a** | **PSR-4 namespacing** | **▶ NEXT** | — | — |
 | 3 | Migrate 5 legacy handlers → UnifiedHandlerBase | queued | 2a | 5 of 7 handlers on legacy `BWS_Handler_Base`; `BWS_Rule_Engine` unused by legacy handlers |
-| 2b | Rename sweep (`__()`, constants, hooks, JS) | queued | 2a | admin menu/page still says "Taxonomy Manager"; mixed text domains |
+| 2b | Rename sweep — *user-facing rename done* (folder, file, header, option key, menu/title/H1); only code-internal strings left (`__()` sweep, constants, hooks, JS) | ◐ partial | 2a | mixed text domains |
 | 4 | CPT storage | queued | 3 | — |
 | 7 | Unified migration / preview tool | queued | — (ungated; can run anytime) | `lib/` classes instantiated but never called; tab-aware save bug; Conversion subpage taxonomy selectors |
 | 6a | Options-compatible integrations | queued | 3 | — |
@@ -154,7 +154,7 @@ Pure structural change — no behavior changes, no user-visible changes. Indepen
   - `BWS\MetaConductor\Handlers\` → `includes/handlers/` (includes abstract base classes)
   - `BWS\MetaConductor\Storage\` → `includes/storage/` (includes interface)
   - `BWS\MetaConductor\Conversion\` → `includes/conversion/` + absorbs `includes/lib/` classes
-  - `BWS\MetaConductor\Admin\` → `includes/admin/` (new directory, for Phase 5 settings split)
+  - `BWS\MetaConductor\Admin\` → `includes/admin/` (already exists — Wireframe config/bootstrap live here)
 - **Abstracts co-located**: `includes/abstracts/` is eliminated
   - `BWS_Unified_Handler_Base` → `includes/handlers/class-unified-handler-base.php` (`Handlers\UnifiedHandlerBase`)
   - `BWS_Rule_Storage` interface → `includes/storage/class-rule-storage.php` (`Storage\RuleStorage`)
@@ -177,18 +177,16 @@ Visible change — rename the plugin, migrate the option key, update all strings
 
 Follow the **Naming Surface (0.x)** table in the decisions section above for which layers drop `bws-` and which keep `bws_`/`BWS\`.
 
-> **Partially landed early (release-infra branch):** main-file rename and header `Plugin Name`/`Text Domain` shipped ahead of the full phase to unblock the self-hosted release pipeline (PUC + GitHub Actions). The option key was already migrated in Phase 2c. Remaining 2b work: the ~600-call `__()` text-domain sweep, constant aliases, nonce/hook prefix rename, JS object rename — and these depend on Phase 2a (PSR-4) landing first per Hard Constraints.
+> **Largely landed early:** the user-facing rename is effectively done — folder, main file, header, option key, menu/page titles, and settings H1 all shipped across Phase 2c + the release-infra branch (some ahead of schedule to unblock the self-hosted release pipeline). **Remaining 2b work** is code-internal: the ~600-call `__()` text-domain sweep (Wireframe args still pass `'bws-meta-manager'`), constant aliases, nonce/hook prefix rename, JS object rename — all gated on Phase 2a (PSR-4) per Hard Constraints.
 
-- Rename plugin folder: `bws-meta-manager` → `meta-conductor` *(repo + GitHub done; local dev folder + test-site install folder still legacy-named)*
+- ~~Rename plugin folder: `bws-meta-manager` → `meta-conductor`~~ ✅ done (repo, GitHub, local dev folder, test-site install all renamed)
 - ~~Rename main file: `bws-taxonomy-manager.php` → `meta-conductor.php`~~ ✅ done
 - ~~Update plugin header: `Plugin Name: Meta Conductor`, `Text Domain: meta-conductor`~~ ✅ done
-- Rename option key: `bws_taxonomy_manager_settings` → `bws_meta_conductor_settings`
-  - Add data migration in activation/upgrade hook: read old key → write new key → delete old key
-  - Test on InstaWP site before deploying
+- ~~Rename option key: `bws_taxonomy_manager_settings` → `bws_meta_conductor_settings`~~ ✅ done in Phase 2c (Wireframe boots against the new key; tested on InstaWP)
+- ~~Update admin menu label and page title~~ ✅ done in Phase 2c (`class-wireframe-bootstrap.php` `page_title`/`menu_title`/`menu_slug`)
+- ~~Update settings page H1~~ ✅ done in Phase 2c (`class-wireframe-config.php` `title`)
 - Update all nonce action strings to `bws_meta_conductor_*` pattern
-- Update admin menu label and page title
-- Update settings page H1
-- Unify text domain to `meta-conductor` throughout (~600 calls to convert)
+- Unify text domain to `meta-conductor` throughout (~600 calls to convert) — **the bulk of remaining 2b work.** Note: Wireframe `__()` args still pass `'bws-meta-manager'`.
 - Update constants to `META_CONDUCTOR_*` (keep backward-compat aliases for `BWS_TAX_MANAGER_*` and `BWS_META_MANAGER_*`)
 - Update JS localized object key to `bwsMetaConductor` in PHP enqueue
 - Update hook/filter prefix to `bws_meta_conductor_*` (paired with option keys)
