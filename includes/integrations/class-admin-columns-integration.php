@@ -203,11 +203,15 @@ class AdminColumnsIntegration {
                     return true;
                 }
                 
-                // Check if trigger term belongs to taxonomy
+                // Check if any trigger term belongs to taxonomy.
+                // trigger_term_id is int[] post-normalize (related rules); a
+                // scalar is tolerated for any other rule type / legacy shape.
                 if (isset($rule['trigger_term_id'])) {
-                    $term = get_term($rule['trigger_term_id']);
-                    if ($term && !is_wp_error($term) && $term->taxonomy === $taxonomy) {
-                        return true;
+                    foreach ((array) $rule['trigger_term_id'] as $tid) {
+                        $term = get_term((int) $tid);
+                        if ($term && !is_wp_error($term) && $term->taxonomy === $taxonomy) {
+                            return true;
+                        }
                     }
                 }
                 
@@ -445,11 +449,15 @@ class AdminColumnsIntegration {
             return true;
         }
         
-        // Check term references
+        // Check term references. trigger_term_id may be int[] (related rules
+        // post-normalize); target_term_id is scalar. (array) cast handles both.
         $term_fields = array('trigger_term_id', 'target_term_id');
         foreach ($term_fields as $field) {
-            if (!empty($rule[$field])) {
-                $term = get_term($rule[$field]);
+            if (empty($rule[$field])) {
+                continue;
+            }
+            foreach ((array) $rule[$field] as $tid) {
+                $term = get_term((int) $tid);
                 if ($term && !is_wp_error($term) && $term->taxonomy === $taxonomy) {
                     return true;
                 }

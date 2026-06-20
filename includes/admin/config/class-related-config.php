@@ -30,6 +30,7 @@ class RelatedConfig {
                     'args'  => [
                         'sortable'       => true,
                         'collapsible'    => true,
+                        'collapsed'      => true,
                         'duplicate_row'  => true,
                         'add_label'      => __('Add related term rule', 'bws-meta-manager'),
                         'empty_message'  => __('No related term rules configured.', 'bws-meta-manager'),
@@ -60,12 +61,11 @@ class RelatedConfig {
                                 'id'          => 'trigger_term_id',
                                 'type'        => 'select',
                                 'label'       => __('Trigger term', 'bws-meta-manager'),
-                                'description' => __('Used when Trigger is "Specific term".', 'bws-meta-manager'),
+                                'description' => __('Used when Trigger is "Specific term". Rule fires if post has any of the listed terms.', 'bws-meta-manager'),
                                 'default'     => '',
                                 'columns'     => 12,
                                 'args'        => [
                                     'multiple' => true,
-                                    'max'      => 1,
                                     'options'  => ConfigHelpers::all_term_options(),
                                 ],
                             ],

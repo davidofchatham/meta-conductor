@@ -5,6 +5,17 @@ All notable changes to Meta Conductor (formerly BWS Meta Manager, formerly BWS T
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] — 2026-06-19
+
+### Added
+
+#### Phase 3b — multi-trigger Related Term Mapping + UX fixes
+
+- **Related Term Mapping rules now accept multiple trigger terms.** Previously limited to one trigger term per rule; now any number can be listed and the rule fires if the post has **any** of them (OR semantics). Previously, if you had already entered a second trigger term in the UI, it was stored but silently ignored at runtime — after this update it fires. Check existing rules and remove any stray second terms if that isn't the intended behavior. Row labels now display all trigger terms joined by ", ".
+- **Term picker now sorted alphabetically** — trigger-term and target-term dropdowns list taxonomies in label order, terms in name order. Previously taxonomies appeared in registration order, which looked arbitrary on sites with many taxonomies.
+- **Related rule rows start collapsed** — all rules load collapsed on the settings page. Click to expand. Improves orientation when many rules are configured.
+- **Search re-enabled after first term selection** — the prior `max: 1` cap on the trigger-term field disabled the search input after one pick; removing the cap restores continuous search.
+
 ## [0.4.0] — 2026-06-19
 
 > Combined release: the Phase 2a PSR-4 restructure (internal, no behavior change) plus the Phase 3a multi-post-type Related Term Mapping work. Still the unstable `0.x` line — no migration path guaranteed pre-1.0.

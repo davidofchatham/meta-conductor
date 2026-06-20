@@ -792,16 +792,23 @@ class AcfIntegration {
 				}
 			}
 		} elseif ($rule['trigger_type'] === 'term') {
-			$trigger_term = get_term($rule['trigger_term_id']);
-			if ($trigger_term && !is_wp_error($trigger_term)) {
+			// trigger_term_id is int[] post-normalize. Fire if ANY trigger term
+			// is present in its taxonomy's ACF field (OR semantics, mirrors
+			// RelatedHandler V3/V5).
+			$trigger_ids = (array) ($rule['trigger_term_id'] ?? array());
+			foreach ($trigger_ids as $tid) {
+				$trigger_term = get_term((int) $tid);
+				if (!$trigger_term || is_wp_error($trigger_term)) {
+					continue;
+				}
 				$trigger_taxonomy = $trigger_term->taxonomy;
-				
+
 				foreach ($taxonomy_fields as $field_name => $field) {
 					if ($field['taxonomy'] === $trigger_taxonomy) {
 						$terms = $this->get_acf_field_terms($post_id, $field);
 						if (in_array($trigger_term->term_id, $terms)) {
 							$trigger_found = true;
-							break;
+							break 2;
 						}
 					}
 				}

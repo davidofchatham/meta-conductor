@@ -204,7 +204,7 @@ class OptionRuleStorage implements RuleStorage {
      */
     private static function normalize_rule_shape(string $type, array $rule): array {
         $single_term_fields = [
-            'related_rules'    => ['trigger_term_id', 'target_term_id'],
+            'related_rules'    => ['target_term_id'],
             'time_based_rules' => ['target_term_id'],
         ];
 
@@ -220,6 +220,16 @@ class OptionRuleStorage implements RuleStorage {
                     $rule[$field] = (int) $rule[$field];
                 }
             }
+        }
+
+        // related_rules trigger_term_id: canonical shape is int[] (V1).
+        // Stored value may be a FormTokenField array [a,b,...] or a legacy scalar.
+        // Dedupe, cast, and drop zeros.
+        if ($type === 'related_rules' && isset($rule['trigger_term_id'])) {
+            $raw = $rule['trigger_term_id'];
+            $ids = is_array($raw) ? $raw : [$raw];
+            $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+            $rule['trigger_term_id'] = $ids;
         }
 
         if ($type === 'related_post_terms_rules' && !empty($rule['acf_field_name'])) {

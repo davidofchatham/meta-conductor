@@ -129,86 +129,143 @@ class RelatedHandler extends UnifiedHandlerBase {
     }
     
     /**
-     * Get trigger terms for a post based on rule
+     * Get trigger terms present on a post (V2, V3).
+     *
+     * term-type: returns int[] of trigger IDs that are currently on the post
+     * (OR — any match counts). taxonomy-type: returns all post terms in the
+     * trigger taxonomy.
      */
     private function get_trigger_terms($post_id, $rule) {
         $trigger_terms = array();
-        
+
         if ($rule['trigger_type'] === 'term') {
-            // Check if specific term is applied
-            $term = get_term($rule['trigger_term_id']);
-            if ($term && !is_wp_error($term)) {
+            $trigger_ids = (array) ($rule['trigger_term_id'] ?? []);
+            foreach ($trigger_ids as $tid) {
+                $tid  = (int) $tid;
+                $term = \get_term($tid);
+                if (!$term || \is_wp_error($term)) {
+                    continue;
+                }
                 if ($this->post_has_terms($post_id, $term->taxonomy, array($term->term_id))) {
                     $trigger_terms[] = $term->term_id;
                 }
             }
         } elseif ($rule['trigger_type'] === 'taxonomy') {
-            // Check if any term from taxonomy is applied
             $post_terms = wp_get_object_terms($post_id, $rule['trigger_taxonomy'], array('fields' => 'ids'));
             if (!is_wp_error($post_terms) && !empty($post_terms)) {
                 $trigger_terms = $post_terms;
             }
         }
-        
+
         return $trigger_terms;
     }
     
     /**
-     * Check if terms change should trigger related terms
+     * Check if a term-set change should trigger this rule (V3).
+     *
+     * term-type: fires if ANY listed trigger term was added or removed in
+     * this taxonomy change (OR semantics). taxonomy-type: fires whenever the
+     * trigger taxonomy itself changed.
      */
     private function should_trigger_related_terms($rule, $taxonomy, $new_tt_ids, $old_tt_ids) {
         if ($rule['trigger_type'] === 'term') {
-            $term = get_term($rule['trigger_term_id']);
-            if (!$term || is_wp_error($term) || $term->taxonomy !== $taxonomy) {
-                return false;
+            // V12: hook tt_ids are strings, term_taxonomy_id is int — normalize
+            // both to int before strict comparison or the match always fails.
+            $new_tt_ids = array_map('intval', (array) $new_tt_ids);
+            $old_tt_ids = array_map('intval', (array) ($old_tt_ids ?? []));
+
+            $added   = array_diff($new_tt_ids, $old_tt_ids);
+            $removed = array_diff($old_tt_ids, $new_tt_ids);
+
+            $trigger_ids = (array) ($rule['trigger_term_id'] ?? []);
+            foreach ($trigger_ids as $tid) {
+                $term = \get_term((int) $tid);
+                if (!$term || \is_wp_error($term) || $term->taxonomy !== $taxonomy) {
+                    continue;
+                }
+                $ttid = (int) $term->term_taxonomy_id;
+                if (in_array($ttid, $added, true)
+                    || in_array($ttid, $removed, true)) {
+                    return true;
+                }
             }
-            
-            // Check if the specific trigger term was added or removed
-            $added = array_diff($new_tt_ids, $old_tt_ids ?? array());
-            $removed = array_diff($old_tt_ids ?? array(), $new_tt_ids);
-            
-            return in_array($term->term_taxonomy_id, $added) || in_array($term->term_taxonomy_id, $removed);
-            
+            return false;
+
         } elseif ($rule['trigger_type'] === 'taxonomy') {
             return $rule['trigger_taxonomy'] === $taxonomy;
         }
-        
+
         return false;
     }
     
     /**
-     * Apply related terms based on rule
+     * Apply or remove the target term for this rule (V3, V4).
+     *
+     * term-type apply: ANY listed trigger term added in this change → apply.
+     * term-type remove (bidirectional V4): at least one trigger removed in this
+     *   change AND NO trigger term remains on the post (queried across every
+     *   taxonomy, not just the one that fired) → remove. If another trigger is
+     *   still present anywhere the target stays.
+     * taxonomy-type: unchanged (any terms present → apply; none → remove).
      */
     private function apply_related_terms($post_id, $rule, $new_tt_ids, $old_tt_ids) {
-        $target_term = get_term($rule['target_term_id']);
-        if (!$target_term || is_wp_error($target_term)) {
+        $target_term = \get_term($rule['target_term_id']);
+        if (!$target_term || \is_wp_error($target_term)) {
             return;
         }
-        
-        $should_apply = false;
+
+        $should_apply  = false;
         $should_remove = false;
-        
+
         if ($rule['trigger_type'] === 'term') {
-            $trigger_term = get_term($rule['trigger_term_id']);
-            if ($trigger_term && !is_wp_error($trigger_term)) {
-                $added = array_diff($new_tt_ids, $old_tt_ids ?? array());
-                $removed = array_diff($old_tt_ids ?? array(), $new_tt_ids);
-                
-                if (in_array($trigger_term->term_taxonomy_id, $added)) {
-                    $should_apply = true;
-                } elseif (in_array($trigger_term->term_taxonomy_id, $removed)) {
-                    $should_remove = true;
+            // V12: normalize both sides to int before strict comparison.
+            $new_tt_ids = array_map('intval', (array) $new_tt_ids);
+            $old_tt_ids = array_map('intval', (array) ($old_tt_ids ?? []));
+
+            $trigger_ids = (array) ($rule['trigger_term_id'] ?? []);
+            $added       = array_diff($new_tt_ids, $old_tt_ids);
+            $removed     = array_diff($old_tt_ids, $new_tt_ids);
+
+            $any_trigger_added   = false;
+            $any_trigger_removed = false;
+
+            foreach ($trigger_ids as $tid) {
+                $term = \get_term((int) $tid);
+                if (!$term || \is_wp_error($term)) {
+                    continue;
+                }
+                $ttid = (int) $term->term_taxonomy_id;
+                if (in_array($ttid, $added, true)) {
+                    $any_trigger_added = true;
+                }
+                if (in_array($ttid, $removed, true)) {
+                    $any_trigger_removed = true;
                 }
             }
+
+            // V14: "is any trigger still present" must be answered against the
+            // post's ACTUAL terms across ALL taxonomies — not $new_tt_ids, which
+            // only holds the single taxonomy this set_object_terms call changed.
+            // Triggers may span taxonomies (the picker lists all of them), so a
+            // hook-payload check would see a trigger in another taxonomy as
+            // absent and wrongly remove the target (violates V4).
+            $any_trigger_present = !empty($this->get_trigger_terms($post_id, $rule));
+
+            if ($any_trigger_added) {
+                $should_apply = true;
+            } elseif ($any_trigger_removed && !$any_trigger_present) {
+                // ALL trigger terms gone from the post — safe to remove (V4).
+                $should_remove = true;
+            }
+
         } elseif ($rule['trigger_type'] === 'taxonomy') {
-            // If any terms in trigger taxonomy, apply target
             if (!empty($new_tt_ids)) {
                 $should_apply = true;
             } elseif (empty($new_tt_ids) && !empty($old_tt_ids)) {
                 $should_remove = true;
             }
         }
-        
+
         if ($should_apply) {
             $this->apply_terms_to_post($post_id, $target_term->taxonomy, array($target_term->term_id), 'merge');
         } elseif ($should_remove && !empty($rule['bidirectional'])) {
@@ -217,34 +274,47 @@ class RelatedHandler extends UnifiedHandlerBase {
     }
     
     /**
-     * Process ACF related terms
+     * Process ACF-field saves for this rule (V5).
+     *
+     * term-type: trigger taxonomy = union of taxonomies across all trigger
+     * term IDs. Fires if any ACF taxonomy field belongs to that set.
+     * taxonomy-type: unchanged.
      */
     private function process_acf_related_terms($post_id, $rule) {
         if (!function_exists('get_field_objects')) {
             return;
         }
-        
+
         $field_objects = get_field_objects($post_id);
         if (!$field_objects) {
             return;
         }
-        
-        $trigger_taxonomy = $rule['trigger_type'] === 'taxonomy' ? $rule['trigger_taxonomy'] : null;
-        if ($rule['trigger_type'] === 'term') {
-            $trigger_term = get_term($rule['trigger_term_id']);
-            $trigger_taxonomy = $trigger_term ? $trigger_term->taxonomy : null;
+
+        $trigger_taxonomies = [];
+
+        if ($rule['trigger_type'] === 'taxonomy') {
+            if (!empty($rule['trigger_taxonomy'])) {
+                $trigger_taxonomies[] = $rule['trigger_taxonomy'];
+            }
+        } elseif ($rule['trigger_type'] === 'term') {
+            $trigger_ids = (array) ($rule['trigger_term_id'] ?? []);
+            foreach ($trigger_ids as $tid) {
+                $term = \get_term((int) $tid);
+                if ($term && !\is_wp_error($term)) {
+                    $trigger_taxonomies[] = $term->taxonomy;
+                }
+            }
+            $trigger_taxonomies = array_unique($trigger_taxonomies);
         }
-        
-        if (!$trigger_taxonomy) {
+
+        if (empty($trigger_taxonomies)) {
             return;
         }
-        
-        // Check if any ACF fields were updated for the trigger taxonomy
+
         foreach ($field_objects as $field) {
-            if ($field['type'] === 'taxonomy' && 
-                isset($field['taxonomy']) && 
-                $field['taxonomy'] === $trigger_taxonomy) {
-                
+            if ($field['type'] === 'taxonomy'
+                && isset($field['taxonomy'])
+                && in_array($field['taxonomy'], $trigger_taxonomies, true)) {
                 $this->process_related_terms($post_id, $rule);
                 break;
             }
@@ -272,8 +342,16 @@ class RelatedHandler extends UnifiedHandlerBase {
         }
 
         if ($trigger_type === 'term') {
-            if (empty($rule['trigger_term_id']) || !\get_term($rule['trigger_term_id'])) {
+            // V6: non-empty AND every id resolves.
+            $trigger_ids = (array) ($rule['trigger_term_id'] ?? []);
+            $trigger_ids = array_filter($trigger_ids);
+            if (empty($trigger_ids)) {
                 return false;
+            }
+            foreach ($trigger_ids as $tid) {
+                if (!\get_term((int) $tid)) {
+                    return false;
+                }
             }
         } else { // taxonomy
             if (empty($rule['trigger_taxonomy']) || !\taxonomy_exists($rule['trigger_taxonomy'])) {

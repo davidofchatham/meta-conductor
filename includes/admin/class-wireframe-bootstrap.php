@@ -59,22 +59,13 @@ class WireframeBootstrap {
             $trigger_type = $rule['trigger_type'] ?? 'term';
 
             if ($trigger_type === 'taxonomy') {
-                $rule['trigger_label'] = self::taxonomy_label($rule['trigger_taxonomy'] ?? '');
+                $rule['trigger_label'] = \esc_html(self::taxonomy_label($rule['trigger_taxonomy'] ?? ''));
             } else {
-                $rule['trigger_label'] = self::term_label($rule['trigger_term_id'] ?? null);
+                $rule['trigger_label'] = \esc_html(self::trigger_terms_label($rule['trigger_term_id'] ?? null));
             }
 
-            $rule['target_label'] = self::term_label($rule['target_term_id'] ?? null);
-            $rule['scope_label']  = self::scope_label($rule['post_types'] ?? []);
-
-            // Escape at the point of injection: these labels are persisted and
-            // later substituted into the repeater row title. Wireframe renders
-            // the title as a React text child (auto-escaped), so this is
-            // defense-in-depth, not a known hole. WP already sanitizes term
-            // names on input.
-            $rule['trigger_label'] = \esc_html($rule['trigger_label']);
-            $rule['target_label']  = \esc_html($rule['target_label']);
-            $rule['scope_label']   = \esc_html($rule['scope_label']);
+            $rule['target_label'] = \esc_html(self::term_label($rule['target_term_id'] ?? null));
+            $rule['scope_label']  = \esc_html(self::scope_label($rule['post_types'] ?? []));
         }
         unset($rule);
 
@@ -82,14 +73,14 @@ class WireframeBootstrap {
     }
 
     /**
-     * Resolve a stored term ID to "<taxonomy label>: <term name>" (V11),
-     * mirroring the option-label shape of ConfigHelpers::all_term_options().
+     * Resolve a single stored term ID to "<taxonomy label>: <term name>".
      *
-     * Accepts the FormTokenField single-value shape `[N]` as well as a bare
-     * scalar `N`. Returns '' when unresolvable.
+     * Accepts a bare scalar or a single-element array. Returns '' when
+     * unresolvable. Used for target_term_id (single) and as a primitive
+     * for trigger_terms_label (multi).
      *
-     * @param mixed $stored Term ID, or single-element array of one.
-     * @return string
+     * @param mixed $stored Term ID or single-element array.
+     * @return string Unescaped label.
      */
     private static function term_label($stored): string {
         $id = is_array($stored) ? ($stored[0] ?? 0) : $stored;
@@ -106,6 +97,30 @@ class WireframeBootstrap {
         $tax_label = self::taxonomy_label($term->taxonomy);
 
         return $tax_label !== '' ? $tax_label . ': ' . $term->name : $term->name;
+    }
+
+    /**
+     * Build the trigger_label for a term-type rule (V7).
+     *
+     * Maps the int[] trigger_term_id array to individual term labels and joins
+     * with ", ". Scalar and single-element-array stored values are also
+     * accepted (legacy shape; normalizer converts on read but the save-payload
+     * hook runs before normalize). Returns UNESCAPED text — the caller escapes
+     * once at injection, matching term_label/taxonomy_label/scope_label.
+     *
+     * @param mixed $stored int[], scalar, or null.
+     * @return string Unescaped, comma-joined label; '' if nothing resolves.
+     */
+    private static function trigger_terms_label($stored): string {
+        $ids = is_array($stored) ? $stored : [$stored];
+        $labels = [];
+        foreach ($ids as $id) {
+            $label = self::term_label($id);
+            if ($label !== '') {
+                $labels[] = $label;
+            }
+        }
+        return implode(', ', $labels);
     }
 
     /**

@@ -133,10 +133,15 @@ class ConfigHelpers {
         $options    = [];
         $taxonomies = get_taxonomies(['public' => true], 'objects');
 
+        // Sort taxonomies alphabetically by label (V8).
+        usort($taxonomies, fn($a, $b) => strcmp($a->label, $b->label));
+
         foreach ($taxonomies as $taxonomy) {
             $terms = get_terms([
                 'taxonomy'   => $taxonomy->name,
                 'hide_empty' => false,
+                'orderby'    => 'name',
+                'order'      => 'ASC',
             ]);
 
             if (is_wp_error($terms)) {
