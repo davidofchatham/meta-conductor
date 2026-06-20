@@ -30,6 +30,7 @@ class TimeBasedConfig {
                     'args'  => [
                         'sortable'       => true,
                         'collapsible'    => true,
+                        'collapsed'      => true,
                         'duplicate_row'  => true,
                         'add_label'      => __('Add date window rule', 'bws-meta-manager'),
                         'empty_message'  => __('No date window rules configured.', 'bws-meta-manager'),

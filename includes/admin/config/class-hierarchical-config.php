@@ -30,6 +30,7 @@ class HierarchicalConfig {
                             'args'  => [
                                 'sortable'       => true,
                                 'collapsible'    => true,
+                                'collapsed'      => true,
                                 'duplicate_row'  => true,
                                 'add_label'      => __('Add hierarchical rule', 'bws-meta-manager'),
                                 'empty_message'  => __('No hierarchical rules configured.', 'bws-meta-manager'),

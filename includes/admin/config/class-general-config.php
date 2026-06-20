@@ -49,6 +49,7 @@ class GeneralConfig {
                     'args'  => [
                         'sortable'       => true,
                         'collapsible'    => true,
+                        'collapsed'      => true,
                         'duplicate_row'  => false,
                         'add_label'      => __('Add taxonomy override', 'bws-meta-manager'),
                         'empty_message'  => __('No overrides — all taxonomies default to "Merge".', 'bws-meta-manager'),

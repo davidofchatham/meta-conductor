@@ -30,6 +30,7 @@ class RelatedPostTermsConfig {
                     'args'  => [
                         'sortable'       => true,
                         'collapsible'    => true,
+                        'collapsed'      => true,
                         'duplicate_row'  => true,
                         'add_label'      => __('Add ACF reference rule', 'bws-meta-manager'),
                         'empty_message'  => __('No ACF reference rules configured.', 'bws-meta-manager'),

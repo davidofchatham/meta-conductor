@@ -32,6 +32,7 @@ class TitleSlugConfig {
                     'args'  => [
                         'sortable'       => true,
                         'collapsible'    => true,
+                        'collapsed'      => true,
                         'duplicate_row'  => true,
                         'add_label'      => __('Add title/slug rule', 'bws-meta-manager'),
                         'empty_message'  => __('No title/slug rules configured.', 'bws-meta-manager'),
