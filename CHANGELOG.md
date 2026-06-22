@@ -5,6 +5,12 @@ All notable changes to Meta Conductor (formerly BWS Meta Manager, formerly BWS T
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] — 2026-06-22
+
+### Fixed
+
+- **Fatal error when ACF or Admin Columns integrations read handler rules.** `get_enabled_rules()` was `protected` on both handler base classes but called cross-class by the ACF and Admin Columns integrations, throwing `Call to protected method ... from scope ... AcfIntegration`. Now `public`.
+
 ## [0.4.2] — 2026-06-20
 
 ### Changed

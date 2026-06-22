@@ -156,7 +156,7 @@ abstract class UnifiedHandlerBase {
      * @since 0.2.0 Updated to use storage abstraction
      * @return array Enabled rules
      */
-    protected function get_enabled_rules() {
+    public function get_enabled_rules() {
         $storage = StorageFactory::get_instance();
         $rule_type = $this->get_rule_type();
 

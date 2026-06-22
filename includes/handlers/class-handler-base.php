@@ -131,8 +131,10 @@ abstract class HandlerBase {
     
     /**
      * Get enabled rules for this handler
+     *
+     * Public: called cross-class by integrations (ACF, Admin Columns).
      */
-    protected function get_enabled_rules() {
+    public function get_enabled_rules() {
         $rules = $this->get_rules();
         return array_filter($rules, function($rule) {
             return !empty($rule['enabled']);
