@@ -1,10 +1,10 @@
 # Meta Conductor: Roadmap
 
-**Current Version**: 0.3.1 (pre-release; `0.x` unstable until `1.0.0`)
+**Current Version**: 0.4.3 (pre-release; `0.x` unstable until `1.0.0`)
 **Target Version**: 1.0.0 (first production-ready cut, after rename + PSR-4 namespacing land)
 **Branch**: `main`
 
-The refactor is an **incremental migration, not a rewrite** — the core business logic works; the remaining work is structural (finish the unified-framework handler migration, complete the rename, PSR-4 namespacing, CPT storage). This document tracks the phased plan and the decisions behind it.
+The refactor is an **incremental migration, not a rewrite** — the core business logic works; the remaining work is structural (finish the unified-framework handler migration, complete the rename, PSR-4 namespacing, config page split). This document tracks the phased plan and the decisions behind it.
 
 ---
 
@@ -18,16 +18,16 @@ Phase numbers are **stable IDs, not execution order** — work has landed out of
 | 1 | Bug fixes | ✅ done | — | — |
 | 2c | Wireframe UI swap | ✅ done | — | god-class `BWS_Settings` → 60-line shell; mixed JS globals (legacy JS deleted) |
 | 0.3.1 | PR #17 review pass | ✅ done | — | — |
-| **2a** | **PSR-4 namespacing** | **▶ NEXT** | — | — |
-| 3 | Migrate 5 legacy handlers → UnifiedHandlerBase | queued | 2a | 5 of 7 handlers on legacy `BWS_Handler_Base`; `BWS_Rule_Engine` unused by legacy handlers |
-| 2b | Rename sweep — *user-facing rename done* (folder, file, header, option key, menu/title/H1); only code-internal strings left (`__()` sweep, constants, hooks, JS) | ◐ partial | 2a | mixed text domains |
-| 4 | CPT storage | queued | 3 | — |
+| 2a | PSR-4 namespacing (+ `lib/`→`Support\`, abstracts co-located, `tests/` harness) | ✅ done (0.4.0) | — | manual `require_once` chains; `includes/abstracts/` + `includes/lib/` |
+| **3** | Migrate 5 legacy handlers → UnifiedHandlerBase — **1 of 5 done** (Related, 0.4.0/0.4.1); **▶ NEXT: step 2 (level-restriction)** | ◐ partial | 2a ✅ | 4 of 7 handlers still on legacy `BWS_Handler_Base`; `BWS_Rule_Engine` unused by legacy handlers |
+| 2b | Rename sweep — *user-facing rename done* (folder, file, header, option key, menu/title/H1); only code-internal strings left (`__()` sweep, constants, hooks, JS) | ◐ partial | 2a ✅ | mixed text domains |
+| 4 | Config page split (storage blast-radius) — *was CPT storage; CPT deferred* | queued | 3 | one-blob clobber radius; per-page autoload; gives UBT its own option |
 | 7 | Unified migration / preview tool | queued | — (ungated; can run anytime) | `lib/` classes instantiated but never called; tab-aware save bug; Conversion subpage taxonomy selectors |
 | 6a | Options-compatible integrations | queued | 3 | — |
-| 6b | BWS User Based Terms | queued | 4 | — |
+| 6b | BWS User Based Terms (→ Options, Personalize page) | queued | 4 | UBT merge; needs Personalize page option from P4 |
 | ~~5~~ | ~~Settings refactor~~ | cancelled | — | absorbed by 2c; lib delegation folded into 7 |
 
-**Recommended run order:** 2a → 3 → 2b → 4 → (6a, 7) → 6b. Phase 3 before 2b so the rename sweep touches already-migrated handlers once. Phase 7 is unblocked and can slot in whenever Conversion is needed.
+**Recommended run order:** ~~2a~~ ✅ → **3 (finish steps 2–5)** → 2b → 4 → (6a, 7) → 6b. Phase 3 before 2b so the rename sweep touches already-migrated handlers once. Phase 7 is unblocked and can slot in whenever Conversion is needed.
 
 Live defects not yet scheduled to a phase are tracked under each phase section's **Known issues**; the "Open items it closes" column above is the at-a-glance index.
 
@@ -41,14 +41,15 @@ Status column: ✅ = actioned · Pn = pending in that phase · standing = ongoin
 |----------|--------|--------|-------|
 | **Plugin name** | **Meta Conductor** | ✅ | Display name and slug both drop "BWS". See "Naming surface" table below. |
 | **Naming surface** | Split by layer | ◐ partial (P2b) | Folder/main-file/text-domain done; constants, hooks, JS, `__()` sweep remain in 2b. |
-| **PSR-4 namespacing** | Yes | P2a (next) | Custom `spl_autoload_register()` autoloader; namespace `BWS\MetaConductor\`; pattern from a sibling BWS plugin |
-| **Abstracts directory** | Co-locate with implementations | P2a | `Storage\RuleStorage`, `Handlers\UnifiedHandlerBase` — `includes/abstracts/` eliminated |
-| **Interface file naming** | Use `class-` prefix for all | P2a | Autoloader generates `class-{name}.php`; interfaces follow same convention |
-| **lib/ classes** | Absorb into `Conversion\` namespace | P2a | BatchProcessor, FieldConverter, ValueMapper, TermMigrator move to `includes/conversion/` |
-| **lib/ integration** | Complete in Phase 7 | P7 | `BWS_Data_Processor` delegates to lib classes during the migration-tool build (was Phase 5, cancelled). |
+| **PSR-4 namespacing** | Yes | ✅ (0.4.0) | Custom `spl_autoload_register()` autoloader (root `autoload.php`); namespace `BWS\MetaConductor\` |
+| **Abstracts directory** | Co-locate with implementations | ✅ (0.4.0) | `Storage\RuleStorage`, `Handlers\UnifiedHandlerBase` — `includes/abstracts/` eliminated |
+| **Interface file naming** | Use `class-` prefix for all | ✅ (0.4.0) | Autoloader generates `class-{name}.php`; interfaces follow same convention |
+| **lib/ classes** | Absorb into `Support\` namespace | ✅ (0.4.0) | BatchProcessor, FieldConverter, ValueMapper, TermMigrator → `includes/support/` (renamed from `lib/` to avoid collision with vendored `libs/`; not `Conversion\` as originally planned) |
+| **lib/ integration** | Complete in Phase 7 | P7 | `Conversion\DataProcessor` delegates to `Support\` classes during the migration-tool build (was Phase 5, cancelled). |
 | **Conversion tool** | Keep in this plugin | ✅ decided | Operates on same entities/fields |
-| **CPT vs options** | Per-type routing | P4 | Storage factory routes by rule type; see framework below |
-| **CPT structure** | Single shared CPT: `bws_mc_rule` | P4 | Differentiated by `rule_type` meta field; one list table filterable by type |
+| **CPT vs options** | Options + page split; CPT deferred | ✅ reassessed (2026-06-23) | Storage choice is **per Wireframe page**, not per rule type. Page split (P4) splits the blob; CPT only if a type needs a draft/test lifecycle. See [storage-model.md](docs/storage-model.md). |
+| **CPT structure** | Deferred | — | `bws_mc_rule` shared-CPT design preserved in storage-model.md if/when a type needs it. Not scheduled. |
+| **Config storage boundary** | Wireframe page = `option_key` | P4 | Split 5 tabs → 4 pages → 4 options. Rule-type → option_key router. See [config-pages-split plan](.claude/plans/config-pages-split.md). |
 | **Plugin file rename** | Yes | ✅ | All installs are controlled |
 | **Option key rename** | Yes — with data migration, tested on InstaWP | ✅ (2c) | New key: `bws_meta_conductor_settings` |
 | **Handler migration order** | Simplest first | P3 | Related → Level Restriction → Propagation → Related Post Terms → Time Based |
@@ -185,7 +186,7 @@ Follow the **Naming Surface (0.x)** table in the decisions section above for whi
 - Update JS localized object key to `bwsMetaConductor` in PHP enqueue
 - Update hook/filter prefix to `bws_meta_conductor_*` (paired with option keys)
 
-**Files**: `meta-conductor.php`, `includes/class-bws-taxonomy-manager.php`, `includes/class-bws-settings.php`, `includes/storage/class-option-rule-storage.php`, `includes/handlers/class-unified-handler-base.php`, plus every file containing `__()` / `_e()` / `_x()` / `_n()` calls
+**Files**: `meta-conductor.php`, `includes/class-taxonomy-manager.php`, `includes/class-settings.php`, `includes/storage/class-option-rule-storage.php`, `includes/handlers/class-unified-handler-base.php`, plus every file containing `__()` / `_e()` / `_x()` / `_n()` calls (paths post-2a)
 
 **End of phase**: Keep version on the `0.x` line; graduate to `1.0.0` only when production-ready. Update CLAUDE.md
 
@@ -206,21 +207,36 @@ Migrate each handler from `BWS_Handler_Base` to `UnifiedHandlerBase`. Template: 
 
 **After last handler**:
 - Delete `class-handler-base.php` (`BWS_Handler_Base`).
-- Remove `on_post_save()` loop in `class-bws-taxonomy-manager.php` — it calls `process_post()` on every handler, but unified-base handlers register their own hooks and don't need it. Currently causes `process_post()` no-op overrides in hierarchical + title_slug handlers to prevent the base class from routing flat Wireframe rules through `BWS_Rule_Engine`.
+- Remove `on_post_save()` loop in `class-taxonomy-manager.php` — it calls `process_post()` on every handler, but unified-base handlers register their own hooks and don't need it. Currently causes `process_post()` no-op overrides in hierarchical + title_slug handlers to prevent the base class from routing flat Wireframe rules through `BWS_Rule_Engine`.
 
 **End of phase**: Update CLAUDE.md
 
 ---
 
-### Phase 4: Implement CPT Storage
+### Phase 4: Config Page Split (storage blast-radius)
 
-Required before merging BWS User Based Terms. Also needed for `title_slug_rules` and `time_based_rules` migration from options.
+**Replaces the former "Implement CPT Storage" phase** (2026-06-23 reassessment). CPT storage is **not** a scheduled deliverable — it stays a deferred option only for a rule type that genuinely needs a draft/test lifecycle. The real priority is splitting the single Wireframe settings page into multiple pages so the options blob splits with it. Rationale + tradeoffs: [docs/storage-model.md](docs/storage-model.md). Full plan: [config-pages-split plan](.claude/plans/config-pages-split.md).
 
-- Implement `includes/storage/class-cpt-rule-storage.php` (implements `Storage\RuleStorage` interface, 15 methods)
-- CPT: `bws_mc_rule`, differentiated by `rule_type` meta field — single list table filterable by type
-- Update `Storage\StorageFactory` to route CPT-type rule types to CPT implementation, options-type to options implementation
-- Build migration tool: options → CPT for `title_slug_rules` and `time_based_rules` (dry-run mode first)
-- Test per-type routing with all handlers
+**Why this instead of CPT:** Wireframe binds one `option_key` per page → all rule types currently share one blob, one save rewrites everything, cross-type clobber is possible. Splitting tabs → pages shrinks the save blast radius, gives per-page autoload control, and lets each page choose its storage independently later — delivering most of CPT's write-isolation benefit at near-zero cost, no new storage engine. UBT no longer needs CPT (role/user = target, not owner → single author; per-user data → profile field + one indirection rule).
+
+**Pages (4 — Restrict merges into Auto-Set; they interact):**
+
+| Page | `option_key` | Hosts |
+|------|-------------|-------|
+| Auto-Set & Restrict | `bws_mc_auto_set` | propagation, related_post_terms, time_based, related, hierarchical, level_restriction |
+| Format & Transform | `bws_mc_format` | title_slug, (future field_transformation) |
+| Personalize by User | `bws_mc_personalize` | user_based (UBT lands here) |
+| General | `bws_mc_general` | conflict_handling, manual_processing globals |
+
+**Work:**
+
+- Split `WireframeConfig::build()` into 4 page-config composers; `WireframeBootstrap::boot` `pages[]` gains 4 entries (reuse existing `*Config::section()` classes — just regroup which page hosts them; in-page **tabs** separate rule types).
+- Add a **rule_type → option_key router** (the job `Storage\StorageFactory` was meant to own). `OptionRuleStorage::get_all_settings()` resolves the right page option per type; cross-type reads (`search_rules`, diagnostics, export/import) iterate the N page options.
+- Rescope save-payload hooks (`snapshot_related_labels` → Auto-Set page save).
+- **Migration:** one-time fan-out of the single `bws_meta_conductor_settings` blob → 4 page options, dry-run first, old key readable during transition, delete after verify.
+- Re-run H1 (lint) + H2 (autoload harness) after class moves.
+
+**Deferred (not this phase):** CPT storage (`class-cpt-rule-storage.php`, `bws_mc_rule` CPT). Revisit only if a type needs a draft/test lifecycle — see storage-model.md. Lost-update clobber, if concurrent authoring ever appears, is handled by a version-token guard on the page blob (cheaper than CPT), not by this phase.
 
 **End of phase**: Update CLAUDE.md
 
@@ -250,7 +266,7 @@ Reframes the existing ACF "Data Conversion" page as a general-purpose Migration 
   - `preview` renderer — shows before/after
   - `commit` callback — writes the change
 - UI: recipe picker → parameter form → preview sample → run with chunked progress bar → completion summary.
-- Reuses existing infrastructure: `Conversion\BatchProcessor`, `Conversion\TermMigrator`, `Conversion\FieldConverter`, `Conversion\ValueMapper`. Lib class delegation (cancelled Phase 5 carry-over) happens here.
+- Reuses existing infrastructure: `Support\BatchProcessor`, `Support\TermMigrator`, `Support\FieldConverter`, `Support\ValueMapper` (moved from `lib/` → `Support\` in 2a). Lib-class delegation (cancelled Phase 5 carry-over) happens here.
 
 **Recipes to ship at launch:**
 
@@ -291,11 +307,13 @@ These do not require CPT storage.
 
 ---
 
-### Phase 6b: BWS User Based Terms (Requires Phase 4 CPT)
+### Phase 6b: BWS User Based Terms (Requires Phase 4 page split)
 
-- User-based term filtering as a new rule type
-- Currently uses CPT `bws_user_term_rule` — data migrated into `bws_mc_rule` CPT on merge
-- Largest integration; tackle last
+- User-based term setting as a new rule type, landing on the **Personalize page** (its own `bws_mc_personalize` option — created in Phase 4).
+- Stored in **options** (not CPT): role/user = *target*, not owner → single author. Per-user customization → **profile ACF field + one indirection rule**, not N per-user rules. See [ubt-merger plan](.claude/plans/ubt-merger.md), [storage-model.md](docs/storage-model.md).
+- Migration: UBT CPT posts (`bws_user_term_rule`) → MC Personalize-page option array (dry-run).
+- Port UBT rule-engine / applicator / cache / ACF-integration into an MC handler extending `UnifiedHandlerBase`; drop the UBT CPT editor in favor of the Wireframe panel.
+- Largest integration; tackle last.
 
 **End of phase**: Update CLAUDE.md
 
@@ -303,38 +321,14 @@ These do not require CPT storage.
 
 ## Storage Model Decision Framework
 
-**Run every new rule type through this before implementation.**
+**Moved → [docs/storage-model.md](docs/storage-model.md).** That doc is the source of truth + working doc for options-vs-CPT, the decision criteria, the per-type assignments table, concurrency/clobber preventions, the indirection escape hatch, and the Wireframe-page storage boundary.
 
-### Criteria
+**Run every new rule type through it before implementing.**
 
-Choose **CPT** if any of these are true:
-- The rule defines a specific named recipe or pattern (not just enabling a behavior)
-- Multiple rules of this type can apply to the same post type or taxonomy
-- Rules accumulate as the site grows — not bounded by taxonomy/post type count
-- Rules benefit from a draft/test/active lifecycle
-
-Choose **Options** if all of these are true:
-- The rule enables or configures a behavior for a specific taxonomy or post type
-- Count is bounded — roughly one rule per taxonomy or post type
-- The rule has no meaningful standalone identity or name
-- Managing them in a settings form never becomes unwieldy
-
-### Assignments
-
-| Rule Type | Storage | Reasoning |
-|-----------|---------|-----------|
-| `hierarchical_rules` | Options | Behavior toggle per taxonomy; bounded count |
-| `propagation_rules` | Options | Behavior toggle per post type; bounded count |
-| `related_rules` | Options | Cross-taxonomy config; bounded count |
-| `hierarchical_level_restriction_rules` | Options | One per taxonomy max |
-| `related_post_terms_rules` | Options | ACF sync config; bounded count |
-| `acf_relationship_rules` (new) | Options | Parent/child relationship config; bounded count |
-| `title_slug_rules` | **CPT** | Named patterns per post type; accumulate; benefit from enable/disable per rule — migrate from options in Phase 4 |
-| `time_based_rules` | **CPT** | Schedule rules multiply; benefit from individual management — migrate from options in Phase 4 |
-| `field_transformation_rules` (new) | **CPT** | Named computed-field recipes; can be numerous per post type |
-| `user_based_rules` (UBT) | **CPT** | User-specific; entity-like; was built on CPT |
-
-> Document storage decision and reasoning here before implementing any new rule type.
+Key reassessments since the original inline framework (2026-06-23):
+- `user_based_rules` (UBT): **CPT → Options** — role/user is the *target*, not the owner → single author, no concurrent writes; per-user explosion solved by indirection (profile field + one rule). See [ubt-merger plan](.claude/plans/ubt-merger.md).
+- `title_slug_rules` / `time_based_rules`: **CPT (Phase 4) re-opened** — no concurrent authoring; page-split covers blast radius. Options unless a real draft/test lifecycle is wanted.
+- Storage choice is **per Wireframe page**, not per rule type — see [config-pages-split plan](.claude/plans/config-pages-split.md).
 
 ---
 
@@ -342,27 +336,30 @@ Choose **Options** if all of these are true:
 
 | File | Role | Phase |
 |------|------|-------|
-| `includes/abstracts/class-bws-unified-handler-base.php` | Becomes `includes/handlers/class-unified-handler-base.php` | 2a |
-| `bws-taxonomy-manager.php` | Main file; becomes `meta-conductor.php` | 2b |
-| `includes/class-bws-taxonomy-manager.php` | Menu registration, AJAX hooks | 2b |
-| `includes/class-bws-settings.php` | God class; branding strings | 2b, 5 |
-| `includes/storage/class-bws-option-rule-storage.php` | Option key constant | 2b |
-| `includes/storage/class-bws-storage-factory.php` | Per-type routing factory | 4 |
-| `includes/abstracts/interface-bws-rule-storage.php` | Interface; becomes `includes/storage/class-rule-storage.php` | 2a, 4 |
-| `includes/handlers/class-bws-hierarchical-handler.php` | Migration template | 3 |
-| `includes/handlers/class-bws-title-slug-handler.php` | New unified handler (Phase 0) | — |
-| `includes/conversion/class-bws-data-processor.php` | Delegates to lib classes in Phase 5 | 5 |
-| `assets/js/admin.js` | JS namespace unification | 2b, 5 |
-| `assets/js/conversion-admin.js` | Separate conversion JS | 5 |
+> Paths reflect post-2a reality (PSR-4 done in 0.4.0): no `BWS_` prefix, kebab `class-{name}.php`, `BWS\MetaConductor\` namespace. `meta-conductor.php` main-file rename landed in 2c.
+
+| File | Role | Phase |
+|------|------|-------|
+| `includes/handlers/class-unified-handler-base.php` | Shared handler base; gains migrated handlers | 3 |
+| `meta-conductor.php` | Main file (renamed 2c); constants/hooks `__()` sweep | 2b |
+| `includes/class-taxonomy-manager.php` | Menu registration, AJAX hooks | 2b |
+| `includes/class-settings.php` | ~60-line compat shell; deletable after Phase 3 | 2b, 3 |
+| `includes/storage/class-option-rule-storage.php` | Option storage; gains rule_type → option_key routing | 4 |
+| `includes/storage/class-storage-factory.php` | Rule-type → option_key router (page split) | 4 |
+| `includes/storage/class-rule-storage.php` | RuleStorage interface | 4 |
+| `includes/handlers/class-hierarchical-handler.php` | Migration template | 3 |
+| `includes/handlers/class-title-slug-handler.php` | Unified handler (Phase 0) | — |
+| `includes/conversion/class-data-processor.php` | Delegates to `Support\` classes during the tool build | 7 |
+| `assets/js/conversion-admin.js` | Conversion JS | 7 |
 
 ---
 
 ## Hard Constraints
 
 - ~~Don't start Phase 2a until title/slug handler testing is complete on InstaWP~~ (Phase 2c completed; Title/Slug tested)
-- Don't start Phase 2b until Phase 2a is stable on InstaWP (Phase 2c is done; 2a is next)
+- ~~Don't start Phase 2b until Phase 2a is stable on InstaWP~~ (2a done in 0.4.0; static-verified H1+H2, InstaWP sweep done)
 - Don't start Phase 6a integrations until Phase 3 handler migration is done
-- Don't start `field_transformation_rules` (CPT type) until Phase 4 CPT storage is working
-- Don't start Phase 6b (UBT) until Phase 4 CPT storage is working
+- Don't start `field_transformation_rules` until its storage is decided via [storage-model.md](docs/storage-model.md) (likely Options + indirection; CPT only if a per-recipe lifecycle is needed)
+- Don't start Phase 6b (UBT) until Phase 4 page split is done (UBT needs the Personalize page option)
 - Don't refactor BWS_Settings until handler migration is done (cleaner split once handlers own their logic)
 - Update CLAUDE.md at the end of every phase
