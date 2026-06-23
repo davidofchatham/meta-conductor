@@ -60,6 +60,15 @@ class AcfIntegration {
 	 * Handle ACF post save
 	 */
 	public function on_acf_save_post($post_id) {
+		// Kill-switch: this whole term-sync engine reimplements 6 of 7 rule
+		// types on the OLD rule schema and is redundant for Load-Terms-on ACF
+		// taxonomy fields (handlers read native terms; ACF keeps native == field
+		// value). Disabled by default; the migrated handlers are the sole
+		// writers. Slated for wholesale deletion after verify. (SPEC §V7/§V9)
+		if (!apply_filters('bws_mc_acf_sync_engine_enabled', false)) {
+			return;
+		}
+
 		// Skip if not a real post ID
 		if (!is_numeric($post_id)) {
 			return;

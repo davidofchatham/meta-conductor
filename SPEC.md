@@ -122,7 +122,7 @@ AcfIntegration shadow-engine. Live-data safe.
 | T7 | . | handler: source-scoped status gate in term-collection (NOT should_process_post) | V5,I.handler,I.base |
 | T8 | . | handler: 3-tier reverse-field resolution (explicit → native-bidi graceful → meta_query) | V6,I.handler |
 | T9 | . | handler: idempotent short-circuit re-entrancy (skip write when computed==current) | V11,I.handler |
-| T10 | . | acf: kill-switch filter on `on_acf_save_post` (default off, all 6 cases); keep field-settings UI | V9,I.acf |
+| T10 | x | acf: kill-switch filter on `on_acf_save_post` (default off, all 6 cases); keep field-settings UI | V9,I.acf |
 | T11 | . | label: `snapshot_acf_reference_labels` callback; schema assembly; `acf_get_field()` field_label; no arrow | V10,I.label |
 | T12 | . | CHANGELOG + future-features (deferred: single-owner opt, tier-filter, manual-survives, status-filter sweep, status mirroring, AcfIntegration delete) | I.changelog,I.future,C5 |
 | T13 | . | Stage 1 InstaWP: H1+H2 + mechanics (config render, migration shape, label, single/multi-rule additive, keep_in_sync removal, kill-switch toggles) | C2,C6 |
