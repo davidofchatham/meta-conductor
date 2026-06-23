@@ -232,15 +232,83 @@ class OptionRuleStorage implements RuleStorage {
             $rule['trigger_term_id'] = $ids;
         }
 
-        if ($type === 'related_post_terms_rules' && !empty($rule['acf_field_name'])) {
-            $raw = (string) $rule['acf_field_name'];
-            if (str_contains($raw, ':')) {
-                [$pt, $bare]            = explode(':', $raw, 2);
-                $rule['post_type']      = $pt;
-                $rule['acf_field_name'] = $bare;
-            } elseif (!isset($rule['post_type'])) {
-                $rule['post_type'] = '';
+        if ($type === 'related_post_terms_rules') {
+            if (!empty($rule['acf_field_name'])) {
+                $raw = (string) $rule['acf_field_name'];
+                if (str_contains($raw, ':')) {
+                    [$pt, $bare]            = explode(':', $raw, 2);
+                    $rule['post_type']      = $pt;
+                    $rule['acf_field_name'] = $bare;
+                } elseif (!isset($rule['post_type'])) {
+                    $rule['post_type'] = '';
+                }
             }
+
+            // Reverse field is stored in the same "post_type:field_name" option
+            // format; the handler wants the bare field name. (SPEC §V6)
+            if (!empty($rule['reverse_acf_field_name'])) {
+                $rraw = (string) $rule['reverse_acf_field_name'];
+                if (str_contains($rraw, ':')) {
+                    [, $rbare]                      = explode(':', $rraw, 2);
+                    $rule['reverse_acf_field_name'] = $rbare;
+                }
+            }
+
+            $rule = self::migrate_related_post_terms_shape($rule);
+        }
+
+        return $rule;
+    }
+
+    /**
+     * Live-data-safe old→new shape migration for related_post_terms rules.
+     *
+     * Read-time only (no stored rewrite) — applies on every get_rules/get_rule
+     * so legacy rows behave identically until re-saved in the new UI. (SPEC §V8)
+     *
+     *   source_taxonomy(+target fallback) → single `taxonomy` (prefer source;
+     *     cross-tax never worked — term-ID copy rejects foreign-tax IDs)
+     *   bidirectional (bool)              → keep_in_sync (bool)
+     *   conflict_handling                 → DROPPED (merge→off, replace→on,
+     *                                       skip→off + _migration_flag)
+     *   holder_role absent                → 'target' (= legacy pull-to-holder)
+     *   post_status absent                → untouched (= any)
+     *
+     * @param array $rule Normalized-so-far rule (post_type/acf split already done).
+     * @return array
+     */
+    private static function migrate_related_post_terms_shape(array $rule): array {
+        // Taxonomy collapse.
+        if (!isset($rule['taxonomy']) || $rule['taxonomy'] === '') {
+            $rule['taxonomy'] = $rule['source_taxonomy'] ?? $rule['target_taxonomy'] ?? '';
+        }
+        unset($rule['source_taxonomy'], $rule['target_taxonomy']);
+
+        // bidirectional → keep_in_sync.
+        if (!isset($rule['keep_in_sync']) && isset($rule['bidirectional'])) {
+            $rule['keep_in_sync'] = !empty($rule['bidirectional']);
+        }
+        unset($rule['bidirectional']);
+
+        // conflict_handling → keep_in_sync axis, then drop.
+        if (isset($rule['conflict_handling'])) {
+            if (!isset($rule['keep_in_sync'])) {
+                $rule['keep_in_sync'] = ($rule['conflict_handling'] === 'replace');
+            }
+            if ($rule['conflict_handling'] === 'skip') {
+                // No clean equivalent; flag for manual review (rare).
+                $rule['_migration_flag'] = 'conflict_handling=skip dropped';
+            }
+            unset($rule['conflict_handling']);
+        }
+
+        // Defaults for absent keys.
+        if (!isset($rule['keep_in_sync'])) {
+            $rule['keep_in_sync'] = false;
+        }
+        if (!isset($rule['holder_role']) || $rule['holder_role'] === '') {
+            // Legacy behavior was pull-to-holder.
+            $rule['holder_role'] = 'target';
         }
 
         return $rule;
@@ -584,8 +652,10 @@ class OptionRuleStorage implements RuleStorage {
                 if (empty($data['acf_field_name'])) {
                     $errors[] = 'ACF field name is required';
                 }
-                if (empty($data['source_taxonomy'])) {
-                    $errors[] = 'Source taxonomy is required';
+                // New schema: single `taxonomy`. Legacy rows: `source_taxonomy`.
+                // Accept either so validation is live-data safe. (SPEC §V8)
+                if (empty($data['taxonomy']) && empty($data['source_taxonomy'])) {
+                    $errors[] = 'Taxonomy is required';
                 }
                 break;
 

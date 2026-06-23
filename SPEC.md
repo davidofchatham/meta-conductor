@@ -114,14 +114,14 @@ AcfIntegration shadow-engine. Live-data safe.
 | id | st | task | cites |
 |----|----|------|-------|
 | T1 | x | helpers: add `post_status_field()` shared checkboxes (empty=any); mirror `post_types_field()` | I.helpers,V5 |
-| T2 | . | config: single `taxonomy`; `keep_in_sync` (was bidirectional); DROP conflict_handling; add `holder_role` (default source), optional `reverse_acf_field_name`, `post_status` gate, hidden label subfield(s); clarify ACF-field help | V1,V5,V6,V12,C4,I.config |
-| T3 | . | storage: `normalize_rule_shape` case migration mapping (taxonomy collapse, keep_in_sync, conflict drop, holder_role backfill=target) | V8,C1,I.storage |
-| T4 | . | handler: migrate HandlerBase→UnifiedHandlerBase; typed helper calls; H1+H2 | C2,C3,I.handler,I.base |
-| T5 | . | handler: declarative Model 1 sync — authoritative(T) rule-union, source-authoritative removal, no meta; both holder_role modes | V3,I.handler |
-| T6 | . | handler: full bidirectional triggering (authoritative-save, terms-change, dependent-save) | V4,I.handler |
-| T7 | . | handler: source-scoped status gate in term-collection (NOT should_process_post) | V5,I.handler,I.base |
-| T8 | . | handler: 3-tier reverse-field resolution (explicit → native-bidi graceful → meta_query) | V6,I.handler |
-| T9 | . | handler: idempotent short-circuit re-entrancy (skip write when computed==current) | V11,I.handler |
+| T2 | x | config: single `taxonomy`; `keep_in_sync` (was bidirectional); DROP conflict_handling; add `holder_role` (default source), optional `reverse_acf_field_name`, `post_status` gate, hidden label subfield(s); clarify ACF-field help | V1,V5,V6,V12,C4,I.config |
+| T3 | x | storage: `normalize_rule_shape` case migration mapping (taxonomy collapse, keep_in_sync, conflict drop, holder_role backfill=target) | V8,C1,I.storage |
+| T4 | x | handler: migrate HandlerBase→UnifiedHandlerBase; typed helper calls; H1+H2 | C2,C3,I.handler,I.base |
+| T5 | x | handler: declarative Model 1 sync — authoritative(T) rule-union, source-authoritative removal, no meta; both holder_role modes | V3,I.handler |
+| T6 | x | handler: full bidirectional triggering (authoritative-save, terms-change, dependent-save) | V4,I.handler |
+| T7 | x | handler: source-scoped status gate in term-collection (NOT should_process_post) | V5,I.handler,I.base |
+| T8 | x | handler: 3-tier reverse-field resolution (explicit → native-bidi graceful → meta_query) | V6,I.handler |
+| T9 | x | handler: idempotent short-circuit re-entrancy (skip write when computed==current) | V11,I.handler |
 | T10 | x | acf: kill-switch filter on `on_acf_save_post` (default off, all 6 cases); keep field-settings UI | V9,I.acf |
 | T11 | . | label: `snapshot_acf_reference_labels` callback; schema assembly; `acf_get_field()` field_label; no arrow | V10,I.label |
 | T12 | . | CHANGELOG + future-features (deferred: single-owner opt, tier-filter, manual-survives, status-filter sweep, status mirroring, AcfIntegration delete) | I.changelog,I.future,C5 |
