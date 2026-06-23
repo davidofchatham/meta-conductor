@@ -123,7 +123,7 @@ AcfIntegration shadow-engine. Live-data safe.
 | T8 | x | handler: 3-tier reverse-field resolution (explicit → native-bidi graceful → meta_query) | V6,I.handler |
 | T9 | x | handler: idempotent short-circuit re-entrancy (skip write when computed==current) | V11,I.handler |
 | T10 | x | acf: kill-switch filter on `on_acf_save_post` (default off, all 6 cases); keep field-settings UI | V9,I.acf |
-| T11 | . | label: `snapshot_acf_reference_labels` callback; schema assembly; `acf_get_field()` field_label; no arrow | V10,I.label |
+| T11 | x | label: `snapshot_acf_reference_labels` callback; schema assembly; `acf_get_field()` field_label; no arrow | V10,I.label |
 | T12 | . | CHANGELOG + future-features (deferred: single-owner opt, tier-filter, manual-survives, status-filter sweep, status mirroring, AcfIntegration delete) | I.changelog,I.future,C5 |
 | T13 | . | Stage 1 InstaWP: H1+H2 + mechanics (config render, migration shape, label, single/multi-rule additive, keep_in_sync removal, kill-switch toggles) | C2,C6 |
 | T14 | . | Stage 2 athletics test copy: real-data gate — push+pull, source-status gate, declarative no-clobber, engine-off parity (both live types), legacy migration neutral; BEFORE production deploy | C1,C6,V7,V9 |

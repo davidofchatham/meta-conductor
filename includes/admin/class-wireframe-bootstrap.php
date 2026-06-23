@@ -32,6 +32,10 @@ class WireframeBootstrap {
         // title_template does raw value substitution only — it cannot resolve
         // a stored term ID to a name — so the names must be persisted.
         add_filter('wp-wireframe/save/payload', [self::class, 'snapshot_related_labels'], 10, 1);
+
+        // Snapshot the ACF-reference row title (SPEC §V10). Separate callback
+        // from the related path — generalize later if shapes converge.
+        add_filter('wp-wireframe/save/payload', [self::class, 'snapshot_acf_reference_labels'], 10, 1);
     }
 
     /**
@@ -70,6 +74,114 @@ class WireframeBootstrap {
         unset($rule);
 
         return $clean_values;
+    }
+
+    /**
+     * Assemble each ACF-reference rule's row title (SPEC §V10).
+     *
+     * Hooked on `wp-wireframe/save/payload`, PRE-storage — so `acf_field_name`
+     * is still the raw "post_type:field_name" option value (before the storage
+     * adapter splits it). No A→B arrow: same term, same taxonomy, moved across
+     * a relationship.
+     *
+     * Schema: {Copy|Sync} {Taxonomy} terms {to|from} {field_label}{ on {statuses}}
+     *   Copy|Sync ← keep_in_sync (off|on)
+     *   to|from   ← holder_role (source=to/push | target=from/pull)
+     *   field_label ← acf_get_field()['label'] (clean human label), fallback name
+     *   on {statuses} ← post_status gate, only when set
+     *
+     * @param array $clean_values
+     * @return array
+     */
+    public static function snapshot_acf_reference_labels(array $clean_values): array {
+        if (empty($clean_values['related_post_terms_rules']) || !is_array($clean_values['related_post_terms_rules'])) {
+            return $clean_values;
+        }
+
+        foreach ($clean_values['related_post_terms_rules'] as &$rule) {
+            if (!is_array($rule)) {
+                continue;
+            }
+
+            $verb = !empty($rule['keep_in_sync'])
+                ? __('Sync', 'bws-meta-manager')
+                : __('Copy', 'bws-meta-manager');
+
+            $prep = (($rule['holder_role'] ?? 'source') === 'source')
+                ? __('to', 'bws-meta-manager')
+                : __('from', 'bws-meta-manager');
+
+            $tax_label   = self::taxonomy_label($rule['taxonomy'] ?? '');
+            $field_label = self::acf_field_label($rule['acf_field_name'] ?? '');
+            $gate        = self::status_gate_label($rule['post_status'] ?? []);
+
+            // Assemble; tolerate empty parts gracefully.
+            $title = trim(sprintf(
+                /* translators: 1: Copy/Sync 2: taxonomy 3: to/from 4: field label */
+                __('%1$s %2$s terms %3$s %4$s', 'bws-meta-manager'),
+                $verb,
+                $tax_label,
+                $prep,
+                $field_label
+            ));
+
+            if ($gate !== '') {
+                $title .= ' ' . sprintf(__('on %s', 'bws-meta-manager'), $gate);
+            }
+
+            $rule['row_title'] = \esc_html($title);
+        }
+        unset($rule);
+
+        return $clean_values;
+    }
+
+    /**
+     * Resolve a raw "post_type:field_name" (or bare name) ACF relationship
+     * field to its clean human label via acf_get_field(). Falls back to the
+     * bare field name. (SPEC §V10)
+     *
+     * @param string $stored Raw option value.
+     * @return string Unescaped label.
+     */
+    private static function acf_field_label($stored): string {
+        $raw = (string) $stored;
+        if ($raw === '') {
+            return '';
+        }
+        // Strip the "post_type:" prefix the option value carries.
+        $name = \str_contains($raw, ':') ? explode(':', $raw, 2)[1] : $raw;
+
+        if (function_exists('acf_get_field')) {
+            $field = \acf_get_field($name);
+            if (is_array($field) && !empty($field['label'])) {
+                return (string) $field['label'];
+            }
+        }
+        return $name;
+    }
+
+    /**
+     * Comma-joined human labels for a post_status gate (Wireframe {slug:bool}
+     * map or list). '' when no gate set. (SPEC §V10)
+     *
+     * @param mixed $post_status
+     * @return string Unescaped.
+     */
+    private static function status_gate_label($post_status): string {
+        if (empty($post_status) || !is_array($post_status)) {
+            return '';
+        }
+        $slugs = \array_is_list($post_status)
+            ? $post_status
+            : array_keys(array_filter($post_status));
+
+        $labels = [];
+        foreach ($slugs as $slug) {
+            $obj = \get_post_status_object((string) $slug);
+            $labels[] = $obj ? $obj->label : (string) $slug;
+        }
+        return implode(', ', $labels);
     }
 
     /**
