@@ -5,6 +5,45 @@ All notable changes to Meta Conductor (formerly BWS Meta Manager, formerly BWS T
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — 2026-06-23
+
+### Changed
+
+#### ACF reference rules ("From referenced post") reworked
+
+- **Direction is now selectable.** Each rule's ACF field pins the "field holder" post type; a new
+  **Authoritative end** option says which end owns the terms — *Field holder is the source* pushes the holder's
+  terms out to the related posts, *Related posts are the source* pulls their terms onto the holder (the old
+  behavior). Existing rules keep the pull behavior automatically; only newly added rules default to push.
+- **Single taxonomy.** The separate Source/Target taxonomy selectors are collapsed into one **Taxonomy**
+  field. Copying terms across two *different* taxonomies never actually worked (terms are copied by ID, and an
+  ID belongs to one taxonomy), so the second selector was a footgun. Existing rules keep their source taxonomy.
+- **"Bidirectional" → "Keep in sync."** Clearer name for the same idea: when on, copied terms are removed from
+  the target once the source no longer has them; when off, terms are only added, never removed.
+- **Source publication-status filter.** New **Limit to source statuses** option — only copy terms from source
+  posts with the chosen statuses (e.g. published only). Empty = any status. Gates the *source*, not the target.
+- **Optional reverse relationship field** for faster two-way lookups; auto-detects ACF native bidirectional
+  fields, falling back to a query when none is configured.
+- **Rule row titles** rebuilt: e.g. "Copy Sport Connectors terms to Team schedule on Published".
+- **Conflict handling option removed** — "Keep in sync" now controls add-only vs replace. Existing rules map
+  automatically (merge → off, replace → on).
+
+### Heads-up (existing ACF reference rules)
+
+- Migration is automatic and behavior-preserving — existing rules continue to pull onto the field holder, in
+  their source taxonomy, with the same add/remove behavior. **Re-save a rule to refresh its row title** and to
+  adopt the new single-taxonomy/direction wording. A rule that previously used the rare `skip` conflict mode is
+  migrated to add-only; re-check those.
+
+### Internal
+
+- ACF reference handler migrated to the unified handler base (Phase 3). Sync is now **declarative and
+  source-authoritative**: a post's terms in the synced taxonomy are recomputed from its current related posts
+  on every relevant save, rather than tracked incrementally — safer under multiple rules and reorders.
+- The legacy `AcfIntegration` term-sync engine (a parallel reimplementation of several rule types) is disabled
+  by default behind the `bws_mc_acf_sync_engine_enabled` filter; the migrated handlers are the sole writers.
+  Redundant for taxonomy fields configured to load/save terms to the post. Slated for removal.
+
 ## [0.4.3] — 2026-06-22
 
 ### Fixed

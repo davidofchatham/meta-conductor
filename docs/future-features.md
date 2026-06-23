@@ -47,6 +47,33 @@ When an idea is promoted to in-flight, add a link to its plan file under `.claud
 - **Source**: external — `../bws-user-based-terms/`. Currently uses its own CPT (`bws_user_term_rule`); merge into the unified `bws_mc_rule` CPT planned in Phase 4.
 - **Storage**: CPT.
 
+### `related_post_terms_rules` — ACF reference enhancements (deferred)
+
+Deferred refinements from the 0.5.0 rework ([SPEC.md](../SPEC.md) when active; design history in
+[.claude/plans/acf-reference-rework.md](../.claude/plans/acf-reference-rework.md)):
+
+- **Status mirroring** — set referenced posts' publication status from the owner (e.g. unpublished owner →
+  private events, so editors can preview while the frontend hides them). Replaces the standalone script's
+  term-withholding hack. Shares a `set_managed_status()` status-effect primitive with the temporal rule's
+  future "set post status" action. Full scope + open questions in
+  [.claude/plans/status-mirroring.md](../.claude/plans/status-mirroring.md). **Status**: planned (own plan).
+- **Tier filter** — sync only a particular hierarchy level of a taxonomy (e.g. only 2nd-level terms).
+- **Manual-survives mode** — let hand-added, non-source-derivable terms persist under Keep-in-sync. Today the
+  synced taxonomy is wholly rule-owned (source-authoritative). Would require rule-domain-vs-manual tracking.
+- **True cross-taxonomy copy** — map terms by slug/name so source and target can differ (current copy is by
+  ID, single taxonomy only).
+- **Single-owner optimization** — skip the multi-source rule-union when a dependent provably has one owner
+  (ACF `max=1` / native bidi). Negligible gain when a reverse field is configured; only matters for the
+  meta_query fallback with large fan-out.
+- **Status-filter sweep** — extend the shared `ConfigHelpers::post_status_field()` gate to the other
+  post-working rule types (related, propagation, time_based, title_slug, hierarchical, level_restriction).
+
+### AcfIntegration term-sync engine removal (debt)
+
+The legacy `AcfIntegration` parallel sync engine is disabled by default (0.5.0, filter
+`bws_mc_acf_sync_engine_enabled`). After the two-stage verify confirms all exercised rule types behave with it
+off, delete it wholesale and drop the filter. **Status**: planned (end of Phase 3).
+
 ---
 
 ## Tools and infrastructure
