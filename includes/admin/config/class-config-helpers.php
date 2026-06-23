@@ -118,6 +118,64 @@ class ConfigHelpers {
     }
 
     /**
+     * Registered post statuses as slug => label, with NO empty placeholder.
+     *
+     * Limited to the statuses meaningful as a rule gate: the built-in
+     * publish/draft/pending/private/future, plus any custom public status.
+     * Internal statuses (auto-draft, inherit, trash) are excluded — they are
+     * never a meaningful filter target.
+     */
+    public static function post_status_checkbox_options(): array {
+        $options = [];
+
+        // Built-in gateable statuses, in a sensible order.
+        $builtin = ['publish', 'future', 'draft', 'pending', 'private'];
+        foreach ($builtin as $slug) {
+            $obj = \get_post_status_object($slug);
+            if ($obj) {
+                $options[$slug] = $obj->label;
+            }
+        }
+
+        // Custom public statuses registered by other plugins/themes.
+        $custom = \get_post_stati(['public' => true, '_builtin' => false], 'objects');
+        foreach ($custom as $obj) {
+            if (!isset($options[$obj->name])) {
+                $options[$obj->name] = $obj->label;
+            }
+        }
+
+        return $options;
+    }
+
+    /**
+     * Canonical "Limit to post statuses" checkboxes subfield, shared by every
+     * rule type that gates on publication status. Single source of truth for
+     * the id (`post_status`), label, and empty-means-all semantics.
+     *
+     * Empty/all-unchecked ⇒ no status filter (all statuses considered).
+     * Enforcement is per-rule-type: most handlers gate the trigger post via
+     * UnifiedHandlerBase::should_process_post (reads `post_status`); the
+     * ACF-reference rule gates the SOURCE post during term-collection instead
+     * (SPEC §V5). The field shape is shared; the enforcement is not.
+     *
+     * @param array $overrides Per-call field-definition overrides (e.g. label, columns).
+     */
+    public static function post_status_field(array $overrides = []): array {
+        // `id` is intentionally NOT overridable: handlers read the `post_status`
+        // key by name. Merge overrides first, then force the canonical id.
+        return array_merge([
+            'type'        => 'checkboxes',
+            'label'       => __('Limit to post statuses', 'bws-meta-manager'),
+            'description' => __('Leave all unchecked to apply to every status.', 'bws-meta-manager'),
+            'columns'     => 12,
+            'args'        => [
+                'options' => self::post_status_checkbox_options(),
+            ],
+        ], $overrides, ['id' => 'post_status']);
+    }
+
+    /**
      * All terms across all public taxonomies, labelled "Taxonomy: Term".
      *
      * Designed for small sites (under ~500 terms). Result is cached for
