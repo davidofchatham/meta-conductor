@@ -128,6 +128,13 @@ AcfIntegration shadow-engine. Live-data safe.
   sever leaves terms per V13 (documented gap). **Caveat:** the old-value read assumes ACF has not primed its
   value cache with the NEW value at update_value time; if it has, the diff misses the removal (best-effort,
   not guaranteed — verify on the athletics test copy). (I.handler, I.acf, V3, V13)
+- V15. **No per-request recompute-result cache.** The save_post + acf/save_post double-fire is made safe ONLY
+  by `write_terms`' idempotent short-circuit + the `in_sync` cascade guard (V11), NEVER by caching which
+  (dependent,taxonomy) pairs were already recomputed this request. A result cache is a CORRECTNESS bug: the
+  source-status gate input (V5) can change BETWEEN the two fires of one save — e.g. a publish→draft transition
+  flips the source's status mid-request — so the first (stale-status, publish) recompute would suppress the
+  second (correct-status, draft) recompute and the authoritative wipe never runs. Recompute is pure
+  read+compare; repeating it is cheap and the short-circuit collapses redundant writes. Fixes B5. (I.handler, V5, V11)
 
 ## §T — tasks
 
@@ -149,10 +156,12 @@ AcfIntegration shadow-engine. Live-data safe.
 | T14 | . | Stage 2 athletics test copy: real-data gate — push+pull, source-status gate, declarative no-clobber, engine-off parity (both live types), legacy migration neutral; ALSO V13 (unrelated post sharing taxonomy NOT wiped on save), V14 (remove event from schedule → event loses synced terms; confirm ACF old-value read works); BEFORE production deploy | C1,C6,V7,V9,V13,V14 |
 | T15 | x | handler: gate write on SOURCE PRESENCE not type-match — recompute_dependent requires ≥1 resolved source (across rules) before writing; no source ⇒ skip (no empty-replace). Fixes B3 | V13,I.handler |
 | T16 | x | handler: source-side sever strip — hook `acf/update_value` (relationship/post_object), diff old-vs-new dependents, force-recompute removed ones while source known | V14,I.handler,I.acf |
+| T17 | x | handler: drop per-request recompute-result cache (`$synced`) — relied on stale status snapshot across publish→draft transition, suppressed the wipe recompute. Idempotent short-circuit + in_sync guard already cover the double-fire. Fixes B5 | V15,I.handler |
 
 ## §B — bugs
 
 | id | date | cause | fix |
 |----|------|-------|-----|
 | B3 | 2026-06-24 | Push + keep_in_sync wipes terms on UNRELATED posts. `dependent_post_type=''` for push ⇒ `post_type_matches(post,'')` always true ⇒ every saved post marked its own dependent; `recompute_dependent` set `rule_applies` on type-match alone, resolved 0 sources, wrote `authoritative=[]` via replace ⇒ cleared any post that merely shares the taxonomy. Code review (CONFIRMED). | V13, T15 |
+| B5 | 2026-06-24 | Source status publish→draft did NOT wipe dependents' synced terms (test on crdhmavadev real copy). Per-request `$synced` cache (added as #5 double-fire optimization) keyed (dep:tax); the early publish-status fire recomputed+cached all dependents with `passes:1`, so the later draft-status fire — which should recompute with the source gated out and authoritative=[] → keep_in_sync wipe — was deduped away. Cache snapshotted a status that changed mid-request. Fix: remove the cache; rely on write_terms idempotent short-circuit + in_sync guard. Found via debug tracing. | V15, T17 |
 | B4 | 2026-06-24 | NOT A BUG — withdrawn after review. A published dependent whose only source fails the V5 status gate (draft source, publish gate) IS correctly sync-to-empty: gated-out source = resolved-but-contributes-nothing. This is intended source-authoritative behavior; status-mirroring (deferred) will later soften the UX by making the dependent private instead of term-stripped. No fix. (V13 records the gated-source semantics.) | — |

@@ -52,14 +52,6 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
      */
     private array $severed = [];
 
-    /**
-     * Per-request dedupe of recomputed (post_id:taxonomy) pairs, so the
-     * save_post + acf/save_post double-fire recomputes each at most once. (#5)
-     *
-     * @var array<string,bool>
-     */
-    private array $synced = [];
-
     protected function init_hooks() {
         // A post was saved: it may be a SOURCE (push to its dependents) or a
         // DEPENDENT (recompute itself from its sources). Both handled. (SPEC §V4)
@@ -252,14 +244,14 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
 
         foreach ($dependents as $dep_id => $taxes) {
             foreach (array_keys($taxes) as $taxonomy) {
-                // Per-request dedupe (#5): save_post + acf/save_post both fire
-                // sync_for_post for the same post; recompute each (post,tax)
-                // at most once per request.
-                $key = $dep_id . ':' . $taxonomy;
-                if (isset($this->synced[$key])) {
-                    continue;
-                }
-                $this->synced[$key] = true;
+                // No per-request recompute cache: the save_post + acf/save_post
+                // double-fire is made safe by write_terms' idempotent
+                // short-circuit + the in_sync cascade guard (SPEC §V11), NOT by
+                // caching the result. A cache here is actively WRONG — a status
+                // transition (publish→draft) changes the source-status gate
+                // BETWEEN the two fires, so the first (stale-status) recompute
+                // would suppress the second (correct-status) one and the
+                // authoritative wipe would never run. (SPEC §B5)
                 $this->recompute_dependent((int) $dep_id, (string) $taxonomy, $rules);
             }
         }
