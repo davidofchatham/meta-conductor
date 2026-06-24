@@ -315,6 +315,77 @@ class OptionRuleStorage implements RuleStorage {
     }
 
     /**
+     * Schema-version flag for the one-time related_post_terms_rules rewrite.
+     *
+     * Bumped whenever a future key-RENAMING migration is added that the admin
+     * (raw get_option) can't see at read time. Re-running the rewrite is
+     * idempotent, so the gate is purely to avoid a write on every admin load.
+     */
+    const ACFREF_SCHEMA_VERSION = 1;
+    const ACFREF_SCHEMA_FLAG    = 'bws_mc_acfref_schema';
+
+    /**
+     * One-time, flag-gated persistence of the related_post_terms_rules
+     * read-time migration. (SPEC §V16, B6, T18)
+     *
+     * The Wireframe admin reads the settings option RAW (get_option, no filter
+     * seam), bypassing normalize_rule_shape — so the read-time key-RENAME
+     * migration (source_taxonomy→taxonomy, bidirectional→keep_in_sync,
+     * conflict_handling drop, holder_role default) never reaches the form. A
+     * legacy row then renders with config DEFAULTS (push, empty taxonomy) and a
+     * resave PERSISTS that corruption. This rewrites the legacy rows in storage
+     * once so the admin reads already-migrated data.
+     *
+     * Applies ONLY the key-rename migration (migrate_related_post_terms_shape).
+     * Deliberately does NOT split acf_field_name "post:field" → that split is a
+     * SAFE directional adapter: the admin stores+round-trips the COMBINED value,
+     * the handler splits at read time. Persisting the split would break the
+     * admin select (its option keys are "post:field"). (SPEC §V16)
+     *
+     * Idempotent: a row already in the new shape is unchanged. Runs once per
+     * schema version via the option flag.
+     *
+     * @return bool True if a rewrite was performed.
+     */
+    public function maybe_migrate_acf_ref_storage(): bool {
+        if ((int) get_option(self::ACFREF_SCHEMA_FLAG, 0) >= self::ACFREF_SCHEMA_VERSION) {
+            return false;
+        }
+
+        $settings = get_option(self::OPTION_NAME, []);
+        if (!is_array($settings)) {
+            $settings = [];
+        }
+
+        $rows = $settings['related_post_terms_rules'] ?? [];
+        $changed = false;
+
+        if (is_array($rows)) {
+            foreach ($rows as $i => $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $migrated = self::migrate_related_post_terms_shape($row);
+                if ($migrated !== $row) {
+                    $rows[$i] = $migrated;
+                    $changed = true;
+                }
+            }
+        }
+
+        if ($changed) {
+            $settings['related_post_terms_rules'] = $rows;
+            $this->save_all_settings($settings);
+        }
+
+        // Set the flag even when nothing changed (fresh installs / already-new
+        // data) so we never re-scan on subsequent loads.
+        update_option(self::ACFREF_SCHEMA_FLAG, self::ACFREF_SCHEMA_VERSION);
+
+        return $changed;
+    }
+
+    /**
      * {@inheritDoc}
      */
     public function get_rule(string $type, int $rule_id): ?array {

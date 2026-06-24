@@ -368,6 +368,15 @@ class WireframeBootstrap {
             return;
         }
 
+        // One-time persist of the related_post_terms_rules read-time migration,
+        // BEFORE Wireframe reads the option raw (it bypasses normalize_rule_shape,
+        // so the form would otherwise render legacy rows with config defaults and
+        // a resave would corrupt them). Flag-gated → at most one write. (SPEC §V16/B6)
+        $storage = \BWS\MetaConductor\Storage\StorageFactory::get_instance();
+        if (method_exists($storage, 'maybe_migrate_acf_ref_storage')) {
+            $storage->maybe_migrate_acf_ref_storage();
+        }
+
         // WireframeConfig autoloads via PSR-4 (autoload.php) — no manual require (Phase 2a).
 
         // Multi-page mode with one page. The single-page menu_slug bug

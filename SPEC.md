@@ -128,6 +128,18 @@ AcfIntegration shadow-engine. Live-data safe.
   sever leaves terms per V13 (documented gap). **Caveat:** the old-value read assumes ACF has not primed its
   value cache with the NEW value at update_value time; if it has, the diff misses the removal (best-effort,
   not guaranteed — verify on the athletics test copy). (I.handler, I.acf, V3, V13)
+- V16. **Key-renaming migrations MUST persist to storage, not read-time-only.** The Wireframe admin reads the
+  option RAW via `get_option` (`Settings::resolvedFor`) with NO filter seam — it bypasses
+  `OptionRuleStorage::normalize_rule_shape`. So a read-time-only migration that RENAMES or REMOVES keys (vs a
+  directional adapter that reshapes the SAME key) is invisible to the admin: the form binds the new key name,
+  finds it absent in raw storage, falls back to the config DEFAULT, and a resave PERSISTS that default —
+  silently corrupting the rule (the "behaves identically until re-saved" promise inverts: resave corrupts
+  instead of cleanly migrating). Audited (B6): the only affected type is `related_post_terms_rules`
+  (source_taxonomy→taxonomy, bidirectional→keep_in_sync, conflict_handling drop, holder_role default). The
+  term-ID `[N]`↔`int` and acf `pt:field` split transforms are SAFE — they are directional adapters where the
+  admin's stored shape round-trips. Fix: a one-time, flag-gated option REWRITE on admin boot (before Wireframe
+  reads) runs the legacy rows through the adapter and persists the normalized shape; handler + admin then read
+  identical data. Fixes B6. (I.storage, I.admin, V8)
 - V15. **No per-request recompute-result cache.** The save_post + acf/save_post double-fire is made safe ONLY
   by `write_terms`' idempotent short-circuit + the `in_sync` cascade guard (V11), NEVER by caching which
   (dependent,taxonomy) pairs were already recomputed this request. A result cache is a CORRECTNESS bug: the
@@ -157,11 +169,13 @@ AcfIntegration shadow-engine. Live-data safe.
 | T15 | x | handler: gate write on SOURCE PRESENCE not type-match — recompute_dependent requires ≥1 resolved source (across rules) before writing; no source ⇒ skip (no empty-replace). Fixes B3 | V13,I.handler |
 | T16 | x | handler: source-side sever strip — hook `acf/update_value` (relationship/post_object), diff old-vs-new dependents, force-recompute removed ones while source known | V14,I.handler,I.acf |
 | T17 | x | handler: drop per-request recompute-result cache (`$synced`) — relied on stale status snapshot across publish→draft transition, suppressed the wipe recompute. Idempotent short-circuit + in_sync guard already cover the double-fire. Fixes B5 | V15,I.handler |
+| T18 | x | storage: one-time flag-gated option rewrite for related_post_terms_rules — on admin boot (before Wireframe reads raw), detect legacy keys / missing holder_role+taxonomy, run rows through migrate_related_post_terms_shape + acf split, persist normalized shape, set schema flag. Fixes B6 | V16,I.storage,I.admin |
 
 ## §B — bugs
 
 | id | date | cause | fix |
 |----|------|-------|-----|
 | B3 | 2026-06-24 | Push + keep_in_sync wipes terms on UNRELATED posts. `dependent_post_type=''` for push ⇒ `post_type_matches(post,'')` always true ⇒ every saved post marked its own dependent; `recompute_dependent` set `rule_applies` on type-match alone, resolved 0 sources, wrote `authoritative=[]` via replace ⇒ cleared any post that merely shares the taxonomy. Code review (CONFIRMED). | V13, T15 |
+| B6 | 2026-06-24 | Legacy ACF-ref rule renders WRONG in admin + corrupts on resave (found via InstaWP migration test). Wireframe reads option raw (get_option, no filter), bypassing normalize_rule_shape; migrated keys (taxonomy, holder_role, keep_in_sync) absent from raw storage ⇒ form shows config defaults (push, empty taxonomy) not migrated values (pull, shaker) ⇒ resave persists corruption. Read-time-only migration can't reach the admin. Audit (V16): confined to related_post_terms_rules (only key-rename migration); term-ID + acf-split transforms are safe directional adapters. Fix: one-time flag-gated option rewrite at boot. | V16, T18 |
 | B5 | 2026-06-24 | Source status publish→draft did NOT wipe dependents' synced terms (test on crdhmavadev real copy). Per-request `$synced` cache (added as #5 double-fire optimization) keyed (dep:tax); the early publish-status fire recomputed+cached all dependents with `passes:1`, so the later draft-status fire — which should recompute with the source gated out and authoritative=[] → keep_in_sync wipe — was deduped away. Cache snapshotted a status that changed mid-request. Fix: remove the cache; rely on write_terms idempotent short-circuit + in_sync guard. Found via debug tracing. | V15, T17 |
 | B4 | 2026-06-24 | NOT A BUG — withdrawn after review. A published dependent whose only source fails the V5 status gate (draft source, publish gate) IS correctly sync-to-empty: gated-out source = resolved-but-contributes-nothing. This is intended source-authoritative behavior; status-mirroring (deferred) will later soften the UX by making the dependent private instead of term-stripped. No fix. (V13 records the gated-source semantics.) | — |
