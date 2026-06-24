@@ -42,6 +42,16 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
         return 'related_post_terms_rules';
     }
 
+    /**
+     * Per-request capture of dependents REMOVED from a source's relationship
+     * field this save, keyed by source post ID. Filled by capture_removed_*
+     * on acf/update_value (which sees old vs new), drained in on_acf_save_post.
+     * Enables source-side sever strip without per-term tracking. (SPEC §V14)
+     *
+     * @var array<int,int[]>
+     */
+    private array $severed = [];
+
     protected function init_hooks() {
         // A post was saved: it may be a SOURCE (push to its dependents) or a
         // DEPENDENT (recompute itself from its sources). Both handled. (SPEC §V4)
@@ -51,6 +61,13 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
         // A post's terms changed: if it is a source, propagate to its
         // dependents. (SPEC §V4)
         add_action('set_object_terms', [$this, 'on_terms_changed'], 15, 4);
+
+        // Capture dependents removed from a relationship field this save, so we
+        // can withdraw the source's contribution from them while the source is
+        // still known. acf/update_value fires BEFORE the new value is written,
+        // so get_field() still returns the OLD value here. (SPEC §V14)
+        add_filter('acf/update_value/type=relationship', [$this, 'capture_removed_dependents'], 5, 3);
+        add_filter('acf/update_value/type=post_object', [$this, 'capture_removed_dependents'], 5, 3);
     }
 
     // ---------------------------------------------------------------------
@@ -61,7 +78,93 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
         if (!is_numeric($post_id)) {
             return;
         }
-        $this->sync_for_post((int) $post_id);
+        $post_id = (int) $post_id;
+        $this->sync_for_post($post_id);
+        // Withdraw the source's contribution from any dependent it just
+        // dropped from its relationship field. (SPEC §V14)
+        $this->process_severed($post_id);
+    }
+
+    /**
+     * acf/update_value filter (priority 5, before the value is written): if
+     * this field is a relationship field used by some enabled rule, diff the
+     * OLD value (still readable via get_field here) against the new value and
+     * record the removed dependent IDs for this source. (SPEC §V14)
+     *
+     * @param mixed $value    New field value (returned unchanged).
+     * @param int   $post_id  Source post being saved.
+     * @param array $field    ACF field array.
+     * @return mixed
+     */
+    public function capture_removed_dependents($value, $post_id, $field) {
+        $post_id    = (int) $post_id;
+        $field_name = (string) ($field['name'] ?? '');
+        if ($field_name === '' || !$this->field_used_by_rule($field_name)) {
+            return $value;
+        }
+
+        $old = $this->read_relationship($post_id, $field_name);
+        if (empty($old)) {
+            return $value;
+        }
+
+        $new = $this->extract_ids($value);
+        $removed = array_values(array_diff($old, $new));
+        if (!empty($removed)) {
+            $existing = $this->severed[$post_id] ?? [];
+            $this->severed[$post_id] = array_values(array_unique(array_merge($existing, $removed)));
+        }
+
+        return $value;
+    }
+
+    /**
+     * Recompute each dependent the given source just dropped. The dependent
+     * now resolves zero sources under this source's rule, so a normal
+     * recompute would skip it (V13). Force the keep-in-sync replace so the
+     * severed source's terms are withdrawn. (SPEC §V14)
+     */
+    private function process_severed(int $source_id): void {
+        if (empty($this->severed[$source_id])) {
+            return;
+        }
+        $removed = $this->severed[$source_id];
+        unset($this->severed[$source_id]);
+
+        $rules = $this->get_enabled_rules();
+
+        // Taxonomies that have at least one keep-in-sync rule (add-only never
+        // removes, so a severed source can't strip those).
+        $sync_taxes = [];
+        foreach ($rules as $rule) {
+            $taxonomy = (string) ($rule['taxonomy'] ?? '');
+            if ($taxonomy !== '' && !empty($rule['keep_in_sync'])) {
+                $sync_taxes[$taxonomy] = true;
+            }
+        }
+        if (empty($sync_taxes)) {
+            return;
+        }
+
+        foreach ($removed as $dep_id) {
+            foreach (array_keys($sync_taxes) as $taxonomy) {
+                // Force replace from REMAINING sources: other valid sources'
+                // terms survive; if none remain, the dependent is emptied
+                // (severed source withdrawn). (§V14)
+                $this->recompute_dependent((int) $dep_id, $taxonomy, $rules, true);
+            }
+        }
+    }
+
+    /** Whether any enabled rule uses $field_name as its forward or reverse field. */
+    private function field_used_by_rule(string $field_name): bool {
+        foreach ($this->get_enabled_rules() as $rule) {
+            if ((string) ($rule['acf_field_name'] ?? '') === $field_name
+                || (string) ($rule['reverse_acf_field_name'] ?? '') === $field_name) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public function on_post_save($post_id): void {
@@ -146,29 +249,44 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
      * enabled rules' valid sources. Source-authoritative, declarative,
      * idempotent. (SPEC §V3/§V5/§V11)
      */
-    private function recompute_dependent(int $dependent_id, string $taxonomy, array $rules): void {
-        $authoritative   = [];
-        $any_sync        = false;
-        $rule_applies    = false;
+    private function recompute_dependent(int $dependent_id, string $taxonomy, array $rules, bool $force_sync = false): void {
+        $authoritative = [];
+        $any_sync      = $force_sync; // §V14 sever: replace even at zero sources
+        $source_count  = 0; // resolved sources across all applicable rules (SPEC §V13)
+
+        $dep_post = \get_post($dependent_id);
+        if (!$dep_post instanceof \WP_Post) {
+            return;
+        }
 
         foreach ($rules as $rule) {
             if ((string) ($rule['taxonomy'] ?? '') !== $taxonomy) {
                 continue;
             }
-            // Only rules for which this post is a valid dependent contribute.
-            $dep_post = \get_post($dependent_id);
-            if (!$dep_post instanceof \WP_Post
-                || !$this->post_type_matches($dep_post, $this->dependent_post_type($rule))) {
+            // Post type must be eligible as a dependent ('' = any, e.g. push).
+            if (!$this->post_type_matches($dep_post, $this->dependent_post_type($rule))) {
                 continue;
             }
 
-            $rule_applies = true;
+            // V13: the rule "manages" this dependent ONLY if it resolves a
+            // real source for it. Type-match alone is NOT enough — a push
+            // rule's dependent type is '' (any), which would otherwise treat
+            // every saved post as a managed dependent and wipe it.
+            $sources = $this->sources_of_dependent($dependent_id, $rule);
+            if (empty($sources)) {
+                continue;
+            }
+
+            $source_count += count($sources);
             if (!empty($rule['keep_in_sync'])) {
                 $any_sync = true;
             }
 
-            foreach ($this->sources_of_dependent($dependent_id, $rule) as $source_id) {
-                // Source-scoped status gate (SPEC §V5).
+            foreach ($sources as $source_id) {
+                // Source-scoped status gate (SPEC §V5). A gated-out source
+                // still counts as a resolved source (V13) — its terms just
+                // don't contribute — so a published dependent of a draft
+                // source is sync-emptied, NOT skipped-as-unmanaged.
                 if (!$this->source_status_passes($source_id, $rule)) {
                     continue;
                 }
@@ -181,7 +299,13 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
             }
         }
 
-        if (!$rule_applies) {
+        // V13: no resolved source under ANY rule ⇒ this post is not managed
+        // here ⇒ leave its terms untouched. Empty-replace is permitted only
+        // when sources exist but yield no terms (legit sync-to-empty).
+        // EXCEPTION (§V14): a forced sever recompute writes even at zero
+        // sources — the dependent was just orphaned and must lose the
+        // withdrawn source's terms (computed from remaining sources, if any).
+        if ($source_count === 0 && !$force_sync) {
             return;
         }
 
@@ -190,11 +314,9 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
         if ($any_sync) {
             // keep-in-sync ⇒ final = authoritative (rule-union replace). (§V3)
             $this->write_terms($dependent_id, $taxonomy, $authoritative, true);
-        } else {
+        } elseif (!empty($authoritative)) {
             // add-only ⇒ never removes. (§V3)
-            if (!empty($authoritative)) {
-                $this->write_terms($dependent_id, $taxonomy, $authoritative, false);
-            }
+            $this->write_terms($dependent_id, $taxonomy, $authoritative, false);
         }
     }
 
@@ -350,11 +472,20 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
         if ($field_name === '' || !function_exists('get_field')) {
             return [];
         }
-        $value = \get_field($field_name, $post_id);
+        return $this->extract_ids(\get_field($field_name, $post_id));
+    }
+
+    /**
+     * Normalize an ACF relationship/post-object value (array of WP_Post,
+     * array of IDs, single object, or single ID) to a unique int[] of post IDs.
+     *
+     * @param mixed $value
+     * @return int[]
+     */
+    private function extract_ids($value): array {
         if (empty($value)) {
             return [];
         }
-
         $ids = [];
         $items = is_array($value) ? $value : [$value];
         foreach ($items as $item) {

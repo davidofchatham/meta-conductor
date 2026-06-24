@@ -108,6 +108,26 @@ AcfIntegration shadow-engine. Live-data safe.
   global lock, no in-flight set. Reuse `UnifiedHandlerBase::apply_terms_to_post` short-circuit if present. (I.handler)
 - V12. **conflict_handling DROPPED — one axis.** keep_in_sync IS the merge(off)/replace(on) control. No
   second redundant field. `skip` (seed-only) = possible future flag, NOT carried. (I.config, V8)
+- V13. **Managed-dependent precondition — write ONLY when ≥1 resolved source exists.** A dependent D is
+  recomputed/written for a rule ONLY if `sources_of_dependent(D, rule)` resolves ≥1 source under that rule.
+  Across ALL enabled rules: if D has ZERO resolved sources, DO NOT write — leave D's terms untouched (D is not
+  managed by this rule). The write gate depends on SOURCE PRESENCE, never post-type match alone (post-type
+  match for push is `''`=any → matches every post). Empty-replace (`wp_set_object_terms(D, [], T)`) is
+  permitted when sources RESOLVE but yield no terms — INCLUDING when the only source(s) fail the V5 status gate
+  (a status-gated-out source counts as resolved: it contributes no terms ⇒ legit sync-to-empty; e.g. a
+  published dependent of a still-draft source under a publish gate is correctly emptied). Empty-replace is
+  FORBIDDEN only when NO source resolves at all (not-managed ≠ source-emptied). Fixes B3. (I.handler, V3, V5)
+- V14. **Orphan strip on SOURCE-side sever only.** When a source's relationship field REMOVES a dependent
+  (the edge is severed from the source side), recompute that removed dependent WHILE THE SOURCE IS STILL
+  KNOWN, so the source's contribution withdraws (its terms drop out of the union; keep-in-sync then removes
+  them). Removed dependent IDs captured via `acf/update_value` (priority 5, before write) reading the OLD
+  value with `get_field` and diffing the new — no per-term tracking, stays within V3's no-meta model. Forced
+  replace (`recompute_dependent(...,$force_sync=true)`) bypasses the V13 zero-source skip for exactly these
+  orphans so the withdrawn source's terms drop; remaining valid sources' terms survive; only keep_in_sync
+  taxonomies are swept (add-only never removes). Sever detected ONLY from the source side; a dependent-side
+  sever leaves terms per V13 (documented gap). **Caveat:** the old-value read assumes ACF has not primed its
+  value cache with the NEW value at update_value time; if it has, the diff misses the removal (best-effort,
+  not guaranteed — verify on the athletics test copy). (I.handler, I.acf, V3, V13)
 
 ## §T — tasks
 
@@ -126,9 +146,13 @@ AcfIntegration shadow-engine. Live-data safe.
 | T11 | x | label: `snapshot_acf_reference_labels` callback; schema assembly; `acf_get_field()` field_label; no arrow | V10,I.label |
 | T12 | x | CHANGELOG + future-features (deferred: single-owner opt, tier-filter, manual-survives, status-filter sweep, status mirroring, AcfIntegration delete) | I.changelog,I.future,C5 |
 | T13 | x | Stage 1 InstaWP: H1+H2 + mechanics (config render, migration shape, label, single/multi-rule additive, keep_in_sync removal, kill-switch toggles) — H1+H2 green; migration-shape harness 14/14 PASS; UI sweep = user-run | C2,C6 |
-| T14 | . | Stage 2 athletics test copy: real-data gate — push+pull, source-status gate, declarative no-clobber, engine-off parity (both live types), legacy migration neutral; BEFORE production deploy | C1,C6,V7,V9 |
+| T14 | . | Stage 2 athletics test copy: real-data gate — push+pull, source-status gate, declarative no-clobber, engine-off parity (both live types), legacy migration neutral; ALSO V13 (unrelated post sharing taxonomy NOT wiped on save), V14 (remove event from schedule → event loses synced terms; confirm ACF old-value read works); BEFORE production deploy | C1,C6,V7,V9,V13,V14 |
+| T15 | x | handler: gate write on SOURCE PRESENCE not type-match — recompute_dependent requires ≥1 resolved source (across rules) before writing; no source ⇒ skip (no empty-replace). Fixes B3 | V13,I.handler |
+| T16 | x | handler: source-side sever strip — hook `acf/update_value` (relationship/post_object), diff old-vs-new dependents, force-recompute removed ones while source known | V14,I.handler,I.acf |
 
 ## §B — bugs
 
 | id | date | cause | fix |
 |----|------|-------|-----|
+| B3 | 2026-06-24 | Push + keep_in_sync wipes terms on UNRELATED posts. `dependent_post_type=''` for push ⇒ `post_type_matches(post,'')` always true ⇒ every saved post marked its own dependent; `recompute_dependent` set `rule_applies` on type-match alone, resolved 0 sources, wrote `authoritative=[]` via replace ⇒ cleared any post that merely shares the taxonomy. Code review (CONFIRMED). | V13, T15 |
+| B4 | 2026-06-24 | NOT A BUG — withdrawn after review. A published dependent whose only source fails the V5 status gate (draft source, publish gate) IS correctly sync-to-empty: gated-out source = resolved-but-contributes-nothing. This is intended source-authoritative behavior; status-mirroring (deferred) will later soften the UX by making the dependent private instead of term-stripped. No fix. (V13 records the gated-source semantics.) | — |
