@@ -118,6 +118,27 @@ class ConfigHelpers {
     }
 
     /**
+     * Normalize a Wireframe checkboxes value to a flat list of selected slugs.
+     *
+     * Checkboxes store a `{slug: bool}` map; a plain list of slugs (or an empty
+     * value) is also accepted. Single source of truth for the extraction shared
+     * by handlers (gate enforcement) and the label snapshot (row titles) — keep
+     * the three former copies (handler status_gate, bootstrap status_gate_label,
+     * should_process_post) from drifting.
+     *
+     * @param mixed $value Checkbox map, list of slugs, or empty.
+     * @return string[] Selected slugs (truthy keys), or [] when nothing selected.
+     */
+    public static function selected_checkbox_slugs($value): array {
+        if (empty($value) || !is_array($value)) {
+            return [];
+        }
+        return array_is_list($value)
+            ? array_values($value)
+            : array_keys(array_filter($value));
+    }
+
+    /**
      * Registered post statuses as slug => label, with NO empty placeholder.
      *
      * Limited to the statuses meaningful as a rule gate: the built-in
@@ -226,17 +247,21 @@ class ConfigHelpers {
      * Returns empty array when ACF is unavailable.
      */
     public static function acf_relationship_field_options(string $placeholder = ''): array {
-        static $cache = null;
+        // Cache the field map WITHOUT the placeholder row, so callers that pass
+        // different placeholders (e.g. the reverse-field "— None / auto —") each
+        // get their own first option instead of the first caller's cached one.
+        static $fields_cache = null;
 
-        if ($cache !== null) {
-            return $cache;
+        $placeholder_row = ['' => $placeholder ?: __('— Select ACF field —', 'bws-meta-manager')];
+
+        if ($fields_cache !== null) {
+            return $placeholder_row + $fields_cache;
         }
 
-        $options = ['' => $placeholder ?: __('— Select ACF field —', 'bws-meta-manager')];
+        $fields_cache = [];
 
         if (!function_exists('acf_get_field_groups') || !function_exists('acf_get_fields')) {
-            $cache = $options;
-            return $options;
+            return $placeholder_row + $fields_cache;
         }
 
         $post_types  = get_post_types(['public' => true], 'objects');
@@ -259,15 +284,14 @@ class ConfigHelpers {
                         continue;
                     }
 
-                    $key             = $post_type->name . ':' . $field['name'];
-                    $field_label     = $field['label'] ?? $field['name'];
-                    $label           = sprintf('%s: %s (%s)', $post_type->label, $field_label, $field['name']);
-                    $options[$key]   = $label;
+                    $key                  = $post_type->name . ':' . $field['name'];
+                    $field_label          = $field['label'] ?? $field['name'];
+                    $label                = sprintf('%s: %s (%s)', $post_type->label, $field_label, $field['name']);
+                    $fields_cache[$key]   = $label;
                 }
             }
         }
 
-        $cache = $options;
-        return $options;
+        return $placeholder_row + $fields_cache;
     }
 }

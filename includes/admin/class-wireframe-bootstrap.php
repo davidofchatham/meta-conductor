@@ -169,12 +169,10 @@ class WireframeBootstrap {
      * @return string Unescaped.
      */
     private static function status_gate_label($post_status): string {
-        if (empty($post_status) || !is_array($post_status)) {
+        $slugs = Config\ConfigHelpers::selected_checkbox_slugs($post_status);
+        if (empty($slugs)) {
             return '';
         }
-        $slugs = \array_is_list($post_status)
-            ? $post_status
-            : array_keys(array_filter($post_status));
 
         $labels = [];
         foreach ($slugs as $slug) {

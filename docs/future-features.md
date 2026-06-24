@@ -62,6 +62,10 @@ Deferred refinements from the 0.5.0 rework ([SPEC.md](../SPEC.md) when active; d
   synced taxonomy is wholly rule-owned (source-authoritative). Would require rule-domain-vs-manual tracking.
 - **True cross-taxonomy copy** — map terms by slug/name so source and target can differ (current copy is by
   ID, single taxonomy only).
+- **Multi-level chain propagation** — a post that is BOTH a dependent (of A) and a source (for C) doesn't
+  propagate to C in the same save: its term-change is suppressed by the re-entrancy guard while it's being
+  written. Chains deeper than 2 levels need a depth-bounded re-dispatch after each write. Today's data
+  (athletics) is 2-level so unaffected. Build only if a 3+ level chain appears. (Code-review #4, 0.5.0.)
 - **Single-owner optimization** — skip the multi-source rule-union when a dependent provably has one owner
   (ACF `max=1` / native bidi). Negligible gain when a reverse field is configured; only matters for the
   meta_query fallback with large fan-out.

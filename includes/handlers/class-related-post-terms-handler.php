@@ -52,6 +52,14 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
      */
     private array $severed = [];
 
+    /**
+     * Per-request dedupe of recomputed (post_id:taxonomy) pairs, so the
+     * save_post + acf/save_post double-fire recomputes each at most once. (#5)
+     *
+     * @var array<string,bool>
+     */
+    private array $synced = [];
+
     protected function init_hooks() {
         // A post was saved: it may be a SOURCE (push to its dependents) or a
         // DEPENDENT (recompute itself from its sources). Both handled. (SPEC §V4)
@@ -223,7 +231,12 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
             }
 
             // Is THIS post a dependent under this rule? (It receives terms.)
-            if ($this->post_type_matches($post, $this->dependent_post_type($rule))) {
+            // Gate on dependent-type ELIGIBILITY, not just the post_type_matches
+            // ''=any wildcard: a push rule's dependent type is '' so this would
+            // otherwise run the reverse-lookup on EVERY saved post site-wide
+            // (#6). is_eligible_dependent_type narrows push to the ACF field's
+            // configured target post types when known.
+            if ($this->is_eligible_dependent_type($post, $rule)) {
                 $dependents[$post_id][$taxonomy] = true;
             }
 
@@ -239,6 +252,14 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
 
         foreach ($dependents as $dep_id => $taxes) {
             foreach (array_keys($taxes) as $taxonomy) {
+                // Per-request dedupe (#5): save_post + acf/save_post both fire
+                // sync_for_post for the same post; recompute each (post,tax)
+                // at most once per request.
+                $key = $dep_id . ':' . $taxonomy;
+                if (isset($this->synced[$key])) {
+                    continue;
+                }
+                $this->synced[$key] = true;
                 $this->recompute_dependent((int) $dep_id, (string) $taxonomy, $rules);
             }
         }
@@ -329,6 +350,10 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
      * @param bool  $replace  true = set exactly (keep-in-sync); false = merge (add-only).
      */
     private function write_terms(int $post_id, string $taxonomy, array $terms, bool $replace): void {
+        // NOTE: deliberately NOT UnifiedHandlerBase::apply_terms_to_post — that
+        // method early-returns on empty $terms, so it cannot do the keep-in-sync
+        // empty-replace (wipe-to-[]) this rule needs, and it has no idempotent
+        // short-circuit / cascade guard. Kept separate on purpose.
         $terms   = array_values(array_unique(array_map('intval', $terms)));
         $current = \wp_get_object_terms($post_id, $taxonomy, ['fields' => 'ids']);
         if (\is_wp_error($current)) {
@@ -336,38 +361,32 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
         }
         $current = array_map('intval', $current);
 
-        if ($replace) {
-            sort($terms);
-            $cmp = $current;
-            sort($cmp);
-            if ($terms === $cmp) {
-                return; // idempotent no-op → breaks the cascade
-            }
-            $this->in_sync[$post_id] = true;
-            \wp_set_object_terms($post_id, $terms, $taxonomy);
-            unset($this->in_sync[$post_id]);
+        // Single path: replace ⇒ final = $terms; add-only ⇒ final = current ∪ terms.
+        $final = $replace ? $terms : array_values(array_unique(array_merge($current, $terms)));
 
-            $this->debug_log(
-                sprintf('ACF-ref sync (replace) post %d tax %s', $post_id, $taxonomy),
-                ['terms' => $terms]
-            );
-        } else {
-            $merged = array_values(array_unique(array_merge($current, $terms)));
-            sort($merged);
-            $cmp = $current;
-            sort($cmp);
-            if ($merged === $cmp) {
-                return; // already a superset → no-op
-            }
-            $this->in_sync[$post_id] = true;
-            \wp_set_object_terms($post_id, $merged, $taxonomy);
-            unset($this->in_sync[$post_id]);
-
-            $this->debug_log(
-                sprintf('ACF-ref sync (add) post %d tax %s', $post_id, $taxonomy),
-                ['terms' => $terms]
-            );
+        // Idempotent short-circuit (SPEC §V11): no change ⇒ no write ⇒ no
+        // set_object_terms ⇒ cascade dies. Order-insensitive compare.
+        sort($final);
+        $cmp = $current;
+        sort($cmp);
+        if ($final === $cmp) {
+            return;
         }
+
+        // Cascade guard (SPEC §V11). try/finally so a throwing set_object_terms
+        // hook can't leak the in_sync flag and silently skip this post for the
+        // rest of the request. (#3)
+        $this->in_sync[$post_id] = true;
+        try {
+            \wp_set_object_terms($post_id, $final, $taxonomy);
+        } finally {
+            unset($this->in_sync[$post_id]);
+        }
+
+        $this->debug_log(
+            sprintf('ACF-ref sync (%s) post %d tax %s', $replace ? 'replace' : 'add', $post_id, $taxonomy),
+            ['terms' => $final]
+        );
     }
 
     // ---------------------------------------------------------------------
@@ -574,15 +593,54 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
      * @return string[]
      */
     private function status_gate(array $rule): array {
-        $raw = $rule['post_status'] ?? [];
-        if (empty($raw) || !is_array($raw)) {
-            return [];
-        }
-        return array_is_list($raw) ? $raw : array_keys(array_filter($raw));
+        return \BWS\MetaConductor\Admin\Config\ConfigHelpers::selected_checkbox_slugs($rule['post_status'] ?? []);
     }
 
     /** Whether a post's type matches a required type ('' ⇒ any). */
     private function post_type_matches(\WP_Post $post, string $required_type): bool {
         return $required_type === '' || $post->post_type === $required_type;
+    }
+
+    /**
+     * Whether $post can plausibly be a DEPENDENT of $rule — used to avoid
+     * running the reverse-lookup on every saved post site-wide. (#6)
+     *
+     * pull (dependent type = holder, concrete): exact type match.
+     * push (dependent type = '' / any): the dependent is whatever the ACF
+     *   field points AT, so narrow to the field's configured target post types
+     *   when ACF can tell us; if the field config is unknown/unconstrained,
+     *   fall back to eligible (correctness preserved — V13's source-presence
+     *   gate still prevents any wrong write; this is purely a perf pre-filter).
+     */
+    private function is_eligible_dependent_type(\WP_Post $post, array $rule): bool {
+        $dep_type = $this->dependent_post_type($rule);
+        if ($dep_type !== '') {
+            return $post->post_type === $dep_type;
+        }
+
+        // push: consult the ACF field's target post types.
+        $targets = $this->acf_field_target_post_types((string) ($rule['acf_field_name'] ?? ''));
+        if (empty($targets)) {
+            return true; // unknown/unconstrained → can't narrow; stay correct
+        }
+        return in_array($post->post_type, $targets, true);
+    }
+
+    /**
+     * Target post types an ACF relationship/post-object field points at, from
+     * its `post_type` setting. Empty ⇒ unconstrained or ACF unavailable.
+     * Defensive — never fatals on old/absent ACF.
+     *
+     * @return string[]
+     */
+    private function acf_field_target_post_types(string $field_name): array {
+        if ($field_name === '' || !function_exists('acf_get_field')) {
+            return [];
+        }
+        $field = \acf_get_field($field_name);
+        if (!is_array($field) || empty($field['post_type'])) {
+            return [];
+        }
+        return array_values(array_filter((array) $field['post_type']));
     }
 }
