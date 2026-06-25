@@ -383,14 +383,21 @@ class OptionRuleStorage implements RuleStorage {
 
         if ($changed) {
             $settings['related_post_terms_rules'] = $rows;
-            $this->save_all_settings($settings);
+            // Set the flag ONLY if the rewrite actually persisted. If the DB
+            // write fails (lock, size limit), DON'T flag — otherwise we'd
+            // permanently skip the migration and the admin would later read +
+            // resave the un-migrated raw option, corrupting it. (PR#24 round 2 #3)
+            if ($this->save_all_settings($settings)) {
+                update_option(self::ACFREF_SCHEMA_FLAG, self::ACFREF_SCHEMA_VERSION);
+            }
+            return true;
         }
 
-        // Set the flag even when nothing changed (fresh installs / already-new
-        // data) so we never re-scan on subsequent loads.
+        // Nothing to migrate (fresh install / already-new data): no write was
+        // needed, so flag unconditionally to skip future scans.
         update_option(self::ACFREF_SCHEMA_FLAG, self::ACFREF_SCHEMA_VERSION);
 
-        return $changed;
+        return false;
     }
 
     /**

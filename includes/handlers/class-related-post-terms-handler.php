@@ -27,10 +27,14 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
     protected $handler_type = 'related_post_terms';
 
     /**
-     * Re-entrancy: post IDs currently inside a sync write. Guards the
-     * set_object_terms cascade alongside the idempotent short-circuit. (SPEC §V11)
+     * Re-entrancy: (post_id, taxonomy) pairs currently inside a sync write,
+     * keyed `in_sync[$post_id][$taxonomy]`. Guards the set_object_terms cascade
+     * alongside the idempotent short-circuit. Keyed by taxonomy (not just post)
+     * so that if another plugin cross-links a DIFFERENT taxonomy on the same
+     * post mid-write, that taxonomy's sync is not wrongly suppressed. (SPEC §V11;
+     * PR#24 round 2 #6)
      *
-     * @var array<int,bool>
+     * @var array<int,array<string,bool>>
      */
     private array $in_sync = [];
 
@@ -77,6 +81,15 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
         // so get_field() still returns the OLD value here. (SPEC §V14)
         add_filter('acf/update_value/type=relationship', [$this, 'capture_removed_dependents'], 5, 3);
         add_filter('acf/update_value/type=post_object', [$this, 'capture_removed_dependents'], 5, 3);
+
+        // A PUSH source is being permanently deleted: its dependents must lose
+        // its contribution. No acf/update_value fires on delete, so CAPTURE the
+        // whole relationship as "removed" while the source still exists
+        // (before_delete_post), then STRIP after it's gone (deleted_post) — once
+        // the dying source no longer resolves as a remaining source of its
+        // dependents. (SPEC §V14; PR#24 round 2 #4)
+        add_action('before_delete_post', [$this, 'on_before_delete_post'], 10, 1);
+        add_action('deleted_post', [$this, 'on_deleted_post'], 10, 1);
     }
 
     // ---------------------------------------------------------------------
@@ -88,10 +101,73 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
             return;
         }
         $post_id = (int) $post_id;
+        // Older ACF fires acf/save_post for autosave/revision IDs; skip them so
+        // sync never runs against an autosave object. Mirrors on_post_save.
+        // (PR#24 round 2 #5)
+        if (\wp_is_post_autosave($post_id) || \wp_is_post_revision($post_id)) {
+            return;
+        }
         $this->sync_for_post($post_id);
         // Withdraw the source's contribution from any dependent it just
         // dropped from its relationship field. (SPEC §V14)
         $this->process_severed($post_id);
+    }
+
+    /**
+     * A post is being permanently deleted. If it is a PUSH source, CAPTURE its
+     * entire current relationship as "removed" while the post still exists — no
+     * acf/update_value fires on delete. The actual strip runs in on_deleted_post
+     * (after the source is gone, so it no longer resolves as a remaining source
+     * of its dependents). Mirrors capture_removed_dependents' push+keep_in_sync+
+     * per-taxonomy scoping. (SPEC §V14; PR#24 round 2 #4)
+     *
+     * @param int $post_id Post being deleted.
+     */
+    public function on_before_delete_post($post_id): void {
+        $post_id = (int) $post_id;
+        if ($post_id <= 0) {
+            return;
+        }
+
+        $post = \get_post($post_id);
+        if (!$post instanceof \WP_Post) {
+            return;
+        }
+
+        foreach ($this->get_enabled_rules() as $rule) {
+            if (!$this->holder_is_source($rule) || empty($rule['keep_in_sync'])) {
+                continue;
+            }
+            $taxonomy   = (string) ($rule['taxonomy'] ?? '');
+            $field_name = (string) ($rule['acf_field_name'] ?? '');
+            if ($taxonomy === '' || $field_name === '') {
+                continue;
+            }
+            // Only act if THIS post is a holder of the rule's field.
+            if (!$this->post_type_matches($post, $this->holder_post_type($rule))) {
+                continue;
+            }
+            $dependents = $this->read_relationship($post_id, $field_name);
+            if (empty($dependents)) {
+                continue;
+            }
+            $existing = $this->severed[$post_id][$taxonomy] ?? [];
+            $this->severed[$post_id][$taxonomy] = array_values(
+                array_unique(array_merge($existing, $dependents))
+            );
+        }
+    }
+
+    /**
+     * The post is now deleted. Strip the captured dependents: with the source
+     * gone, recompute_dependent's reverse lookup resolves only the dependents'
+     * REMAINING sources, so the deleted source's terms correctly withdraw.
+     * (SPEC §V14; PR#24 round 2 #4)
+     *
+     * @param int $post_id Deleted post.
+     */
+    public function on_deleted_post($post_id): void {
+        $this->process_severed((int) $post_id);
     }
 
     /**
@@ -199,6 +275,14 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
             return;
         }
         $this->sync_for_post($post_id);
+        // Also drain any captured severs here. acf/update_value can fire without
+        // a following acf/save_post (e.g. programmatic update_field() in a CLI
+        // import), which would otherwise leave $this->severed growing unbounded
+        // and the sever unprocessed. save_post (priority 25) runs after ACF
+        // writes its fields (priority 10), so capture is complete by now.
+        // process_severed unsets the key, so the acf/save_post path won't
+        // double-process. (PR#24 round 2 #7)
+        $this->process_severed($post_id);
     }
 
     /**
@@ -209,11 +293,14 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
      */
     public function on_terms_changed($object_id, $terms, $tt_ids, $taxonomy): void {
         $object_id = (int) $object_id;
-        // Skip writes we are making ourselves (cascade guard). (SPEC §V11)
-        if (!empty($this->in_sync[$object_id])) {
+        $taxonomy  = (string) $taxonomy;
+        // Skip writes we are making ourselves (cascade guard), scoped to the
+        // taxonomy we're writing — a cross-taxonomy side effect on the same post
+        // is still processed. (SPEC §V11; PR#24 round 2 #6)
+        if (!empty($this->in_sync[$object_id][$taxonomy])) {
             return;
         }
-        $this->sync_for_post($object_id, (string) $taxonomy);
+        $this->sync_for_post($object_id, $taxonomy);
     }
 
     // ---------------------------------------------------------------------
@@ -294,17 +381,18 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
      */
     private function recompute_dependent(int $dependent_id, string $taxonomy, array $rules, bool $force_sync = false): void {
         $authoritative = [];
-        // Replace mode is set ONLY by a keep_in_sync rule that actually has
-        // sources for this dependent (below). Do NOT seed it from $force_sync —
-        // that would force replace even when the only sourced rule is add-only,
-        // breaking the add-only contract (PR#24 Bug 3). The sever case is sound
-        // without seeding: capture_removed_dependents only records under push +
-        // keep_in_sync rules, so $force_sync here always means "a keep_in_sync
-        // rule manages this orphan" → $force_replace carries that intent for the
-        // zero-remaining-sources case.
-        $any_sync      = false;
-        $force_replace = $force_sync; // §V14 sever: replace from remaining sources, even if none remain
-        $source_count  = 0; // resolved sources across all applicable rules (SPEC §V13)
+        // $any_sync is set true ONLY by a keep_in_sync rule that actually has
+        // sources for this dependent (loop below). It is NOT seeded from
+        // $force_sync — that would force replace even when the only sourced rule
+        // is add-only, breaking the add-only contract (PR#24 Bug 3).
+        //
+        // The sever path passes $force_sync=true and is used DIRECTLY in the
+        // final write decision (not via $any_sync): capture_removed_dependents
+        // only records under push + keep_in_sync rules, so $force_sync here
+        // always means "a keep_in_sync rule manages this orphan" → replace from
+        // remaining sources, emptying if none remain. (SPEC §V14)
+        $any_sync     = false;
+        $source_count = 0; // resolved sources across all applicable rules (SPEC §V13)
 
         $dep_post = \get_post($dependent_id);
         if (!$dep_post instanceof \WP_Post) {
@@ -363,7 +451,7 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
 
         $authoritative = array_keys($authoritative);
 
-        if ($any_sync || $force_replace) {
+        if ($any_sync || $force_sync) {
             // keep-in-sync (or a forced sever of a keep_in_sync push) ⇒
             // final = authoritative (rule-union replace; empties if none). (§V3/§V14)
             $this->write_terms($dependent_id, $taxonomy, $authoritative, true);
@@ -405,14 +493,14 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
             return;
         }
 
-        // Cascade guard (SPEC §V11). try/finally so a throwing set_object_terms
-        // hook can't leak the in_sync flag and silently skip this post for the
-        // rest of the request. (#3)
-        $this->in_sync[$post_id] = true;
+        // Cascade guard (SPEC §V11), scoped to (post, taxonomy). try/finally so
+        // a throwing set_object_terms hook can't leak the flag and silently skip
+        // this post+taxonomy for the rest of the request. (#3; round-2 #6)
+        $this->in_sync[$post_id][$taxonomy] = true;
         try {
             \wp_set_object_terms($post_id, $final, $taxonomy);
         } finally {
-            unset($this->in_sync[$post_id]);
+            unset($this->in_sync[$post_id][$taxonomy]);
         }
 
         $this->debug_log(
@@ -583,6 +671,13 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
             return [];
         }
 
+        // LIKE on the bare ID (NOT quote-wrapped). ACF serializes a
+        // relationship/post-object value as an INTEGER array — `a:1:{i:0;i:42;}`
+        // — so the old `"42"` pattern (which only matches STRING serialization
+        // `s:2:"42"`) never matched modern ACF and tier 3 silently returned
+        // nothing. The bare value over-matches (e.g. 42 inside 142), so the
+        // per-result read_relationship() below is the authoritative filter.
+        // (PR#24 round 2 #2)
         $candidates = \get_posts([
             'post_type'      => $holder_type,
             'post_status'    => 'any',
@@ -590,7 +685,7 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
             'fields'         => 'ids',
             'meta_query'     => [[
                 'key'     => $field_name,
-                'value'   => '"' . $related_id . '"',
+                'value'   => (string) $related_id,
                 'compare' => 'LIKE',
             ]],
         ]);
