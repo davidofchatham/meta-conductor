@@ -235,7 +235,11 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
             // Is THIS post a source under this rule? Then its dependents must
             // recompute. (push: holder is source → its related posts; pull:
             // related posts are sources → the holder that references them.)
-            if ($this->post_type_matches($post, $this->source_post_type($rule))) {
+            // Gate on source-type ELIGIBILITY, mirroring the dependent-side
+            // pre-filter above: a pull rule's source type is '' (any), which
+            // would otherwise run resolve_reverse — including the tier-3
+            // meta_query scan — on EVERY saved post site-wide. (SPEC §V17/B7)
+            if ($this->is_eligible_source_type($post, $rule)) {
                 foreach ($this->dependents_of_source($post_id, $rule) as $dep_id) {
                     $dependents[$dep_id][$taxonomy] = true;
                 }
@@ -611,6 +615,32 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
         }
 
         // push: consult the ACF field's target post types.
+        $targets = $this->acf_field_target_post_types((string) ($rule['acf_field_name'] ?? ''));
+        if (empty($targets)) {
+            return true; // unknown/unconstrained → can't narrow; stay correct
+        }
+        return in_array($post->post_type, $targets, true);
+    }
+
+    /**
+     * Whether $post can plausibly be a SOURCE of $rule — the source-side mirror
+     * of is_eligible_dependent_type. Avoids running resolve_reverse (incl. the
+     * tier-3 meta_query scan) on every saved post site-wide. (SPEC §V17/B7)
+     *
+     * push (source type = holder, concrete): exact type match.
+     * pull (source type = '' / any): the source is whatever the ACF field points
+     *   AT (a related post), so narrow to the field's configured target post
+     *   types when ACF can tell us; unknown/unconstrained ⇒ stay eligible
+     *   (resolve_reverse on an ineligible post returns empty anyway, and V13's
+     *   source-presence gate still prevents wrong writes — purely a perf filter).
+     */
+    private function is_eligible_source_type(\WP_Post $post, array $rule): bool {
+        $src_type = $this->source_post_type($rule);
+        if ($src_type !== '') {
+            return $post->post_type === $src_type;
+        }
+
+        // pull: consult the ACF field's target post types (the related posts).
         $targets = $this->acf_field_target_post_types((string) ($rule['acf_field_name'] ?? ''));
         if (empty($targets)) {
             return true; // unknown/unconstrained → can't narrow; stay correct
