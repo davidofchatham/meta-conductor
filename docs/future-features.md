@@ -49,8 +49,8 @@ When an idea is promoted to in-flight, add a link to its plan file under `.claud
 
 ### `related_post_terms_rules` — ACF reference enhancements (deferred)
 
-Deferred refinements from the 0.5.0 rework ([SPEC.md](../SPEC.md) when active; design history in
-[.claude/plans/acf-reference-rework.md](../.claude/plans/acf-reference-rework.md)):
+Deferred refinements from the 0.5.0 rework (design history in
+[.claude/plans/archive/acf-reference-rework.md](../.claude/plans/archive/acf-reference-rework.md)):
 
 - **Status mirroring** — set referenced posts' publication status from the owner (e.g. unpublished owner →
   private events, so editors can preview while the frontend hides them). Replaces the standalone script's
@@ -71,6 +71,12 @@ Deferred refinements from the 0.5.0 rework ([SPEC.md](../SPEC.md) when active; d
   meta_query fallback with large fan-out.
 - **Status-filter sweep** — extend the shared `ConfigHelpers::post_status_field()` gate to the other
   post-working rule types (related, propagation, time_based, title_slug, hierarchical, level_restriction).
+  → GitHub issue [#23](https://github.com/davidofchatham/meta-conductor/issues/23).
+- **Tier-3 reverse-lookup cost** — a pull rule with NEITHER an explicit reverse field NOR a detectable ACF
+  bidirectional field falls back to `find_holders_referencing` (unindexed meta_query LIKE over all holder
+  posts) on every eligible save. B7 (0.5.0) removed the spurious calls on ineligible saves; the legit case is
+  still O(N). The UI warns the admin to set a reverse/bidi field; a code fix (index/registry) would remove the
+  warning. → GitHub issue [#22](https://github.com/davidofchatham/meta-conductor/issues/22).
 
 ## Tools and infrastructure
 

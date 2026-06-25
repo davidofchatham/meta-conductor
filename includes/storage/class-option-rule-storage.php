@@ -177,7 +177,15 @@ class OptionRuleStorage implements RuleStorage {
         $all_settings = $this->get_all_settings();
         $rules = $all_settings[$type] ?? [];
 
-        // Add IDs if not present + normalize Wireframe shape changes to legacy shape
+        // Add IDs if not present + normalize Wireframe shape changes to legacy shape.
+        //
+        // WARNING: `id` is the ARRAY INDEX, re-derived on every read and never
+        // persisted (save reindexes via array_values; the id key is stripped
+        // before write). Wireframe stores rules POSITIONALLY, so reordering or
+        // deleting a rule renumbers the rest. NEVER key persistent per-rule state
+        // (tracking meta, caches) on this id — use a stable identity (e.g. post
+        // id + field name). The ACF-reference handler is declarative and stores
+        // nothing keyed on rules, so it is unaffected.
         foreach ($rules as $index => &$rule) {
             if (!isset($rule['id'])) {
                 $rule['id'] = $index;
