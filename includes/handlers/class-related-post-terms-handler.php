@@ -43,12 +43,21 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
     }
 
     /**
-     * Per-request capture of dependents REMOVED from a source's relationship
-     * field this save, keyed by source post ID. Filled by capture_removed_*
-     * on acf/update_value (which sees old vs new), drained in on_acf_save_post.
-     * Enables source-side sever strip without per-term tracking. (SPEC §V14)
+     * Per-request capture of DEPENDENTS removed from a PUSH source's
+     * relationship field this save, keyed by source post ID THEN taxonomy:
+     * `severed[source_id][taxonomy] = [removed_dependent_ids]`. Filled by
+     * capture_removed_dependents on acf/update_value (which sees old vs new),
+     * drained in on_acf_save_post. Enables source-side sever strip without
+     * per-term tracking. (SPEC §V14)
      *
-     * @var array<int,int[]>
+     * PUSH-ONLY by construction: for a pull rule the field lists the holder's
+     * SOURCES, not dependents — removing one is already handled by the holder's
+     * own sync_for_post (it recomputes from remaining sources), and treating a
+     * removed source as a dependent would wipe that source's terms (PR#24 Bug 1).
+     * Keyed by taxonomy so a severed source only strips the taxonomy IT feeds,
+     * not every keep_in_sync taxonomy site-wide (PR#24 Bug 2).
+     *
+     * @var array<int,array<string,int[]>>
      */
     private array $severed = [];
 
@@ -99,20 +108,59 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
     public function capture_removed_dependents($value, $post_id, $field) {
         $post_id    = (int) $post_id;
         $field_name = (string) ($field['name'] ?? '');
-        if ($field_name === '' || !$this->field_used_by_rule($field_name)) {
+        if ($field_name === '') {
             return $value;
         }
 
+        // Only PUSH + keep_in_sync rules whose forward field is THIS field matter
+        // here: their field value lists the holder's dependents, so a removed
+        // entry is a dependent to strip. Pull rules (field lists sources) are
+        // skipped — sync_for_post on the holder already handles their sever
+        // (PR#24 Bug 1). Add-only rules never remove, so a sever can't strip
+        // them — skip too (PR#24 Bug 3).
+        $push_rules = [];
+        foreach ($this->get_enabled_rules() as $rule) {
+            if ($this->holder_is_source($rule)
+                && !empty($rule['keep_in_sync'])
+                && (string) ($rule['acf_field_name'] ?? '') === $field_name) {
+                $push_rules[] = $rule;
+            }
+        }
+        if (empty($push_rules)) {
+            return $value;
+        }
+
+        // Read the OLD value. acf/update_value (priority 5) fires before the new
+        // value is written, so get_field() returns the old DB value TODAY — but
+        // that ordering is an ACF implementation detail, not a contract. Fall
+        // back to raw post meta (also still the old value at this point) if the
+        // ACF read comes back empty, hardening against a future ACF that primes
+        // its value cache with the new value before this filter. (PR#24 Bug 4)
         $old = $this->read_relationship($post_id, $field_name);
+        if (empty($old)) {
+            $old = $this->extract_ids(\get_post_meta($post_id, $field_name, true));
+        }
         if (empty($old)) {
             return $value;
         }
 
-        $new = $this->extract_ids($value);
+        $new     = $this->extract_ids($value);
         $removed = array_values(array_diff($old, $new));
-        if (!empty($removed)) {
-            $existing = $this->severed[$post_id] ?? [];
-            $this->severed[$post_id] = array_values(array_unique(array_merge($existing, $removed)));
+        if (empty($removed)) {
+            return $value;
+        }
+
+        // Record removed dependents per taxonomy the holder pushes (Bug 2: a
+        // severed source only strips the taxonomy it actually feeds).
+        foreach ($push_rules as $rule) {
+            $taxonomy = (string) ($rule['taxonomy'] ?? '');
+            if ($taxonomy === '') {
+                continue;
+            }
+            $existing = $this->severed[$post_id][$taxonomy] ?? [];
+            $this->severed[$post_id][$taxonomy] = array_values(
+                array_unique(array_merge($existing, $removed))
+            );
         }
 
         return $value;
@@ -128,43 +176,21 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
         if (empty($this->severed[$source_id])) {
             return;
         }
-        $removed = $this->severed[$source_id];
+        $by_taxonomy = $this->severed[$source_id];
         unset($this->severed[$source_id]);
 
         $rules = $this->get_enabled_rules();
 
-        // Taxonomies that have at least one keep-in-sync rule (add-only never
-        // removes, so a severed source can't strip those).
-        $sync_taxes = [];
-        foreach ($rules as $rule) {
-            $taxonomy = (string) ($rule['taxonomy'] ?? '');
-            if ($taxonomy !== '' && !empty($rule['keep_in_sync'])) {
-                $sync_taxes[$taxonomy] = true;
+        // Each removed dependent is recomputed ONLY in the taxonomy the severing
+        // source actually pushes (capture already scoped this per push rule):
+        // remaining valid sources' terms survive; if none remain, the dependent
+        // is emptied (severed source withdrawn). force_sync bypasses the V13
+        // zero-source skip for exactly these orphans. (§V14)
+        foreach ($by_taxonomy as $taxonomy => $dep_ids) {
+            foreach ($dep_ids as $dep_id) {
+                $this->recompute_dependent((int) $dep_id, (string) $taxonomy, $rules, true);
             }
         }
-        if (empty($sync_taxes)) {
-            return;
-        }
-
-        foreach ($removed as $dep_id) {
-            foreach (array_keys($sync_taxes) as $taxonomy) {
-                // Force replace from REMAINING sources: other valid sources'
-                // terms survive; if none remain, the dependent is emptied
-                // (severed source withdrawn). (§V14)
-                $this->recompute_dependent((int) $dep_id, $taxonomy, $rules, true);
-            }
-        }
-    }
-
-    /** Whether any enabled rule uses $field_name as its forward or reverse field. */
-    private function field_used_by_rule(string $field_name): bool {
-        foreach ($this->get_enabled_rules() as $rule) {
-            if ((string) ($rule['acf_field_name'] ?? '') === $field_name
-                || (string) ($rule['reverse_acf_field_name'] ?? '') === $field_name) {
-                return true;
-            }
-        }
-        return false;
     }
 
     public function on_post_save($post_id): void {
@@ -268,7 +294,16 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
      */
     private function recompute_dependent(int $dependent_id, string $taxonomy, array $rules, bool $force_sync = false): void {
         $authoritative = [];
-        $any_sync      = $force_sync; // §V14 sever: replace even at zero sources
+        // Replace mode is set ONLY by a keep_in_sync rule that actually has
+        // sources for this dependent (below). Do NOT seed it from $force_sync —
+        // that would force replace even when the only sourced rule is add-only,
+        // breaking the add-only contract (PR#24 Bug 3). The sever case is sound
+        // without seeding: capture_removed_dependents only records under push +
+        // keep_in_sync rules, so $force_sync here always means "a keep_in_sync
+        // rule manages this orphan" → $force_replace carries that intent for the
+        // zero-remaining-sources case.
+        $any_sync      = false;
+        $force_replace = $force_sync; // §V14 sever: replace from remaining sources, even if none remain
         $source_count  = 0; // resolved sources across all applicable rules (SPEC §V13)
 
         $dep_post = \get_post($dependent_id);
@@ -328,8 +363,9 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
 
         $authoritative = array_keys($authoritative);
 
-        if ($any_sync) {
-            // keep-in-sync ⇒ final = authoritative (rule-union replace). (§V3)
+        if ($any_sync || $force_replace) {
+            // keep-in-sync (or a forced sever of a keep_in_sync push) ⇒
+            // final = authoritative (rule-union replace; empties if none). (§V3/§V14)
             $this->write_terms($dependent_id, $taxonomy, $authoritative, true);
         } elseif (!empty($authoritative)) {
             // add-only ⇒ never removes. (§V3)
