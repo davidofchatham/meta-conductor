@@ -14,7 +14,6 @@ use BWS\MetaConductor\Handlers\TimeBasedHandler;
 use BWS\MetaConductor\Handlers\RelatedPostTermsHandler;
 use BWS\MetaConductor\Handlers\HierarchicalLevelRestrictionHandler;
 use BWS\MetaConductor\Handlers\TitleSlugHandler;
-use BWS\MetaConductor\Integrations\AcfIntegration;
 use BWS\MetaConductor\Integrations\AdminColumnsIntegration;
 use BWS\MetaConductor\Conversion\ConversionManager;
 use BWS\MetaConductor\Conversion\ConversionCli;
@@ -132,8 +131,6 @@ class TaxonomyManager {
         );
 
         // Initialize integrations
-        new AcfIntegration($this->handlers);
-
         if (class_exists('AC\\Plugin')) {
             new AdminColumnsIntegration($this->handlers);
         }

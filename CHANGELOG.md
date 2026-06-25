@@ -40,9 +40,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - ACF reference handler migrated to the unified handler base (Phase 3). Sync is now **declarative and
   source-authoritative**: a post's terms in the synced taxonomy are recomputed from its current related posts
   on every relevant save, rather than tracked incrementally — safer under multiple rules and reorders.
-- The legacy `AcfIntegration` term-sync engine (a parallel reimplementation of several rule types) is disabled
-  by default behind the `bws_mc_acf_sync_engine_enabled` filter; the migrated handlers are the sole writers.
-  Redundant for taxonomy fields configured to load/save terms to the post. Slated for removal.
+- **Removed** the legacy `AcfIntegration` term-sync engine — a parallel reimplementation of several rule types
+  on the old rule schema. Redundant for taxonomy fields that load/save terms to the post (ACF mirrors native ↔
+  field, so the handlers reading native terms already see everything). The migrated handlers are the sole
+  writers; engine-off parity was verified on real data before removal. The `bws_mc_acf_sync_engine_enabled`
+  filter is gone with it.
 
 ## [0.4.3] — 2026-06-22
 

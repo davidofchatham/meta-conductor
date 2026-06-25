@@ -91,11 +91,15 @@ AcfIntegration shadow-engine. Live-data safe.
   DROPPED (`merge`→keep_in_sync OFF, `replace`→ON, `skip`→OFF+flag); backfill `holder_role='target'` for ALL
   legacy rows (= today's pull); `post_status` absent = any; no `direction` key; no tracking-meta key. (I.storage,
   C1)
-- V9. **AcfIntegration shadow-engine kill-switch.** `on_acf_save_post` short-circuits behind filter
-  `bws_mc_acf_sync_engine_enabled` (default FALSE this branch) ⇒ all 6 reimplemented cases stop. Keep harmless
-  field-settings UI (`add_taxonomy_field_settings`, `modify_taxonomy_field_query`). After two-stage verify
-  clean ⇒ DELETE engine wholesale (follow-up commit). The engine's `related` case is ALREADY half-broken vs
-  the migrated RelatedHandler (scalar `target_term_id` read, survives by max=1 luck). NOT a UBT dependency. (I.acf)
+- V9. **AcfIntegration shadow-engine DELETED (T20).** Was kill-switched behind `bws_mc_acf_sync_engine_enabled`
+  (default FALSE); engine-off parity proven on real data (push/pull/status/sever/bidi all green with engine off)
+  ⇒ whole class removed: file, the `new AcfIntegration(...)` instantiation in TaxonomyManager, the H2 autoload
+  entry. The "keep harmless field-settings UI" carve-out was DROPPED after audit: `add_taxonomy_field_settings`
+  added a `bws_taxonomy_manager_enabled` field setting NO code reads; `modify_taxonomy_field_query` was a no-op;
+  `validate_relationship_field` had no callers. Deleting the field-settings hook only stops rendering an unused
+  ACF-editor checkbox — no data read, no behavior change. Rationale (V7): all terms flow through NATIVE taxonomy
+  and ACF (Load/Save Terms ON) mirrors native ↔ field, so the engine's field-level reads/writes were pure
+  duplication. The `bws_mc_acf_sync_engine_enabled` filter is gone with the class. (I.acf, V7)
 - V10. **Label snapshot — separate callback, no arrow.** `snapshot_acf_reference_labels` on
   `wp-wireframe/save/payload` (PRE-storage; raw `acf_field_name` still `post_type:field_name`). Schema:
   `{Copy|Sync} {Taxonomy} terms {to|from} {field_label}{ on {statuses}}` — `Copy|Sync`←keep_in_sync(off|on);
@@ -180,6 +184,7 @@ AcfIntegration shadow-engine. Live-data safe.
 | T15 | x | handler: gate write on SOURCE PRESENCE not type-match — recompute_dependent requires ≥1 resolved source (across rules) before writing; no source ⇒ skip (no empty-replace). Fixes B3 | V13,I.handler |
 | T16 | x | handler: source-side sever strip — hook `acf/update_value` (relationship/post_object), diff old-vs-new dependents, force-recompute removed ones while source known | V14,I.handler,I.acf |
 | T17 | x | handler: drop per-request recompute-result cache (`$synced`) — relied on stale status snapshot across publish→draft transition, suppressed the wipe recompute. Idempotent short-circuit + in_sync guard already cover the double-fire. Fixes B5 | V15,I.handler |
+| T20 | x | delete AcfIntegration shadow engine wholesale — file + TaxonomyManager instantiation + H2 entry; drop bws_mc_acf_sync_engine_enabled filter; engine-off parity proven | V9,V7,I.acf |
 | T19 | x | handler: symmetric source-side eligibility pre-filter — add is_eligible_source_type, gate the source-branch reverse lookup in sync_for_post so pull rules don't run resolve_reverse (tier-3 meta_query) on every site-wide save. Fixes B7 | V17,I.handler |
 | T18 | x | storage: one-time flag-gated option rewrite for related_post_terms_rules — on admin boot (before Wireframe reads raw), detect legacy keys / missing holder_role+taxonomy, run rows through migrate_related_post_terms_shape + acf split, persist normalized shape, set schema flag. Fixes B6 | V16,I.storage,I.admin |
 

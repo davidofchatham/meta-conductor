@@ -72,14 +72,6 @@ Deferred refinements from the 0.5.0 rework ([SPEC.md](../SPEC.md) when active; d
 - **Status-filter sweep** — extend the shared `ConfigHelpers::post_status_field()` gate to the other
   post-working rule types (related, propagation, time_based, title_slug, hierarchical, level_restriction).
 
-### AcfIntegration term-sync engine removal (debt)
-
-The legacy `AcfIntegration` parallel sync engine is disabled by default (0.5.0, filter
-`bws_mc_acf_sync_engine_enabled`). After the two-stage verify confirms all exercised rule types behave with it
-off, delete it wholesale and drop the filter. **Status**: planned (end of Phase 3).
-
----
-
 ## Tools and infrastructure
 
 ### Post type converter
