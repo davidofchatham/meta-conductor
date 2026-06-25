@@ -51,8 +51,8 @@ class RelatedPostTermsConfig {
                             [
                                 'id'          => 'acf_field_name',
                                 'type'        => 'select',
-                                'label'       => __('ACF relationship field', 'bws-meta-manager'),
-                                'description' => __('The post-object or relationship field connecting the two posts. The post type that OWNS this field is the "field holder"; use "Authoritative end" below to say which end\'s terms win. Stored as "post_type:field_name".', 'bws-meta-manager'),
+                                'label'       => __('Monitored relationship field', 'bws-meta-manager'),
+                                'description' => __('The post-object or relationship field connecting the two posts. Watched at both ends — a change to either post re-syncs. The post type that OWNS this field is the "field holder"; "Source" below decides which end\'s terms win.', 'bws-meta-manager'),
                                 'default'     => '',
                                 'required'    => true,
                                 'columns'     => 12,
@@ -63,15 +63,30 @@ class RelatedPostTermsConfig {
                             [
                                 'id'          => 'holder_role',
                                 'type'        => 'radio',
-                                'label'       => __('Authoritative end', 'bws-meta-manager'),
-                                'description' => __('Which end owns the terms. "Field holder" pushes its terms out to the related posts; "Related posts" pulls their terms onto the field holder.', 'bws-meta-manager'),
+                                'label'       => __('Source (terms copied from)', 'bws-meta-manager'),
+                                'description' => __('Which end is authoritative — its terms are copied to the other end. The trigger is ambient (a change at either end re-syncs); this decides direction.', 'bws-meta-manager'),
                                 'default'     => 'source',
                                 'columns'     => 12,
                                 'args'        => [
                                     'options' => [
-                                        'source' => __('Field holder is the source (push terms out)', 'bws-meta-manager'),
-                                        'target' => __('Related posts are the source (pull terms in)', 'bws-meta-manager'),
+                                        'source' => __('Field holder → copies out to related posts (push)', 'bws-meta-manager'),
+                                        'target' => __('Related posts → copies in to the field holder (pull)', 'bws-meta-manager'),
                                     ],
+                                ],
+                            ],
+                            ConfigHelpers::post_status_field([
+                                'label'       => __('Limit to source statuses', 'bws-meta-manager'),
+                                'description' => __('Only copy terms FROM source posts with these statuses. Leave all unchecked to allow any status.', 'bws-meta-manager'),
+                            ]),
+                            [
+                                'id'          => 'reverse_acf_field_name',
+                                'type'        => 'select',
+                                'label'       => __('Reverse relationship field (optional)', 'bws-meta-manager'),
+                                'description' => __('The inverse relationship field on the other end, if any. Speeds the reverse lookup. Leave blank to auto-detect ACF bidirectional fields. ⚠ With neither an explicit reverse field nor a detectable bidirectional field, the reverse lookup falls back to an unindexed query on every save — slow on large sites. Set this (or use an ACF bidirectional field) to avoid it.', 'bws-meta-manager'),
+                                'default'     => '',
+                                'columns'     => 12,
+                                'args'        => [
+                                    'options' => ConfigHelpers::acf_relationship_field_options(__('— None / auto —', 'bws-meta-manager')),
                                 ],
                             ],
                             [
@@ -86,21 +101,6 @@ class RelatedPostTermsConfig {
                                     'options' => ConfigHelpers::taxonomy_options(),
                                 ],
                             ],
-                            [
-                                'id'          => 'reverse_acf_field_name',
-                                'type'        => 'select',
-                                'label'       => __('Reverse relationship field (optional)', 'bws-meta-manager'),
-                                'description' => __('The inverse relationship field on the other end, if any. Speeds the reverse lookup. Leave blank to auto-detect ACF bidirectional fields, falling back to a query.', 'bws-meta-manager'),
-                                'default'     => '',
-                                'columns'     => 12,
-                                'args'        => [
-                                    'options' => ConfigHelpers::acf_relationship_field_options(__('— None / auto —', 'bws-meta-manager')),
-                                ],
-                            ],
-                            ConfigHelpers::post_status_field([
-                                'label'       => __('Limit to source statuses', 'bws-meta-manager'),
-                                'description' => __('Only copy terms FROM source posts with these statuses. Leave all unchecked to allow any status.', 'bws-meta-manager'),
-                            ]),
                             [
                                 'id'          => 'keep_in_sync',
                                 'type'        => 'toggle',
