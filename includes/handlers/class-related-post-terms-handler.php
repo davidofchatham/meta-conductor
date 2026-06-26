@@ -188,17 +188,26 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
             return $value;
         }
 
+        $post = \get_post($post_id);
+        if (!$post instanceof \WP_Post) {
+            return $value;
+        }
+
         // Only PUSH + keep_in_sync rules whose forward field is THIS field matter
         // here: their field value lists the holder's dependents, so a removed
         // entry is a dependent to strip. Pull rules (field lists sources) are
         // skipped — sync_for_post on the holder already handles their sever
         // (PR#24 Bug 1). Add-only rules never remove, so a sever can't strip
-        // them — skip too (PR#24 Bug 3).
+        // them — skip too (PR#24 Bug 3). The post must also be of the rule's
+        // HOLDER type: ACF field names aren't unique across post types, so a
+        // same-named field on a DIFFERENT post type could otherwise match a
+        // rule and force_sync-wipe unrelated dependents (PR#24 round 3 Bug 1).
         $push_rules = [];
         foreach ($this->get_enabled_rules() as $rule) {
             if ($this->holder_is_source($rule)
                 && !empty($rule['keep_in_sync'])
-                && (string) ($rule['acf_field_name'] ?? '') === $field_name) {
+                && (string) ($rule['acf_field_name'] ?? '') === $field_name
+                && $this->post_type_matches($post, $this->holder_post_type($rule))) {
                 $push_rules[] = $rule;
             }
         }

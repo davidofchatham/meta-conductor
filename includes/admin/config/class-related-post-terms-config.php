@@ -52,7 +52,7 @@ class RelatedPostTermsConfig {
                                 'id'          => 'acf_field_name',
                                 'type'        => 'select',
                                 'label'       => __('Monitored relationship field', 'bws-meta-manager'),
-                                'description' => __('The post-object or relationship field connecting the two posts. Watched at both ends — a change to either post re-syncs. The post type that OWNS this field is the "field holder"; "Source" below decides which end\'s terms win.', 'bws-meta-manager'),
+                                'description' => __('The post-object or relationship field connecting the two posts. Watched at both ends — a change to either post re-syncs. The post type that OWNS this field is the "field holder"; "Source" below decides which end\'s terms win. ⚠ If two DIFFERENT field groups define separate relationship fields with the SAME field name, reverse-lookup and post-type detection may resolve the wrong one — give same-named fields distinct names, or set an explicit Reverse relationship field below.', 'bws-meta-manager'),
                                 'default'     => '',
                                 'required'    => true,
                                 'columns'     => 12,
