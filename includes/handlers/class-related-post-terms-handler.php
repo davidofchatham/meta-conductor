@@ -509,10 +509,19 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
 
         $authoritative = array_keys($authoritative);
 
-        if ($any_sync || $force_sync) {
-            // keep-in-sync (or a forced sever of a keep_in_sync push) ⇒
-            // final = authoritative (rule-union replace; empties if none). (§V3/§V14)
+        if ($any_sync) {
+            // A keep_in_sync rule manages this dependent ⇒ rule-union replace
+            // (empties if no terms). (§V3)
             $this->write_terms($dependent_id, $taxonomy, $authoritative, true);
+        } elseif ($force_sync && $source_count === 0) {
+            // True orphan (§V14): the sever removed the LAST source under a
+            // keep_in_sync push, and no other rule has sources here. Empty-
+            // replace withdraws the gone source's terms. Gated on
+            // source_count===0 so a forced sever does NOT replace when a sibling
+            // ADD-ONLY rule still has living sources — that would strip the
+            // dependent's terms beyond the add-only contribution, breaking the
+            // add-only contract. (PR#24 round 6 #1)
+            $this->write_terms($dependent_id, $taxonomy, [], true);
         } elseif (!empty($authoritative)) {
             // add-only ⇒ never removes. (§V3)
             $this->write_terms($dependent_id, $taxonomy, $authoritative, false);
@@ -874,10 +883,19 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
         if ($field_name === '' || !function_exists('acf_get_field')) {
             return [];
         }
-        $field = \acf_get_field($field_name);
-        if (!is_array($field) || empty($field['post_type'])) {
-            return [];
+        // Per-request memo: this is called from both eligibility pre-filters,
+        // once per rule, and the save_post + acf/save_post double-fire repeats
+        // the whole pipeline — so without caching it's ~4×N acf_get_field calls
+        // per save. Field config is stable within a request. (PR#24 round 6 minor)
+        static $cache = [];
+        if (array_key_exists($field_name, $cache)) {
+            return $cache[$field_name];
         }
-        return array_values(array_filter((array) $field['post_type']));
+        $field  = \acf_get_field($field_name);
+        $result = (is_array($field) && !empty($field['post_type']))
+            ? array_values(array_filter((array) $field['post_type']))
+            : [];
+        $cache[$field_name] = $result;
+        return $result;
     }
 }

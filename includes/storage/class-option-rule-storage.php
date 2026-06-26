@@ -94,14 +94,27 @@ class OptionRuleStorage implements RuleStorage {
     private function save_all_settings(array $settings): bool {
         $success = update_option(self::OPTION_NAME, $settings);
 
-        // Refresh the request cache UNCONDITIONALLY. update_option returns false
-        // not only on a real failure but also when the new value EQUALS what's
-        // already stored — in that (common) case the cache must still reflect
-        // $settings, or later get_rules() in the same request would serve the
-        // stale pre-write shape (e.g. a just-migrated row read back un-migrated,
-        // taxonomy=''). A genuine DB failure is rare and self-heals next load.
-        // (PR#24 round 5 #5)
-        $this->cached_settings = $settings;
+        // Refresh the request cache to match what's ACTUALLY stored. update_option
+        // returns false for TWO reasons: (a) the new value equals the stored value
+        // (no write needed) — cache should reflect $settings; (b) a genuine DB
+        // failure — cache must NOT adopt $settings, or a later save in the same
+        // request (e.g. import_rules looping save_rule) would read the poisoned
+        // cache and persist the failed data as the baseline. Distinguish by
+        // re-reading: only adopt $settings when it actually round-trips.
+        // (PR#24 round 5 #5 + round 6 #4)
+        if ($success) {
+            $this->cached_settings = $settings;
+        } else {
+            $stored = get_option(self::OPTION_NAME, []);
+            if (is_array($stored) && $stored === $settings) {
+                // Case (a): already-equal — cache is consistent with storage.
+                $this->cached_settings = $settings;
+            } else {
+                // Case (b): genuine failure — drop the cache so the next read
+                // re-fetches the real (unchanged) storage rather than $settings.
+                $this->cached_settings = null;
+            }
+        }
 
         return $success;
     }
@@ -594,8 +607,11 @@ class OptionRuleStorage implements RuleStorage {
             }
         }
 
-        if ($updated_count > 0) {
-            $this->save_all_settings($all_settings);
+        // Report 0 if the write didn't persist, so callers don't show success on
+        // a genuine DB failure (save_rule/delete_rule already propagate the save
+        // result; bulk_toggle must too). (PR#24 round 6 #3)
+        if ($updated_count > 0 && !$this->save_all_settings($all_settings)) {
+            return 0;
         }
 
         return $updated_count;

@@ -258,11 +258,16 @@ class ConfigHelpers {
             return $placeholder_row + $fields_cache;
         }
 
-        $fields_cache = [];
-
+        // Do NOT set $fields_cache before confirming ACF is loaded: if this runs
+        // on an early hook (before ACF registers its functions), setting the
+        // cache to [] would make it non-null and PERMANENTLY return only the
+        // placeholder for the rest of the request — even after ACF loads.
+        // (PR#24 round 6 #2)
         if (!function_exists('acf_get_field_groups') || !function_exists('acf_get_fields')) {
-            return $placeholder_row + $fields_cache;
+            return $placeholder_row;
         }
+
+        $fields_cache = [];
 
         $post_types  = get_post_types(['public' => true], 'objects');
         $field_types = ['relationship', 'post_object'];
