@@ -104,14 +104,22 @@ class OptionRuleStorage implements RuleStorage {
         // (PR#24 round 5 #5 + round 6 #4)
         if ($success) {
             $this->cached_settings = $settings;
+        } elseif ($this->cached_settings === $settings) {
+            // Case (a), fast path: the cache already equals $settings, so the
+            // false return must mean the stored value also equals $settings
+            // (update_option only no-ops on equality). No re-read needed.
+            // (PR#24 round 7 #3)
+            $this->cached_settings = $settings;
         } else {
+            // Distinguish case (a) already-equal from case (b) genuine DB
+            // failure by re-reading. Only adopt $settings when it round-trips;
+            // otherwise drop the cache so a later save in the same request
+            // (e.g. import_rules looping save_rule) doesn't persist failed data
+            // as the baseline. (PR#24 round 5 #5 + round 6 #4)
             $stored = get_option(self::OPTION_NAME, []);
             if (is_array($stored) && $stored === $settings) {
-                // Case (a): already-equal — cache is consistent with storage.
                 $this->cached_settings = $settings;
             } else {
-                // Case (b): genuine failure — drop the cache so the next read
-                // re-fetches the real (unchanged) storage rather than $settings.
                 $this->cached_settings = null;
             }
         }

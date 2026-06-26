@@ -79,6 +79,15 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
      */
     private array $reverse_lookup_cache = [];
 
+    /**
+     * Per-request memo of ACF field → target post types, keyed by field name.
+     * Instance property (not a function-static) so it doesn't bleed across
+     * handler instances in tests. (PR#24 round 7 minor)
+     *
+     * @var array<string,string[]>
+     */
+    private array $field_target_types_cache = [];
+
     protected function init_hooks() {
         // A post was saved: it may be a SOURCE (push to its dependents) or a
         // DEPENDENT (recompute itself from its sources). Both handled. (SPEC §V4)
@@ -145,7 +154,10 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
      */
     public function on_before_delete_post($post_id): void {
         $post_id = (int) $post_id;
-        if ($post_id <= 0) {
+        // Skip revision purges (wp_delete_post_revision fires before_delete_post)
+        // — a 'revision' post matches no holder/source type anyway, so this just
+        // avoids the rule scan + get_post on every revision cleanup. (round 7 #4)
+        if ($post_id <= 0 || \wp_is_post_revision($post_id)) {
             return;
         }
 
@@ -225,12 +237,6 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
             return $value;
         }
 
-        // A relationship field is being written ⇒ the relationship graph is
-        // about to change ⇒ drop the tier-3 reverse-lookup memo so a later
-        // lookup in this request doesn't serve a stale holder set (matters in
-        // multi-save CLI/REST runs). (PR#24 round 5 #2)
-        $this->reverse_lookup_cache = [];
-
         $post = \get_post($post_id);
         if (!$post instanceof \WP_Post) {
             return $value;
@@ -257,6 +263,15 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
         if (empty($push_rules)) {
             return $value;
         }
+
+        // A field THIS plugin manages is being written ⇒ the relationship graph
+        // is about to change ⇒ drop the tier-3 reverse-lookup memo so a later
+        // lookup in this request doesn't serve a stale holder set (matters in
+        // multi-save CLI/REST runs). Placed AFTER the push-rule guard so an
+        // unrelated relationship-field save site-wide doesn't needlessly bust
+        // the cache (its key includes holder_type, so it couldn't collide
+        // anyway). (PR#24 round 5 #2, round 7 #1)
+        $this->reverse_lookup_cache = [];
 
         // Read the OLD value. acf/update_value (priority 5) fires before the new
         // value is written, so get_field() returns the old DB value TODAY — but
@@ -565,9 +580,20 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
         // this post+taxonomy for the rest of the request. (#3; round-2 #6)
         $this->in_sync[$post_id][$taxonomy] = true;
         try {
-            \wp_set_object_terms($post_id, $final, $taxonomy);
+            $result = \wp_set_object_terms($post_id, $final, $taxonomy);
         } finally {
             unset($this->in_sync[$post_id][$taxonomy]);
+        }
+
+        // wp_set_object_terms returns WP_Error when the taxonomy doesn't exist
+        // (e.g. deleted after the rule was saved). Don't log a success message
+        // for a write that silently no-op'd. (PR#24 round 7 #2)
+        if (\is_wp_error($result)) {
+            $this->debug_log(
+                sprintf('ACF-ref sync FAILED post %d tax %s: %s', $post_id, $taxonomy, $result->get_error_message()),
+                ['terms' => $final]
+            );
+            return;
         }
 
         $this->debug_log(
@@ -887,15 +913,14 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
         // once per rule, and the save_post + acf/save_post double-fire repeats
         // the whole pipeline — so without caching it's ~4×N acf_get_field calls
         // per save. Field config is stable within a request. (PR#24 round 6 minor)
-        static $cache = [];
-        if (array_key_exists($field_name, $cache)) {
-            return $cache[$field_name];
+        if (array_key_exists($field_name, $this->field_target_types_cache)) {
+            return $this->field_target_types_cache[$field_name];
         }
         $field  = \acf_get_field($field_name);
         $result = (is_array($field) && !empty($field['post_type']))
             ? array_values(array_filter((array) $field['post_type']))
             : [];
-        $cache[$field_name] = $result;
+        $this->field_target_types_cache[$field_name] = $result;
         return $result;
     }
 }
