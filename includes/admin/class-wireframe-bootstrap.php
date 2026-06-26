@@ -107,7 +107,13 @@ class WireframeBootstrap {
                 ? __('Sync', 'bws-meta-manager')
                 : __('Copy', 'bws-meta-manager');
 
-            $prep = (($rule['holder_role'] ?? 'source') === 'source')
+            // Default an ABSENT holder_role to 'target', matching the handler
+            // (holder_is_source) and the storage migration — NOT 'source'. The
+            // key is absent only for a legacy raw rule re-saved before the
+            // migration flag is set; defaulting to 'source' here would write a
+            // row title that lies about the rule's runtime direction. A new rule
+            // always carries an explicit holder_role. (PR#24 round 4 #2)
+            $prep = (($rule['holder_role'] ?? 'target') === 'source')
                 ? __('to', 'bws-meta-manager')
                 : __('from', 'bws-meta-manager');
 

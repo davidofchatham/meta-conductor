@@ -106,7 +106,7 @@ class RelatedPostTermsConfig {
                                 'type'        => 'toggle',
                                 'label'       => __('Keep in sync', 'bws-meta-manager'),
                                 'description' => __('Remove copied terms from the target when the source no longer has them. Off = add-only (never removes).', 'bws-meta-manager'),
-                                'default'     => false,
+                                'default'     => true,
                                 'columns'     => 12,
                             ],
                             // Snapshot label for the row title (SPEC §V10). Not

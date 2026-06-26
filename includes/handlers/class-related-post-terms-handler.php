@@ -600,11 +600,18 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
             return $this->read_relationship($related_id, $reverse);
         }
 
-        // Tier 2: ACF native bidirectional — the field's partner key. Wrapped
-        // defensively; absent/old ACF or no bidi config falls through silently.
-        $partner = $this->acf_bidirectional_partner((string) $rule['acf_field_name']);
-        if ($partner !== '') {
-            return $this->read_relationship($related_id, $partner);
+        // Tier 2: ACF native bidirectional — the field's partner key(s). A field
+        // can be bidi-linked to MORE THAN ONE partner field (one per target post
+        // type), so union the reverse reads across all of them, not just the
+        // first (PR#24 round 4 #1). Wrapped defensively; absent/old ACF or no
+        // bidi config returns [].
+        $partners = $this->acf_bidirectional_partners((string) $rule['acf_field_name']);
+        if (!empty($partners)) {
+            $holders = [];
+            foreach ($partners as $partner) {
+                $holders = array_merge($holders, $this->read_relationship($related_id, $partner));
+            }
+            return array_values(array_unique($holders));
         }
 
         // Tier 3: meta_query fallback (slow; correct).
@@ -647,24 +654,34 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
     }
 
     /**
-     * The ACF native-bidirectional partner field name, or '' if none / ACF
-     * unavailable. Defensive: never fatals on old/absent ACF. (SPEC §V6 tier 2)
+     * The ACF native-bidirectional partner field names (one per linked target
+     * field), or [] if none / ACF unavailable. A field bidi-linked to multiple
+     * post types has multiple partner fields — ALL are returned (PR#24 round 4
+     * #1). Defensive: never fatals on old/absent ACF. (SPEC §V6 tier 2)
+     *
+     * @return string[]
      */
-    private function acf_bidirectional_partner(string $field_name): string {
+    private function acf_bidirectional_partners(string $field_name): array {
         if ($field_name === '' || !function_exists('acf_get_field')) {
-            return '';
+            return [];
         }
         $field = \acf_get_field($field_name);
         if (!is_array($field) || empty($field['bidirectional'])) {
-            return '';
+            return [];
         }
         $targets = $field['bidirectional_target'] ?? [];
         if (!is_array($targets) || empty($targets)) {
-            return '';
+            return [];
         }
-        // bidirectional_target holds field KEYS; resolve the first to its name.
-        $partner = \acf_get_field($targets[0]);
-        return (is_array($partner) && !empty($partner['name'])) ? (string) $partner['name'] : '';
+        // bidirectional_target holds field KEYS; resolve each to its name.
+        $names = [];
+        foreach ($targets as $key) {
+            $partner = \acf_get_field($key);
+            if (is_array($partner) && !empty($partner['name'])) {
+                $names[] = (string) $partner['name'];
+            }
+        }
+        return array_values(array_unique($names));
     }
 
     /**
