@@ -94,9 +94,14 @@ class OptionRuleStorage implements RuleStorage {
     private function save_all_settings(array $settings): bool {
         $success = update_option(self::OPTION_NAME, $settings);
 
-        if ($success) {
-            $this->cached_settings = $settings;
-        }
+        // Refresh the request cache UNCONDITIONALLY. update_option returns false
+        // not only on a real failure but also when the new value EQUALS what's
+        // already stored — in that (common) case the cache must still reflect
+        // $settings, or later get_rules() in the same request would serve the
+        // stale pre-write shape (e.g. a just-migrated row read back un-migrated,
+        // taxonomy=''). A genuine DB failure is rare and self-heals next load.
+        // (PR#24 round 5 #5)
+        $this->cached_settings = $settings;
 
         return $success;
     }

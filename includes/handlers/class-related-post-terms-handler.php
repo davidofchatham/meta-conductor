@@ -65,6 +65,20 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
      */
     private array $severed = [];
 
+    /**
+     * Per-request memo of tier-3 reverse-lookup results, keyed
+     * `"{related_id}:{holder_type}:{field_name}"`. The acf/save_post (p30) +
+     * save_post (p25) double-fire runs the full pipeline twice per save; the
+     * idempotent short-circuit stops double WRITES but not the double unindexed
+     * find_holders_referencing scan. The relationship graph is stable within one
+     * request, so caching the lookup is safe — and, unlike a recompute-RESULT
+     * cache (forbidden by §V15/B5 because the status gate can change mid-request),
+     * this caches only the holder SET, never the write decision. (PR#24 round 5 #2)
+     *
+     * @var array<string,int[]>
+     */
+    private array $reverse_lookup_cache = [];
+
     protected function init_hooks() {
         // A post was saved: it may be a SOURCE (push to its dependents) or a
         // DEPENDENT (recompute itself from its sources). Both handled. (SPEC §V4)
@@ -114,12 +128,18 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
     }
 
     /**
-     * A post is being permanently deleted. If it is a PUSH source, CAPTURE its
-     * entire current relationship as "removed" while the post still exists — no
-     * acf/update_value fires on delete. The actual strip runs in on_deleted_post
-     * (after the source is gone, so it no longer resolves as a remaining source
-     * of its dependents). Mirrors capture_removed_dependents' push+keep_in_sync+
-     * per-taxonomy scoping. (SPEC §V14; PR#24 round 2 #4)
+     * A post is being permanently deleted. Its dependents must lose its
+     * contribution, but no acf/update_value fires on delete. CAPTURE the
+     * affected dependents while the post still exists; the actual strip runs in
+     * on_deleted_post (after it's gone, so it no longer resolves as a remaining
+     * source). Both directions handled (SPEC §V14; PR#24 round 2 #4, round 5 #4):
+     *
+     *   PUSH (this post is the field-holding source): its dependents are the
+     *     related posts in its field — capture them directly.
+     *   PULL (this post is a related SOURCE): its dependents are the HOLDERS
+     *     that reference it — capture them via reverse lookup. (Without this, a
+     *     deleted pull-source with no terms in the synced taxonomy fires no
+     *     set_object_terms cascade, so the holder would keep stale terms.)
      *
      * @param int $post_id Post being deleted.
      */
@@ -135,19 +155,33 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
         }
 
         foreach ($this->get_enabled_rules() as $rule) {
-            if (!$this->holder_is_source($rule) || empty($rule['keep_in_sync'])) {
+            if (empty($rule['keep_in_sync'])) {
+                continue; // add-only never removes ⇒ a delete can't strip
+            }
+            $taxonomy = (string) ($rule['taxonomy'] ?? '');
+            if ($taxonomy === '') {
                 continue;
             }
-            $taxonomy   = (string) ($rule['taxonomy'] ?? '');
-            $field_name = (string) ($rule['acf_field_name'] ?? '');
-            if ($taxonomy === '' || $field_name === '') {
-                continue;
+
+            if ($this->holder_is_source($rule)) {
+                // PUSH: this post must be the field holder; its dependents are
+                // the related posts it lists.
+                $field_name = (string) ($rule['acf_field_name'] ?? '');
+                if ($field_name === ''
+                    || !$this->post_type_matches($post, $this->holder_post_type($rule))) {
+                    continue;
+                }
+                $dependents = $this->read_relationship($post_id, $field_name);
+            } else {
+                // PULL: this post is a SOURCE (related post); its dependents are
+                // the holders that reference it. Gate on source eligibility so we
+                // don't reverse-lookup every deleted post site-wide. (§V17)
+                if (!$this->is_eligible_source_type($post, $rule)) {
+                    continue;
+                }
+                $dependents = $this->dependents_of_source($post_id, $rule);
             }
-            // Only act if THIS post is a holder of the rule's field.
-            if (!$this->post_type_matches($post, $this->holder_post_type($rule))) {
-                continue;
-            }
-            $dependents = $this->read_relationship($post_id, $field_name);
+
             if (empty($dependents)) {
                 continue;
             }
@@ -160,13 +194,16 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
 
     /**
      * The post is now deleted. Strip the captured dependents: with the source
-     * gone, recompute_dependent's reverse lookup resolves only the dependents'
-     * REMAINING sources, so the deleted source's terms correctly withdraw.
-     * (SPEC §V14; PR#24 round 2 #4)
+     * gone, recompute_dependent's reverse lookup / field read resolves only the
+     * dependents' REMAINING sources, so the deleted source's terms correctly
+     * withdraw. (SPEC §V14; PR#24 round 2 #4, round 5 #4)
      *
      * @param int $post_id Deleted post.
      */
     public function on_deleted_post($post_id): void {
+        // The graph changed (a post vanished) — drop the reverse-lookup memo so
+        // process_severed's recompute sees the post-delete graph. (round 5 #2)
+        $this->reverse_lookup_cache = [];
         $this->process_severed((int) $post_id);
     }
 
@@ -187,6 +224,12 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
         if ($field_name === '') {
             return $value;
         }
+
+        // A relationship field is being written ⇒ the relationship graph is
+        // about to change ⇒ drop the tier-3 reverse-lookup memo so a later
+        // lookup in this request doesn't serve a stale holder set (matters in
+        // multi-save CLI/REST runs). (PR#24 round 5 #2)
+        $this->reverse_lookup_cache = [];
 
         $post = \get_post($post_id);
         if (!$post instanceof \WP_Post) {
@@ -431,15 +474,21 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
                 $any_sync = true;
             }
 
+            // Source-scoped status gate (SPEC §V5). A gated-out source still
+            // counts as a resolved source (V13) — its terms just don't
+            // contribute — so a published dependent of a draft source is
+            // sync-emptied, NOT skipped-as-unmanaged.
+            $passing = [];
             foreach ($sources as $source_id) {
-                // Source-scoped status gate (SPEC §V5). A gated-out source
-                // still counts as a resolved source (V13) — its terms just
-                // don't contribute — so a published dependent of a draft
-                // source is sync-emptied, NOT skipped-as-unmanaged.
-                if (!$this->source_status_passes($source_id, $rule)) {
-                    continue;
+                if ($this->source_status_passes($source_id, $rule)) {
+                    $passing[] = (int) $source_id;
                 }
-                $src_terms = \wp_get_object_terms($source_id, $taxonomy, ['fields' => 'ids']);
+            }
+            if (!empty($passing)) {
+                // Batch: wp_get_object_terms accepts an int[] of objects, so all
+                // passing sources for this rule resolve in ONE query rather than
+                // N (PR#24 round 5 #3).
+                $src_terms = \wp_get_object_terms($passing, $taxonomy, ['fields' => 'ids']);
                 if (!\is_wp_error($src_terms)) {
                     foreach ($src_terms as $tid) {
                         $authoritative[(int) $tid] = true;
@@ -697,6 +746,13 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
             return [];
         }
 
+        // Per-request memo: the save_post + acf/save_post double-fire would
+        // otherwise run this unindexed scan twice per save. (PR#24 round 5 #2)
+        $cache_key = $related_id . ':' . $holder_type . ':' . $field_name;
+        if (isset($this->reverse_lookup_cache[$cache_key])) {
+            return $this->reverse_lookup_cache[$cache_key];
+        }
+
         // LIKE on the bare ID (NOT quote-wrapped). ACF serializes a
         // relationship/post-object value as an INTEGER array — `a:1:{i:0;i:42;}`
         // — so the old `"42"` pattern (which only matches STRING serialization
@@ -723,6 +779,8 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
                 $matches[] = $cid;
             }
         }
+
+        $this->reverse_lookup_cache[$cache_key] = $matches;
         return $matches;
     }
 
