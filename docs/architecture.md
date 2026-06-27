@@ -25,6 +25,67 @@ Key boundaries (the rules that matter, regardless of class names):
 - **One `wp_options` key** (`bws_meta_conductor_settings`) holds every rule type, each an array of rule rows, plus a few global keys (per-taxonomy conflict overrides, manual-processing toggle).
 - **Two handler bases coexist** during the Phase-3 migration: `UnifiedHandlerBase` (typed PHP 8.1 helpers, storage-backed) and the legacy `HandlerBase`. Handlers migrate one at a time; the legacy base disappears when the last moves.
 
+## Writing a rule handler — hard-won invariants
+
+Distilled from the 0.5.0 ACF-reference rework and its eight review rounds. These
+are cross-handler traps, not ACF-specific. Read before building or migrating a
+handler (temporal-rule, status-mirroring, the remaining legacy migrations, the
+Phase-4 CPT storage move all hit several).
+
+1. **Wireframe reads the option RAW** (`get_option`, no filter seam), bypassing
+   `normalize_rule_shape`. A read-time migration that RENAMES or REMOVES a key is
+   invisible to the admin form → the form binds the new key, finds it absent,
+   falls back to the config default, and a resave PERSISTS that default
+   (corruption). Any key-renaming migration needs a one-time, flag-gated option
+   REWRITE, not just read-time normalization. (B6) Directional adapters that
+   reshape the SAME key (array↔scalar) are safe — the admin round-trips them.
+
+2. **Never gate a destructive write on post-type match alone.** A rule whose
+   target type is `''`=any matches every post; combined with a replace/remove
+   mode it wipes unrelated posts. Require positive evidence the rule MANAGES this
+   object (e.g. a resolved source present) before any remove/replace. A "force"
+   flag must be scoped to the exact case that needs it (the true orphan,
+   `source_count===0`), never used as a blanket replace trigger — that strips
+   sibling add-only rules' contributions. (B3/V13, R6#1)
+
+3. **Cache DATA, never DECISIONS.** Memoizing a pure lookup (relationship graph
+   read, ACF field config) is safe and request-lived. Memoizing a write/skip
+   DECISION that depends on mutable state (status gate, time window) is a bug:
+   the state can change between the two fires of one save, and the cached
+   decision masks it. (B5/V15 — a recompute-result cache hid a publish→draft
+   transition.) Invalidate a data cache on the mutation that changes its inputs.
+
+4. **The save_post + acf/save_post double-fire is universal.** Every ACF-aware
+   handler runs twice per admin save. Make writes idempotent (short-circuit on
+   no-change) and cascade-guarded, scoped to (post, taxonomy); never assume
+   "runs once". Conversely, a bare programmatic `update_field()` fires
+   `acf/update_value` but NEITHER save hook — document that callers must fire
+   `acf/save_post`/`wp_update_post` to flush deferred work. (V11, R8#2)
+
+5. **Delete has no field-update hook.** Sever/cleanup on permanent delete needs
+   `before_delete_post` (capture while the post still resolves) + `deleted_post`
+   (act after it's gone, so it no longer counts as its own remaining source).
+   Guard against revision/autosave IDs. (R2#4, R5#4, R7#4)
+
+6. **ACF field identity is by KEY, not name.** `acf_get_field($name)` returns an
+   arbitrary field when two groups share a bare name; `bidirectional_target` is a
+   LIST of partner keys (resolve all); the old value at `acf/update_value` time
+   is an impl-detail ordering (have a `get_post_meta` fallback); relationship
+   values serialize as an INT array (`i:42;`, not `s:2:"42"`). Resolve by key;
+   never assume serialization format. (#25, R2#2, R4#1, B4)
+
+7. **Storage write results must propagate; cache must mirror storage.**
+   `update_option` returns false for BOTH a no-op-equal write AND a real failure
+   — never ignore the bool, and don't let the request cache adopt data that
+   didn't persist (it ghost-persists on the next save). Distinguish equal-vs-fail
+   by re-reading. (R5#5/R6#4/R8#1/R8#3) — applies directly to the Phase-4 CPT
+   backend, which must honor the same contract.
+
+8. **Pre-filter site-wide hooks in BOTH directions.** Global `save_post` /
+   `set_object_terms` / `acf/update_value` hooks fire for every post on the site;
+   gate eligibility (is this post a plausible source AND/OR dependent of any
+   rule?) before any expensive reverse lookup or query. (B7/V17)
+
 ## Settings UI — WP Wireframe
 
 The settings UI is a React app provided by `tdrayson/wp-wireframe`. Each rule type has a config class under [includes/admin/config/](../includes/admin/config/) exposing a `section()` method. The top-level composer assembles tabs from sections:
