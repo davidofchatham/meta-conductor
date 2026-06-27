@@ -29,8 +29,9 @@ Key boundaries (the rules that matter, regardless of class names):
 
 Distilled from the 0.5.0 ACF-reference rework and its eight review rounds. These
 are cross-handler traps, not ACF-specific. Read before building or migrating a
-handler (temporal-rule, status-mirroring, the remaining legacy migrations, the
-Phase-4 CPT storage move all hit several).
+handler (temporal-rule, status-mirroring, the remaining legacy migrations, and
+the Phase-4 config page split — one blob → per-page option_keys — all hit
+several).
 
 1. **Wireframe reads the option RAW** (`get_option`, no filter seam), bypassing
    `normalize_rule_shape`. A read-time migration that RENAMES or REMOVES a key is
@@ -39,6 +40,10 @@ Phase-4 CPT storage move all hit several).
    (corruption). Any key-renaming migration needs a one-time, flag-gated option
    REWRITE, not just read-time normalization. (B6) Directional adapters that
    reshape the SAME key (array↔scalar) are safe — the admin round-trips them.
+   **Phase-4 page split is exactly this trap at the option-key level:** moving a
+   rule type from the single `bws_meta_conductor_settings` blob to its own
+   per-page option_key must REWRITE the rules into the new key before Wireframe
+   reads that page raw, or the page renders empty and a resave wipes the type.
 
 2. **Never gate a destructive write on post-type match alone.** A rule whose
    target type is `''`=any matches every post; combined with a replace/remove
@@ -78,8 +83,9 @@ Phase-4 CPT storage move all hit several).
    `update_option` returns false for BOTH a no-op-equal write AND a real failure
    — never ignore the bool, and don't let the request cache adopt data that
    didn't persist (it ghost-persists on the next save). Distinguish equal-vs-fail
-   by re-reading. (R5#5/R6#4/R8#1/R8#3) — applies directly to the Phase-4 CPT
-   backend, which must honor the same contract.
+   by re-reading. (R5#5/R6#4/R8#1/R8#3; tracked as issue #27) — the Phase-4 page
+   split multiplies this: a rule_type→option_key router writes to several
+   options, each with its own cache, every one bound by the same contract.
 
 8. **Pre-filter site-wide hooks in BOTH directions.** Global `save_post` /
    `set_object_terms` / `acf/update_value` hooks fire for every post on the site;
