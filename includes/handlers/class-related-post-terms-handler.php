@@ -88,6 +88,27 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
      */
     private array $field_target_types_cache = [];
 
+    /**
+     * Per-REQUEST memo of enabled rules. The acf/update_value capture filter
+     * fires once per relationship field saved site-wide, and each call (plus the
+     * save_post + acf/save_post double-fire) re-ran get_enabled_rules → storage
+     * normalize over every rule — O(fields × rules) normalize passes per save on
+     * relationship-heavy sites. The rule set is immutable within a request that
+     * saves posts (rules are only mutated by the admin REST save, a separate
+     * request), so a request-lifetime memo is safe. (PR#24 round 8 #4)
+     *
+     * @var array<int,array>|null
+     */
+    private ?array $enabled_rules_memo = null;
+
+    /** Memoized get_enabled_rules for the request. (round 8 #4) */
+    private function enabled_rules(): array {
+        if ($this->enabled_rules_memo === null) {
+            $this->enabled_rules_memo = $this->get_enabled_rules();
+        }
+        return $this->enabled_rules_memo;
+    }
+
     protected function init_hooks() {
         // A post was saved: it may be a SOURCE (push to its dependents) or a
         // DEPENDENT (recompute itself from its sources). Both handled. (SPEC §V4)
@@ -166,7 +187,7 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
             return;
         }
 
-        foreach ($this->get_enabled_rules() as $rule) {
+        foreach ($this->enabled_rules() as $rule) {
             if (empty($rule['keep_in_sync'])) {
                 continue; // add-only never removes ⇒ a delete can't strip
             }
@@ -252,7 +273,7 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
         // same-named field on a DIFFERENT post type could otherwise match a
         // rule and force_sync-wipe unrelated dependents (PR#24 round 3 Bug 1).
         $push_rules = [];
-        foreach ($this->get_enabled_rules() as $rule) {
+        foreach ($this->enabled_rules() as $rule) {
             if ($this->holder_is_source($rule)
                 && !empty($rule['keep_in_sync'])
                 && (string) ($rule['acf_field_name'] ?? '') === $field_name
@@ -322,7 +343,7 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
         $by_taxonomy = $this->severed[$source_id];
         unset($this->severed[$source_id]);
 
-        $rules = $this->get_enabled_rules();
+        $rules = $this->enabled_rules();
 
         // Each removed dependent is recomputed ONLY in the taxonomy the severing
         // source actually pushes (capture already scoped this per push rule):
@@ -342,13 +363,17 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
             return;
         }
         $this->sync_for_post($post_id);
-        // Also drain any captured severs here. acf/update_value can fire without
-        // a following acf/save_post (e.g. programmatic update_field() in a CLI
-        // import), which would otherwise leave $this->severed growing unbounded
-        // and the sever unprocessed. save_post (priority 25) runs after ACF
-        // writes its fields (priority 10), so capture is complete by now.
-        // process_severed unsets the key, so the acf/save_post path won't
-        // double-process. (PR#24 round 2 #7)
+        // Also drain any captured severs here, covering an ACF-form save that
+        // fires acf/update_value but where acf/save_post is missed. save_post
+        // (priority 25) runs after ACF writes its fields (priority 10), so
+        // capture is complete by now; process_severed unsets the key so the
+        // acf/save_post path won't double-process. (PR#24 round 2 #7)
+        //
+        // KNOWN LIMIT (round 8 #2): a BARE programmatic update_field($f,$v,$id)
+        // with no wp_update_post fires acf/update_value (→ capture) but neither
+        // save_post NOR acf/save_post, so its sever is never drained. CLI/import
+        // callers that mutate relationship fields directly should fire
+        // do_action('acf/save_post', $id) (or wp_update_post) afterward to flush.
         $this->process_severed($post_id);
     }
 
@@ -388,7 +413,7 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
             return;
         }
 
-        $rules = $this->get_enabled_rules();
+        $rules = $this->enabled_rules();
         if (empty($rules)) {
             return;
         }

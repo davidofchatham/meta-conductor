@@ -102,26 +102,22 @@ class OptionRuleStorage implements RuleStorage {
         // cache and persist the failed data as the baseline. Distinguish by
         // re-reading: only adopt $settings when it actually round-trips.
         // (PR#24 round 5 #5 + round 6 #4)
-        if ($success) {
-            $this->cached_settings = $settings;
-        } elseif ($this->cached_settings === $settings) {
-            // Case (a), fast path: the cache already equals $settings, so the
-            // false return must mean the stored value also equals $settings
-            // (update_option only no-ops on equality). No re-read needed.
-            // (PR#24 round 7 #3)
+        if ($success || $this->cached_settings === $settings) {
+            // Success ⇒ adopt. Or false BUT the cache already equals $settings ⇒
+            // the false can only mean update_option no-op'd on equality (the
+            // stored value also equals $settings), so adopting is correct and no
+            // re-read is needed. (PR#24 round 5 #5, round 7 #3, round 8 #5)
             $this->cached_settings = $settings;
         } else {
-            // Distinguish case (a) already-equal from case (b) genuine DB
-            // failure by re-reading. Only adopt $settings when it round-trips;
-            // otherwise drop the cache so a later save in the same request
-            // (e.g. import_rules looping save_rule) doesn't persist failed data
-            // as the baseline. (PR#24 round 5 #5 + round 6 #4)
+            // false AND cache differs: distinguish a no-op (stored already ==
+            // $settings) from a genuine DB failure by re-reading. Adopt only if
+            // it round-trips; otherwise drop the cache so a later save in the
+            // same request (e.g. import_rules looping save_rule) doesn't persist
+            // failed data as the baseline. (PR#24 round 6 #4)
             $stored = get_option(self::OPTION_NAME, []);
-            if (is_array($stored) && $stored === $settings) {
-                $this->cached_settings = $settings;
-            } else {
-                $this->cached_settings = null;
-            }
+            $this->cached_settings = (is_array($stored) && $stored === $settings)
+                ? $settings
+                : null;
         }
 
         return $success;
@@ -420,12 +416,17 @@ class OptionRuleStorage implements RuleStorage {
             // concurrent writer) — rows ARE persisted → flag, so we don't loop
             // re-entering the migration every admin load (PR#24 round 4 #3).
             // Re-read fresh (bypass the request cache, which we just primed).
+            // Return true ONLY when the rewrite actually persisted (flag set) —
+            // matches the docblock ("true if a rewrite was performed"). On a
+            // write failure the flag stays unset (retry next load) and we report
+            // false so a caller doesn't log "migration done". (PR#24 round 8 #3)
             $persisted = get_option(self::OPTION_NAME, []);
             if (is_array($persisted)
                 && ($persisted['related_post_terms_rules'] ?? null) === $rows) {
                 update_option(self::ACFREF_SCHEMA_FLAG, self::ACFREF_SCHEMA_VERSION);
+                return true;
             }
-            return true;
+            return false;
         }
 
         // Nothing to migrate (fresh install / already-new data): no write was
@@ -609,15 +610,24 @@ class OptionRuleStorage implements RuleStorage {
         $updated_count = 0;
 
         foreach ($rule_ids as $rule_id) {
-            if (isset($all_settings[$type][$rule_id])) {
+            // Only count + mutate rules whose state ACTUALLY changes. Counting
+            // no-ops would (a) overstate the toggle count, and (b) when EVERY
+            // target is already in the requested state, leave $settings ===
+            // stored ⇒ update_option no-ops ⇒ save_all_settings returns false ⇒
+            // the failure guard below would wrongly report 0. (PR#24 round 8 #1)
+            if (isset($all_settings[$type][$rule_id])
+                && (bool) ($all_settings[$type][$rule_id]['enabled'] ?? false) !== $enabled) {
                 $all_settings[$type][$rule_id]['enabled'] = $enabled;
                 $updated_count++;
             }
         }
 
-        // Report 0 if the write didn't persist, so callers don't show success on
-        // a genuine DB failure (save_rule/delete_rule already propagate the save
-        // result; bulk_toggle must too). (PR#24 round 6 #3)
+        // Report 0 if a real write was needed but didn't persist, so callers
+        // don't show success on a genuine DB failure (save_rule/delete_rule
+        // already propagate the save result; bulk_toggle must too). With the
+        // change-detection above, $updated_count>0 implies $settings differs
+        // from stored, so a false here is a true failure, not a no-op.
+        // (PR#24 round 6 #3, round 8 #1)
         if ($updated_count > 0 && !$this->save_all_settings($all_settings)) {
             return 0;
         }
