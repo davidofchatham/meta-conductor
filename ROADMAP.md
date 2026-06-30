@@ -300,8 +300,8 @@ These do not require CPT storage.
 **Date-Based Taxonomy Updater** — *folded into the in-flight Temporal State Rule (0.x), not a separate type.* The per-post ACF-date comparison this described is now an Options-storage extension of `time_based_rules`. See docs/future-features.md → `time_based_rules`.
 
 **Field Transformation Rules** (from existing snippet)
-- Combines multiple fields into a formatted output field (e.g. athlete stats → bio string, date + time → sortable datetime)
-- New rule type `field_transformation_rules` → CPT storage (requires Phase 4)
+- Combines multiple fields into a formatted output field (e.g. athlete stats → bio string, date + time → sortable datetime). Must also work inside ACF repeater rows (per-row compose/write).
+- New rule type `field_transformation_rules` → storage TBD via [storage-model.md](docs/storage-model.md) (likely Options + indirection; CPT only if a per-recipe lifecycle is wanted). **Not gated on Phase 4** — Phase 4 is the page split, not CPT.
 
 **End of phase**: Update CLAUDE.md
 

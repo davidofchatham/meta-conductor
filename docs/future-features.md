@@ -34,20 +34,52 @@ When an idea is promoted to in-flight, add a link to its plan file under `.claud
 
 ### `field_transformation_rules` — Computed Field Output
 
-- **Status**: planned (Phase 6a, requires Phase 4 CPT storage)
+- **Status**: planned (Phase 6a)
 - **Motivation**: combine multiple source fields into a formatted output field. Examples: merge first/middle/last name into a display name, combine date + time into a sortable datetime, format a phone number, derive a bio string from athlete stats.
-- **Sketch**: rule declares output meta key + a template/transformer. Reference snippet: `plugins-to-integrate/format-game-date-time-fields.php` (site-specific athletics_events example showing batching pattern; not directly reusable).
-- **Storage**: CPT.
+- **Sketch**: rule declares output meta key + a template/transformer. **Reuse the TitleSlugHandler token engine** (`resolve_token()`, pattern→segments→resolve-or-drop→reassemble, with empty-token + dangling-separator dropping) — ~60–70% of a computed-field engine already exists there; the net-new work is a **target-field write path** (write to an arbitrary meta/ACF key, not just `post_title`/`post_slug`), a **raw-vs-sanitize output policy** flag (so literal HTML survives), and a few new token classes (value-filter `{term:TAX|exclude:…}`, conditional `{if_term:…}`, optional format-transform). Reference snippet: `plugins-to-integrate/format-game-date-time-fields.php` (site-specific athletics_events example showing batching pattern; not directly reusable).
+- **Must work inside ACF repeater rows, not just post-level.** Each row composes its own output from that row's sibling subfields, written back to a per-row output subfield. The build cost is **row-scoped token reads** (the flat/post-level resolver `get_post_meta($post_id, KEY)` must instead read `get_sub_field()` in row context) plus a `have_rows()` iteration loop. The *write* is cheap and verified (2026-06-26): `update_sub_field(['rep', $row, 'sub'], $val, $post_id)` on `acf/save_post` pri 20 — maintains ACF's field-key reference meta, **no re-entrancy guard needed** (it doesn't re-fire `acf/save_post`/`save_post`; only `wp_update_post` would). Details + citations in the plan stub. (The roster height/weight case is the repeater-native one.)
+- **Worked examples** (the "store-on-save what we now compute-on-render" cases that motivate this): two athletics template helpers — an event-title builder (post title + taxonomies + HTML wrap) and a roster height/weight/position string. Token-gap analysis mapping each against the existing resolver, plus the repeater-scope blockers: [.claude/plans/field-transformation-token-gap.md](../.claude/plans/field-transformation-token-gap.md). Reachability ≈ 50% / 70% respectively with the resolver alone (post-level); the shortfall is conditional/transform logic, markup emission, and row-scoped read/write.
+- **Storage**: TBD — run [storage-model.md](storage-model.md) when designed. Likely **Options + indirection** unless a per-recipe draft/test lifecycle is wanted; CPT is a deferred option, not a prerequisite. Not gated on Phase 4 (which is the config-page split, not CPT).
+- **Gating / build order**: gates on **Phase 3** (handler migration), like the other Phase 6a integrations — **not** Phase 4. Build order vs Phase 4 is free: built *before* the page split → lands in the shared `bws_meta_conductor_settings` blob and migrates with everyone when the split runs; built *after* → drops onto its own Format & Transform page-option (`bws_mc_format`). Either works; no hard dependency.
 
 ### `user_based_rules` — User-Based Term Setting / Restriction
 
-- **Status**: planned (Phase 6b, requires Phase 4 CPT storage)
+- **Status**: planned (Phase 6b, requires Phase 4 page split — for its own `bws_mc_personalize` option)
 - **Motivation**: pre-set terms in a taxonomy based on the current user (role or ID), or lock a taxonomy so only specific roles can edit it. Spans both auto-set and restrict actions, which is why both flavors live under the **Personalize by User** tab in the settings UI.
 - **Sketch**: absorb the existing standalone plugin `bws-user-based-terms` (separate repo). Each rule maps user role or ID → taxonomy → term(s). Auto-set variant applies on `save_post`; restrict variant filters term lists in admin.
-- **Source**: external — `../bws-user-based-terms/`. Currently uses its own CPT (`bws_user_term_rule`); merge into the unified `bws_mc_rule` CPT planned in Phase 4.
-- **Storage**: CPT.
+- **Source**: external — `../bws-user-based-terms/`. Currently uses its own CPT (`bws_user_term_rule`); migrate that CPT's posts into the MC Personalize-page **option** array (role/user = target, not owner → single author → Options, not CPT). Per-user customization is solved by indirection (profile field + one rule), not N per-user rules. See [.claude/plans/ubt-merger.md](../.claude/plans/ubt-merger.md), [storage-model.md](storage-model.md).
+- **Storage**: Options (Personalize page, `bws_mc_personalize`). Changed from CPT (2026-06-23).
 
----
+### `related_post_terms_rules` — ACF reference enhancements (deferred)
+
+Deferred refinements from the 0.5.0 rework (design history in
+[.claude/plans/archive/acf-reference-rework.md](../.claude/plans/archive/acf-reference-rework.md)):
+
+- **Status mirroring** — set referenced posts' publication status from the owner (e.g. unpublished owner →
+  private events, so editors can preview while the frontend hides them). Replaces the standalone script's
+  term-withholding hack. Shares a `set_managed_status()` status-effect primitive with the temporal rule's
+  future "set post status" action. Full scope + open questions in
+  [.claude/plans/status-mirroring.md](../.claude/plans/status-mirroring.md). **Status**: planned (own plan).
+- **Tier filter** — sync only a particular hierarchy level of a taxonomy (e.g. only 2nd-level terms).
+- **Manual-survives mode** — let hand-added, non-source-derivable terms persist under Keep-in-sync. Today the
+  synced taxonomy is wholly rule-owned (source-authoritative). Would require rule-domain-vs-manual tracking.
+- **True cross-taxonomy copy** — map terms by slug/name so source and target can differ (current copy is by
+  ID, single taxonomy only).
+- **Multi-level chain propagation** — a post that is BOTH a dependent (of A) and a source (for C) doesn't
+  propagate to C in the same save: its term-change is suppressed by the re-entrancy guard while it's being
+  written. Chains deeper than 2 levels need a depth-bounded re-dispatch after each write. Today's data
+  (athletics) is 2-level so unaffected. Build only if a 3+ level chain appears. (Code-review #4, 0.5.0.)
+- **Single-owner optimization** — skip the multi-source rule-union when a dependent provably has one owner
+  (ACF `max=1` / native bidi). Negligible gain when a reverse field is configured; only matters for the
+  meta_query fallback with large fan-out.
+- **Status-filter sweep** — extend the shared `ConfigHelpers::post_status_field()` gate to the other
+  post-working rule types (related, propagation, time_based, title_slug, hierarchical, level_restriction).
+  → GitHub issue [#23](https://github.com/davidofchatham/meta-conductor/issues/23).
+- **Tier-3 reverse-lookup cost** — a pull rule with NEITHER an explicit reverse field NOR a detectable ACF
+  bidirectional field falls back to `find_holders_referencing` (unindexed meta_query LIKE over all holder
+  posts) on every eligible save. B7 (0.5.0) removed the spurious calls on ineligible saves; the legit case is
+  still O(N). The UI warns the admin to set a reverse/bidi field; a code fix (index/registry) would remove the
+  warning. → GitHub issue [#22](https://github.com/davidofchatham/meta-conductor/issues/22).
 
 ## Tools and infrastructure
 
@@ -79,8 +111,8 @@ When an idea is promoted to in-flight, add a link to its plan file under `.claud
 
 ### CPT storage backend
 
-- **Status**: planned (Phase 4)
-- **Motivation**: rules that accumulate (`title_slug_rules`, `time_based_rules`, future CPT-type rules) outgrow a single wp_options row. CPT storage gives a list table, draft/active lifecycle, and standard WP query power.
+- **Status**: deferred (unscheduled) — **was Phase 4; reassessed 2026-06-23.** Phase 4 is now the config-page split, not CPT. CPT stays a deferred option only for a rule type that genuinely needs a draft/test lifecycle. Page-split + a version-token guard cover the blast-radius/clobber concern CPT was originally reached for. See [storage-model.md](storage-model.md), ROADMAP Phase 4.
+- **Motivation**: a rule type that accumulates *and* wants a list table / draft-active lifecycle / standard WP query power could outgrow a single wp_options row. (Accumulation alone no longer triggers CPT — per-entity explosion is solved by indirection, not N rows.)
 - **Sketch**: implement `BWS_CPT_Rule_Storage` against the existing `BWS_Rule_Storage` interface. Single shared CPT `bws_mc_rule`, differentiated by `rule_type` meta. Per-type routing in `BWS_Storage_Factory`. Migration tool: options → CPT for the two existing rule types that benefit.
 
 ### PSR-4 namespacing

@@ -35,7 +35,7 @@ spl_autoload_register(function ($class) {
 	$path_parts = explode('\\', $relative_class);
 
 	// Last part is the class/interface name -> WordPress file naming.
-	// Examples: RuleEngine -> class-rule-engine.php, AcfIntegration -> class-acf-integration.php
+	// Examples: RuleEngine -> class-rule-engine.php, WireframeBootstrap -> class-wireframe-bootstrap.php
 	$class_name = array_pop($path_parts);
 	$filename   = 'class-' . strtolower(preg_replace('/([a-z])([A-Z])/', '$1-$2', $class_name)) . '.php';
 

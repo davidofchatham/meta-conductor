@@ -1,361 +1,1012 @@
 <?php
 /**
- * BWS Taxonomy Manager Related Post Terms Handler
- * Syncs taxonomy terms from related posts via ACF relationship/post object fields
- * 
+ * Related Post Terms (ACF Reference) handler.
+ *
+ * Copies taxonomy terms between a post and the posts it relates to via an ACF
+ * relationship / post-object field, using a DECLARATIVE source-authoritative
+ * model (no per-application tracking meta): a dependent's terms in a taxonomy
+ * are recomputed each sync as the union of terms derivable from its valid
+ * sources across all enabled rules. (SPEC §V3)
+ *
+ * Direction is holder-relative (SPEC §V1): the ACF field pins the holder post
+ * type; `holder_role` says which end is authoritative. source = push the
+ * holder's terms out to related posts; target = pull related posts' terms onto
+ * the holder.
+ *
  * @since 0.1.0
  */
 
 namespace BWS\MetaConductor\Handlers;
 
-// Prevent direct access
 if (!defined('ABSPATH')) {
     exit;
 }
 
-// TODO(Phase 3): still on the legacy HandlerBase. The unified base
-// (UnifiedHandlerBase) has diverged — e.g. should_process_post()
-// normalizes Wireframe checkbox format only there. Fixes to one base may not
-// reach this one until migration. See ROADMAP Phase 3.
-class RelatedPostTermsHandler extends HandlerBase {
-    
-    /**
-     * Handler type
-     */
+class RelatedPostTermsHandler extends UnifiedHandlerBase {
+
     protected $handler_type = 'related_post_terms';
-    
+
     /**
-     * Track processing to prevent infinite loops
+     * Re-entrancy: (post_id, taxonomy) pairs currently inside a sync write,
+     * keyed `in_sync[$post_id][$taxonomy]`. Guards the set_object_terms cascade
+     * alongside the idempotent short-circuit. Keyed by taxonomy (not just post)
+     * so that if another plugin cross-links a DIFFERENT taxonomy on the same
+     * post mid-write, that taxonomy's sync is not wrongly suppressed. (SPEC §V11;
+     * PR#24 round 2 #6)
+     *
+     * @var array<int,array<string,bool>>
      */
-    private $processing = false;
-    
+    private array $in_sync = [];
+
+    public function get_handler_type() {
+        return $this->handler_type;
+    }
+
+    protected function get_rule_type() {
+        return 'related_post_terms_rules';
+    }
+
     /**
-     * Initialize hooks
+     * Per-request capture of DEPENDENTS removed from a PUSH source's
+     * relationship field this save, keyed by source post ID THEN taxonomy:
+     * `severed[source_id][taxonomy] = [removed_dependent_ids]`. Filled by
+     * capture_removed_dependents on acf/update_value (which sees old vs new),
+     * drained in on_acf_save_post. Enables source-side sever strip without
+     * per-term tracking. (SPEC §V14)
+     *
+     * PUSH-ONLY by construction: for a pull rule the field lists the holder's
+     * SOURCES, not dependents — removing one is already handled by the holder's
+     * own sync_for_post (it recomputes from remaining sources), and treating a
+     * removed source as a dependent would wipe that source's terms (PR#24 Bug 1).
+     * Keyed by taxonomy so a severed source only strips the taxonomy IT feeds,
+     * not every keep_in_sync taxonomy site-wide (PR#24 Bug 2).
+     *
+     * @var array<int,array<string,int[]>>
      */
+    private array $severed = [];
+
+    /**
+     * Per-request memo of tier-3 reverse-lookup results, keyed
+     * `"{related_id}:{holder_type}:{field_name}"`. The acf/save_post (p30) +
+     * save_post (p25) double-fire runs the full pipeline twice per save; the
+     * idempotent short-circuit stops double WRITES but not the double unindexed
+     * find_holders_referencing scan. The relationship graph is stable within one
+     * request, so caching the lookup is safe — and, unlike a recompute-RESULT
+     * cache (forbidden by §V15/B5 because the status gate can change mid-request),
+     * this caches only the holder SET, never the write decision. (PR#24 round 5 #2)
+     *
+     * @var array<string,int[]>
+     */
+    private array $reverse_lookup_cache = [];
+
+    /**
+     * Per-request memo of ACF field → target post types, keyed by field name.
+     * Instance property (not a function-static) so it doesn't bleed across
+     * handler instances in tests. (PR#24 round 7 minor)
+     *
+     * @var array<string,string[]>
+     */
+    private array $field_target_types_cache = [];
+
+    /**
+     * Per-REQUEST memo of enabled rules. The acf/update_value capture filter
+     * fires once per relationship field saved site-wide, and each call (plus the
+     * save_post + acf/save_post double-fire) re-ran get_enabled_rules → storage
+     * normalize over every rule — O(fields × rules) normalize passes per save on
+     * relationship-heavy sites. The rule set is immutable within a request that
+     * saves posts (rules are only mutated by the admin REST save, a separate
+     * request), so a request-lifetime memo is safe. (PR#24 round 8 #4)
+     *
+     * @var array<int,array>|null
+     */
+    private ?array $enabled_rules_memo = null;
+
+    /** Memoized get_enabled_rules for the request. (round 8 #4) */
+    private function enabled_rules(): array {
+        if ($this->enabled_rules_memo === null) {
+            $this->enabled_rules_memo = $this->get_enabled_rules();
+        }
+        return $this->enabled_rules_memo;
+    }
+
     protected function init_hooks() {
-        // Hook into ACF field updates
-        add_action('acf/save_post', array($this, 'on_acf_save_post'), 30);
-        
-        // Hook into post updates for relationship fields
-        add_action('save_post', array($this, 'on_post_save'), 25, 3);
-        
-        // Hook into when posts are updated that might be related to others
-        add_action('set_object_terms', array($this, 'on_related_post_terms_updated'), 15, 6);
+        // A post was saved: it may be a SOURCE (push to its dependents) or a
+        // DEPENDENT (recompute itself from its sources). Both handled. (SPEC §V4)
+        add_action('acf/save_post', [$this, 'on_acf_save_post'], 30);
+        add_action('save_post', [$this, 'on_post_save'], 25, 1);
+
+        // A post's terms changed: if it is a source, propagate to its
+        // dependents. (SPEC §V4)
+        add_action('set_object_terms', [$this, 'on_terms_changed'], 15, 4);
+
+        // Capture dependents removed from a relationship field this save, so we
+        // can withdraw the source's contribution from them while the source is
+        // still known. acf/update_value fires BEFORE the new value is written,
+        // so get_field() still returns the OLD value here. (SPEC §V14)
+        add_filter('acf/update_value/type=relationship', [$this, 'capture_removed_dependents'], 5, 3);
+        add_filter('acf/update_value/type=post_object', [$this, 'capture_removed_dependents'], 5, 3);
+
+        // A PUSH source is being permanently deleted: its dependents must lose
+        // its contribution. No acf/update_value fires on delete, so CAPTURE the
+        // whole relationship as "removed" while the source still exists
+        // (before_delete_post), then STRIP after it's gone (deleted_post) — once
+        // the dying source no longer resolves as a remaining source of its
+        // dependents. (SPEC §V14; PR#24 round 2 #4)
+        add_action('before_delete_post', [$this, 'on_before_delete_post'], 10, 1);
+        add_action('deleted_post', [$this, 'on_deleted_post'], 10, 1);
     }
-    
-    /**
-     * Process a post
-     */
-    public function process_post($post_id, $post, $update) {
-        if ($this->processing) {
+
+    // ---------------------------------------------------------------------
+    // Triggers (SPEC §V4)
+    // ---------------------------------------------------------------------
+
+    public function on_acf_save_post($post_id): void {
+        if (!is_numeric($post_id)) {
             return;
         }
-        
-        $enabled_rules = $this->get_enabled_rules();
-        
-        foreach ($enabled_rules as $rule) {
-            if (!$this->rule_applies_to_post($rule, $post)) {
+        $post_id = (int) $post_id;
+        // Older ACF fires acf/save_post for autosave/revision IDs; skip them so
+        // sync never runs against an autosave object. Mirrors on_post_save.
+        // (PR#24 round 2 #5)
+        if (\wp_is_post_autosave($post_id) || \wp_is_post_revision($post_id)) {
+            return;
+        }
+        $this->sync_for_post($post_id);
+        // Withdraw the source's contribution from any dependent it just
+        // dropped from its relationship field. (SPEC §V14)
+        $this->process_severed($post_id);
+    }
+
+    /**
+     * A post is being permanently deleted. Its dependents must lose its
+     * contribution, but no acf/update_value fires on delete. CAPTURE the
+     * affected dependents while the post still exists; the actual strip runs in
+     * on_deleted_post (after it's gone, so it no longer resolves as a remaining
+     * source). Both directions handled (SPEC §V14; PR#24 round 2 #4, round 5 #4):
+     *
+     *   PUSH (this post is the field-holding source): its dependents are the
+     *     related posts in its field — capture them directly.
+     *   PULL (this post is a related SOURCE): its dependents are the HOLDERS
+     *     that reference it — capture them via reverse lookup. (Without this, a
+     *     deleted pull-source with no terms in the synced taxonomy fires no
+     *     set_object_terms cascade, so the holder would keep stale terms.)
+     *
+     * @param int $post_id Post being deleted.
+     */
+    public function on_before_delete_post($post_id): void {
+        $post_id = (int) $post_id;
+        // Skip revision purges (wp_delete_post_revision fires before_delete_post)
+        // — a 'revision' post matches no holder/source type anyway, so this just
+        // avoids the rule scan + get_post on every revision cleanup. (round 7 #4)
+        if ($post_id <= 0 || \wp_is_post_revision($post_id)) {
+            return;
+        }
+
+        $post = \get_post($post_id);
+        if (!$post instanceof \WP_Post) {
+            return;
+        }
+
+        foreach ($this->enabled_rules() as $rule) {
+            if (empty($rule['keep_in_sync'])) {
+                continue; // add-only never removes ⇒ a delete can't strip
+            }
+            $taxonomy = (string) ($rule['taxonomy'] ?? '');
+            if ($taxonomy === '') {
                 continue;
             }
-            
-            $this->process_related_post_terms($post_id, $post, $rule);
-        }
-    }
-    
-    /**
-     * Handle ACF field saves
-     */
-    public function on_acf_save_post($post_id) {
-        if ($this->processing || !is_numeric($post_id)) {
-            return;
-        }
-        
-        $post = get_post($post_id);
-        if (!$post) {
-            return;
-        }
-        
-        $this->processing = true;
-        $this->process_post($post_id, $post, true);
-        $this->processing = false;
-    }
-    
-    /**
-     * Handle regular post saves
-     */
-    public function on_post_save($post_id, $post, $update) {
-        if ($this->processing || wp_is_post_autosave($post_id) || wp_is_post_revision($post_id)) {
-            return;
-        }
-        
-        $this->processing = true;
-        $this->process_post($post_id, $post, $update);
-        $this->processing = false;
-    }
-    
-    /**
-     * Handle when terms are updated on related posts
-     */
-    public function on_related_post_terms_updated($object_id, $terms, $tt_ids, $taxonomy, $append, $old_tt_ids) {
-        if ($this->processing) {
-            return;
-        }
-        
-        // Find posts that have this post as a related post
-        $this->processing = true;
-        $this->update_posts_related_to($object_id, $taxonomy);
-        $this->processing = false;
-    }
-    
-    /**
-     * Process related post terms for a specific post and rule
-     */
-    private function process_related_post_terms($post_id, $post, $rule) {
-        $acf_field_name = $rule['acf_field_name'];
-        $source_taxonomy = $rule['source_taxonomy'];
-        $target_taxonomy = $rule['target_taxonomy'];
-        $conflict_handling = $rule['conflict_handling'] ?? 'merge';
-        
-        // Get related posts from ACF field
-        $related_posts = $this->get_acf_related_posts($post_id, $acf_field_name);
-        
-        if (empty($related_posts)) {
-            // If no related posts and bidirectional, clear target taxonomy terms
-            if (!empty($rule['bidirectional'])) {
-                wp_set_object_terms($post_id, array(), $target_taxonomy);
+
+            if ($this->holder_is_source($rule)) {
+                // PUSH: this post must be the field holder; its dependents are
+                // the related posts it lists.
+                $field_name = (string) ($rule['acf_field_name'] ?? '');
+                if ($field_name === ''
+                    || !$this->post_type_matches($post, $this->holder_post_type($rule))) {
+                    continue;
+                }
+                $dependents = $this->read_relationship($post_id, $field_name);
+            } else {
+                // PULL: this post is a SOURCE (related post); its dependents are
+                // the holders that reference it. Gate on source eligibility so we
+                // don't reverse-lookup every deleted post site-wide. (§V17)
+                if (!$this->is_eligible_source_type($post, $rule)) {
+                    continue;
+                }
+                $dependents = $this->dependents_of_source($post_id, $rule);
             }
-            return;
+
+            if (empty($dependents)) {
+                continue;
+            }
+            $existing = $this->severed[$post_id][$taxonomy] ?? [];
+            $this->severed[$post_id][$taxonomy] = array_values(
+                array_unique(array_merge($existing, $dependents))
+            );
         }
-        
-        // Collect terms from all related posts
-        $terms_to_apply = array();
-        
-        foreach ($related_posts as $related_post_id) {
-            $related_terms = wp_get_object_terms($related_post_id, $source_taxonomy, array('fields' => 'ids'));
-            
-            if (!is_wp_error($related_terms) && !empty($related_terms)) {
-                $terms_to_apply = array_merge($terms_to_apply, $related_terms);
+    }
+
+    /**
+     * The post is now deleted. Strip the captured dependents: with the source
+     * gone, recompute_dependent's reverse lookup / field read resolves only the
+     * dependents' REMAINING sources, so the deleted source's terms correctly
+     * withdraw. (SPEC §V14; PR#24 round 2 #4, round 5 #4)
+     *
+     * @param int $post_id Deleted post.
+     */
+    public function on_deleted_post($post_id): void {
+        // The graph changed (a post vanished) — drop the reverse-lookup memo so
+        // process_severed's recompute sees the post-delete graph. (round 5 #2)
+        $this->reverse_lookup_cache = [];
+        $this->process_severed((int) $post_id);
+    }
+
+    /**
+     * acf/update_value filter (priority 5, before the value is written): if
+     * this field is a relationship field used by some enabled rule, diff the
+     * OLD value (still readable via get_field here) against the new value and
+     * record the removed dependent IDs for this source. (SPEC §V14, §V18)
+     *
+     * Handles BOTH directions, because either end of a relationship can be the
+     * post the user edits to remove a link:
+     *
+     *   PUSH (holder=source): the saved field is the rule's FORWARD field. Its
+     *     value lists the holder's dependents → a removed entry is a dependent
+     *     to strip. Post must be the rule's HOLDER type.
+     *   PULL (holder=target): the saved field is the rule's REVERSE field (the
+     *     source/related-post side of the relationship — explicit
+     *     `reverse_acf_field_name` or an ACF native-bidi partner). Its value
+     *     lists the HOLDERS that reference this source → a removed entry is a
+     *     holder (dependent) to recompute. Post must be an eligible SOURCE type.
+     *     Without this, editing the source to drop a holder leaves no capture:
+     *     dependents_of_source then reads the NEW graph (holder already gone)
+     *     and never recomputes it, so the holder keeps the stale pulled term.
+     *     (SPEC §B8/§V18)
+     *
+     * Add-only rules (keep_in_sync off) never remove, so a sever can't strip
+     * them — skipped in both directions (PR#24 Bug 3). The post-type gate
+     * matters because ACF field names aren't unique across post types: a
+     * same-named field on a different post type could otherwise match a rule
+     * and force_sync-wipe unrelated dependents (PR#24 round 3 Bug 1).
+     *
+     * Tier-3 pull rules (no explicit reverse field AND no ACF native bidi) have
+     * no reverse field NAME to match here, so a relationship EDIT on their
+     * source can't be captured — only the DELETE path (before_delete_post PULL
+     * branch) covers them. Such rules rely on the meta_query scan and have no
+     * stored reverse value to diff; their edit-sever is a known gap (§V18).
+     *
+     * @param mixed $value    New field value (returned unchanged).
+     * @param int   $post_id  Post being saved (a source or a holder).
+     * @param array $field    ACF field array.
+     * @return mixed
+     */
+    public function capture_removed_dependents($value, $post_id, $field) {
+        $post_id    = (int) $post_id;
+        $field_name = (string) ($field['name'] ?? '');
+        if ($field_name === '') {
+            return $value;
+        }
+
+        $post = \get_post($post_id);
+        if (!$post instanceof \WP_Post) {
+            return $value;
+        }
+
+        // Match every keep_in_sync rule for which the saved field lists this
+        // post's DEPENDENTS — push (forward field, holder=source) or pull
+        // (reverse field, holder=target). A removed entry is a dependent to
+        // recompute in either case. (§V14 push, §V18 pull)
+        $sever_rules = [];
+        foreach ($this->enabled_rules() as $rule) {
+            if (empty($rule['keep_in_sync'])) {
+                continue; // add-only never removes
+            }
+            if ($this->holder_is_source($rule)) {
+                // PUSH: saved field must be the forward field, post the holder.
+                if ((string) ($rule['acf_field_name'] ?? '') === $field_name
+                    && $this->post_type_matches($post, $this->holder_post_type($rule))) {
+                    $sever_rules[] = $rule;
+                }
+            } else {
+                // PULL: saved field must be a reverse field (explicit or native
+                // bidi partner) of the rule's forward field, post an eligible
+                // source. (§V18)
+                if ($this->field_is_reverse_of($field_name, $rule)
+                    && $this->is_eligible_source_type($post, $rule)) {
+                    $sever_rules[] = $rule;
+                }
             }
         }
-        
-        $terms_to_apply = array_unique($terms_to_apply);
-        
-        if (!empty($terms_to_apply)) {
-            // Apply terms to target taxonomy
-            $this->apply_terms_to_post($post_id, $target_taxonomy, $terms_to_apply, $conflict_handling);
-            
+        if (empty($sever_rules)) {
+            return $value;
+        }
+
+        // A field THIS plugin manages is being written ⇒ the relationship graph
+        // is about to change ⇒ drop the tier-3 reverse-lookup memo so a later
+        // lookup in this request doesn't serve a stale holder set (matters in
+        // multi-save CLI/REST runs). Placed AFTER the sever-rule guard so an
+        // unrelated relationship-field save site-wide doesn't needlessly bust
+        // the cache (its key includes holder_type, so it couldn't collide
+        // anyway). (PR#24 round 5 #2, round 7 #1)
+        $this->reverse_lookup_cache = [];
+
+        // Read the OLD value. acf/update_value (priority 5) fires before the new
+        // value is written, so get_field() returns the old DB value TODAY — but
+        // that ordering is an ACF implementation detail, not a contract. Fall
+        // back to raw post meta (also still the old value at this point) if the
+        // ACF read comes back empty, hardening against a future ACF that primes
+        // its value cache with the new value before this filter. (PR#24 Bug 4)
+        $old = $this->read_relationship($post_id, $field_name);
+        if (empty($old)) {
+            $old = $this->extract_ids(\get_post_meta($post_id, $field_name, true));
+        }
+        if (empty($old)) {
+            return $value;
+        }
+
+        $new     = $this->extract_ids($value);
+        $removed = array_values(array_diff($old, $new));
+        if (empty($removed)) {
+            return $value;
+        }
+
+        // Record removed dependents per taxonomy the rule feeds (Bug 2: a
+        // severed source only strips the taxonomy it actually feeds).
+        foreach ($sever_rules as $rule) {
+            $taxonomy = (string) ($rule['taxonomy'] ?? '');
+            if ($taxonomy === '') {
+                continue;
+            }
+            $existing = $this->severed[$post_id][$taxonomy] ?? [];
+            $this->severed[$post_id][$taxonomy] = array_values(
+                array_unique(array_merge($existing, $removed))
+            );
+        }
+
+        return $value;
+    }
+
+    /**
+     * Recompute each dependent the given source just dropped. The dependent
+     * now resolves zero sources under this source's rule, so a normal
+     * recompute would skip it (V13). Force the keep-in-sync replace so the
+     * severed source's terms are withdrawn. (SPEC §V14)
+     */
+    private function process_severed(int $source_id): void {
+        if (empty($this->severed[$source_id])) {
+            return;
+        }
+        $by_taxonomy = $this->severed[$source_id];
+        unset($this->severed[$source_id]);
+
+        $rules = $this->enabled_rules();
+
+        // Each removed dependent is recomputed ONLY in the taxonomy the severing
+        // source actually pushes (capture already scoped this per push rule):
+        // remaining valid sources' terms survive; if none remain, the dependent
+        // is emptied (severed source withdrawn). force_sync bypasses the V13
+        // zero-source skip for exactly these orphans. (§V14)
+        foreach ($by_taxonomy as $taxonomy => $dep_ids) {
+            foreach ($dep_ids as $dep_id) {
+                $this->recompute_dependent((int) $dep_id, (string) $taxonomy, $rules, true);
+            }
+        }
+    }
+
+    public function on_post_save($post_id): void {
+        $post_id = (int) $post_id;
+        if (\wp_is_post_autosave($post_id) || \wp_is_post_revision($post_id)) {
+            return;
+        }
+        $this->sync_for_post($post_id);
+        // Also drain any captured severs here, covering an ACF-form save that
+        // fires acf/update_value but where acf/save_post is missed. save_post
+        // (priority 25) runs after ACF writes its fields (priority 10), so
+        // capture is complete by now; process_severed unsets the key so the
+        // acf/save_post path won't double-process. (PR#24 round 2 #7)
+        //
+        // KNOWN LIMIT (round 8 #2): a BARE programmatic update_field($f,$v,$id)
+        // with no wp_update_post fires acf/update_value (→ capture) but neither
+        // save_post NOR acf/save_post, so its sever is never drained. CLI/import
+        // callers that mutate relationship fields directly should fire
+        // do_action('acf/save_post', $id) (or wp_update_post) afterward to flush.
+        $this->process_severed($post_id);
+    }
+
+    /**
+     * @param int    $object_id Post whose terms changed.
+     * @param array  $terms     Unused.
+     * @param array  $tt_ids    Unused.
+     * @param string $taxonomy  Taxonomy that changed.
+     */
+    public function on_terms_changed($object_id, $terms, $tt_ids, $taxonomy): void {
+        $object_id = (int) $object_id;
+        $taxonomy  = (string) $taxonomy;
+        // Skip writes we are making ourselves (cascade guard), scoped to the
+        // taxonomy we're writing — a cross-taxonomy side effect on the same post
+        // is still processed. (SPEC §V11; PR#24 round 2 #6)
+        if (!empty($this->in_sync[$object_id][$taxonomy])) {
+            return;
+        }
+        $this->sync_for_post($object_id, $taxonomy);
+    }
+
+    // ---------------------------------------------------------------------
+    // Orchestration
+    // ---------------------------------------------------------------------
+
+    /**
+     * Given a post that changed, find every DEPENDENT affected (the post
+     * itself if it is a dependent under some rule, and the dependents it is a
+     * source for) and recompute each. (SPEC §V3/§V4)
+     *
+     * @param int    $post_id        Post that triggered the sync.
+     * @param string $only_taxonomy  Optional: limit to this taxonomy (terms-change trigger).
+     */
+    private function sync_for_post(int $post_id, string $only_taxonomy = ''): void {
+        $post = \get_post($post_id);
+        if (!$post instanceof \WP_Post) {
+            return;
+        }
+
+        $rules = $this->enabled_rules();
+        if (empty($rules)) {
+            return;
+        }
+
+        // Collect the set of (dependent_post_id, taxonomy) pairs to recompute.
+        $dependents = [];
+
+        foreach ($rules as $rule) {
+            $taxonomy = (string) ($rule['taxonomy'] ?? '');
+            if ($taxonomy === '' || ($only_taxonomy !== '' && $taxonomy !== $only_taxonomy)) {
+                continue;
+            }
+
+            // Is THIS post a dependent under this rule? (It receives terms.)
+            // Gate on dependent-type ELIGIBILITY, not just the post_type_matches
+            // ''=any wildcard: a push rule's dependent type is '' so this would
+            // otherwise run the reverse-lookup on EVERY saved post site-wide
+            // (#6). is_eligible_dependent_type narrows push to the ACF field's
+            // configured target post types when known.
+            if ($this->is_eligible_dependent_type($post, $rule)) {
+                $dependents[$post_id][$taxonomy] = true;
+            }
+
+            // Is THIS post a source under this rule? Then its dependents must
+            // recompute. (push: holder is source → its related posts; pull:
+            // related posts are sources → the holder that references them.)
+            // Gate on source-type ELIGIBILITY, mirroring the dependent-side
+            // pre-filter above: a pull rule's source type is '' (any), which
+            // would otherwise run resolve_reverse — including the tier-3
+            // meta_query scan — on EVERY saved post site-wide. (SPEC §V17/B7)
+            if ($this->is_eligible_source_type($post, $rule)) {
+                foreach ($this->dependents_of_source($post_id, $rule) as $dep_id) {
+                    $dependents[$dep_id][$taxonomy] = true;
+                }
+            }
+        }
+
+        foreach ($dependents as $dep_id => $taxes) {
+            foreach (array_keys($taxes) as $taxonomy) {
+                // No per-request recompute cache: the save_post + acf/save_post
+                // double-fire is made safe by write_terms' idempotent
+                // short-circuit + the in_sync cascade guard (SPEC §V11), NOT by
+                // caching the result. A cache here is actively WRONG — a status
+                // transition (publish→draft) changes the source-status gate
+                // BETWEEN the two fires, so the first (stale-status) recompute
+                // would suppress the second (correct-status) one and the
+                // authoritative wipe would never run. (SPEC §B5)
+                $this->recompute_dependent((int) $dep_id, (string) $taxonomy, $rules);
+            }
+        }
+    }
+
+    /**
+     * Recompute one dependent's terms in one taxonomy from the union of all
+     * enabled rules' valid sources. Source-authoritative, declarative,
+     * idempotent. (SPEC §V3/§V5/§V11)
+     */
+    private function recompute_dependent(int $dependent_id, string $taxonomy, array $rules, bool $force_sync = false): void {
+        $authoritative = [];
+        // $any_sync is set true ONLY by a keep_in_sync rule that actually has
+        // sources for this dependent (loop below). It is NOT seeded from
+        // $force_sync — that would force replace even when the only sourced rule
+        // is add-only, breaking the add-only contract (PR#24 Bug 3).
+        //
+        // The sever path passes $force_sync=true and is used DIRECTLY in the
+        // final write decision (not via $any_sync): capture_removed_dependents
+        // only records under push + keep_in_sync rules, so $force_sync here
+        // always means "a keep_in_sync rule manages this orphan" → replace from
+        // remaining sources, emptying if none remain. (SPEC §V14)
+        $any_sync     = false;
+        $source_count = 0; // resolved sources across all applicable rules (SPEC §V13)
+
+        $dep_post = \get_post($dependent_id);
+        if (!$dep_post instanceof \WP_Post) {
+            return;
+        }
+
+        foreach ($rules as $rule) {
+            if ((string) ($rule['taxonomy'] ?? '') !== $taxonomy) {
+                continue;
+            }
+            // Post type must be eligible as a dependent ('' = any, e.g. push).
+            if (!$this->post_type_matches($dep_post, $this->dependent_post_type($rule))) {
+                continue;
+            }
+
+            // V13: the rule "manages" this dependent ONLY if it resolves a
+            // real source for it. Type-match alone is NOT enough — a push
+            // rule's dependent type is '' (any), which would otherwise treat
+            // every saved post as a managed dependent and wipe it.
+            $sources = $this->sources_of_dependent($dependent_id, $rule);
+            if (empty($sources)) {
+                continue;
+            }
+
+            $source_count += count($sources);
+            if (!empty($rule['keep_in_sync'])) {
+                $any_sync = true;
+            }
+
+            // Source-scoped status gate (SPEC §V5). A gated-out source still
+            // counts as a resolved source (V13) — its terms just don't
+            // contribute — so a published dependent of a draft source is
+            // sync-emptied, NOT skipped-as-unmanaged.
+            $passing = [];
+            foreach ($sources as $source_id) {
+                if ($this->source_status_passes($source_id, $rule)) {
+                    $passing[] = (int) $source_id;
+                }
+            }
+            if (!empty($passing)) {
+                // Batch: wp_get_object_terms accepts an int[] of objects, so all
+                // passing sources for this rule resolve in ONE query rather than
+                // N (PR#24 round 5 #3).
+                $src_terms = \wp_get_object_terms($passing, $taxonomy, ['fields' => 'ids']);
+                if (!\is_wp_error($src_terms)) {
+                    foreach ($src_terms as $tid) {
+                        $authoritative[(int) $tid] = true;
+                    }
+                }
+            }
+        }
+
+        // V13: no resolved source under ANY rule ⇒ this post is not managed
+        // here ⇒ leave its terms untouched. Empty-replace is permitted only
+        // when sources exist but yield no terms (legit sync-to-empty).
+        // EXCEPTION (§V14): a forced sever recompute writes even at zero
+        // sources — the dependent was just orphaned and must lose the
+        // withdrawn source's terms (computed from remaining sources, if any).
+        if ($source_count === 0 && !$force_sync) {
+            return;
+        }
+
+        $authoritative = array_keys($authoritative);
+
+        if ($any_sync) {
+            // A keep_in_sync rule manages this dependent ⇒ rule-union replace
+            // (empties if no terms). (§V3)
+            $this->write_terms($dependent_id, $taxonomy, $authoritative, true);
+        } elseif ($force_sync && $source_count === 0) {
+            // True orphan (§V14): the sever removed the LAST source under a
+            // keep_in_sync push, and no other rule has sources here. Empty-
+            // replace withdraws the gone source's terms. Gated on
+            // source_count===0 so a forced sever does NOT replace when a sibling
+            // ADD-ONLY rule still has living sources — that would strip the
+            // dependent's terms beyond the add-only contribution, breaking the
+            // add-only contract. (PR#24 round 6 #1)
+            $this->write_terms($dependent_id, $taxonomy, [], true);
+        } elseif (!empty($authoritative)) {
+            // add-only ⇒ never removes. (§V3)
+            $this->write_terms($dependent_id, $taxonomy, $authoritative, false);
+        }
+    }
+
+    /**
+     * Write terms with idempotent short-circuit + cascade guard. (SPEC §V11)
+     *
+     * @param int   $post_id  Dependent post.
+     * @param string $taxonomy Taxonomy.
+     * @param int[] $terms    Authoritative term IDs.
+     * @param bool  $replace  true = set exactly (keep-in-sync); false = merge (add-only).
+     */
+    private function write_terms(int $post_id, string $taxonomy, array $terms, bool $replace): void {
+        // NOTE: deliberately NOT UnifiedHandlerBase::apply_terms_to_post — that
+        // method early-returns on empty $terms, so it cannot do the keep-in-sync
+        // empty-replace (wipe-to-[]) this rule needs, and it has no idempotent
+        // short-circuit / cascade guard. Kept separate on purpose.
+        $terms   = array_values(array_unique(array_map('intval', $terms)));
+        $current = \wp_get_object_terms($post_id, $taxonomy, ['fields' => 'ids']);
+        if (\is_wp_error($current)) {
+            $current = [];
+        }
+        $current = array_map('intval', $current);
+
+        // Single path: replace ⇒ final = $terms; add-only ⇒ final = current ∪ terms.
+        $final = $replace ? $terms : array_values(array_unique(array_merge($current, $terms)));
+
+        // Idempotent short-circuit (SPEC §V11): no change ⇒ no write ⇒ no
+        // set_object_terms ⇒ cascade dies. Order-insensitive compare.
+        sort($final);
+        $cmp = $current;
+        sort($cmp);
+        if ($final === $cmp) {
+            return;
+        }
+
+        // Cascade guard (SPEC §V11), scoped to (post, taxonomy). try/finally so
+        // a throwing set_object_terms hook can't leak the flag and silently skip
+        // this post+taxonomy for the rest of the request. (#3; round-2 #6)
+        $this->in_sync[$post_id][$taxonomy] = true;
+        try {
+            $result = \wp_set_object_terms($post_id, $final, $taxonomy);
+        } finally {
+            unset($this->in_sync[$post_id][$taxonomy]);
+        }
+
+        // wp_set_object_terms returns WP_Error when the taxonomy doesn't exist
+        // (e.g. deleted after the rule was saved). Don't log a success message
+        // for a write that silently no-op'd. (PR#24 round 7 #2)
+        if (\is_wp_error($result)) {
             $this->debug_log(
-                sprintf('Applied related post terms to post %d', $post_id),
-                array(
-                    'rule' => $rule,
-                    'related_posts' => $related_posts,
-                    'terms_applied' => $terms_to_apply
-                )
+                sprintf('ACF-ref sync FAILED post %d tax %s: %s', $post_id, $taxonomy, $result->get_error_message()),
+                ['terms' => $final]
             );
-        } elseif (!empty($rule['bidirectional'])) {
-            // No terms found and bidirectional - clear target taxonomy
-            wp_set_object_terms($post_id, array(), $target_taxonomy);
+            return;
         }
-    }
-    
-    /**
-     * Get related posts from ACF field
-     */
-    private function get_acf_related_posts($post_id, $field_name) {
-        if (!function_exists('get_field')) {
-            return array();
-        }
-        
-        $field_value = get_field($field_name, $post_id);
-        
-        if (empty($field_value)) {
-            return array();
-        }
-        
-        $related_post_ids = array();
-        
-        // Handle different ACF field return formats
-        if (is_array($field_value)) {
-            foreach ($field_value as $item) {
-                if (is_object($item) && isset($item->ID)) {
-                    $related_post_ids[] = $item->ID;
-                } elseif (is_numeric($item)) {
-                    $related_post_ids[] = absint($item);
-                }
-            }
-        } elseif (is_object($field_value) && isset($field_value->ID)) {
-            $related_post_ids[] = $field_value->ID;
-        } elseif (is_numeric($field_value)) {
-            $related_post_ids[] = absint($field_value);
-        }
-        
-        return array_unique(array_filter($related_post_ids));
-    }
-    
-    /**
-     * Update posts that are related to the given post
-     */
-    private function update_posts_related_to($related_post_id, $updated_taxonomy) {
-        $enabled_rules = $this->get_enabled_rules();
-        
-        foreach ($enabled_rules as $rule) {
-            // Skip if this taxonomy change doesn't affect this rule
-            if ($rule['source_taxonomy'] !== $updated_taxonomy) {
-                continue;
-            }
-            
-            // Find posts that have this post as a related post
-            $posts_to_update = $this->find_posts_with_related_post($related_post_id, $rule);
-            
-            foreach ($posts_to_update as $post_id) {
-                $post = get_post($post_id);
-                if ($post && $this->rule_applies_to_post($rule, $post)) {
-                    $this->process_related_post_terms($post_id, $post, $rule);
-                }
-            }
-        }
-    }
-    
-    /**
-     * Find posts that have the given post as a related post
-     */
-    private function find_posts_with_related_post($related_post_id, $rule) {
-        if (!function_exists('get_field_objects')) {
-            return array();
-        }
-        
-        $acf_field_name = $rule['acf_field_name'];
-        $post_type = $rule['post_type'];
-        
-        // Query posts that might have this related post
-        $posts = get_posts(array(
-            'post_type' => $post_type,
-            'post_status' => array('publish', 'draft', 'private'),
-            'numberposts' => -1,
-            'fields' => 'ids',
-            'meta_query' => array(
-                array(
-                    'key' => $acf_field_name,
-                    'value' => '"' . $related_post_id . '"',
-                    'compare' => 'LIKE'
-                )
-            )
-        ));
-        
-        $matching_posts = array();
-        
-        // Verify the relationship exists (meta_query with LIKE can have false positives)
-        foreach ($posts as $post_id) {
-            $related_posts = $this->get_acf_related_posts($post_id, $acf_field_name);
-            if (in_array($related_post_id, $related_posts)) {
-                $matching_posts[] = $post_id;
-            }
-        }
-        
-        return $matching_posts;
-    }
-    
-    /**
-     * Validate rule data
-     */
-    public function validate_rule($rule_data) {
-        $errors = array();
-        
-        // Validate post type
-        if (empty($rule_data['post_type'])) {
-            $errors[] = __('Post type is required.', 'bws-taxonomy-manager');
-        } elseif (!post_type_exists($rule_data['post_type'])) {
-            $errors[] = __('Selected post type does not exist.', 'bws-taxonomy-manager');
-        }
-        
-        // Validate ACF field name
-        if (empty($rule_data['acf_field_name'])) {
-            $errors[] = __('ACF field name is required.', 'bws-taxonomy-manager');
-        }
-        
-        // Validate source taxonomy
-        if (empty($rule_data['source_taxonomy'])) {
-            $errors[] = __('Source taxonomy is required.', 'bws-taxonomy-manager');
-        } elseif (!taxonomy_exists($rule_data['source_taxonomy'])) {
-            $errors[] = __('Selected source taxonomy does not exist.', 'bws-taxonomy-manager');
-        }
-        
-        // Validate target taxonomy
-        if (empty($rule_data['target_taxonomy'])) {
-            $errors[] = __('Target taxonomy is required.', 'bws-taxonomy-manager');
-        } elseif (!taxonomy_exists($rule_data['target_taxonomy'])) {
-            $errors[] = __('Selected target taxonomy does not exist.', 'bws-taxonomy-manager');
-        }
-        
-        // Validate conflict handling
-        $valid_handling = array('replace', 'merge', 'skip');
-        if (!empty($rule_data['conflict_handling']) && 
-            !in_array($rule_data['conflict_handling'], $valid_handling)) {
-            $errors[] = __('Invalid conflict handling method selected.', 'bws-taxonomy-manager');
-        }
-        
-        return array(
-            'valid' => empty($errors),
-            'errors' => $errors,
-            'sanitized_data' => $this->sanitize_rule_data($rule_data)
+
+        $this->debug_log(
+            sprintf('ACF-ref sync (%s) post %d tax %s', $replace ? 'replace' : 'add', $post_id, $taxonomy),
+            ['terms' => $final]
         );
     }
-    
+
+    // ---------------------------------------------------------------------
+    // Direction model (SPEC §V1) — resolve source/dependent ends per rule
+    // ---------------------------------------------------------------------
+
+    /** The post type that OWNS the ACF field (the holder). */
+    private function holder_post_type(array $rule): string {
+        return (string) ($rule['post_type'] ?? '');
+    }
+
+    /** Holder is source when holder_role=source (push); else target (pull). */
+    private function holder_is_source(array $rule): bool {
+        return (($rule['holder_role'] ?? 'target') === 'source');
+    }
+
     /**
-     * Sanitize rule data
+     * Post type of the SOURCE end (terms come FROM here). Empty string ⇒ "any"
+     * (the related posts side, whose type we don't constrain).
      */
-    private function sanitize_rule_data($rule_data) {
-        return array(
-            'post_type' => sanitize_text_field($rule_data['post_type'] ?? ''),
-            'acf_field_name' => sanitize_text_field($rule_data['acf_field_name'] ?? ''),
-            'source_taxonomy' => sanitize_text_field($rule_data['source_taxonomy'] ?? ''),
-            'target_taxonomy' => sanitize_text_field($rule_data['target_taxonomy'] ?? ''),
-            'conflict_handling' => sanitize_text_field($rule_data['conflict_handling'] ?? 'merge'),
-            'bidirectional' => !empty($rule_data['bidirectional']),
-            'enabled' => !empty($rule_data['enabled'])
+    private function source_post_type(array $rule): string {
+        // holder is source → source type = holder. holder is target → source =
+        // the related posts (unconstrained type).
+        return $this->holder_is_source($rule) ? $this->holder_post_type($rule) : '';
+    }
+
+    /**
+     * Post type of the DEPENDENT end (terms are written here). Empty ⇒ any.
+     */
+    private function dependent_post_type(array $rule): string {
+        return $this->holder_is_source($rule) ? '' : $this->holder_post_type($rule);
+    }
+
+    /**
+     * The dependents that a given SOURCE post feeds, under this rule.
+     *
+     * push (holder=source): the source IS the holder → read its ACF field →
+     *   the related posts are dependents.
+     * pull (holder=target): the source is a related post → find the holders
+     *   that reference it (reverse lookup) → those holders are dependents.
+     *
+     * @return int[]
+     */
+    private function dependents_of_source(int $source_id, array $rule): array {
+        if ($this->holder_is_source($rule)) {
+            return $this->read_relationship($source_id, (string) $rule['acf_field_name']);
+        }
+        return $this->resolve_reverse($source_id, $rule);
+    }
+
+    /**
+     * The sources that feed a given DEPENDENT post, under this rule.
+     *
+     * push (holder=source): the dependent is a related post → find the holders
+     *   that reference it (reverse lookup) → those holders are sources.
+     * pull (holder=target): the dependent IS the holder → read its ACF field →
+     *   the related posts are sources.
+     *
+     * @return int[]
+     */
+    private function sources_of_dependent(int $dependent_id, array $rule): array {
+        if ($this->holder_is_source($rule)) {
+            return $this->resolve_reverse($dependent_id, $rule);
+        }
+        return $this->read_relationship($dependent_id, (string) $rule['acf_field_name']);
+    }
+
+    // ---------------------------------------------------------------------
+    // Reverse-field resolution — three tiers (SPEC §V6)
+    // ---------------------------------------------------------------------
+
+    /**
+     * Resolve the holder posts whose relationship field points at $related_id.
+     * Tier 1 explicit reverse field → tier 2 ACF native bidi → tier 3 meta_query.
+     *
+     * @return int[]
+     */
+    private function resolve_reverse(int $related_id, array $rule): array {
+        // Tier 1: explicit reverse field on the related post.
+        $reverse = (string) ($rule['reverse_acf_field_name'] ?? '');
+        if ($reverse !== '') {
+            return $this->read_relationship($related_id, $reverse);
+        }
+
+        // Tier 2: ACF native bidirectional — the field's partner key(s). A field
+        // can be bidi-linked to MORE THAN ONE partner field (one per target post
+        // type), so union the reverse reads across all of them, not just the
+        // first (PR#24 round 4 #1). Wrapped defensively; absent/old ACF or no
+        // bidi config returns [].
+        $partners = $this->acf_bidirectional_partners((string) $rule['acf_field_name']);
+        if (!empty($partners)) {
+            $holders = [];
+            foreach ($partners as $partner) {
+                $holders = array_merge($holders, $this->read_relationship($related_id, $partner));
+            }
+            return array_values(array_unique($holders));
+        }
+
+        // Tier 3: meta_query fallback (slow; correct).
+        return $this->find_holders_referencing($related_id, $rule);
+    }
+
+    /**
+     * Whether $field_name is the REVERSE side of $rule's forward relationship
+     * field — i.e. a field on the source/related-post end whose value lists the
+     * holders. Used to capture a pull-direction sever when the user edits the
+     * SOURCE to drop a holder. (SPEC §V18)
+     *
+     * Tier 1: explicit `reverse_acf_field_name`. Tier 2: an ACF native-bidi
+     * partner of the forward field. Tier 3 (meta_query) has no reverse field
+     * name, so it can't be matched here — those rules' edit-sever is uncovered
+     * (delete-sever still works). Mirrors resolve_reverse's tier order.
+     */
+    private function field_is_reverse_of(string $field_name, array $rule): bool {
+        if ($field_name === '') {
+            return false;
+        }
+        $reverse = (string) ($rule['reverse_acf_field_name'] ?? '');
+        if ($reverse !== '') {
+            return $field_name === $reverse;
+        }
+        return in_array(
+            $field_name,
+            $this->acf_bidirectional_partners((string) ($rule['acf_field_name'] ?? '')),
+            true
         );
     }
-    
+
     /**
-     * Process existing posts for testing/manual application
+     * Read an ACF relationship/post-object field → array of related post IDs.
+     *
+     * @return int[]
      */
-    public function process_existing_posts($batch_size = 50, $offset = 0) {
-        $result = parent::process_existing_posts($batch_size, $offset);
-        
-        // Add specific message for related post terms processing
-        if ($result['processed'] > 0) {
-            $result['message'] = sprintf(
-                __('Processed %d posts for related post term syncing. %d of %d total posts complete.', 'bws-taxonomy-manager'),
-                $result['processed'],
-                min($offset + $batch_size, $result['total']),
-                $result['total']
-            );
+    private function read_relationship(int $post_id, string $field_name): array {
+        if ($field_name === '' || !function_exists('get_field')) {
+            return [];
         }
-        
+        return $this->extract_ids(\get_field($field_name, $post_id));
+    }
+
+    /**
+     * Normalize an ACF relationship/post-object value (array of WP_Post,
+     * array of IDs, single object, or single ID) to a unique int[] of post IDs.
+     *
+     * @param mixed $value
+     * @return int[]
+     */
+    private function extract_ids($value): array {
+        if (empty($value)) {
+            return [];
+        }
+        $ids = [];
+        $items = is_array($value) ? $value : [$value];
+        foreach ($items as $item) {
+            if (is_object($item) && isset($item->ID)) {
+                $ids[] = (int) $item->ID;
+            } elseif (is_numeric($item)) {
+                $ids[] = (int) $item;
+            }
+        }
+        return array_values(array_unique(array_filter($ids)));
+    }
+
+    /**
+     * The ACF native-bidirectional partner field names (one per linked target
+     * field), or [] if none / ACF unavailable. A field bidi-linked to multiple
+     * post types has multiple partner fields — ALL are returned (PR#24 round 4
+     * #1). Defensive: never fatals on old/absent ACF. (SPEC §V6 tier 2)
+     *
+     * @return string[]
+     */
+    private function acf_bidirectional_partners(string $field_name): array {
+        if ($field_name === '' || !function_exists('acf_get_field')) {
+            return [];
+        }
+        $field = \acf_get_field($field_name);
+        if (!is_array($field) || empty($field['bidirectional'])) {
+            return [];
+        }
+        $targets = $field['bidirectional_target'] ?? [];
+        if (!is_array($targets) || empty($targets)) {
+            return [];
+        }
+        // bidirectional_target holds field KEYS; resolve each to its name.
+        $names = [];
+        foreach ($targets as $key) {
+            $partner = \acf_get_field($key);
+            if (is_array($partner) && !empty($partner['name'])) {
+                $names[] = (string) $partner['name'];
+            }
+        }
+        return array_values(array_unique($names));
+    }
+
+    /**
+     * Tier 3 fallback: holders whose relationship field references $related_id.
+     * meta_query LIKE + per-result verification (false-positive prone). (SPEC §V6)
+     *
+     * @return int[]
+     */
+    private function find_holders_referencing(int $related_id, array $rule): array {
+        $holder_type = $this->holder_post_type($rule);
+        $field_name  = (string) $rule['acf_field_name'];
+        if ($holder_type === '' || $field_name === '') {
+            return [];
+        }
+
+        // Per-request memo: the save_post + acf/save_post double-fire would
+        // otherwise run this unindexed scan twice per save. (PR#24 round 5 #2)
+        $cache_key = $related_id . ':' . $holder_type . ':' . $field_name;
+        if (isset($this->reverse_lookup_cache[$cache_key])) {
+            return $this->reverse_lookup_cache[$cache_key];
+        }
+
+        // LIKE on the bare ID (NOT quote-wrapped). ACF serializes a
+        // relationship/post-object value as an INTEGER array — `a:1:{i:0;i:42;}`
+        // — so the old `"42"` pattern (which only matches STRING serialization
+        // `s:2:"42"`) never matched modern ACF and tier 3 silently returned
+        // nothing. The bare value over-matches (e.g. 42 inside 142), so the
+        // per-result read_relationship() below is the authoritative filter.
+        // (PR#24 round 2 #2)
+        $candidates = \get_posts([
+            'post_type'      => $holder_type,
+            'post_status'    => 'any',
+            'numberposts'    => -1,
+            'fields'         => 'ids',
+            'meta_query'     => [[
+                'key'     => $field_name,
+                'value'   => (string) $related_id,
+                'compare' => 'LIKE',
+            ]],
+        ]);
+
+        $matches = [];
+        foreach ($candidates as $cid) {
+            $cid = (int) $cid;
+            if (in_array($related_id, $this->read_relationship($cid, $field_name), true)) {
+                $matches[] = $cid;
+            }
+        }
+
+        $this->reverse_lookup_cache[$cache_key] = $matches;
+        return $matches;
+    }
+
+    // ---------------------------------------------------------------------
+    // Gates
+    // ---------------------------------------------------------------------
+
+    /** Source-status gate (SPEC §V5). Empty gate ⇒ any status passes. */
+    private function source_status_passes(int $source_id, array $rule): bool {
+        $statuses = $this->status_gate($rule);
+        if (empty($statuses)) {
+            return true;
+        }
+        return in_array(\get_post_status($source_id), $statuses, true);
+    }
+
+    /**
+     * Normalize the post_status gate (Wireframe checkboxes {slug:bool} or list)
+     * to a list of slugs. Empty ⇒ no filter.
+     *
+     * @return string[]
+     */
+    private function status_gate(array $rule): array {
+        return \BWS\MetaConductor\Admin\Config\ConfigHelpers::selected_checkbox_slugs($rule['post_status'] ?? []);
+    }
+
+    /** Whether a post's type matches a required type ('' ⇒ any). */
+    private function post_type_matches(\WP_Post $post, string $required_type): bool {
+        return $required_type === '' || $post->post_type === $required_type;
+    }
+
+    /**
+     * Whether $post can plausibly be a DEPENDENT of $rule — used to avoid
+     * running the reverse-lookup on every saved post site-wide. (#6)
+     *
+     * pull (dependent type = holder, concrete): exact type match.
+     * push (dependent type = '' / any): the dependent is whatever the ACF
+     *   field points AT, so narrow to the field's configured target post types
+     *   when ACF can tell us; if the field config is unknown/unconstrained,
+     *   fall back to eligible (correctness preserved — V13's source-presence
+     *   gate still prevents any wrong write; this is purely a perf pre-filter).
+     */
+    private function is_eligible_dependent_type(\WP_Post $post, array $rule): bool {
+        $dep_type = $this->dependent_post_type($rule);
+        if ($dep_type !== '') {
+            return $post->post_type === $dep_type;
+        }
+
+        // push: consult the ACF field's target post types.
+        $targets = $this->acf_field_target_post_types((string) ($rule['acf_field_name'] ?? ''));
+        if (empty($targets)) {
+            return true; // unknown/unconstrained → can't narrow; stay correct
+        }
+        return in_array($post->post_type, $targets, true);
+    }
+
+    /**
+     * Whether $post can plausibly be a SOURCE of $rule — the source-side mirror
+     * of is_eligible_dependent_type. Avoids running resolve_reverse (incl. the
+     * tier-3 meta_query scan) on every saved post site-wide. (SPEC §V17/B7)
+     *
+     * push (source type = holder, concrete): exact type match.
+     * pull (source type = '' / any): the source is whatever the ACF field points
+     *   AT (a related post), so narrow to the field's configured target post
+     *   types when ACF can tell us; unknown/unconstrained ⇒ stay eligible
+     *   (resolve_reverse on an ineligible post returns empty anyway, and V13's
+     *   source-presence gate still prevents wrong writes — purely a perf filter).
+     */
+    private function is_eligible_source_type(\WP_Post $post, array $rule): bool {
+        $src_type = $this->source_post_type($rule);
+        if ($src_type !== '') {
+            return $post->post_type === $src_type;
+        }
+
+        // pull: consult the ACF field's target post types (the related posts).
+        $targets = $this->acf_field_target_post_types((string) ($rule['acf_field_name'] ?? ''));
+        if (empty($targets)) {
+            return true; // unknown/unconstrained → can't narrow; stay correct
+        }
+        return in_array($post->post_type, $targets, true);
+    }
+
+    /**
+     * Target post types an ACF relationship/post-object field points at, from
+     * its `post_type` setting. Empty ⇒ unconstrained or ACF unavailable.
+     * Defensive — never fatals on old/absent ACF.
+     *
+     * @return string[]
+     */
+    private function acf_field_target_post_types(string $field_name): array {
+        if ($field_name === '' || !function_exists('acf_get_field')) {
+            return [];
+        }
+        // Per-request memo: this is called from both eligibility pre-filters,
+        // once per rule, and the save_post + acf/save_post double-fire repeats
+        // the whole pipeline — so without caching it's ~4×N acf_get_field calls
+        // per save. Field config is stable within a request. (PR#24 round 6 minor)
+        if (array_key_exists($field_name, $this->field_target_types_cache)) {
+            return $this->field_target_types_cache[$field_name];
+        }
+        $field  = \acf_get_field($field_name);
+        $result = (is_array($field) && !empty($field['post_type']))
+            ? array_values(array_filter((array) $field['post_type']))
+            : [];
+        $this->field_target_types_cache[$field_name] = $result;
         return $result;
-    }
-    
-    /**
-     * Get summary of rules for admin display
-     */
-    public function get_rules_summary() {
-        $enabled_rules = $this->get_enabled_rules();
-        
-        $summary = array(
-            'total_rules' => count($enabled_rules),
-            'post_types' => array(),
-            'taxonomies' => array()
-        );
-        
-        foreach ($enabled_rules as $rule) {
-            $summary['post_types'][] = $rule['post_type'];
-            $summary['taxonomies'][] = $rule['source_taxonomy'];
-            $summary['taxonomies'][] = $rule['target_taxonomy'];
-        }
-        
-        $summary['post_types'] = array_unique($summary['post_types']);
-        $summary['taxonomies'] = array_unique($summary['taxonomies']);
-        
-        return $summary;
     }
 }

@@ -32,6 +32,10 @@ class WireframeBootstrap {
         // title_template does raw value substitution only — it cannot resolve
         // a stored term ID to a name — so the names must be persisted.
         add_filter('wp-wireframe/save/payload', [self::class, 'snapshot_related_labels'], 10, 1);
+
+        // Snapshot the ACF-reference row title (SPEC §V10). Separate callback
+        // from the related path — generalize later if shapes converge.
+        add_filter('wp-wireframe/save/payload', [self::class, 'snapshot_acf_reference_labels'], 10, 1);
     }
 
     /**
@@ -66,10 +70,147 @@ class WireframeBootstrap {
 
             $rule['target_label'] = \esc_html(self::term_label($rule['target_term_id'] ?? null));
             $rule['scope_label']  = \esc_html(self::scope_label($rule['post_types'] ?? []));
+
+            // Flag a disabled rule in the collapsed row title. title_template is
+            // raw token substitution with no client-side conditional, and the
+            // repeater header has no extension slot for a live control, so the
+            // marker is baked into the leading label token at save. It refreshes
+            // on the save that flips `enabled`, so it's accurate for persisted
+            // state. (Live header toggle would need a Wireframe JS fork; tracked
+            // separately.)
+            $rule['trigger_label'] = self::disabled_prefix($rule) . $rule['trigger_label'];
         }
         unset($rule);
 
         return $clean_values;
+    }
+
+    /**
+     * Leading marker for a disabled rule's collapsed row title, '' when enabled.
+     * Prepended to the first title_template token by each snapshot. Shared by
+     * every rule type whose repeater carries an `enabled` toggle.
+     *
+     * @param array $rule Clean rule values (the `enabled` subfield).
+     * @return string Unescaped marker (already-safe literal).
+     */
+    private static function disabled_prefix(array $rule): string {
+        // `enabled` defaults true; a rule missing the key (legacy) is treated
+        // as enabled, matching the config default and the handler gate.
+        $enabled = !array_key_exists('enabled', $rule) || !empty($rule['enabled']);
+        return $enabled ? '' : \esc_html__('[Disabled] ', 'bws-meta-manager');
+    }
+
+    /**
+     * Assemble each ACF-reference rule's row title (SPEC §V10).
+     *
+     * Hooked on `wp-wireframe/save/payload`, PRE-storage — so `acf_field_name`
+     * is still the raw "post_type:field_name" option value (before the storage
+     * adapter splits it). No A→B arrow: same term, same taxonomy, moved across
+     * a relationship.
+     *
+     * Schema: {Copy|Sync} {Taxonomy} terms {to|from} {field_label}{ on {statuses}}
+     *   Copy|Sync ← keep_in_sync (off|on)
+     *   to|from   ← holder_role (source=to/push | target=from/pull)
+     *   field_label ← acf_get_field()['label'] (clean human label), fallback name
+     *   on {statuses} ← post_status gate, only when set
+     *
+     * @param array $clean_values
+     * @return array
+     */
+    public static function snapshot_acf_reference_labels(array $clean_values): array {
+        if (empty($clean_values['related_post_terms_rules']) || !is_array($clean_values['related_post_terms_rules'])) {
+            return $clean_values;
+        }
+
+        foreach ($clean_values['related_post_terms_rules'] as &$rule) {
+            if (!is_array($rule)) {
+                continue;
+            }
+
+            $verb = !empty($rule['keep_in_sync'])
+                ? __('Sync', 'bws-meta-manager')
+                : __('Copy', 'bws-meta-manager');
+
+            // Default an ABSENT holder_role to 'target', matching the handler
+            // (holder_is_source) and the storage migration — NOT 'source'. The
+            // key is absent only for a legacy raw rule re-saved before the
+            // migration flag is set; defaulting to 'source' here would write a
+            // row title that lies about the rule's runtime direction. A new rule
+            // always carries an explicit holder_role. (PR#24 round 4 #2)
+            $prep = (($rule['holder_role'] ?? 'target') === 'source')
+                ? __('to', 'bws-meta-manager')
+                : __('from', 'bws-meta-manager');
+
+            $tax_label   = self::taxonomy_label($rule['taxonomy'] ?? '');
+            $field_label = self::acf_field_label($rule['acf_field_name'] ?? '');
+            $gate        = self::status_gate_label($rule['post_status'] ?? []);
+
+            // Assemble; tolerate empty parts gracefully.
+            $title = trim(sprintf(
+                /* translators: 1: Copy/Sync 2: taxonomy 3: to/from 4: field label */
+                __('%1$s %2$s terms %3$s %4$s', 'bws-meta-manager'),
+                $verb,
+                $tax_label,
+                $prep,
+                $field_label
+            ));
+
+            if ($gate !== '') {
+                $title .= ' ' . sprintf(__('on %s', 'bws-meta-manager'), $gate);
+            }
+
+            // Flag disabled rules in the collapsed title (see disabled_prefix).
+            $rule['row_title'] = self::disabled_prefix($rule) . \esc_html($title);
+        }
+        unset($rule);
+
+        return $clean_values;
+    }
+
+    /**
+     * Resolve a raw "post_type:field_name" (or bare name) ACF relationship
+     * field to its clean human label via acf_get_field(). Falls back to the
+     * bare field name. (SPEC §V10)
+     *
+     * @param string $stored Raw option value.
+     * @return string Unescaped label.
+     */
+    private static function acf_field_label($stored): string {
+        $raw = (string) $stored;
+        if ($raw === '') {
+            return '';
+        }
+        // Strip the "post_type:" prefix the option value carries.
+        $name = \str_contains($raw, ':') ? explode(':', $raw, 2)[1] : $raw;
+
+        if (function_exists('acf_get_field')) {
+            $field = \acf_get_field($name);
+            if (is_array($field) && !empty($field['label'])) {
+                return (string) $field['label'];
+            }
+        }
+        return $name;
+    }
+
+    /**
+     * Comma-joined human labels for a post_status gate (Wireframe {slug:bool}
+     * map or list). '' when no gate set. (SPEC §V10)
+     *
+     * @param mixed $post_status
+     * @return string Unescaped.
+     */
+    private static function status_gate_label($post_status): string {
+        $slugs = Config\ConfigHelpers::selected_checkbox_slugs($post_status);
+        if (empty($slugs)) {
+            return '';
+        }
+
+        $labels = [];
+        foreach ($slugs as $slug) {
+            $obj = \get_post_status_object((string) $slug);
+            $labels[] = $obj ? $obj->label : (string) $slug;
+        }
+        return implode(', ', $labels);
     }
 
     /**
@@ -256,6 +397,15 @@ class WireframeBootstrap {
 
         if (!is_admin() && !$is_rest) {
             return;
+        }
+
+        // One-time persist of the related_post_terms_rules read-time migration,
+        // BEFORE Wireframe reads the option raw (it bypasses normalize_rule_shape,
+        // so the form would otherwise render legacy rows with config defaults and
+        // a resave would corrupt them). Flag-gated → at most one write. (SPEC §V16/B6)
+        $storage = \BWS\MetaConductor\Storage\StorageFactory::get_instance();
+        if (method_exists($storage, 'maybe_migrate_acf_ref_storage')) {
+            $storage->maybe_migrate_acf_ref_storage();
         }
 
         // WireframeConfig autoloads via PSR-4 (autoload.php) — no manual require (Phase 2a).
