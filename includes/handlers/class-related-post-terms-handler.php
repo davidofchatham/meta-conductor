@@ -244,10 +244,38 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
      * acf/update_value filter (priority 5, before the value is written): if
      * this field is a relationship field used by some enabled rule, diff the
      * OLD value (still readable via get_field here) against the new value and
-     * record the removed dependent IDs for this source. (SPEC §V14)
+     * record the removed dependent IDs for this source. (SPEC §V14, §V18)
+     *
+     * Handles BOTH directions, because either end of a relationship can be the
+     * post the user edits to remove a link:
+     *
+     *   PUSH (holder=source): the saved field is the rule's FORWARD field. Its
+     *     value lists the holder's dependents → a removed entry is a dependent
+     *     to strip. Post must be the rule's HOLDER type.
+     *   PULL (holder=target): the saved field is the rule's REVERSE field (the
+     *     source/related-post side of the relationship — explicit
+     *     `reverse_acf_field_name` or an ACF native-bidi partner). Its value
+     *     lists the HOLDERS that reference this source → a removed entry is a
+     *     holder (dependent) to recompute. Post must be an eligible SOURCE type.
+     *     Without this, editing the source to drop a holder leaves no capture:
+     *     dependents_of_source then reads the NEW graph (holder already gone)
+     *     and never recomputes it, so the holder keeps the stale pulled term.
+     *     (SPEC §B8/§V18)
+     *
+     * Add-only rules (keep_in_sync off) never remove, so a sever can't strip
+     * them — skipped in both directions (PR#24 Bug 3). The post-type gate
+     * matters because ACF field names aren't unique across post types: a
+     * same-named field on a different post type could otherwise match a rule
+     * and force_sync-wipe unrelated dependents (PR#24 round 3 Bug 1).
+     *
+     * Tier-3 pull rules (no explicit reverse field AND no ACF native bidi) have
+     * no reverse field NAME to match here, so a relationship EDIT on their
+     * source can't be captured — only the DELETE path (before_delete_post PULL
+     * branch) covers them. Such rules rely on the meta_query scan and have no
+     * stored reverse value to diff; their edit-sever is a known gap (§V18).
      *
      * @param mixed $value    New field value (returned unchanged).
-     * @param int   $post_id  Source post being saved.
+     * @param int   $post_id  Post being saved (a source or a holder).
      * @param array $field    ACF field array.
      * @return mixed
      */
@@ -263,32 +291,39 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
             return $value;
         }
 
-        // Only PUSH + keep_in_sync rules whose forward field is THIS field matter
-        // here: their field value lists the holder's dependents, so a removed
-        // entry is a dependent to strip. Pull rules (field lists sources) are
-        // skipped — sync_for_post on the holder already handles their sever
-        // (PR#24 Bug 1). Add-only rules never remove, so a sever can't strip
-        // them — skip too (PR#24 Bug 3). The post must also be of the rule's
-        // HOLDER type: ACF field names aren't unique across post types, so a
-        // same-named field on a DIFFERENT post type could otherwise match a
-        // rule and force_sync-wipe unrelated dependents (PR#24 round 3 Bug 1).
-        $push_rules = [];
+        // Match every keep_in_sync rule for which the saved field lists this
+        // post's DEPENDENTS — push (forward field, holder=source) or pull
+        // (reverse field, holder=target). A removed entry is a dependent to
+        // recompute in either case. (§V14 push, §V18 pull)
+        $sever_rules = [];
         foreach ($this->enabled_rules() as $rule) {
-            if ($this->holder_is_source($rule)
-                && !empty($rule['keep_in_sync'])
-                && (string) ($rule['acf_field_name'] ?? '') === $field_name
-                && $this->post_type_matches($post, $this->holder_post_type($rule))) {
-                $push_rules[] = $rule;
+            if (empty($rule['keep_in_sync'])) {
+                continue; // add-only never removes
+            }
+            if ($this->holder_is_source($rule)) {
+                // PUSH: saved field must be the forward field, post the holder.
+                if ((string) ($rule['acf_field_name'] ?? '') === $field_name
+                    && $this->post_type_matches($post, $this->holder_post_type($rule))) {
+                    $sever_rules[] = $rule;
+                }
+            } else {
+                // PULL: saved field must be a reverse field (explicit or native
+                // bidi partner) of the rule's forward field, post an eligible
+                // source. (§V18)
+                if ($this->field_is_reverse_of($field_name, $rule)
+                    && $this->is_eligible_source_type($post, $rule)) {
+                    $sever_rules[] = $rule;
+                }
             }
         }
-        if (empty($push_rules)) {
+        if (empty($sever_rules)) {
             return $value;
         }
 
         // A field THIS plugin manages is being written ⇒ the relationship graph
         // is about to change ⇒ drop the tier-3 reverse-lookup memo so a later
         // lookup in this request doesn't serve a stale holder set (matters in
-        // multi-save CLI/REST runs). Placed AFTER the push-rule guard so an
+        // multi-save CLI/REST runs). Placed AFTER the sever-rule guard so an
         // unrelated relationship-field save site-wide doesn't needlessly bust
         // the cache (its key includes holder_type, so it couldn't collide
         // anyway). (PR#24 round 5 #2, round 7 #1)
@@ -314,9 +349,9 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
             return $value;
         }
 
-        // Record removed dependents per taxonomy the holder pushes (Bug 2: a
+        // Record removed dependents per taxonomy the rule feeds (Bug 2: a
         // severed source only strips the taxonomy it actually feeds).
-        foreach ($push_rules as $rule) {
+        foreach ($sever_rules as $rule) {
             $taxonomy = (string) ($rule['taxonomy'] ?? '');
             if ($taxonomy === '') {
                 continue;
@@ -725,6 +760,32 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
 
         // Tier 3: meta_query fallback (slow; correct).
         return $this->find_holders_referencing($related_id, $rule);
+    }
+
+    /**
+     * Whether $field_name is the REVERSE side of $rule's forward relationship
+     * field — i.e. a field on the source/related-post end whose value lists the
+     * holders. Used to capture a pull-direction sever when the user edits the
+     * SOURCE to drop a holder. (SPEC §V18)
+     *
+     * Tier 1: explicit `reverse_acf_field_name`. Tier 2: an ACF native-bidi
+     * partner of the forward field. Tier 3 (meta_query) has no reverse field
+     * name, so it can't be matched here — those rules' edit-sever is uncovered
+     * (delete-sever still works). Mirrors resolve_reverse's tier order.
+     */
+    private function field_is_reverse_of(string $field_name, array $rule): bool {
+        if ($field_name === '') {
+            return false;
+        }
+        $reverse = (string) ($rule['reverse_acf_field_name'] ?? '');
+        if ($reverse !== '') {
+            return $field_name === $reverse;
+        }
+        return in_array(
+            $field_name,
+            $this->acf_bidirectional_partners((string) ($rule['acf_field_name'] ?? '')),
+            true
+        );
     }
 
     /**
