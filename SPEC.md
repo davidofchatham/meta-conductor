@@ -122,6 +122,14 @@ it (all 3 are confirmed-working, C7), don't bolt on new logic unless a violation
   only writes when `$final_terms !== $current` (short-circuit) = idempotent. propagation + time-based MUST
   short-circuit on no-change and be (post, taxonomy)-scoped; never assume "runs once". Confirm idempotent on
   the test site (resave = no spurious diff). (T2,T3,T4)
+- V11. **Sibling-conditional subfields use real `conditions`, not description text** (Wireframe 1.0.6 #13,
+  don't #3). A subfield only relevant when a sibling has a given value gets a `conditions` node
+  (`{field, operator, value}` / `all` / `any`; `in` for multi-value) evaluated client-side + server-side
+  against the same repeater row. Replaces the legacy "Only used when X" description workaround. CAVEAT: a
+  condition-hidden subfield DROPS from the save payload (`RepeaterField` skips it) — so the handler reads it
+  absent (= falsy/default); ensure that's the intended value in the hidden state. Each migrated/revisited
+  handler's config: convert its description-text conditionals to real `conditions`. (T2 done: level-restriction
+  `include_ancestors`; T3/T4 sweep their configs.) (I.*-c)
 - V10. **Pre-filter site-wide hooks before expensive work** (arch#8). `set_object_terms` / `save_post` fire
   for EVERY post on the site. level-restriction early-continues on `$rule['taxonomy'] !== $taxonomy` before
   any term math = cheap gate. propagation (`save_post` every post) + time-based (`save_post` + publish every
@@ -134,7 +142,7 @@ it (all 3 are confirmed-working, C7), don't bolt on new logic unless a violation
 | id | st | task | cites |
 |----|----|------|-------|
 | T1 | x | Add `hierarchical_post_types_field()` to `ConfigHelpers` (checkboxes over hierarchical public post types; canonical `post_types` id; empty=all). H1+H2. | V5,I.helper |
-| T2 | . | Migrate level-restriction (I.lvl-h + I.lvl-c together): base flip, `get_handler_type`/`get_rule_type`, own hooks → `init_hooks`, no-op `process_post`, swap gate; config drop local `post_type_options_no_placeholder` → shared `post_types_field()`; title/label polish. H1+H2. InstaWP: all 3 modes, include_ancestors on/off, ACF taxonomy-field path; confirm-preserve traps V7 (object-scoped), V9 (resave = no spurious diff), V10 (taxonomy early-continue). | V1,V2,V3,V7,V8,V9,V10,I.lvl-h,I.lvl-c |
+| T2 | x | Migrate level-restriction (I.lvl-h + I.lvl-c together): base flip, `get_handler_type`/`get_rule_type`, own hooks → `init_hooks`, no-op `process_post`, swap gate; config drop local `post_type_options_no_placeholder` → shared `post_types_field()`; title/label polish. H1+H2. InstaWP: all 3 modes, include_ancestors on/off, ACF taxonomy-field path; confirm-preserve traps V7 (object-scoped), V9 (resave = no spurious diff), V10 (taxonomy early-continue). | V1,V2,V3,V7,V8,V9,V10,I.lvl-h,I.lvl-c |
 | T3 | . | Migrate propagation (I.prop-h + I.prop-c together): base flip, gate swap, no-op `process_post`; scalar `post_type` → plural `post_types` across handler incl `get_all_child_posts` child-walk; config single select → `hierarchical_post_types_field()` + snapshot label subfields; title polish. Keep `process_new_child_post` wired. H1+H2. InstaWP: parent term-removal → child propagation, new-child-post path, multi-post-type rule, existing rule resolves; confirm-preserve traps V7 (replace targets resolved children only, never blanket), V9 (idempotent resave), V10 (eligibility gate before child-walk WP_Query). | V1,V2,V3,V4,V5,V7,V8,V9,V10,I.prop-h,I.prop-c,T1 |
 | T4 | . | Migrate time-based (I.time-h + I.time-c together): base flip, gate swap, no-op `process_post`; scalar→plural; keep own `save_post` + cron `bws_taxonomy_manager_cleanup`; config select → `post_types_field()`; title/label polish. (Temporal extension OUT — separate spec.) H1+H2. InstaWP: in/out-of-range apply, publish path, cron cleanup; confirm-preserve traps V8 (no time-window decision cache), V9 (idempotent), V10 (gate before date scan). | V1,V2,V3,V6,V7,V8,V9,V10,I.time-h,I.time-c |
 | T5 | . | Delete `class-handler-base.php` (I.legacy). Confirm no remaining `extends HandlerBase` references. H1+H2. | I.legacy,T2,T3,T4 |
@@ -145,3 +153,5 @@ it (all 3 are confirmed-working, C7), don't bolt on new logic unless a violation
 
 | id | date | cause | fix |
 |----|------|-------|-----|
+| B1 | 2026-06-30 | Bulk "process existing posts" inert for hook-driven unified handlers: base `process_existing_posts` calls per-post `process_post`, which migrated handlers no-op (V4). Level-restriction legacy supported bulk via `apply_level_restrictions`; migration drops it (related already inert since 0.4.0). NOT data-corrupting — dead admin button. | Accepted for now (option C): no-op like template, keep `apply_level_restrictions` annotated as the ready primitive. Systemic base fix (apply_to_post route) tracked as issue #31. No new §V — V4 already explains the no-op; this is a known gap, not a recurrence trap. |
+| B2 | 2026-06-30 | Level-restriction `include_ancestors` description wrong ("only relevant in deepest only") — code also branches in one_per_level with a DIFFERENT meaning (add-ancestors vs don't-prune). Description doing a condition's job (don't #3 workaround). | (a) description rewritten to both behaviors; (c) subfield `conditions` added (Wireframe 1.0.6 #13, restriction_mode `in` [deepest_only, one_per_level]) so the field only shows where it acts. (b) muddled two-meaning semantics flagged for redesign = issue #32. New §V11 generalizes the condition-over-description rule. |
