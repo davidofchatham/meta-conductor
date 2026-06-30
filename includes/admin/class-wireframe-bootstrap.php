@@ -70,10 +70,34 @@ class WireframeBootstrap {
 
             $rule['target_label'] = \esc_html(self::term_label($rule['target_term_id'] ?? null));
             $rule['scope_label']  = \esc_html(self::scope_label($rule['post_types'] ?? []));
+
+            // Flag a disabled rule in the collapsed row title. title_template is
+            // raw token substitution with no client-side conditional, and the
+            // repeater header has no extension slot for a live control, so the
+            // marker is baked into the leading label token at save. It refreshes
+            // on the save that flips `enabled`, so it's accurate for persisted
+            // state. (Live header toggle would need a Wireframe JS fork; tracked
+            // separately.)
+            $rule['trigger_label'] = self::disabled_prefix($rule) . $rule['trigger_label'];
         }
         unset($rule);
 
         return $clean_values;
+    }
+
+    /**
+     * Leading marker for a disabled rule's collapsed row title, '' when enabled.
+     * Prepended to the first title_template token by each snapshot. Shared by
+     * every rule type whose repeater carries an `enabled` toggle.
+     *
+     * @param array $rule Clean rule values (the `enabled` subfield).
+     * @return string Unescaped marker (already-safe literal).
+     */
+    private static function disabled_prefix(array $rule): string {
+        // `enabled` defaults true; a rule missing the key (legacy) is treated
+        // as enabled, matching the config default and the handler gate.
+        $enabled = !array_key_exists('enabled', $rule) || !empty($rule['enabled']);
+        return $enabled ? '' : \esc_html__('[Disabled] ', 'bws-meta-manager');
     }
 
     /**
@@ -135,7 +159,8 @@ class WireframeBootstrap {
                 $title .= ' ' . sprintf(__('on %s', 'bws-meta-manager'), $gate);
             }
 
-            $rule['row_title'] = \esc_html($title);
+            // Flag disabled rules in the collapsed title (see disabled_prefix).
+            $rule['row_title'] = self::disabled_prefix($rule) . \esc_html($title);
         }
         unset($rule);
 

@@ -7,6 +7,12 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased] (0.5.0)
 
+### Added
+
+- **Disabled rules are flagged in their collapsed row title** — ACF reference and Related Term Mapping rules
+  now show a `[Disabled]` prefix on the row label when switched off, so a disabled rule is recognizable without
+  expanding it. (The marker updates when you save the rule.)
+
 ### Changed
 
 #### ACF reference rules ("From referenced post") reworked
