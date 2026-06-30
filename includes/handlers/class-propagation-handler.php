@@ -13,49 +13,34 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-// TODO(Phase 3): still on the legacy HandlerBase. The unified base
-// (UnifiedHandlerBase) has diverged — e.g. should_process_post()
-// normalizes Wireframe checkbox format only there. Fixes to one base may not
-// reach this one until migration. See ROADMAP Phase 3.
-class PropagationHandler extends HandlerBase {
-    
-    /**
-     * Handler type
-     */
-    protected $handler_type = 'propagation';
-    
+class PropagationHandler extends UnifiedHandlerBase {
+
+    public function get_handler_type(): string {
+        return 'propagation';
+    }
+
+    protected function get_rule_type(): string {
+        return 'propagation_rules';
+    }
+
     /**
      * Initialize hooks
      */
     protected function init_hooks() {
         add_action('save_post', array($this, 'on_parent_post_save'), 15, 3);
         add_action('set_object_terms', array($this, 'on_parent_terms_set'), 10, 6);
-        
+
         // Hook into ACF field updates
         add_action('acf/save_post', array($this, 'on_acf_save_post'), 25);
     }
-    
-    /**
-     * Process a post
-     */
-    public function process_post($post_id, $post, $update) {
-        $enabled_rules = $this->get_enabled_rules();
-        
-        foreach ($enabled_rules as $rule) {
-            if (!$this->rule_applies_to_post($rule, $post)) {
-                continue;
-            }
-            
-            // If this post has children, propagate terms to them
-            $this->propagate_terms_to_children($post_id, $rule);
-            
-            // If this post has a parent, get terms from parent
-            if ($post->post_parent > 0) {
-                $this->inherit_terms_from_parent($post_id, $post, $rule);
-            }
-        }
-    }
-    
+
+    // Intentional no-op (not a forgotten implementation). Propagation fires via
+    // its own save_post / set_object_terms / acf/save_post hooks (above) and the
+    // new-child path (process_new_child_post); the base process_post routes
+    // through RuleEngine, which propagation does not use. The on_post_save loop
+    // in TaxonomyManager calls this until the Phase-3 teardown removes it.
+    public function process_post($post_id, $post, $update) {}
+
     /**
      * Handle when a parent post is saved
      */
@@ -66,12 +51,12 @@ class PropagationHandler extends HandlerBase {
         }
         
         $enabled_rules = $this->get_enabled_rules();
-        
+
         foreach ($enabled_rules as $rule) {
-            if (!$this->rule_applies_to_post($rule, $post)) {
+            if (!$this->should_process_post($post_id, $rule)) {
                 continue;
             }
-            
+
             // Propagate terms to children
             $this->propagate_terms_to_children($post_id, $rule);
         }
@@ -89,7 +74,7 @@ class PropagationHandler extends HandlerBase {
             }
 
             $post = get_post($object_id);
-            if (!$post || !$this->rule_applies_to_post($rule, $post)) {
+            if (!$post || !$this->should_process_post($object_id, $rule)) {
                 continue;
             }
 
@@ -121,12 +106,12 @@ class PropagationHandler extends HandlerBase {
         }
         
         $enabled_rules = $this->get_enabled_rules();
-        
+
         foreach ($enabled_rules as $rule) {
-            if (!$this->rule_applies_to_post($rule, $post)) {
+            if (!$this->should_process_post($post_id, $rule)) {
                 continue;
             }
-            
+
             // Check for ACF taxonomy fields and propagate if necessary
             $this->process_acf_propagation($post_id, $rule);
         }
@@ -173,12 +158,12 @@ class PropagationHandler extends HandlerBase {
         }
         
         $enabled_rules = $this->get_enabled_rules();
-        
+
         foreach ($enabled_rules as $rule) {
-            if (!$this->rule_applies_to_post($rule, $post)) {
+            if (!$this->should_process_post($post_id, $rule)) {
                 continue;
             }
-            
+
             $this->inherit_terms_from_parent($post_id, $post, $rule);
         }
     }
@@ -187,7 +172,7 @@ class PropagationHandler extends HandlerBase {
      * Propagate terms from parent to all children
      */
     private function propagate_terms_to_children($parent_id, $rule) {
-        $children = $this->get_all_child_posts($parent_id, $rule['post_type']);
+        $children = $this->get_all_child_posts($parent_id, $this->resolve_child_post_types($rule));
 
         if (empty($children)) {
             return;
@@ -227,7 +212,7 @@ class PropagationHandler extends HandlerBase {
      * @param array $removed_tt_ids Term taxonomy IDs that were removed from parent
      */
     private function propagate_term_removals_to_children($parent_id, $rule, $removed_tt_ids) {
-        $children = $this->get_all_child_posts($parent_id, $rule['post_type']);
+        $children = $this->get_all_child_posts($parent_id, $this->resolve_child_post_types($rule));
 
         if (empty($children)) {
             return;
@@ -339,8 +324,8 @@ class PropagationHandler extends HandlerBase {
     private function inherit_terms_from_parent($child_id, $child_post, $rule) {
         $parent_id = $child_post->post_parent;
         $parent_post = get_post($parent_id);
-        
-        if (!$parent_post || !$this->rule_applies_to_post($rule, $parent_post)) {
+
+        if (!$parent_post || !$this->should_process_post($parent_id, $rule)) {
             return;
         }
         
@@ -364,27 +349,60 @@ class PropagationHandler extends HandlerBase {
     }
     
     /**
-     * Get all child posts recursively
+     * Resolve the rule's `post_types` checkboxes to a concrete slug list for
+     * the child-post query.
+     *
+     * The post-type GATE (should_process_post) treats empty as "all" and never
+     * needs concrete slugs; the child WALK does — get_posts needs real post
+     * types to query by post_parent. So empty `post_types` ⇒ every HIERARCHICAL
+     * public post type (propagation only acts on parent/child trees; V5). A
+     * non-empty checkbox map/list is flattened via the canonical extractor.
+     *
+     * @param array $rule Rule config.
+     * @return string[] Post-type slugs to walk for children.
      */
-    private function get_all_child_posts($parent_id, $post_type) {
+    private function resolve_child_post_types($rule): array {
+        $slugs = \BWS\MetaConductor\Admin\Config\ConfigHelpers::selected_checkbox_slugs(
+            $rule['post_types'] ?? []
+        );
+
+        if (empty($slugs)) {
+            $slugs = array_values(get_post_types(['public' => true, 'hierarchical' => true]));
+        }
+
+        return $slugs;
+    }
+
+    /**
+     * Get all child posts recursively
+     *
+     * @param int      $parent_id  Parent post ID.
+     * @param string[] $post_types Post-type slugs to query (get_posts accepts an array).
+     * @return int[] Child post IDs (recursive).
+     */
+    private function get_all_child_posts($parent_id, array $post_types) {
+        if (empty($post_types)) {
+            return array();
+        }
+
         $children = array();
-        
+
         $child_posts = get_posts(array(
-            'post_type' => $post_type,
+            'post_type' => $post_types,
             'post_parent' => $parent_id,
             'post_status' => array('publish', 'draft', 'private'),
             'numberposts' => -1,
             'fields' => 'ids'
         ));
-        
+
         foreach ($child_posts as $child_id) {
             $children[] = $child_id;
-            
+
             // Recursively get children of children
-            $grandchildren = $this->get_all_child_posts($child_id, $post_type);
+            $grandchildren = $this->get_all_child_posts($child_id, $post_types);
             $children = array_merge($children, $grandchildren);
         }
-        
+
         return $children;
     }
     
@@ -471,46 +489,47 @@ class PropagationHandler extends HandlerBase {
      */
     public function validate_rule($rule_data) {
         $errors = array();
-        
-        // Validate post type
-        if (empty($rule_data['post_type'])) {
-            $errors[] = __('Post type is required.', 'bws-taxonomy-manager');
-        } elseif (!post_type_exists($rule_data['post_type'])) {
-            $errors[] = __('Selected post type does not exist.', 'bws-taxonomy-manager');
-        } else {
-            $post_type_obj = get_post_type_object($rule_data['post_type']);
+
+        // Validate post types (optional — empty ⇒ all hierarchical types).
+        $post_types = \BWS\MetaConductor\Admin\Config\ConfigHelpers::selected_checkbox_slugs($rule_data['post_types'] ?? []);
+        foreach ($post_types as $post_type) {
+            if (!post_type_exists($post_type)) {
+                $errors[] = sprintf(__('Post type "%s" does not exist.', 'bws-meta-manager'), $post_type);
+                continue;
+            }
+            $post_type_obj = get_post_type_object($post_type);
             if (!$post_type_obj->hierarchical) {
-                $errors[] = __('Selected post type must be hierarchical for propagation rules.', 'bws-taxonomy-manager');
+                $errors[] = sprintf(__('Post type "%s" must be hierarchical for propagation rules.', 'bws-meta-manager'), $post_type);
             }
         }
-        
+
         // Validate taxonomy
         if (empty($rule_data['taxonomy'])) {
-            $errors[] = __('Taxonomy is required.', 'bws-taxonomy-manager');
+            $errors[] = __('Taxonomy is required.', 'bws-meta-manager');
         } elseif (!taxonomy_exists($rule_data['taxonomy'])) {
-            $errors[] = __('Selected taxonomy does not exist.', 'bws-taxonomy-manager');
+            $errors[] = __('Selected taxonomy does not exist.', 'bws-meta-manager');
         }
-        
+
         // Validate conflict handling
         $valid_handling = array('replace', 'merge', 'skip');
-        if (!empty($rule_data['conflict_handling']) && 
+        if (!empty($rule_data['conflict_handling']) &&
             !in_array($rule_data['conflict_handling'], $valid_handling)) {
-            $errors[] = __('Invalid conflict handling method selected.', 'bws-taxonomy-manager');
+            $errors[] = __('Invalid conflict handling method selected.', 'bws-meta-manager');
         }
-        
+
         return array(
             'valid' => empty($errors),
             'errors' => $errors,
             'sanitized_data' => $this->sanitize_rule_data($rule_data)
         );
     }
-    
+
     /**
      * Sanitize rule data
      */
     private function sanitize_rule_data($rule_data) {
         return array(
-            'post_type' => sanitize_text_field($rule_data['post_type'] ?? ''),
+            'post_types' => \BWS\MetaConductor\Admin\Config\ConfigHelpers::selected_checkbox_slugs($rule_data['post_types'] ?? []),
             'taxonomy' => sanitize_text_field($rule_data['taxonomy'] ?? ''),
             'conflict_handling' => sanitize_text_field($rule_data['conflict_handling'] ?? 'merge'),
             'enabled' => !empty($rule_data['enabled'])
@@ -523,37 +542,20 @@ class PropagationHandler extends HandlerBase {
     protected function get_applicable_post_types() {
         $rules = $this->get_enabled_rules();
         $post_types = array();
-        
+
         foreach ($rules as $rule) {
-            if (!empty($rule['post_type'])) {
-                $post_types[] = $rule['post_type'];
-            }
+            $post_types = array_merge(
+                $post_types,
+                \BWS\MetaConductor\Admin\Config\ConfigHelpers::selected_checkbox_slugs($rule['post_types'] ?? [])
+            );
         }
-        
+
         // If no post types specified, get all hierarchical post types
         if (empty($post_types)) {
             $post_types = get_post_types(array('public' => true, 'hierarchical' => true));
         }
-        
+
         return array_unique($post_types);
     }
     
-    /**
-     * Process existing posts for testing/manual application
-     */
-    public function process_existing_posts($batch_size = 50, $offset = 0) {
-        $result = parent::process_existing_posts($batch_size, $offset);
-        
-        // Add specific message for propagation processing
-        if ($result['processed'] > 0) {
-            $result['message'] = sprintf(
-                __('Processed %d posts for parent-child term propagation. %d of %d total posts complete.', 'bws-taxonomy-manager'),
-                $result['processed'],
-                min($offset + $batch_size, $result['total']),
-                $result['total']
-            );
-        }
-        
-        return $result;
-    }
 }

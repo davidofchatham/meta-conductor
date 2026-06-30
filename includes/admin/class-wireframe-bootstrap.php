@@ -36,6 +36,11 @@ class WireframeBootstrap {
         // Snapshot the ACF-reference row title (SPEC §V10). Separate callback
         // from the related path — generalize later if shapes converge.
         add_filter('wp-wireframe/save/payload', [self::class, 'snapshot_acf_reference_labels'], 10, 1);
+
+        // Snapshot the propagation row title (SPEC §V11). post_type → plural
+        // post_types (Phase 3) broke the old {post_type} token; resolve human
+        // labels at save like the others.
+        add_filter('wp-wireframe/save/payload', [self::class, 'snapshot_propagation_labels'], 10, 1);
     }
 
     /**
@@ -165,6 +170,83 @@ class WireframeBootstrap {
         unset($rule);
 
         return $clean_values;
+    }
+
+    /**
+     * Inject scope_label / tax_label / conflict_label into each propagation row.
+     *
+     * Hooked on `wp-wireframe/save/payload`. Title schema:
+     *   {scope} → {taxonomy} ({conflict})   e.g. "Pages → Categories (merge)"
+     * scope = human post-type labels, or "All post types" when none chosen.
+     * (SPEC §V11; mirrors snapshot_related_labels.)
+     *
+     * @param array $clean_values
+     * @return array
+     */
+    public static function snapshot_propagation_labels(array $clean_values): array {
+        if (empty($clean_values['propagation_rules']) || !is_array($clean_values['propagation_rules'])) {
+            return $clean_values;
+        }
+
+        foreach ($clean_values['propagation_rules'] as &$rule) {
+            if (!is_array($rule)) {
+                continue;
+            }
+
+            $rule['scope_label']    = \esc_html(self::propagation_scope_label($rule['post_types'] ?? []));
+            $rule['tax_label']      = \esc_html(self::taxonomy_label($rule['taxonomy'] ?? ''));
+            $rule['conflict_label'] = \esc_html(self::conflict_label($rule['conflict_handling'] ?? 'merge'));
+
+            // Bake the disabled marker into the leading token.
+            $rule['scope_label'] = self::disabled_prefix($rule) . $rule['scope_label'];
+        }
+        unset($rule);
+
+        return $clean_values;
+    }
+
+    /**
+     * Bare post-type label list for the propagation row title's LEADING token
+     * (no parens decoration, unlike scope_label()). "All post types" when the
+     * rule applies to every hierarchical type (empty post_types).
+     *
+     * @param mixed $post_types Checkbox {slug:bool} map or list of slugs.
+     * @return string Unescaped label.
+     */
+    private static function propagation_scope_label($post_types): string {
+        $slugs = Config\ConfigHelpers::selected_checkbox_slugs($post_types);
+
+        if (empty($slugs)) {
+            return __('All post types', 'bws-meta-manager');
+        }
+
+        $labels = [];
+        foreach ($slugs as $slug) {
+            $obj = \get_post_type_object((string) $slug);
+            if ($obj) {
+                $labels[] = $obj->label;
+            }
+        }
+
+        return empty($labels) ? __('All post types', 'bws-meta-manager') : implode(', ', $labels);
+    }
+
+    /**
+     * Human label for a propagation conflict_handling value.
+     *
+     * @param string $value merge|replace|skip.
+     * @return string Unescaped label.
+     */
+    private static function conflict_label($value): string {
+        switch ($value) {
+            case 'replace':
+                return __('replace', 'bws-meta-manager');
+            case 'skip':
+                return __('skip if set', 'bws-meta-manager');
+            case 'merge':
+            default:
+                return __('merge', 'bws-meta-manager');
+        }
     }
 
     /**
