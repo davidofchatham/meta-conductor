@@ -131,6 +131,14 @@ class TitleSlugHandler extends UnifiedHandlerBase {
         return $data;
     }
 
+    /**
+     * AC v7 reapply seam (SPEC §V2/§V6). Delegates to the gated on_acf_save_post
+     * — the apply path AC v7's update_field() bypasses.
+     */
+    public function reapply_for_post(int $post_id): void {
+        $this->on_acf_save_post($post_id);
+    }
+
     public function on_acf_save_post($post_id): void {
         $post_id = (int) $post_id;
         if (isset($this->handled_pre_write[$post_id])) return;
