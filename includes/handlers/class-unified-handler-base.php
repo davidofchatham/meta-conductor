@@ -518,6 +518,73 @@ abstract class UnifiedHandlerBase {
     }
 
     /**
+     * Read an ACF taxonomy field's value as a flat array of term IDs.
+     *
+     * Ported from legacy HandlerBase (B4/V14) — used by the propagation and
+     * level-restriction ACF code paths, which now extend this base. Standalone
+     * get_field() wrapper; unrelated to the removed AcfIntegration engine.
+     * Returns [] when ACF is absent or the field is empty.
+     *
+     * @param int    $post_id
+     * @param string $field_name
+     * @param string $taxonomy   Accepted for signature parity; ACF returns the value directly.
+     * @return int[]
+     */
+    protected function get_acf_taxonomy_value($post_id, $field_name, $taxonomy) {
+        if (!function_exists('get_field')) {
+            return array();
+        }
+
+        $value = get_field($field_name, $post_id);
+
+        if (empty($value)) {
+            return array();
+        }
+
+        // Handle different ACF taxonomy field return formats
+        if (is_array($value)) {
+            $term_ids = array();
+            foreach ($value as $item) {
+                if (is_object($item) && isset($item->term_id)) {
+                    $term_ids[] = $item->term_id;
+                } elseif (is_numeric($item)) {
+                    $term_ids[] = absint($item);
+                }
+            }
+            return $term_ids;
+        } elseif (is_object($value) && isset($value->term_id)) {
+            return array($value->term_id);
+        } elseif (is_numeric($value)) {
+            return array(absint($value));
+        }
+
+        return array();
+    }
+
+    /**
+     * Write term IDs to an ACF taxonomy field.
+     *
+     * Ported from legacy HandlerBase (B4/V14). Standalone update_field()
+     * wrapper; unrelated to the removed AcfIntegration engine.
+     *
+     * @param int       $post_id
+     * @param string    $field_name
+     * @param int[]|int $term_ids
+     * @return mixed update_field() result, or false when ACF is absent.
+     */
+    protected function set_acf_taxonomy_value($post_id, $field_name, $term_ids) {
+        if (!function_exists('update_field')) {
+            return false;
+        }
+
+        if (!is_array($term_ids)) {
+            $term_ids = array($term_ids);
+        }
+
+        return update_field($field_name, $term_ids, $post_id);
+    }
+
+    /**
      * Check if should process post (legacy compatibility)
      *
      * @param int $post_id Post ID

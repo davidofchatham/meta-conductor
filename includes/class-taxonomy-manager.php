@@ -108,9 +108,6 @@ class TaxonomyManager {
 
         // Cleanup hook
         add_action('bws_taxonomy_manager_cleanup', array($this, 'cleanup_expired_rules'));
-        
-        // Post save hooks
-        add_action('save_post', array($this, 'on_post_save'), 10, 3);
     }
     
     /**
@@ -191,21 +188,6 @@ class TaxonomyManager {
                 'error'              => __('An error occurred. Please try again.', 'bws-meta-manager'),
             )
         ));
-    }
-    
-    /**
-     * Handle post save events
-     */
-    public function on_post_save($post_id, $post, $update) {
-        // Skip autosaves and revisions
-        if (wp_is_post_autosave($post_id) || wp_is_post_revision($post_id)) {
-            return;
-        }
-        
-        // Process through all handlers
-        foreach ($this->handlers as $handler) {
-            $handler->process_post($post_id, $post, $update);
-        }
     }
     
 	/**
