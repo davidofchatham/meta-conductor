@@ -137,6 +137,23 @@ Deferred refinements from the 0.5.0 rework (design history in
 
 ## UX polish (deferred)
 
+### Standardized repeater row-title schema
+
+- **Status**: idea (raised during Phase 3 handler migration, 2026-07-01)
+- **Motivation**: each rule type builds its collapsed-row title independently — a
+  per-handler `snapshot_*_labels` callback in `WireframeBootstrap` assembling an
+  ad-hoc string (related: "Trigger → Target (scope)"; acf-ref: "Copy Tax terms to
+  Field on Status"; propagation: "Scope: Copy Tax terms to children (conflict)";
+  time-based: "start–end: Apply Term to scope with filter"). They share primitives
+  (`term_label`, `taxonomy_label`, `disabled_prefix`, post-type scope, en-dash
+  windows) but no common grammar, so each is revised individually and drifts.
+- **Sketch**: after all rule types are migrated + their titles settle, extract a
+  shared title-builder with a small declarative schema (tokens + separators +
+  conditional clauses) each config declares, so the row title is data, not a
+  bespoke callback per handler. Fold the existing `snapshot_*_labels` into it.
+- **Phase**: unscoped — quality-of-life, once the per-handler titles have stabilized
+  through use. For now titles stay per-handler and are revised one at a time.
+
 ### Hierarchical rule label rework
 
 - **Status**: idea (deferred from Phase 2c discussion)

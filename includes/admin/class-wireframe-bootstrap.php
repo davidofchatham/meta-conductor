@@ -41,6 +41,9 @@ class WireframeBootstrap {
         // post_types (Phase 3) broke the old {post_type} token; resolve human
         // labels at save like the others.
         add_filter('wp-wireframe/save/payload', [self::class, 'snapshot_propagation_labels'], 10, 1);
+
+        // Snapshot the time-based row title (SPEC §V11). Term + scope + window.
+        add_filter('wp-wireframe/save/payload', [self::class, 'snapshot_time_based_labels'], 10, 1);
     }
 
     /**
@@ -253,6 +256,108 @@ class WireframeBootstrap {
             default:
                 return __('merge', 'bws-meta-manager');
         }
+    }
+
+    /**
+     * Assemble each time-based rule's row title (SPEC §V11).
+     *
+     * Hooked on `wp-wireframe/save/payload`. Date-first (the window is the most
+     * salient part of a manually configured date rule), then a sentence:
+     *   {start}–{end}: Apply {target} to {scope}{ with {filter}}
+     *   - dates joined by an en dash, no surrounding spaces.
+     *   - scope = "posts" (all types) or the post-type labels (when restricted).
+     *   - filter clause only when set: specific terms → "with {Term, …}";
+     *     else taxonomies → "with any {Taxonomy} term"; neither → omitted.
+     *   e.g. "2026-05-26–2026-05-27: Apply Shakers: Grandchild ii to posts"
+     *        "2026-05-26–2026-05-27: Apply … to Pages with Breakers: Term A"
+     *
+     * @param array $clean_values
+     * @return array
+     */
+    public static function snapshot_time_based_labels(array $clean_values): array {
+        if (empty($clean_values['time_based_rules']) || !is_array($clean_values['time_based_rules'])) {
+            return $clean_values;
+        }
+
+        foreach ($clean_values['time_based_rules'] as &$rule) {
+            if (!is_array($rule)) {
+                continue;
+            }
+
+            $start  = (string) ($rule['start_date'] ?? '');
+            $end    = (string) ($rule['end_date'] ?? '');
+            $target = self::term_label($rule['target_term_id'] ?? null);
+            $scope  = self::time_based_scope_phrase($rule['post_types'] ?? []);
+            $filter = self::time_based_filter_clause($rule);
+
+            // en dash, no surrounding spaces.
+            $window = ($start !== '' || $end !== '') ? $start . "\xE2\x80\x93" . $end . ': ' : '';
+
+            $sentence = sprintf(
+                /* translators: 1: target term 2: post-type scope phrase */
+                __('Apply %1$s to %2$s', 'bws-meta-manager'),
+                $target !== '' ? $target : __('(no term)', 'bws-meta-manager'),
+                $scope
+            );
+
+            $title = $window . $sentence . $filter;
+
+            $rule['row_title'] = self::disabled_prefix($rule) . \esc_html($title);
+        }
+        unset($rule);
+
+        return $clean_values;
+    }
+
+    /**
+     * Scope phrase for the time-based title's "to …" clause: "posts" when the
+     * rule applies to all post types (empty post_types), else the human
+     * post-type labels ("Pages", "Posts, Pages"). Unescaped.
+     *
+     * @param mixed $post_types Checkbox {slug:bool} map or list of slugs.
+     * @return string
+     */
+    private static function time_based_scope_phrase($post_types): string {
+        $slugs = Config\ConfigHelpers::selected_checkbox_slugs($post_types);
+
+        $labels = [];
+        foreach ($slugs as $slug) {
+            $obj = \get_post_type_object((string) $slug);
+            if ($obj) {
+                $labels[] = $obj->label;
+            }
+        }
+
+        return empty($labels) ? __('posts', 'bws-meta-manager') : implode(', ', $labels);
+    }
+
+    /**
+     * Filter clause for the time-based title: " with {specific terms}" when
+     * filter_terms is set; else " with any {taxonomy} term" when
+     * filter_taxonomies is set; else '' (no filter). Unescaped.
+     *
+     * @param array $rule
+     * @return string
+     */
+    private static function time_based_filter_clause(array $rule): string {
+        $terms = self::trigger_terms_label($rule['filter_terms'] ?? null);
+        if ($terms !== '') {
+            return ' ' . sprintf(__('with %s', 'bws-meta-manager'), $terms);
+        }
+
+        $taxonomies = Config\ConfigHelpers::selected_checkbox_slugs($rule['filter_taxonomies'] ?? []);
+        $labels = [];
+        foreach ($taxonomies as $slug) {
+            $label = self::taxonomy_label((string) $slug);
+            if ($label !== '') {
+                $labels[] = $label;
+            }
+        }
+        if (!empty($labels)) {
+            return ' ' . sprintf(__('with any %s term', 'bws-meta-manager'), implode(', ', $labels));
+        }
+
+        return '';
     }
 
     /**
