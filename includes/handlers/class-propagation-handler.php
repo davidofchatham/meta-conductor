@@ -224,6 +224,14 @@ class PropagationHandler extends UnifiedHandlerBase {
         }
 
         foreach ($children as $child_id) {
+            // No-change short-circuit (symmetric with the upward inherit path):
+            // a no-op parent save would otherwise re-write terms + fire ACF
+            // updates + log for every descendant even when they already hold the
+            // terms. Skip children already in the target state.
+            if (!$this->write_would_change_terms($child_id, $taxonomy, $parent_terms, $conflict_handling)) {
+                continue;
+            }
+
             $this->apply_terms_to_post($child_id, $taxonomy, $parent_terms, $conflict_handling);
 
             // Also update ACF fields if they exist
@@ -360,6 +368,13 @@ class PropagationHandler extends UnifiedHandlerBase {
         $parent_id = $child_post->post_parent;
         $parent_post = get_post($parent_id);
 
+        // Gate on the PARENT here; on_parent_post_save already gated the child.
+        // In stock WP a post_parent is always the same post type as the child
+        // (the editor's parent dropdown is type-scoped), so the two gates always
+        // agree and this double-gate is redundant-but-harmless. It only diverges
+        // under a cross-type post_parent (programmatic / non-stock) — if that
+        // ever becomes real, decide whether propagation scopes the source
+        // (parent), the target (child), or both. (0.6.0 review)
         if (!$parent_post || !$this->should_process_post($parent_id, $rule)) {
             return;
         }
@@ -380,7 +395,7 @@ class PropagationHandler extends UnifiedHandlerBase {
         // would-be end state for this conflict mode and skip if the child is
         // already there. Cause-agnostic (covers both intra-request double-fire
         // and cross-request re-save). (V12)
-        if (!$this->child_needs_inherit($child_id, $taxonomy, $parent_terms, $conflict_handling)) {
+        if (!$this->write_would_change_terms($child_id, $taxonomy, $parent_terms, $conflict_handling)) {
             return;
         }
 
@@ -396,42 +411,44 @@ class PropagationHandler extends UnifiedHandlerBase {
     }
 
     /**
-     * Whether applying $parent_terms to the child under $conflict_handling would
-     * actually change the child's current terms. False ⇒ already in the target
-     * state, skip the write (and the log). Mirrors apply_terms_to_post's per-mode
-     * end state. (V12)
+     * Whether applying $terms to $post_id under $conflict_handling would actually
+     * change the post's current terms. False ⇒ already in the target state, skip
+     * the write (and the log). Mirrors apply_terms_to_post's per-mode end state.
+     * Shared by BOTH directions — upward inherit and downward propagate — so the
+     * no-change short-circuit and the conflict-mode semantics live in one place.
+     * (V12)
      *
-     * @param int      $child_id
+     * @param int      $post_id
      * @param string   $taxonomy
-     * @param int[]    $parent_terms      Term IDs from the parent.
+     * @param int[]    $terms             Term IDs to apply.
      * @param string   $conflict_handling merge|replace|skip.
      * @return bool
      */
-    private function child_needs_inherit($child_id, $taxonomy, $parent_terms, $conflict_handling): bool {
-        $current = wp_get_object_terms($child_id, $taxonomy, array('fields' => 'ids'));
+    private function write_would_change_terms($post_id, $taxonomy, $terms, $conflict_handling): bool {
+        $current = wp_get_object_terms($post_id, $taxonomy, array('fields' => 'ids'));
         if (is_wp_error($current)) {
             return true; // can't tell — let the write proceed
         }
 
         $current = array_map('absint', $current);
-        $parent  = array_map('absint', $parent_terms);
+        $incoming = array_map('absint', $terms);
         sort($current);
 
         switch ($conflict_handling) {
             case 'replace':
-                // Skip only if child already equals the parent set exactly.
-                $target = $parent;
+                // Skip only if the post already equals the incoming set exactly.
+                $target = $incoming;
                 sort($target);
                 return $current !== $target;
 
             case 'skip':
-                // skip mode writes only when the child is empty.
+                // skip mode writes only when the post has no terms yet.
                 return empty($current);
 
             case 'merge':
             default:
-                // Skip if the parent set is already a subset of the child's.
-                return !empty(array_diff($parent, $current));
+                // Skip if the incoming set is already a subset of the current.
+                return !empty(array_diff($incoming, $current));
         }
     }
 

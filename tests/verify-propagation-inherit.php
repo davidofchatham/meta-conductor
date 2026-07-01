@@ -1,12 +1,13 @@
 <?php
 /**
- * H5 — Propagation inherit no-change short-circuit (Phase 3, B3/V12).
+ * H5 — Propagation no-change short-circuit (Phase 3, B3/V12).
  *
- * Locks child_needs_inherit()'s per-conflict-mode decision matrix WITHOUT
- * booting WordPress: stub wp_get_object_terms to return the child's current
- * terms, then assert whether an inherit write would fire for each mode. This is
- * the logic that suppresses the duplicate-inherit write+log on save_post
- * double-fire / re-save (B3 follow-up).
+ * Locks write_would_change_terms()'s per-conflict-mode decision matrix WITHOUT
+ * booting WordPress: stub wp_get_object_terms to return the post's current
+ * terms, then assert whether a write would fire for each mode. This is the
+ * shared logic guarding BOTH directions — upward inherit and downward
+ * propagate — against redundant write+log on save_post double-fire / re-save
+ * / no-op parent save.
  *
  * Private method → exercised via reflection.
  *
@@ -40,7 +41,7 @@ use BWS\MetaConductor\Handlers\PropagationHandler;
 
 // Reach the private method.
 $handler = new PropagationHandler();
-$ref = new ReflectionMethod($handler, 'child_needs_inherit');
+$ref = new ReflectionMethod($handler, 'write_would_change_terms');
 $needs =fn($current, $parent, $mode) => (function () use ($ref, $handler, $current, $parent, $mode) {
     $GLOBALS['__child_terms'] = $current;
     return $ref->invoke($handler, 99, 'breaker', $parent, $mode);

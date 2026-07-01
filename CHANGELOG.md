@@ -32,7 +32,9 @@ the redundant save loop are removed, and each migrated rule type gets a config/l
 - **New child posts now inherit their parent's terms on their own save** (propagation), honoring the rule's
   conflict handling (merge / replace / skip). Previously a new child did not receive inherited terms until
   the parent was re-saved.
-- **Propagation no longer writes/logs a redundant inherit** when a child already has the parent's terms.
+- **Propagation no longer writes/logs a redundant term update** when a post already has the terms — both
+  directions (a child inheriting from its parent, and a parent cascading to its children). A no-op parent
+  save no longer re-writes terms to every descendant.
 - **Prevented a latent crash**: propagation and level-restriction rules that act on an ACF taxonomy field
   would have hit an undefined-method error after the base migration; the ACF read/write helpers are now on
   the unified base. (Only reachable with an ACF taxonomy field configured; native-taxonomy rules were
