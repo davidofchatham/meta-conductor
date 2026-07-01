@@ -106,8 +106,6 @@ class TaxonomyManager {
         add_action('wp_ajax_bws_title_slug_preview',          array($this, 'ajax_title_slug_preview'));
         add_action('wp_ajax_bws_title_slug_process_existing', array($this, 'ajax_title_slug_process_existing'));
 
-        // Cleanup hook
-        add_action('bws_taxonomy_manager_cleanup', array($this, 'cleanup_expired_rules'));
     }
     
     /**
@@ -595,15 +593,6 @@ class TaxonomyManager {
         }
         
         wp_send_json_success(array('taxonomies' => $formatted_taxonomies));
-    }
-    
-    /**
-     * Cleanup expired time-based rules
-     */
-    public function cleanup_expired_rules() {
-        if (isset($this->handlers['time_based'])) {
-            $this->handlers['time_based']->cleanup_expired_rules();
-        }
     }
     
     /**

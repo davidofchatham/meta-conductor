@@ -37,6 +37,8 @@ the redundant save loop are removed, and each migrated rule type gets a config/l
   would have hit an undefined-method error after the base migration; the ACF read/write helpers are now on
   the unified base. (Only reachable with an ACF taxonomy field configured; native-taxonomy rules were
   unaffected.)
+- **Date Window daily cleanup no longer runs twice** — the scheduled expired-term cleanup was registered
+  both directly by the handler and via a redundant relay; the relay is removed.
 
 ### Removed
 

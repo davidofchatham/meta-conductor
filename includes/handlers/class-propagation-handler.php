@@ -621,27 +621,5 @@ class PropagationHandler extends UnifiedHandlerBase {
             'enabled' => !empty($rule_data['enabled'])
         );
     }
-    
-    /**
-     * Get applicable post types - only hierarchical post types
-     */
-    protected function get_applicable_post_types() {
-        $rules = $this->get_enabled_rules();
-        $post_types = array();
 
-        foreach ($rules as $rule) {
-            $post_types = array_merge(
-                $post_types,
-                \BWS\MetaConductor\Admin\Config\ConfigHelpers::selected_checkbox_slugs($rule['post_types'] ?? [])
-            );
-        }
-
-        // If no post types specified, get all hierarchical post types
-        if (empty($post_types)) {
-            $post_types = get_post_types(array('public' => true, 'hierarchical' => true));
-        }
-
-        return array_unique($post_types);
-    }
-    
 }

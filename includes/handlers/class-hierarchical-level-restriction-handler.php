@@ -416,35 +416,7 @@ class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
             'enabled' => !empty($rule_data['enabled'])
         );
     }
-    
-    /**
-     * Get applicable post types for this handler
-     */
-    protected function get_applicable_post_types() {
-        $rules = $this->get_enabled_rules();
-        $post_types = array();
-        
-        foreach ($rules as $rule) {
-            if (!empty($rule['post_types'])) {
-                $post_types = array_merge($post_types, $rule['post_types']);
-            } else {
-                // If no specific post types, get all post types that use this taxonomy
-                $taxonomy = $rule['taxonomy'];
-                if (taxonomy_exists($taxonomy)) {
-                    $taxonomy_obj = get_taxonomy($taxonomy);
-                    $post_types = array_merge($post_types, $taxonomy_obj->object_type);
-                }
-            }
-        }
-        
-        // If still no post types, get all public post types
-        if (empty($post_types)) {
-            $post_types = get_post_types(array('public' => true));
-        }
-        
-        return array_unique($post_types);
-    }
-    
+
     /**
      * Get rules summary for admin display
      */
