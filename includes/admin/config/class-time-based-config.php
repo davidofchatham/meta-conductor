@@ -43,17 +43,7 @@ class TimeBasedConfig {
                                 'default' => true,
                                 'columns' => 12,
                             ],
-                            [
-                                'id'       => 'post_type',
-                                'type'     => 'select',
-                                'label'    => __('Post type', 'bws-meta-manager'),
-                                'default'  => '',
-                                'required' => true,
-                                'columns'  => 12,
-                                'args'     => [
-                                    'options' => ConfigHelpers::post_type_options(),
-                                ],
-                            ],
+                            ConfigHelpers::post_types_field(),
                             [
                                 'id'          => 'filter_taxonomies',
                                 'type'        => 'checkboxes',
