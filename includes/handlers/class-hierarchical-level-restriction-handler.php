@@ -107,8 +107,18 @@ class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
                 continue;
             }
 
-            // Check if this taxonomy has ACF fields that might have been updated
-            $this->process_acf_level_restrictions($post_id, $rule['taxonomy'], $rule);
+            // Set the reentrancy guard (mirrors on_terms_set): process_acf_level_restrictions
+            // calls wp_set_object_terms, which re-fires set_object_terms -> on_terms_set.
+            // Without this the handler re-enters and runs a second (idempotent but
+            // wasteful) restriction pass. try/finally so a downstream throw can't
+            // leave the guard stuck for later rules in this request.
+            $this->processing = true;
+            try {
+                // Check if this taxonomy has ACF fields that might have been updated
+                $this->process_acf_level_restrictions($post_id, $rule['taxonomy'], $rule);
+            } finally {
+                $this->processing = false;
+            }
         }
     }
     

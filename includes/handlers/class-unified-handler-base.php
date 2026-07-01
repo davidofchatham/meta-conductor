@@ -598,16 +598,15 @@ abstract class UnifiedHandlerBase {
             return false;
         }
 
-        // Check post type
+        // Check post type. Like post_status below, flatten the Wireframe
+        // checkboxes {slug:bool} map via the canonical extractor rather than
+        // hand-rolling it — keeps this from drifting from the status gate and
+        // ConfigHelpers (the extractor's own docblock names this call site).
         $post_types = $rule['post_types'] ?? $rule['source_filters']['post_type'] ?? [];
+        $post_types = \BWS\MetaConductor\Admin\Config\ConfigHelpers::selected_checkbox_slugs($post_types);
 
         if (!empty($post_types)) {
-            $post_types = (array)$post_types;
-            // Wireframe checkboxes store {slug: bool}; extract truthy keys.
-            if (!array_is_list($post_types)) {
-                $post_types = array_keys(array_filter($post_types));
-            }
-            if (!empty($post_types) && $post_types[0] !== 'any' && !in_array($post->post_type, $post_types)) {
+            if ($post_types[0] !== 'any' && !in_array($post->post_type, $post_types)) {
                 return false;
             }
         }
@@ -821,9 +820,25 @@ abstract class UnifiedHandlerBase {
             ];
         }
 
-        // Get post types from rules
+        // Get post types from rules. The migrated handlers store the plural
+        // `post_types` Wireframe checkbox map (empty ⇒ all); fall back to the
+        // legacy scalar source_filters['post_type'] for any rule shape that
+        // predates it. Flatten the map via the canonical extractor so this
+        // matches should_process_post's gate.
         $post_types = [];
         foreach ($rules as $rule) {
+            if (isset($rule['post_types'])) {
+                $slugs = \BWS\MetaConductor\Admin\Config\ConfigHelpers::selected_checkbox_slugs($rule['post_types']);
+                // Empty ⇒ "all" for this rule (matches the gate); widen to every
+                // public type and stop narrowing.
+                if (empty($slugs) || (isset($slugs[0]) && $slugs[0] === 'any')) {
+                    $post_types = get_post_types(['public' => true]);
+                    break;
+                }
+                $post_types = array_merge($post_types, $slugs);
+                continue;
+            }
+
             $source_filters = $rule['source_filters'] ?? [];
             $post_type = $source_filters['post_type'] ?? 'post';
 

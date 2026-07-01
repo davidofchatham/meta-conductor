@@ -46,6 +46,17 @@ the redundant save loop are removed, and each migrated rule type gets a config/l
   unaffected.
 - **Post-status gating hardened** — the shared post-status filter didn't normalize its checkbox value, so a
   status gate could be silently bypassed. (No rule type gates on status via this path yet; fixed proactively.)
+- **Post-type gating normalized consistently** — the shared post-type gate hand-rolled its checkbox
+  extraction while the post-status gate used the canonical helper; both now go through the same extractor,
+  removing a drift risk. No behavior change for correctly-saved rules.
+- **Level Restriction ACF saves no longer re-enter the handler** — saving a post whose ACF taxonomy field is
+  under a level-restriction rule wrote terms without setting the reentrancy guard, so the handler ran a
+  second (redundant) restriction pass in the same request. The guard is now symmetric with the native-terms
+  path. (Idempotent before; the fix removes the wasted work and an edge-case extra write.)
+- **Bulk "process existing posts" reads the correct post-type key** — the bulk tool still read the old scalar
+  `source_filters['post_type']` and so would have scanned only the `post` type for the migrated rule types
+  (which now store the plural `post_types` checkboxes). It now reads `post_types` (empty = all), falling back
+  to the legacy key. (Not yet reachable via UI — see [#31](https://github.com/davidofchatham/meta-conductor/issues/31).)
 
 ### Removed
 

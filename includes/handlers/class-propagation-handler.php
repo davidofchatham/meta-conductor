@@ -94,6 +94,13 @@ class PropagationHandler extends UnifiedHandlerBase {
      * Handle when terms are set on a parent post
      */
     public function on_parent_terms_set($object_id, $terms, $tt_ids, $taxonomy, $append, $old_tt_ids) {
+        // No wp_is_post_autosave/revision guard here (unlike on_parent_post_save,
+        // which needs one because save_post genuinely fires for autosaves/revisions).
+        // set_object_terms does NOT fire for revision/autosave objects in normal WP
+        // operation — revisions don't get taxonomy relationships — and the
+        // should_process_post post-type gate below rejects post_type 'revision' for
+        // any normally-configured rule. So the guard would be dead weight. (0.6.0 review)
+        //
         // Suppress re-entry while our own propagate/inherit write is firing
         // set_object_terms (V9/V12). A user-initiated term set runs normally
         // ($processing === false).
