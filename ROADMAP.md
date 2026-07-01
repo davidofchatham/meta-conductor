@@ -19,7 +19,7 @@ Phase numbers are **stable IDs, not execution order** — work has landed out of
 | 2c | Wireframe UI swap | ✅ done | — | god-class `BWS_Settings` → 60-line shell; mixed JS globals (legacy JS deleted) |
 | 0.3.1 | PR #17 review pass | ✅ done | — | — |
 | 2a | PSR-4 namespacing (+ `lib/`→`Support\`, abstracts co-located, `tests/` harness) | ✅ done (0.4.0) | — | manual `require_once` chains; `includes/abstracts/` + `includes/lib/` |
-| **3** | Migrate 5 legacy handlers → UnifiedHandlerBase — **2 of 5 done** (Related 0.4.0/0.4.1; RelatedPostTerms/ACF-ref 0.5.0); **▶ NEXT: step 2 (level-restriction)** | ◐ partial | 2a ✅ | 3 of 7 handlers still on legacy `BWS_Handler_Base`; `BWS_Rule_Engine` unused by legacy handlers |
+| **3** | Migrate 5 legacy handlers → UnifiedHandlerBase — **✅ done (0.6.0)**. All 7 handlers on `UnifiedHandlerBase`; legacy `BWS_Handler_Base` deleted; redundant `on_post_save` loop removed | ✅ done | 2a ✅ | legacy handler base; dual-base divergence; `on_post_save` loop double-run |
 | 2b | Rename sweep — *user-facing rename done* (folder, file, header, option key, menu/title/H1); only code-internal strings left (`__()` sweep, constants, hooks, JS) | ◐ partial | 2a ✅ | mixed text domains |
 | 4 | Config page split (storage blast-radius) — *was CPT storage; CPT deferred* | queued | 3 | one-blob clobber radius; per-page autoload; gives UBT its own option |
 | 7 | Unified migration / preview tool | queued | — (ungated; can run anytime) | `lib/` classes instantiated but never called; tab-aware save bug; Conversion subpage taxonomy selectors |
@@ -27,7 +27,7 @@ Phase numbers are **stable IDs, not execution order** — work has landed out of
 | 6b | BWS User Based Terms (→ Options, Personalize page) | queued | 4 | UBT merge; needs Personalize page option from P4 |
 | ~~5~~ | ~~Settings refactor~~ | cancelled | — | absorbed by 2c; lib delegation folded into 7 |
 
-**Recommended run order:** ~~2a~~ ✅ → **3 (finish steps 2, 3, 5)** → 2b → 4 → (6a, 7) → 6b. Phase 3 before 2b so the rename sweep touches already-migrated handlers once. Phase 7 is unblocked and can slot in whenever Conversion is needed.
+**Recommended run order:** ~~2a~~ ✅ → ~~3~~ ✅ → **2b** → 4 → (6a, 7) → 6b. Phase 3 landed before 2b so the rename sweep touches already-migrated handlers once. Phase 7 is unblocked and can slot in whenever Conversion is needed.
 
 Live defects not yet scheduled to a phase are tracked under each phase section's **Known issues**; the "Open items it closes" column above is the at-a-glance index.
 
@@ -198,16 +198,16 @@ Migrate each handler from `BWS_Handler_Base` to `UnifiedHandlerBase`. Template: 
 
 **Order** (simplest first):
 1. ~~`class-related-handler.php`~~ ✅ **done** (branch `claude/related-multi-pt-3a`) — also gained multi-post-type support (single `post_type` select → shared `post_types` checkboxes via `ConfigHelpers::post_types_field()`). Ported 4 term-utility helpers (`apply_terms_to_post`, `remove_terms_from_post`, `post_has_terms`, `debug_log`) from `BWS_Handler_Base` → `UnifiedHandlerBase`; **steps 2–5 now inherit these from the new base** rather than the legacy one.
-2. `class-hierarchical-level-restriction-handler.php`
-3. `class-propagation-handler.php`
+2. ~~`class-hierarchical-level-restriction-handler.php`~~ ✅ **done** (0.6.0, branch `claude/handler-migration-p3`) — shared `post_types_field()`, `include_ancestors` → real Wireframe `conditions`.
+3. ~~`class-propagation-handler.php`~~ ✅ **done** (0.6.0) — scalar→plural `post_types` + hierarchical-only field, new-child inherit on child save (B3), no-change short-circuit, snapshot row title.
 4. ~~`class-related-post-terms-handler.php`~~ ✅ **done** (0.5.0, branch `claude/acf-reference-p3`) — full ACF-reference rework: declarative source-authoritative sync, `holder_role` direction, 3-tier reverse resolution, both-direction sever (relationship-edit + permanent-delete), source-status gate. Legacy `AcfIntegration` shadow engine removed.
-5. `class-time-based-handler.php`
+5. ~~`class-time-based-handler.php`~~ ✅ **done** (0.6.0) — scalar→plural `post_types`, `process_post` stays functional (own save/publish hooks), date-first snapshot row title.
 
 **For each**: Change `extends` → implement `get_rule_type()` + `get_handler_type()` → replace `process_post()` with `init_hooks()` → replace direct settings reads with `$this->get_enabled_rules()` → test on InstaWP before next.
 
-**After last handler**:
-- Delete `class-handler-base.php` (`BWS_Handler_Base`).
-- Remove `on_post_save()` loop in `class-taxonomy-manager.php` — it calls `process_post()` on every handler, but unified-base handlers register their own hooks and don't need it. Currently causes `process_post()` no-op overrides in hierarchical + title_slug handlers to prevent the base class from routing flat Wireframe rules through `BWS_Rule_Engine`.
+**After last handler** ✅ (0.6.0):
+- ~~Delete `class-handler-base.php`~~ ✅ — ACF read/write helpers (`get_acf_taxonomy_value`/`set_acf_taxonomy_value`) ported to `UnifiedHandlerBase` first (they were used by propagation + level-restriction ACF paths; the base flip had silently dropped them — latent fatal, B4). HandlerBase-internal-only helpers died with the file.
+- ~~Remove `on_post_save()` loop~~ ✅ — every handler owns its hooks. Removal closed the time-based double-run. The no-op `process_post()` overrides stay as defensive guards against the base RuleEngine route (only `process_existing_posts` still reaches them; no UI trigger).
 
 **End of phase**: Update CLAUDE.md
 

@@ -5,6 +5,54 @@ All notable changes to Meta Conductor (formerly BWS Meta Manager, formerly BWS T
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] — Unreleased
+
+Phase 3 complete: the last three legacy handlers migrate to the unified base, the legacy base class and
+the redundant save loop are removed, and each migrated rule type gets a config/label pass.
+
+### Changed
+
+- **Level Restriction, Propagation, and Date Window (time-based) rules migrated to the unified handler base.**
+  These were the last three rule types still on the old handler base. Behavior is unchanged for existing
+  rules, with the fixes and polish below.
+- **"Limit to post types" is now multi-select on every rule type.** Propagation, Level Restriction, and Date
+  Window rules previously took a single post type; they now use the shared post-type checkboxes (empty =
+  all). Propagation offers only hierarchical post types (it needs a parent/child relationship). *Existing
+  single-post-type rules of these three types need a one-time re-save to pick up the new field.*
+- **Clearer collapsed row titles:**
+  - Propagation: e.g. "Pages: Copy Breakers terms to children (replace)" — post-type scope shown only when
+    restricted.
+  - Date Window: e.g. "2026-05-26–2026-05-27: Apply Shakers: Grandchild ii to posts with Breakers: Term A" —
+    date window first, then the target term, scope, and any post filter.
+- **Level Restriction "Keep ancestor terms"** (was "Include ancestors") now has an accurate description of
+  what it does in each mode and only appears in the modes where it has an effect.
+
+### Fixed
+
+- **New child posts now inherit their parent's terms on their own save** (propagation), honoring the rule's
+  conflict handling (merge / replace / skip). Previously a new child did not receive inherited terms until
+  the parent was re-saved.
+- **Propagation no longer writes/logs a redundant inherit** when a child already has the parent's terms.
+- **Prevented a latent crash**: propagation and level-restriction rules that act on an ACF taxonomy field
+  would have hit an undefined-method error after the base migration; the ACF read/write helpers are now on
+  the unified base. (Only reachable with an ACF taxonomy field configured; native-taxonomy rules were
+  unaffected.)
+
+### Removed
+
+- **Legacy `BWS_Handler_Base` class deleted** — all seven rule handlers now share `UnifiedHandlerBase`.
+- **Redundant global save loop removed** — each handler registers its own hooks; the Date Window rule no
+  longer runs twice per save.
+
+### Known interactions (filed, not blocking)
+
+- Propagation + hierarchical rules on the same taxonomy compose: children can gain one extra expansion level
+  ([#35](https://github.com/davidofchatham/meta-conductor/issues/35)).
+- Propagation has no inherited-vs-manual term tracking; a mode switch can strand a previously inherited term
+  ([#34](https://github.com/davidofchatham/meta-conductor/issues/34)).
+- Bulk "process existing posts" is inert for hook-driven handlers and has no UI trigger yet; systemic fix
+  deferred to the Migration/Preview tool ([#31](https://github.com/davidofchatham/meta-conductor/issues/31)).
+
 ## [0.5.0] — 2026-06-30
 
 ### Added

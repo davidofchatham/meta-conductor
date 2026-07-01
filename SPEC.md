@@ -164,7 +164,7 @@ it (all 3 are confirmed-working, C7), don't bolt on new logic unless a violation
 | T4 | x | Migrate time-based (I.time-h + I.time-c together): base flip, gate swap, no-op `process_post`; scalar→plural; keep own `save_post` + cron `bws_taxonomy_manager_cleanup`; config select → `post_types_field()`; title/label polish. (Temporal extension OUT — separate spec.) H1+H2. InstaWP: in/out-of-range apply, publish path, cron cleanup; confirm-preserve traps V8 (no time-window decision cache), V9 (idempotent), V10 (gate before date scan). | V1,V2,V3,V6,V7,V8,V9,V10,I.time-h,I.time-c |
 | T5 | x | Delete `class-handler-base.php` (I.legacy). Confirm no remaining `extends HandlerBase` references. H1+H2. | I.legacy,T2,T3,T4 |
 | T6 | x | Remove `on_post_save` loop (I.tax-mgr L200–210). Verify `on_post_insert`/`process_new_child_post` still wired; re-confirm hierarchical/title_slug no-op `process_post` overrides harmless post-loop. H1+H2. | V4,V6,I.tax-mgr,T5 |
-| T7 | . | All-7-handler regression on InstaWP (loop removal touches every save path) + single-run confirm on time-based. CHANGELOG `[0.6.0] — Unreleased` entries. Update CLAUDE.md + ROADMAP P3 → done. | T5,T6,I.changelog |
+| T7 | x | All-7-handler regression on InstaWP (loop removal touches every save path) + single-run confirm on time-based. CHANGELOG `[0.6.0] — Unreleased` entries. Update CLAUDE.md + ROADMAP P3 → done. | T5,T6,I.changelog |
 
 ## §B — bugs
 
