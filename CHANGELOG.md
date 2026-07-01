@@ -5,6 +5,86 @@ All notable changes to Meta Conductor (formerly BWS Meta Manager, formerly BWS T
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] — Unreleased
+
+Phase 3 complete: the last three legacy handlers migrate to the unified base, the legacy base class and
+the redundant save loop are removed, and each migrated rule type gets a config/label pass.
+
+### Changed
+
+- **Level Restriction, Propagation, and Date Window (time-based) rules migrated to the unified handler base.**
+  These were the last three rule types still on the old handler base. Behavior is unchanged for existing
+  rules, with the fixes and polish below.
+- **"Limit to post types" is now multi-select on every rule type.** Propagation, Level Restriction, and Date
+  Window rules previously took a single post type; they now use the shared post-type checkboxes (empty =
+  all). Propagation offers only hierarchical post types (it needs a parent/child relationship). *Existing
+  single-post-type rules of these three types need a one-time re-save to pick up the new field.*
+- **Clearer collapsed row titles:**
+  - Propagation: e.g. "Pages: Copy Breakers terms to children (replace)" — post-type scope shown only when
+    restricted.
+  - Date Window: e.g. "2026-05-26–2026-05-27: Apply Shakers: Grandchild ii to posts with Breakers: Term A" —
+    date window first, then the target term, scope, and any post filter.
+- **Level Restriction "Keep ancestor terms"** (was "Include ancestors") now has an accurate description of
+  what it does in each mode and only appears in the modes where it has an effect.
+
+### Fixed
+
+- **New child posts now inherit their parent's terms on their own save** (propagation), honoring the rule's
+  conflict handling (merge / replace / skip). Previously a new child did not receive inherited terms until
+  the parent was re-saved.
+- **Propagation no longer writes/logs a redundant term update** when a post already has the terms — both
+  directions (a child inheriting from its parent, and a parent cascading to its children). A no-op parent
+  save no longer re-writes terms to every descendant.
+- **Propagation now populates a child's ACF taxonomy field even when the child had no ACF value yet.** Field
+  discovery used `get_field_objects()`, which returns nothing for a post with no saved ACF meta, so a
+  never-populated child could never receive its first ACF write (native terms applied, ACF field left empty).
+  Fields are now resolved from ACF location rules (value-independent), and the first write uses the field key
+  so ACF registers the field reference correctly. The child-inheriting and parent-cascading paths, the
+  ACF-only source read, and the term-removal path all use the same discovery.
+- **Prevented a latent crash**: propagation and level-restriction rules that act on an ACF taxonomy field
+  would have hit an undefined-method error after the base migration; the ACF read/write helpers are now on
+  the unified base. (Only reachable with an ACF taxonomy field configured; native-taxonomy rules were
+  unaffected.)
+- **Date Window daily cleanup no longer runs twice** — the scheduled expired-term cleanup was registered
+  both directly by the handler and via a redundant relay; the relay is removed.
+- **Date Window "Filter by taxonomies" now works** — the taxonomy filter read the checkbox field in the
+  wrong shape, so a rule with a taxonomy filter set never matched any post. Filtering by specific terms was
+  unaffected.
+- **Post-status gating hardened** — the shared post-status filter didn't normalize its checkbox value, so a
+  status gate could be silently bypassed. (No rule type gates on status via this path yet; fixed proactively.)
+- **Post-type gating normalized consistently** — the shared post-type gate hand-rolled its checkbox
+  extraction while the post-status gate used the canonical helper; both now go through the same extractor,
+  removing a drift risk. No behavior change for correctly-saved rules.
+- **Level Restriction ACF saves no longer re-enter the handler** — saving a post whose ACF taxonomy field is
+  under a level-restriction rule wrote terms without setting the reentrancy guard, so the handler ran a
+  second (redundant) restriction pass in the same request. The guard is now symmetric with the native-terms
+  path. (Idempotent before; the fix removes the wasted work and an edge-case extra write.)
+- **Bulk "process existing posts" reads the correct post-type key** — the bulk tool still read the old scalar
+  `source_filters['post_type']` and so would have scanned only the `post` type for the migrated rule types
+  (which now store the plural `post_types` checkboxes). It now reads `post_types` (empty = all), falling back
+  to the legacy key. (Not yet reachable via UI — see [#31](https://github.com/davidofchatham/meta-conductor/issues/31).)
+
+### Removed
+
+- **Legacy `BWS_Handler_Base` class deleted** — all seven rule handlers now share `UnifiedHandlerBase`.
+- **Redundant global save loop removed** — each handler registers its own hooks; the Date Window rule no
+  longer runs twice per save.
+
+### Known interactions (filed, not blocking)
+
+- Propagation + hierarchical rules on the same taxonomy compose: children can gain one extra expansion level
+  ([#35](https://github.com/davidofchatham/meta-conductor/issues/35)).
+- Propagation has no inherited-vs-manual term tracking; a mode switch can strand a previously inherited term
+  ([#34](https://github.com/davidofchatham/meta-conductor/issues/34)).
+- Bulk "process existing posts" is inert for hook-driven handlers and has no UI trigger yet; systemic fix
+  deferred to the Migration/Preview tool ([#31](https://github.com/davidofchatham/meta-conductor/issues/31)).
+- Propagation treats a post's native terms and its ACF taxonomy field as one merged set and mirrors that set
+  into **both** stores on the children. With the ACF field's Load/Save Terms ON (the default) the two stores
+  are already identical, so this is invisible. With Load/Save Terms OFF — where the native and ACF values are
+  intentionally kept separate — propagation collapses that separation on the children (a parent's native-only
+  term appears in the child's ACF field and vice-versa). Propagation is not channel-preserving by design; if a
+  "keep native and ACF separate" model is needed, file an issue.
+
 ## [0.5.0] — 2026-06-30
 
 ### Added

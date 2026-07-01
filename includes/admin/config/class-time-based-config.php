@@ -34,7 +34,7 @@ class TimeBasedConfig {
                         'duplicate_row'  => true,
                         'add_label'      => __('Add date window rule', 'bws-meta-manager'),
                         'empty_message'  => __('No date window rules configured.', 'bws-meta-manager'),
-                        'title_template' => '{start_date} → {end_date}',
+                        'title_template' => '{row_title}',
                         'subfields'      => [
                             [
                                 'id'      => 'enabled',
@@ -43,17 +43,7 @@ class TimeBasedConfig {
                                 'default' => true,
                                 'columns' => 12,
                             ],
-                            [
-                                'id'       => 'post_type',
-                                'type'     => 'select',
-                                'label'    => __('Post type', 'bws-meta-manager'),
-                                'default'  => '',
-                                'required' => true,
-                                'columns'  => 12,
-                                'args'     => [
-                                    'options' => ConfigHelpers::post_type_options(),
-                                ],
-                            ],
+                            ConfigHelpers::post_types_field(),
                             [
                                 'id'          => 'filter_taxonomies',
                                 'type'        => 'checkboxes',
@@ -100,6 +90,13 @@ class TimeBasedConfig {
                                     'max'      => 1,
                                     'options'  => ConfigHelpers::all_term_options(),
                                 ],
+                            ],
+                            // Snapshot row title (V11/§I.label). Assembled at save
+                            // by snapshot_time_based_labels in WireframeBootstrap.
+                            [
+                                'id'      => 'row_title',
+                                'type'    => 'hidden',
+                                'default' => '',
                             ],
                         ],
                     ],

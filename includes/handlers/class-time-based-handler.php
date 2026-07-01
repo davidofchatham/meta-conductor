@@ -13,42 +13,44 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-// TODO(Phase 3): still on the legacy HandlerBase. The unified base
-// (UnifiedHandlerBase) has diverged — e.g. should_process_post()
-// normalizes Wireframe checkbox format only there. Fixes to one base may not
-// reach this one until migration. See ROADMAP Phase 3.
-class TimeBasedHandler extends HandlerBase {
-    
-    /**
-     * Handler type
-     */
-    protected $handler_type = 'time_based';
-    
+class TimeBasedHandler extends UnifiedHandlerBase {
+
+    public function get_handler_type(): string {
+        return 'time_based';
+    }
+
+    protected function get_rule_type(): string {
+        return 'time_based_rules';
+    }
+
     /**
      * Initialize hooks
      */
     protected function init_hooks() {
         // Hook into post save to check date-based rules
         add_action('save_post', array($this, 'on_post_save'), 20, 3);
-        
+
         // Hook into publish_post to handle newly published posts
         add_action('publish_post', array($this, 'on_post_publish'), 10, 2);
-        
+
         // Daily cleanup hook
         add_action('bws_taxonomy_manager_cleanup', array($this, 'cleanup_expired_rules'));
     }
-    
-    /**
-     * Process a post
-     */
+
+    // NOTE: unlike the hook-into-terms handlers (related/propagation/level-
+    // restriction), time-based genuinely USES process_post as its work method —
+    // its own save_post/publish_post hooks call it. So this is NOT a no-op. Runs
+    // once per save now; the redundant TaxonomyManager on_post_save loop that
+    // used to also call it was removed in the Phase-3 teardown. Writes are still
+    // idempotent (has-term / date-range guards). (V6)
     public function process_post($post_id, $post, $update) {
         $enabled_rules = $this->get_enabled_rules();
-        
+
         foreach ($enabled_rules as $rule) {
-            if (!$this->rule_applies_to_post($rule, $post)) {
+            if (!$this->should_process_post($post_id, $rule)) {
                 continue;
             }
-            
+
             $this->apply_time_based_rule($post_id, $post, $rule);
         }
     }
@@ -117,14 +119,22 @@ class TimeBasedHandler extends HandlerBase {
      * Check if post matches the filter criteria for a rule
      */
     private function post_matches_filter($post_id, $rule) {
-        // If no filter taxonomies specified, match all posts
-        if (empty($rule['filter_taxonomies']) && empty($rule['filter_terms'])) {
+        // Flatten both filters up front. filter_taxonomies is a Wireframe
+        // checkboxes {slug:bool} map; filter_terms is a token list. Extracting
+        // selected slugs first means an all-unchecked map (non-empty but no
+        // selection) correctly reads as "no filter", and the taxonomy loop never
+        // binds to boolean values. (0.6.0 review)
+        $filter_terms      = \BWS\MetaConductor\Admin\Config\ConfigHelpers::selected_checkbox_slugs($rule['filter_terms'] ?? []);
+        $filter_taxonomies = \BWS\MetaConductor\Admin\Config\ConfigHelpers::selected_checkbox_slugs($rule['filter_taxonomies'] ?? []);
+
+        // No filter → match all posts.
+        if (empty($filter_terms) && empty($filter_taxonomies)) {
             return true;
         }
-        
-        // Check filter terms (if specified)
-        if (!empty($rule['filter_terms'])) {
-            foreach ($rule['filter_terms'] as $filter_term_id) {
+
+        // Check filter terms (if specified).
+        if (!empty($filter_terms)) {
+            foreach ($filter_terms as $filter_term_id) {
                 $filter_term = get_term($filter_term_id);
                 if ($filter_term && !is_wp_error($filter_term)) {
                     if ($this->post_has_terms($post_id, $filter_term->taxonomy, array($filter_term->term_id))) {
@@ -134,17 +144,17 @@ class TimeBasedHandler extends HandlerBase {
             }
             return false;
         }
-        
-        // Check filter taxonomies (if specified)
-        if (!empty($rule['filter_taxonomies'])) {
-            foreach ($rule['filter_taxonomies'] as $taxonomy) {
+
+        // Check filter taxonomies (if specified).
+        if (!empty($filter_taxonomies)) {
+            foreach ($filter_taxonomies as $taxonomy) {
                 if ($this->post_has_terms($post_id, $taxonomy)) {
                     return true;
                 }
             }
             return false;
         }
-        
+
         return true;
     }
     
@@ -174,9 +184,17 @@ class TimeBasedHandler extends HandlerBase {
             return;
         }
         
+        // Resolve the rule's post types for the cleanup query. Empty ⇒ all
+        // public types (get_posts needs a concrete set; the gate treats empty
+        // as "all"). get_posts accepts an array of slugs.
+        $post_types = \BWS\MetaConductor\Admin\Config\ConfigHelpers::selected_checkbox_slugs($rule['post_types'] ?? []);
+        if (empty($post_types)) {
+            $post_types = array_values(get_post_types(array('public' => true)));
+        }
+
         // Find all posts that have this term
         $posts_with_term = get_posts(array(
-            'post_type' => $rule['post_type'],
+            'post_type' => $post_types,
             'post_status' => array('publish', 'draft', 'private'),
             'numberposts' => -1,
             'fields' => 'ids',
@@ -251,13 +269,14 @@ class TimeBasedHandler extends HandlerBase {
     public function validate_rule($rule_data) {
         $errors = array();
         
-        // Validate post type
-        if (empty($rule_data['post_type'])) {
-            $errors[] = __('Post type is required.', 'bws-taxonomy-manager');
-        } elseif (!post_type_exists($rule_data['post_type'])) {
-            $errors[] = __('Selected post type does not exist.', 'bws-taxonomy-manager');
+        // Validate post types (optional — empty ⇒ all).
+        $post_types = \BWS\MetaConductor\Admin\Config\ConfigHelpers::selected_checkbox_slugs($rule_data['post_types'] ?? []);
+        foreach ($post_types as $post_type) {
+            if (!post_type_exists($post_type)) {
+                $errors[] = sprintf(__('Post type "%s" does not exist.', 'bws-meta-manager'), $post_type);
+            }
         }
-        
+
         // Validate target term
         if (empty($rule_data['target_term_id'])) {
             $errors[] = __('Target term is required.', 'bws-taxonomy-manager');
@@ -316,7 +335,7 @@ class TimeBasedHandler extends HandlerBase {
      */
     private function sanitize_rule_data($rule_data) {
         return array(
-            'post_type' => sanitize_text_field($rule_data['post_type'] ?? ''),
+            'post_types' => \BWS\MetaConductor\Admin\Config\ConfigHelpers::selected_checkbox_slugs($rule_data['post_types'] ?? []),
             'target_term_id' => absint($rule_data['target_term_id'] ?? 0),
             'start_date' => sanitize_text_field($rule_data['start_date'] ?? ''),
             'end_date' => sanitize_text_field($rule_data['end_date'] ?? ''),

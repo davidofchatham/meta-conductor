@@ -67,7 +67,6 @@ $classes = [
     'BWS\\MetaConductor\\Storage\\OptionRuleStorage',
     'BWS\\MetaConductor\\Storage\\StorageFactory',
     // Handlers\
-    'BWS\\MetaConductor\\Handlers\\HandlerBase',
     'BWS\\MetaConductor\\Handlers\\UnifiedHandlerBase',
     'BWS\\MetaConductor\\Handlers\\HierarchicalHandler',
     'BWS\\MetaConductor\\Handlers\\PropagationHandler',

@@ -106,12 +106,6 @@ class TaxonomyManager {
         add_action('wp_ajax_bws_title_slug_preview',          array($this, 'ajax_title_slug_preview'));
         add_action('wp_ajax_bws_title_slug_process_existing', array($this, 'ajax_title_slug_process_existing'));
 
-        // Cleanup hook
-        add_action('bws_taxonomy_manager_cleanup', array($this, 'cleanup_expired_rules'));
-        
-        // Post save hooks
-        add_action('save_post', array($this, 'on_post_save'), 10, 3);
-        add_action('wp_insert_post', array($this, 'on_post_insert'), 10, 3);
     }
     
     /**
@@ -192,36 +186,6 @@ class TaxonomyManager {
                 'error'              => __('An error occurred. Please try again.', 'bws-meta-manager'),
             )
         ));
-    }
-    
-    /**
-     * Handle post save events
-     */
-    public function on_post_save($post_id, $post, $update) {
-        // Skip autosaves and revisions
-        if (wp_is_post_autosave($post_id) || wp_is_post_revision($post_id)) {
-            return;
-        }
-        
-        // Process through all handlers
-        foreach ($this->handlers as $handler) {
-            $handler->process_post($post_id, $post, $update);
-        }
-    }
-    
-    /**
-     * Handle post insertion events
-     */
-    public function on_post_insert($post_id, $post, $update) {
-        // Only process new posts
-        if ($update) {
-            return;
-        }
-        
-        // Special handling for new child posts
-        if ($post->post_parent > 0) {
-            $this->handlers['propagation']->process_new_child_post($post_id, $post);
-        }
     }
     
 	/**
@@ -629,15 +593,6 @@ class TaxonomyManager {
         }
         
         wp_send_json_success(array('taxonomies' => $formatted_taxonomies));
-    }
-    
-    /**
-     * Cleanup expired time-based rules
-     */
-    public function cleanup_expired_rules() {
-        if (isset($this->handlers['time_based'])) {
-            $this->handlers['time_based']->cleanup_expired_rules();
-        }
     }
     
     /**

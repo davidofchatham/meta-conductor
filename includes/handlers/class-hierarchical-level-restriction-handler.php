@@ -13,57 +13,44 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-// TODO(Phase 3): still on the legacy HandlerBase. The unified base
-// (UnifiedHandlerBase) has diverged — e.g. should_process_post()
-// normalizes Wireframe checkbox format only there. Fixes to one base may not
-// reach this one until migration. See ROADMAP Phase 3.
-class HierarchicalLevelRestrictionHandler extends HandlerBase {
-    
-    /**
-     * Handler type
-     */
-    protected $handler_type = 'hierarchical_level_restriction';
-    
+class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
+
     /**
      * Track processing to prevent infinite loops
      */
     private $processing = false;
-    
+
     /**
      * Cache for term level calculations
      */
     private $term_level_cache = array();
-    
+
+    public function get_handler_type(): string {
+        return 'hierarchical_level_restriction';
+    }
+
+    protected function get_rule_type(): string {
+        return 'hierarchical_level_restriction_rules';
+    }
+
     /**
      * Initialize hooks
      */
     protected function init_hooks() {
         // Hook with high priority to run before hierarchical handler
         add_action('set_object_terms', array($this, 'on_terms_set'), 5, 6);
-        
+
         // Hook into ACF field updates
         add_action('acf/save_post', array($this, 'on_acf_save_post'), 15);
     }
-    
-    /**
-     * Process a post
-     */
-    public function process_post($post_id, $post, $update) {
-        if ($this->processing) {
-            return;
-        }
-        
-        $enabled_rules = $this->get_enabled_rules();
-        
-        foreach ($enabled_rules as $rule) {
-            if (!$this->rule_applies_to_post($rule, $post)) {
-                continue;
-            }
-            
-            $this->apply_level_restrictions($post_id, $rule['taxonomy'], $rule);
-        }
-    }
-    
+
+    // Intentional no-op (not a forgotten implementation). Level restrictions
+    // fire via on_terms_set / on_acf_save_post; the base process_post routes
+    // through RuleEngine, which this handler does not use. (The redundant
+    // TaxonomyManager on_post_save loop that used to call this was removed in the
+    // Phase-3 teardown; process_existing_posts is the only remaining caller.)
+    public function process_post($post_id, $post, $update) {}
+
     /**
      * Handle terms being set on an object
      */
@@ -83,14 +70,20 @@ class HierarchicalLevelRestrictionHandler extends HandlerBase {
             if ($rule['taxonomy'] !== $taxonomy) {
                 continue;
             }
-            
-            if (!$this->rule_applies_to_post($rule, $post)) {
+
+            if (!$this->should_process_post($object_id, $rule)) {
                 continue;
             }
-            
+
+            // Reset even if a downstream hook/filter throws, so later rules in
+            // this request aren't silently skipped by a stuck guard (mirrors the
+            // propagation handler's try/finally).
             $this->processing = true;
-            $this->process_term_level_restrictions($object_id, $taxonomy, $tt_ids, $old_tt_ids, $rule);
-            $this->processing = false;
+            try {
+                $this->process_term_level_restrictions($object_id, $taxonomy, $tt_ids, $old_tt_ids, $rule);
+            } finally {
+                $this->processing = false;
+            }
         }
     }
     
@@ -108,14 +101,24 @@ class HierarchicalLevelRestrictionHandler extends HandlerBase {
         }
         
         $enabled_rules = $this->get_enabled_rules();
-        
+
         foreach ($enabled_rules as $rule) {
-            if (!$this->rule_applies_to_post($rule, $post)) {
+            if (!$this->should_process_post($post_id, $rule)) {
                 continue;
             }
-            
-            // Check if this taxonomy has ACF fields that might have been updated
-            $this->process_acf_level_restrictions($post_id, $rule['taxonomy'], $rule);
+
+            // Set the reentrancy guard (mirrors on_terms_set): process_acf_level_restrictions
+            // calls wp_set_object_terms, which re-fires set_object_terms -> on_terms_set.
+            // Without this the handler re-enters and runs a second (idempotent but
+            // wasteful) restriction pass. try/finally so a downstream throw can't
+            // leave the guard stuck for later rules in this request.
+            $this->processing = true;
+            try {
+                // Check if this taxonomy has ACF fields that might have been updated
+                $this->process_acf_level_restrictions($post_id, $rule['taxonomy'], $rule);
+            } finally {
+                $this->processing = false;
+            }
         }
     }
     
@@ -345,7 +348,14 @@ class HierarchicalLevelRestrictionHandler extends HandlerBase {
     }
     
     /**
-     * Apply level restrictions to existing post
+     * Apply level restrictions to one existing post.
+     *
+     * Per-post bulk-apply primitive. NOT currently wired: post-migration the
+     * base process_existing_posts() drives bulk via process_post(), which is a
+     * no-op here (V4) — so the "process existing posts" tool is inert for this
+     * handler, same as every hook-driven unified handler since 0.4.0. The
+     * systemic fix (base routes bulk through an apply_to_post() primitive each
+     * handler implements) will call this. Kept ready, not dead. See issue.
      */
     private function apply_level_restrictions($post_id, $taxonomy, $rule) {
         $current_terms = wp_get_object_terms($post_id, $taxonomy, array('fields' => 'ids'));
@@ -422,54 +432,7 @@ class HierarchicalLevelRestrictionHandler extends HandlerBase {
             'enabled' => !empty($rule_data['enabled'])
         );
     }
-    
-    /**
-     * Get applicable post types for this handler
-     */
-    protected function get_applicable_post_types() {
-        $rules = $this->get_enabled_rules();
-        $post_types = array();
-        
-        foreach ($rules as $rule) {
-            if (!empty($rule['post_types'])) {
-                $post_types = array_merge($post_types, $rule['post_types']);
-            } else {
-                // If no specific post types, get all post types that use this taxonomy
-                $taxonomy = $rule['taxonomy'];
-                if (taxonomy_exists($taxonomy)) {
-                    $taxonomy_obj = get_taxonomy($taxonomy);
-                    $post_types = array_merge($post_types, $taxonomy_obj->object_type);
-                }
-            }
-        }
-        
-        // If still no post types, get all public post types
-        if (empty($post_types)) {
-            $post_types = get_post_types(array('public' => true));
-        }
-        
-        return array_unique($post_types);
-    }
-    
-    /**
-     * Process existing posts for testing/manual application
-     */
-    public function process_existing_posts($batch_size = 50, $offset = 0) {
-        $result = parent::process_existing_posts($batch_size, $offset);
-        
-        // Add specific message for hierarchical level restriction processing
-        if ($result['processed'] > 0) {
-            $result['message'] = sprintf(
-                __('Processed %d posts for hierarchical level restrictions. %d of %d total posts complete.', 'bws-taxonomy-manager'),
-                $result['processed'],
-                min($offset + $batch_size, $result['total']),
-                $result['total']
-            );
-        }
-        
-        return $result;
-    }
-    
+
     /**
      * Get rules summary for admin display
      */

@@ -518,6 +518,128 @@ abstract class UnifiedHandlerBase {
     }
 
     /**
+     * Read an ACF taxonomy field's value as a flat array of term IDs.
+     *
+     * Ported from legacy HandlerBase (B4/V14) — used by the propagation and
+     * level-restriction ACF code paths, which now extend this base. Standalone
+     * get_field() wrapper; unrelated to the removed AcfIntegration engine.
+     * Returns [] when ACF is absent or the field is empty.
+     *
+     * @param int    $post_id
+     * @param string $field_name
+     * @param string $taxonomy   Accepted for signature parity; ACF returns the value directly.
+     * @return int[]
+     */
+    protected function get_acf_taxonomy_value($post_id, $field_name, $taxonomy) {
+        if (!function_exists('get_field')) {
+            return array();
+        }
+
+        $value = get_field($field_name, $post_id);
+
+        if (empty($value)) {
+            return array();
+        }
+
+        // Handle different ACF taxonomy field return formats
+        if (is_array($value)) {
+            $term_ids = array();
+            foreach ($value as $item) {
+                if (is_object($item) && isset($item->term_id)) {
+                    $term_ids[] = $item->term_id;
+                } elseif (is_numeric($item)) {
+                    $term_ids[] = absint($item);
+                }
+            }
+            return $term_ids;
+        } elseif (is_object($value) && isset($value->term_id)) {
+            return array($value->term_id);
+        } elseif (is_numeric($value)) {
+            return array(absint($value));
+        }
+
+        return array();
+    }
+
+    /**
+     * Write term IDs to an ACF taxonomy field.
+     *
+     * Ported from legacy HandlerBase (B4/V14). Standalone update_field()
+     * wrapper; unrelated to the removed AcfIntegration engine.
+     *
+     * @param int       $post_id
+     * @param string    $field_name
+     * @param int[]|int $term_ids
+     * @return mixed update_field() result, or false when ACF is absent.
+     */
+    protected function set_acf_taxonomy_value($post_id, $field_selector, $term_ids) {
+        if (!function_exists('update_field')) {
+            return false;
+        }
+
+        if (!is_array($term_ids)) {
+            $term_ids = array($term_ids);
+        }
+
+        // $field_selector should be the ACF field KEY (field_xxxx), not the name,
+        // when writing a field that may have NO prior value on this post. On a
+        // first write ACF needs the key to register the hidden _{name} reference
+        // row; passing the name falls back to a bare update_post_meta with no
+        // reference, so get_field() can't later resolve/format the value.
+        // (0.6.0 ACF B-sweep — get_acf_taxonomy_fields yields keys.)
+        return update_field($field_selector, $term_ids, $post_id);
+    }
+
+    /**
+     * Discover a post's ACF taxonomy fields for a taxonomy, INDEPENDENT of
+     * whether the post has any saved field values.
+     *
+     * get_field_objects($post_id) enumerates from stored meta and returns FALSE
+     * for a post with no ACF values yet — so a never-populated child could never
+     * receive its first propagated/restricted ACF write (chicken-and-egg). This
+     * resolves fields from field-group LOCATION rules instead (the same engine
+     * the ACF admin uses), so attached-but-empty fields are found.
+     *
+     * Recurses sub_fields so a taxonomy field nested in a Group/Repeater is seen.
+     *
+     * @param int    $post_id
+     * @param string $taxonomy
+     * @return array[] List of ['name' => string, 'key' => string] for each
+     *                 matching taxonomy field. Empty when ACF is absent or none match.
+     */
+    protected function get_acf_taxonomy_fields($post_id, $taxonomy) {
+        if (!function_exists('acf_get_field_groups') || !function_exists('acf_get_fields')) {
+            return array();
+        }
+
+        $matches = array();
+
+        $walk = function ($fields) use (&$walk, $taxonomy, &$matches) {
+            foreach ((array) $fields as $field) {
+                if (!is_array($field)) {
+                    continue;
+                }
+                if (($field['type'] ?? '') === 'taxonomy'
+                    && ($field['taxonomy'] ?? null) === $taxonomy) {
+                    $matches[] = array(
+                        'name' => $field['name'] ?? '',
+                        'key'  => $field['key'] ?? '',
+                    );
+                }
+                if (!empty($field['sub_fields'])) {
+                    $walk($field['sub_fields']);
+                }
+            }
+        };
+
+        foreach (acf_get_field_groups(array('post_id' => $post_id)) as $group) {
+            $walk(acf_get_fields($group['key']));
+        }
+
+        return $matches;
+    }
+
+    /**
      * Check if should process post (legacy compatibility)
      *
      * @param int $post_id Post ID
@@ -531,25 +653,27 @@ abstract class UnifiedHandlerBase {
             return false;
         }
 
-        // Check post type
+        // Check post type. Like post_status below, flatten the Wireframe
+        // checkboxes {slug:bool} map via the canonical extractor rather than
+        // hand-rolling it — keeps this from drifting from the status gate and
+        // ConfigHelpers (the extractor's own docblock names this call site).
         $post_types = $rule['post_types'] ?? $rule['source_filters']['post_type'] ?? [];
+        $post_types = \BWS\MetaConductor\Admin\Config\ConfigHelpers::selected_checkbox_slugs($post_types);
 
         if (!empty($post_types)) {
-            $post_types = (array)$post_types;
-            // Wireframe checkboxes store {slug: bool}; extract truthy keys.
-            if (!array_is_list($post_types)) {
-                $post_types = array_keys(array_filter($post_types));
-            }
-            if (!empty($post_types) && $post_types[0] !== 'any' && !in_array($post->post_type, $post_types)) {
+            if ($post_types[0] !== 'any' && !in_array($post->post_type, $post_types)) {
                 return false;
             }
         }
 
-        // Check post status
+        // Check post status. Like post_types, the config stores this as a
+        // Wireframe checkboxes {slug:bool} map — flatten to selected slugs first,
+        // else the (array) cast keeps the map and in_array compares against
+        // boolean values (loose match => gate silently bypassed).
         $post_statuses = $rule['post_status'] ?? $rule['source_filters']['post_status'] ?? [];
+        $post_statuses = \BWS\MetaConductor\Admin\Config\ConfigHelpers::selected_checkbox_slugs($post_statuses);
 
         if (!empty($post_statuses)) {
-            $post_statuses = (array)$post_statuses;
             if ($post_statuses[0] !== 'any' && !in_array($post->post_status, $post_statuses)) {
                 return false;
             }
@@ -751,9 +875,25 @@ abstract class UnifiedHandlerBase {
             ];
         }
 
-        // Get post types from rules
+        // Get post types from rules. The migrated handlers store the plural
+        // `post_types` Wireframe checkbox map (empty ⇒ all); fall back to the
+        // legacy scalar source_filters['post_type'] for any rule shape that
+        // predates it. Flatten the map via the canonical extractor so this
+        // matches should_process_post's gate.
         $post_types = [];
         foreach ($rules as $rule) {
+            if (isset($rule['post_types'])) {
+                $slugs = \BWS\MetaConductor\Admin\Config\ConfigHelpers::selected_checkbox_slugs($rule['post_types']);
+                // Empty ⇒ "all" for this rule (matches the gate); widen to every
+                // public type and stop narrowing.
+                if (empty($slugs) || (isset($slugs[0]) && $slugs[0] === 'any')) {
+                    $post_types = get_post_types(['public' => true]);
+                    break;
+                }
+                $post_types = array_merge($post_types, $slugs);
+                continue;
+            }
+
             $source_filters = $rule['source_filters'] ?? [];
             $post_type = $source_filters['post_type'] ?? 'post';
 

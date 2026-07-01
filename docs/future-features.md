@@ -21,6 +21,33 @@ When an idea is promoted to in-flight, add a link to its plan file under `.claud
 - **Source**: `plugins-to-integrate/acf-post-relationship-manager/` (deleted in this commit; reference the prior commit if needed).
 - **Storage**: Options.
 
+### Cross-type parent/child propagation
+
+- **Status**: idea (raised during Phase 3 propagation review, 2026-07-01)
+- **Motivation**: propagation cascades terms parent → child down the WP `post_parent`
+  hierarchy. Today parent and child are always the SAME post type (WP's editor parent
+  dropdown is type-scoped), so the propagation handler's two post-type gates
+  (child in `on_parent_post_save`, parent in `inherit_terms_from_parent`) always agree
+  and the distinction is moot. A cross-type hierarchy (e.g. an `event` parent
+  propagating terms to `session` children) would be genuinely useful.
+- **The blocker is UI, not logic**: WP gives editors no native way to set a *cross-type*
+  `post_parent`. The propagation handler could support it trivially (decide whether
+  `post_types` scopes the source, the target, or both — see the review note in
+  `inherit_terms_from_parent`), but editors can't *create* the relationship.
+- **Two paths, already partly planned**:
+  1. **Term copy across a relationship** — if you only want the TERMS to cross types
+     (not a real WP hierarchy), `related_post_terms_rules` (ACF-reference, shipped
+     0.5.0) already does this over an ACF relationship field, any types. May cover the
+     real need without touching propagation.
+  2. **Real cross-type `post_parent`** — `acf_relationship_rules` (planned Phase 6a)
+     sets `post_parent` from an ACF relationship field, which IS cross-type-capable and
+     gives editors a UI. Compose it with propagation and cross-type term cascade falls
+     out: the ACF rule establishes the cross-type parent, propagation cascades terms.
+- **Decision if pursued**: settle what `post_types` means for propagation (recommend:
+  scope the TARGET/child — "which posts receive terms" — and gate the parent only on
+  "is a valid source", i.e. has terms), and rework `get_all_child_posts` (which today
+  queries children BY the rule's `post_types`) so it can walk cross-type children.
+
 ### `time_based_rules` — Temporal State Rule (evolution of Date Window)
 
 - **Status**: in-flight (targeting the 0.x line, before 1.0.0), scoping.
@@ -136,6 +163,23 @@ Deferred refinements from the 0.5.0 rework (design history in
 ---
 
 ## UX polish (deferred)
+
+### Standardized repeater row-title schema
+
+- **Status**: idea (raised during Phase 3 handler migration, 2026-07-01)
+- **Motivation**: each rule type builds its collapsed-row title independently — a
+  per-handler `snapshot_*_labels` callback in `WireframeBootstrap` assembling an
+  ad-hoc string (related: "Trigger → Target (scope)"; acf-ref: "Copy Tax terms to
+  Field on Status"; propagation: "Scope: Copy Tax terms to children (conflict)";
+  time-based: "start–end: Apply Term to scope with filter"). They share primitives
+  (`term_label`, `taxonomy_label`, `disabled_prefix`, post-type scope, en-dash
+  windows) but no common grammar, so each is revised individually and drifts.
+- **Sketch**: after all rule types are migrated + their titles settle, extract a
+  shared title-builder with a small declarative schema (tokens + separators +
+  conditional clauses) each config declares, so the row title is data, not a
+  bespoke callback per handler. Fold the existing `snapshot_*_labels` into it.
+- **Phase**: unscoped — quality-of-life, once the per-handler titles have stabilized
+  through use. For now titles stay per-handler and are revised one at a time.
 
 ### Hierarchical rule label rework
 

@@ -118,6 +118,51 @@ class ConfigHelpers {
     }
 
     /**
+     * Hierarchical public post types as slug => label, NO empty placeholder.
+     *
+     * Checkbox variant of hierarchical_post_type_options() — for the shared
+     * hierarchical_post_types_field(). Propagation needs a parent/child
+     * relationship, so its post-type set is restricted to hierarchical types.
+     */
+    public static function hierarchical_post_types_checkbox_options(): array {
+        $options    = [];
+        $post_types = get_post_types(['public' => true, 'hierarchical' => true], 'objects');
+
+        foreach ($post_types as $post_type) {
+            $options[$post_type->name] = $post_type->label;
+        }
+
+        return $options;
+    }
+
+    /**
+     * Canonical "Limit to post types" checkboxes subfield restricted to
+     * HIERARCHICAL post types. Mirrors post_types_field() but offers only
+     * parent/child-capable types — propagation can never act on a flat type,
+     * so listing one would be a footgun (SPEC §V5).
+     *
+     * Empty/all-unchecked ⇒ every hierarchical post type using the taxonomy.
+     * Same canonical `post_types` id + {slug:bool} read path as the all-types
+     * field (UnifiedHandlerBase::should_process_post).
+     *
+     * @param array $overrides Per-call field-definition overrides (e.g. columns).
+     */
+    public static function hierarchical_post_types_field(array $overrides = []): array {
+        // `id` is intentionally NOT overridable — should_process_post reads the
+        // `post_types` key by name (same contract as post_types_field()). Merge
+        // overrides first, then force the canonical id.
+        return array_merge([
+            'type'        => 'checkboxes',
+            'label'       => __('Limit to post types', 'bws-meta-manager'),
+            'description' => __('Only hierarchical post types appear — propagation requires a parent/child relationship. Leave all unchecked to apply to every hierarchical post type.', 'bws-meta-manager'),
+            'columns'     => 12,
+            'args'        => [
+                'options' => self::hierarchical_post_types_checkbox_options(),
+            ],
+        ], $overrides, ['id' => 'post_types']);
+    }
+
+    /**
      * Normalize a Wireframe checkboxes value to a flat list of selected slugs.
      *
      * Checkboxes store a `{slug: bool}` map; a plain list of slugs (or an empty

@@ -92,6 +92,21 @@ several).
    gate eligibility (is this post a plausible source AND/OR dependent of any
    rule?) before any expensive reverse lookup or query. (B7/V17)
 
+9. **Sibling-conditional subfields use real `conditions`, not description text.**
+   Wireframe 1.0.6 (#13) evaluates subfield-level `conditions` against the other
+   subfields in the same repeater row, client- AND server-side
+   ([Conditions.php](../vendor/tdrayson/wp-wireframe/src/Framework/Conditions.php),
+   `RepeaterField` honors it). A subfield only meaningful when a sibling holds a
+   given value gets a `conditions` node (`{field, operator, value}`, or `all`/`any`
+   combinators; `in`/`not_in` for multi-value) — NOT a "Only used when X…"
+   description. **When migrating or revisiting any rule type, convert its
+   description-text conditionals to real `conditions`.** Caveat: a condition-hidden
+   subfield is dropped from the save payload (not persisted), so the handler reads
+   it absent (falsy/default) — make sure that's the intended hidden-state value.
+   First conversion: level-restriction `include_ancestors` (shows only in
+   deepest_only / one_per_level). Several configs still carry the old workaround;
+   convert as each is touched. (don't #3, SPEC §V11)
+
 ## Settings UI — WP Wireframe
 
 The settings UI is a React app provided by `tdrayson/wp-wireframe`. Each rule type has a config class under [includes/admin/config/](../includes/admin/config/) exposing a `section()` method. The top-level composer assembles tabs from sections:

@@ -36,6 +36,14 @@ class WireframeBootstrap {
         // Snapshot the ACF-reference row title (SPEC §V10). Separate callback
         // from the related path — generalize later if shapes converge.
         add_filter('wp-wireframe/save/payload', [self::class, 'snapshot_acf_reference_labels'], 10, 1);
+
+        // Snapshot the propagation row title (SPEC §V11). post_type → plural
+        // post_types (Phase 3) broke the old {post_type} token; resolve human
+        // labels at save like the others.
+        add_filter('wp-wireframe/save/payload', [self::class, 'snapshot_propagation_labels'], 10, 1);
+
+        // Snapshot the time-based row title (SPEC §V11). Term + scope + window.
+        add_filter('wp-wireframe/save/payload', [self::class, 'snapshot_time_based_labels'], 10, 1);
     }
 
     /**
@@ -168,6 +176,173 @@ class WireframeBootstrap {
     }
 
     /**
+     * Assemble each propagation rule's row title (SPEC §V11).
+     *
+     * Hooked on `wp-wireframe/save/payload`. Schema:
+     *   {Scope: }Copy {Taxonomy} terms to children{ (conflict)}
+     *   - Scope prefix ("Pages: ") only when the rule is restricted to specific
+     *     post types; omitted when it applies to all (empty post_types).
+     *   - conflict suffix always shown.
+     *   e.g. "Pages: Copy Breakers terms to children (replace)"
+     *        "Copy Categories terms to children (merge)"
+     * No arrow — direction is stated in words ("to children").
+     *
+     * @param array $clean_values
+     * @return array
+     */
+    public static function snapshot_propagation_labels(array $clean_values): array {
+        if (empty($clean_values['propagation_rules']) || !is_array($clean_values['propagation_rules'])) {
+            return $clean_values;
+        }
+
+        foreach ($clean_values['propagation_rules'] as &$rule) {
+            if (!is_array($rule)) {
+                continue;
+            }
+
+            $scope    = self::propagation_scope_prefix($rule['post_types'] ?? []);
+            $tax      = self::taxonomy_label($rule['taxonomy'] ?? '');
+            $conflict = self::conflict_label($rule['conflict_handling'] ?? 'merge');
+
+            $title = sprintf(
+                /* translators: 1: taxonomy label 2: conflict mode */
+                __('Copy %1$s terms to children (%2$s)', 'bws-meta-manager'),
+                $tax,
+                $conflict
+            );
+
+            $rule['row_title'] = self::disabled_prefix($rule) . $scope . \esc_html($title);
+        }
+        unset($rule);
+
+        return $clean_values;
+    }
+
+    /**
+     * Leading "Post type: " prefix for the propagation row title, shown ONLY
+     * when the rule is restricted to specific post types. Empty (= applies to
+     * all hierarchical types) ⇒ '' so the title reads "Copy … terms to children".
+     *
+     * @param mixed $post_types Checkbox {slug:bool} map or list of slugs.
+     * @return string Unescaped, trailing ": " when present.
+     */
+    private static function propagation_scope_prefix($post_types): string {
+        $labels = self::post_type_labels($post_types);
+        return empty($labels) ? '' : \esc_html(implode(', ', $labels)) . ': ';
+    }
+
+    /**
+     * Human label for a propagation conflict_handling value.
+     *
+     * @param string $value merge|replace|skip.
+     * @return string Unescaped label.
+     */
+    private static function conflict_label($value): string {
+        switch ($value) {
+            case 'replace':
+                return __('replace', 'bws-meta-manager');
+            case 'skip':
+                return __('skip if set', 'bws-meta-manager');
+            case 'merge':
+            default:
+                return __('merge', 'bws-meta-manager');
+        }
+    }
+
+    /**
+     * Assemble each time-based rule's row title (SPEC §V11).
+     *
+     * Hooked on `wp-wireframe/save/payload`. Date-first (the window is the most
+     * salient part of a manually configured date rule), then a sentence:
+     *   {start}–{end}: Apply {target} to {scope}{ with {filter}}
+     *   - dates joined by an en dash, no surrounding spaces.
+     *   - scope = "posts" (all types) or the post-type labels (when restricted).
+     *   - filter clause only when set: specific terms → "with {Term, …}";
+     *     else taxonomies → "with any {Taxonomy} term"; neither → omitted.
+     *   e.g. "2026-05-26–2026-05-27: Apply Shakers: Grandchild ii to posts"
+     *        "2026-05-26–2026-05-27: Apply … to Pages with Breakers: Term A"
+     *
+     * @param array $clean_values
+     * @return array
+     */
+    public static function snapshot_time_based_labels(array $clean_values): array {
+        if (empty($clean_values['time_based_rules']) || !is_array($clean_values['time_based_rules'])) {
+            return $clean_values;
+        }
+
+        foreach ($clean_values['time_based_rules'] as &$rule) {
+            if (!is_array($rule)) {
+                continue;
+            }
+
+            $start  = (string) ($rule['start_date'] ?? '');
+            $end    = (string) ($rule['end_date'] ?? '');
+            $target = self::term_label($rule['target_term_id'] ?? null);
+            $scope  = self::time_based_scope_phrase($rule['post_types'] ?? []);
+            $filter = self::time_based_filter_clause($rule);
+
+            // en dash, no surrounding spaces.
+            $window = ($start !== '' || $end !== '') ? $start . "\xE2\x80\x93" . $end . ': ' : '';
+
+            $sentence = sprintf(
+                /* translators: 1: target term 2: post-type scope phrase */
+                __('Apply %1$s to %2$s', 'bws-meta-manager'),
+                $target !== '' ? $target : __('(no term)', 'bws-meta-manager'),
+                $scope
+            );
+
+            $title = $window . $sentence . $filter;
+
+            $rule['row_title'] = self::disabled_prefix($rule) . \esc_html($title);
+        }
+        unset($rule);
+
+        return $clean_values;
+    }
+
+    /**
+     * Scope phrase for the time-based title's "to …" clause: "posts" when the
+     * rule applies to all post types (empty post_types), else the human
+     * post-type labels ("Pages", "Posts, Pages"). Unescaped.
+     *
+     * @param mixed $post_types Checkbox {slug:bool} map or list of slugs.
+     * @return string
+     */
+    private static function time_based_scope_phrase($post_types): string {
+        $labels = self::post_type_labels($post_types);
+        return empty($labels) ? __('posts', 'bws-meta-manager') : implode(', ', $labels);
+    }
+
+    /**
+     * Filter clause for the time-based title: " with {specific terms}" when
+     * filter_terms is set; else " with any {taxonomy} term" when
+     * filter_taxonomies is set; else '' (no filter). Unescaped.
+     *
+     * @param array $rule
+     * @return string
+     */
+    private static function time_based_filter_clause(array $rule): string {
+        $terms = self::trigger_terms_label($rule['filter_terms'] ?? null);
+        if ($terms !== '') {
+            return ' ' . sprintf(__('with %s', 'bws-meta-manager'), $terms);
+        }
+
+        $taxonomies = Config\ConfigHelpers::selected_checkbox_slugs($rule['filter_taxonomies'] ?? []);
+        $labels = [];
+        foreach ($taxonomies as $slug) {
+            $label = self::taxonomy_label((string) $slug);
+            if ($label !== '') {
+                $labels[] = $label;
+            }
+        }
+        if (!empty($labels)) {
+            return ' ' . sprintf(__('with any %s term', 'bws-meta-manager'), implode(', ', $labels));
+        }
+
+        return '';
+    }
+
+    /**
      * Resolve a raw "post_type:field_name" (or bare name) ACF relationship
      * field to its clean human label via acf_get_field(). Falls back to the
      * bare field name. (SPEC §V10)
@@ -265,42 +440,36 @@ class WireframeBootstrap {
     }
 
     /**
-     * Build the post-type scope suffix " (Label, Label)" for the row title.
+     * Resolve a Wireframe post-type checkbox value ({slug:bool} map or slug
+     * list) to a flat array of human post-type labels. Unresolvable slugs (a
+     * type unregistered after save) are dropped. Single source for the three
+     * row-title scope formatters below. (0.6.0 review — was triplicated.)
      *
-     * Returns '' when the rule applies to all post types (empty post_types),
-     * so the dumb-concat title_template renders no trailing space. The " ("
-     * and ")" decoration lives here, not in the template. Accepts the
-     * Wireframe checkbox `{slug: bool}` map and a plain list of slugs.
-     *
-     * @param mixed $post_types Checkbox map or list of post-type slugs.
-     * @return string
+     * @param mixed $post_types
+     * @return string[] Post-type labels.
      */
-    private static function scope_label($post_types): string {
-        if (empty($post_types) || !is_array($post_types)) {
-            return '';
-        }
-
-        // Checkboxes store {slug: bool}; extract truthy keys. A plain list
-        // (array_is_list) is used as-is.
-        $slugs = array_is_list($post_types)
-            ? $post_types
-            : array_keys(array_filter($post_types));
-
+    private static function post_type_labels($post_types): array {
         $labels = [];
-        foreach ($slugs as $slug) {
+        foreach (Config\ConfigHelpers::selected_checkbox_slugs($post_types) as $slug) {
             $obj = \get_post_type_object((string) $slug);
             if ($obj) {
                 $labels[] = $obj->label;
             }
-            // A slug that no longer resolves (post type unregistered after
-            // save) is silently dropped — acceptable pre-1.0.
         }
+        return $labels;
+    }
 
-        if (empty($labels)) {
-            return '';
-        }
-
-        return ' (' . implode(', ', $labels) . ')';
+    /**
+     * Post-type scope SUFFIX " (Label, Label)" for a row title, '' when the rule
+     * applies to all post types. The " (" / ")" decoration lives here, not in
+     * the template.
+     *
+     * @param mixed $post_types
+     * @return string
+     */
+    private static function scope_label($post_types): string {
+        $labels = self::post_type_labels($post_types);
+        return empty($labels) ? '' : ' (' . implode(', ', $labels) . ')';
     }
 
     /**

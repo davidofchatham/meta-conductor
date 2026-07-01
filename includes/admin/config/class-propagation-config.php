@@ -31,7 +31,7 @@ class PropagationConfig {
                         'duplicate_row'  => true,
                         'add_label'      => __('Add propagation rule', 'bws-meta-manager'),
                         'empty_message'  => __('No propagation rules configured.', 'bws-meta-manager'),
-                        'title_template' => '{post_type} → {taxonomy}',
+                        'title_template' => '{row_title}',
                         'subfields'      => [
                             [
                                 'id'      => 'enabled',
@@ -40,26 +40,16 @@ class PropagationConfig {
                                 'default' => true,
                                 'columns' => 12,
                             ],
+                            ConfigHelpers::hierarchical_post_types_field(),
                             [
-                                'id'          => 'post_type',
+                                'id'          => 'taxonomy',
                                 'type'        => 'select',
-                                'label'       => __('Post type', 'bws-meta-manager'),
-                                'description' => __('Only hierarchical post types appear — propagation requires a parent/child relationship.', 'bws-meta-manager'),
+                                'label'       => __('Taxonomy', 'bws-meta-manager'),
+                                'description' => __('Terms in this taxonomy cascade from a parent post to its children.', 'bws-meta-manager'),
                                 'default'     => '',
                                 'required'    => true,
                                 'columns'     => 12,
                                 'args'        => [
-                                    'options' => ConfigHelpers::hierarchical_post_type_options(),
-                                ],
-                            ],
-                            [
-                                'id'       => 'taxonomy',
-                                'type'     => 'select',
-                                'label'    => __('Taxonomy', 'bws-meta-manager'),
-                                'default'  => '',
-                                'required' => true,
-                                'columns'  => 12,
-                                'args'     => [
                                     'options' => ConfigHelpers::taxonomy_options(),
                                 ],
                             ],
@@ -77,6 +67,14 @@ class PropagationConfig {
                                         'skip'    => __('Skip if terms exist', 'bws-meta-manager'),
                                     ],
                                 ],
+                            ],
+                            // Snapshot row title (V11/§I.label). Not user-editable;
+                            // assembled at save by snapshot_propagation_labels in
+                            // WireframeBootstrap. Declared so {row_title} resolves.
+                            [
+                                'id'      => 'row_title',
+                                'type'    => 'hidden',
+                                'default' => '',
                             ],
                         ],
                     ],

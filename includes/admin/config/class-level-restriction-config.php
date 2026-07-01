@@ -69,21 +69,21 @@ class LevelRestrictionConfig {
                             [
                                 'id'          => 'include_ancestors',
                                 'type'        => 'toggle',
-                                'label'       => __('Include ancestors', 'bws-meta-manager'),
-                                'description' => __('Only relevant in "deepest only" mode. Works with existing hierarchical inheritance rules.', 'bws-meta-manager'),
+                                'label'       => __('Keep ancestor terms', 'bws-meta-manager'),
+                                'description' => __('In "deepest only" mode: also keep each kept term\'s parent chain (so e.g. a post tagged with a leaf term still appears under its ancestor archives). In "one per level" mode: keep ancestor terms instead of pruning ones that conflict with a deeper pick. No effect in "shallowest only" mode.', 'bws-meta-manager'),
                                 'default'     => false,
                                 'columns'     => 12,
-                            ],
-                            [
-                                'id'          => 'post_types',
-                                'type'        => 'checkboxes',
-                                'label'       => __('Post types (optional)', 'bws-meta-manager'),
-                                'description' => __('Leave empty to apply to all post types using this taxonomy.', 'bws-meta-manager'),
-                                'columns'     => 12,
-                                'args'        => [
-                                    'options' => self::post_type_options_no_placeholder(),
+                                // Subfield condition (Wireframe 1.0.6, #13): only show
+                                // where the flag actually changes behavior. Hidden ⇒ the
+                                // value drops from the payload (RepeaterField), which is
+                                // the desired "falsy in shallowest_only" outcome.
+                                'conditions'  => [
+                                    'field'    => 'restriction_mode',
+                                    'operator' => 'in',
+                                    'value'    => ['deepest_only', 'one_per_level'],
                                 ],
                             ],
+                            ConfigHelpers::post_types_field(),
                         ],
                     ],
                 ],
@@ -97,16 +97,5 @@ class LevelRestrictionConfig {
             'title'    => __('Level Restriction', 'bws-meta-manager'),
             'sections' => [self::section()],
         ];
-    }
-
-    private static function post_type_options_no_placeholder(): array {
-        $options    = [];
-        $post_types = get_post_types(['public' => true], 'objects');
-
-        foreach ($post_types as $post_type) {
-            $options[$post_type->name] = $post_type->label;
-        }
-
-        return $options;
     }
 }
