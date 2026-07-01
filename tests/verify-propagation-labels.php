@@ -6,9 +6,9 @@
  * stubbed WP, WITHOUT booting WordPress. Catches what H1/H2 cannot:
  *   - cross-namespace FQN resolution (the Config\ConfigHelpers call that the
  *     autoload harness can't see — it only checks class_exists, not call sites)
- *   - the empty-post_types ⇒ "All post types" child-scope label
+ *   - the empty-post_types ⇒ no scope prefix (applies to all)
  *   - {slug:bool} checkbox map AND plain-list handling
- *   - conflict_label + disabled_prefix baking into the leading token
+ *   - conflict suffix + disabled_prefix baking into row_title
  *
  * Loads the two real classes (ConfigHelpers + WireframeBootstrap) so the FQNs
  * actually resolve at call time.
@@ -64,11 +64,12 @@ $out = WireframeBootstrap::snapshot_propagation_labels([
     ]],
 ]);
 $r = $out['propagation_rules'][0];
-$check('scope = human labels',        $r['scope_label'] === 'Pages, Departments');
-$check('tax_label resolved',          $r['tax_label'] === 'Categories');
-$check('conflict_label = merge',      $r['conflict_label'] === 'merge');
+$check('restricted scope prefix',     str_starts_with($r['row_title'], 'Pages, Departments: '));
+$check('verb + taxonomy + children',  str_contains($r['row_title'], 'Copy Categories terms to children'));
+$check('conflict suffix = merge',     str_contains($r['row_title'], '(merge)'));
+$check('no arrow in title',           !str_contains($r['row_title'], '→'));
 
-// --- Case 2: empty post_types ⇒ "All post types". ---------------------------
+// --- Case 2: empty post_types ⇒ no scope prefix. ----------------------------
 $out = WireframeBootstrap::snapshot_propagation_labels([
     'propagation_rules' => [[
         'enabled'           => true,
@@ -78,8 +79,8 @@ $out = WireframeBootstrap::snapshot_propagation_labels([
     ]],
 ]);
 $r = $out['propagation_rules'][0];
-$check('empty scope ⇒ All post types', $r['scope_label'] === 'All post types');
-$check('conflict_label = replace',     $r['conflict_label'] === 'replace');
+$check('all-types ⇒ no prefix',        str_starts_with($r['row_title'], 'Copy Breakers terms to children'));
+$check('conflict suffix = replace',    str_contains($r['row_title'], '(replace)'));
 
 // --- Case 3: plain-list post_types + disabled prefix. -----------------------
 $out = WireframeBootstrap::snapshot_propagation_labels([
@@ -91,16 +92,16 @@ $out = WireframeBootstrap::snapshot_propagation_labels([
     ]],
 ]);
 $r = $out['propagation_rules'][0];
-$check('plain-list scope resolves',    str_contains($r['scope_label'], 'Pages'));
-$check('disabled prefix baked in',     str_starts_with($r['scope_label'], '[Disabled] '));
-$check('conflict_label = skip if set', $r['conflict_label'] === 'skip if set');
+$check('disabled prefix first',        str_starts_with($r['row_title'], '[Disabled] '));
+$check('plain-list scope resolves',    str_contains($r['row_title'], 'Pages: '));
+$check('conflict suffix = skip if set', str_contains($r['row_title'], '(skip if set)'));
 
 // --- Case 4: no propagation_rules key ⇒ untouched. --------------------------
 $untouched = WireframeBootstrap::snapshot_propagation_labels(['other' => 1]);
 $check('non-propagation payload untouched', $untouched === ['other' => 1]);
 
 // --- Report. ----------------------------------------------------------------
-$total = 11;
+$total = 10;
 if ($fail) {
     fwrite(STDERR, "\nPROPAGATION-LABELS FAIL — " . count($fail) . "/$total assertions failed:\n");
     foreach ($fail as $f) { fwrite(STDERR, "  \xE2\x9C\x97 $f\n"); }

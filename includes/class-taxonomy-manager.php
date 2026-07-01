@@ -111,7 +111,6 @@ class TaxonomyManager {
         
         // Post save hooks
         add_action('save_post', array($this, 'on_post_save'), 10, 3);
-        add_action('wp_insert_post', array($this, 'on_post_insert'), 10, 3);
     }
     
     /**
@@ -206,21 +205,6 @@ class TaxonomyManager {
         // Process through all handlers
         foreach ($this->handlers as $handler) {
             $handler->process_post($post_id, $post, $update);
-        }
-    }
-    
-    /**
-     * Handle post insertion events
-     */
-    public function on_post_insert($post_id, $post, $update) {
-        // Only process new posts
-        if ($update) {
-            return;
-        }
-        
-        // Special handling for new child posts
-        if ($post->post_parent > 0) {
-            $this->handlers['propagation']->process_new_child_post($post_id, $post);
         }
     }
     

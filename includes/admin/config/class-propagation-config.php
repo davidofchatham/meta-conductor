@@ -31,7 +31,7 @@ class PropagationConfig {
                         'duplicate_row'  => true,
                         'add_label'      => __('Add propagation rule', 'bws-meta-manager'),
                         'empty_message'  => __('No propagation rules configured.', 'bws-meta-manager'),
-                        'title_template' => '{scope_label} → {tax_label} ({conflict_label})',
+                        'title_template' => '{row_title}',
                         'subfields'      => [
                             [
                                 'id'      => 'enabled',
@@ -68,22 +68,11 @@ class PropagationConfig {
                                     ],
                                 ],
                             ],
-                            // Snapshot labels for the row title (V11/§I.label). Not
-                            // user-editable; populated at save by snapshot_propagation_labels
-                            // in WireframeBootstrap. Declared so title_template tokens
-                            // resolve and the row shape is documented.
+                            // Snapshot row title (V11/§I.label). Not user-editable;
+                            // assembled at save by snapshot_propagation_labels in
+                            // WireframeBootstrap. Declared so {row_title} resolves.
                             [
-                                'id'      => 'scope_label',
-                                'type'    => 'hidden',
-                                'default' => '',
-                            ],
-                            [
-                                'id'      => 'tax_label',
-                                'type'    => 'hidden',
-                                'default' => '',
-                            ],
-                            [
-                                'id'      => 'conflict_label',
+                                'id'      => 'row_title',
                                 'type'    => 'hidden',
                                 'default' => '',
                             ],

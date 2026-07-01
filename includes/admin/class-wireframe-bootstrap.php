@@ -173,12 +173,16 @@ class WireframeBootstrap {
     }
 
     /**
-     * Inject scope_label / tax_label / conflict_label into each propagation row.
+     * Assemble each propagation rule's row title (SPEC §V11).
      *
-     * Hooked on `wp-wireframe/save/payload`. Title schema:
-     *   {scope} → {taxonomy} ({conflict})   e.g. "Pages → Categories (merge)"
-     * scope = human post-type labels, or "All post types" when none chosen.
-     * (SPEC §V11; mirrors snapshot_related_labels.)
+     * Hooked on `wp-wireframe/save/payload`. Schema:
+     *   {Scope: }Copy {Taxonomy} terms to children{ (conflict)}
+     *   - Scope prefix ("Pages: ") only when the rule is restricted to specific
+     *     post types; omitted when it applies to all (empty post_types).
+     *   - conflict suffix always shown.
+     *   e.g. "Pages: Copy Breakers terms to children (replace)"
+     *        "Copy Categories terms to children (merge)"
+     * No arrow — direction is stated in words ("to children").
      *
      * @param array $clean_values
      * @return array
@@ -193,12 +197,18 @@ class WireframeBootstrap {
                 continue;
             }
 
-            $rule['scope_label']    = \esc_html(self::propagation_scope_label($rule['post_types'] ?? []));
-            $rule['tax_label']      = \esc_html(self::taxonomy_label($rule['taxonomy'] ?? ''));
-            $rule['conflict_label'] = \esc_html(self::conflict_label($rule['conflict_handling'] ?? 'merge'));
+            $scope    = self::propagation_scope_prefix($rule['post_types'] ?? []);
+            $tax      = self::taxonomy_label($rule['taxonomy'] ?? '');
+            $conflict = self::conflict_label($rule['conflict_handling'] ?? 'merge');
 
-            // Bake the disabled marker into the leading token.
-            $rule['scope_label'] = self::disabled_prefix($rule) . $rule['scope_label'];
+            $title = sprintf(
+                /* translators: 1: taxonomy label 2: conflict mode */
+                __('Copy %1$s terms to children (%2$s)', 'bws-meta-manager'),
+                $tax,
+                $conflict
+            );
+
+            $rule['row_title'] = self::disabled_prefix($rule) . $scope . \esc_html($title);
         }
         unset($rule);
 
@@ -206,19 +216,15 @@ class WireframeBootstrap {
     }
 
     /**
-     * Bare post-type label list for the propagation row title's LEADING token
-     * (no parens decoration, unlike scope_label()). "All post types" when the
-     * rule applies to every hierarchical type (empty post_types).
+     * Leading "Post type: " prefix for the propagation row title, shown ONLY
+     * when the rule is restricted to specific post types. Empty (= applies to
+     * all hierarchical types) ⇒ '' so the title reads "Copy … terms to children".
      *
      * @param mixed $post_types Checkbox {slug:bool} map or list of slugs.
-     * @return string Unescaped label.
+     * @return string Unescaped, trailing ": " when present.
      */
-    private static function propagation_scope_label($post_types): string {
+    private static function propagation_scope_prefix($post_types): string {
         $slugs = Config\ConfigHelpers::selected_checkbox_slugs($post_types);
-
-        if (empty($slugs)) {
-            return __('All post types', 'bws-meta-manager');
-        }
 
         $labels = [];
         foreach ($slugs as $slug) {
@@ -228,7 +234,7 @@ class WireframeBootstrap {
             }
         }
 
-        return empty($labels) ? __('All post types', 'bws-meta-manager') : implode(', ', $labels);
+        return empty($labels) ? '' : \esc_html(implode(', ', $labels)) . ': ';
     }
 
     /**

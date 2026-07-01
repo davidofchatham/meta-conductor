@@ -15,6 +15,13 @@ if (!defined('ABSPATH')) {
 
 class PropagationHandler extends UnifiedHandlerBase {
 
+    /**
+     * Reentrancy guard. An upward inherit or downward propagate writes terms,
+     * which fires set_object_terms again — without this the handler re-enters
+     * within one request. (V9/V12)
+     */
+    private $processing = false;
+
     public function get_handler_type(): string {
         return 'propagation';
     }
@@ -35,30 +42,50 @@ class PropagationHandler extends UnifiedHandlerBase {
     }
 
     // Intentional no-op (not a forgotten implementation). Propagation fires via
-    // its own save_post / set_object_terms / acf/save_post hooks (above) and the
-    // new-child path (process_new_child_post); the base process_post routes
-    // through RuleEngine, which propagation does not use. The on_post_save loop
-    // in TaxonomyManager calls this until the Phase-3 teardown removes it.
+    // its own save_post / set_object_terms / acf/save_post hooks (above), with
+    // new-child inherit folded into on_parent_post_save (B3); the base
+    // process_post routes through RuleEngine, which propagation does not use.
+    // The on_post_save loop in TaxonomyManager calls this until the Phase-3
+    // teardown (T6) removes it.
     public function process_post($post_id, $post, $update) {}
 
     /**
-     * Handle when a parent post is saved
+     * Handle a post save: propagate DOWN to children, and (if the post itself
+     * has a parent) inherit UP from its parent. Both directions honor the rule's
+     * conflict_handling. Upward inherit lives here — on the child's own save —
+     * NOT on wp_insert_post, which fires at auto-draft creation and misses the
+     * real save (B3/V12).
      */
     public function on_parent_post_save($post_id, $post, $update) {
         // Skip autosaves and revisions
         if (wp_is_post_autosave($post_id) || wp_is_post_revision($post_id)) {
             return;
         }
-        
+
+        if ($this->processing) {
+            return;
+        }
+
         $enabled_rules = $this->get_enabled_rules();
 
-        foreach ($enabled_rules as $rule) {
-            if (!$this->should_process_post($post_id, $rule)) {
-                continue;
-            }
+        $this->processing = true;
+        try {
+            foreach ($enabled_rules as $rule) {
+                if (!$this->should_process_post($post_id, $rule)) {
+                    continue;
+                }
 
-            // Propagate terms to children
-            $this->propagate_terms_to_children($post_id, $rule);
+                // Inherit UP from parent first (this post is a child), so a
+                // freshly created child gets its parent's terms on its own save.
+                if ($post->post_parent > 0) {
+                    $this->inherit_terms_from_parent($post_id, $post, $rule);
+                }
+
+                // Propagate DOWN to children (this post is a parent).
+                $this->propagate_terms_to_children($post_id, $rule);
+            }
+        } finally {
+            $this->processing = false;
         }
     }
     
@@ -66,28 +93,40 @@ class PropagationHandler extends UnifiedHandlerBase {
      * Handle when terms are set on a parent post
      */
     public function on_parent_terms_set($object_id, $terms, $tt_ids, $taxonomy, $append, $old_tt_ids) {
+        // Suppress re-entry while our own propagate/inherit write is firing
+        // set_object_terms (V9/V12). A user-initiated term set runs normally
+        // ($processing === false).
+        if ($this->processing) {
+            return;
+        }
+
         $enabled_rules = $this->get_enabled_rules();
 
-        foreach ($enabled_rules as $rule) {
-            if ($rule['taxonomy'] !== $taxonomy) {
-                continue;
+        $this->processing = true;
+        try {
+            foreach ($enabled_rules as $rule) {
+                if ($rule['taxonomy'] !== $taxonomy) {
+                    continue;
+                }
+
+                $post = get_post($object_id);
+                if (!$post || !$this->should_process_post($object_id, $rule)) {
+                    continue;
+                }
+
+                // Calculate which terms were removed from parent
+                $removed_tt_ids = array_diff($old_tt_ids ?? array(), $tt_ids ?? array());
+
+                // Propagate term removals to children FIRST
+                if (!empty($removed_tt_ids)) {
+                    $this->propagate_term_removals_to_children($object_id, $rule, $removed_tt_ids);
+                }
+
+                // Then propagate new/current terms to children
+                $this->propagate_terms_to_children($object_id, $rule);
             }
-
-            $post = get_post($object_id);
-            if (!$post || !$this->should_process_post($object_id, $rule)) {
-                continue;
-            }
-
-            // Calculate which terms were removed from parent
-            $removed_tt_ids = array_diff($old_tt_ids ?? array(), $tt_ids ?? array());
-
-            // Propagate term removals to children FIRST
-            if (!empty($removed_tt_ids)) {
-                $this->propagate_term_removals_to_children($object_id, $rule, $removed_tt_ids);
-            }
-
-            // Then propagate new/current terms to children
-            $this->propagate_terms_to_children($object_id, $rule);
+        } finally {
+            $this->processing = false;
         }
     }
     
@@ -99,21 +138,30 @@ class PropagationHandler extends UnifiedHandlerBase {
         if (!is_numeric($post_id)) {
             return;
         }
-        
+
+        if ($this->processing) {
+            return;
+        }
+
         $post = get_post($post_id);
         if (!$post) {
             return;
         }
-        
+
         $enabled_rules = $this->get_enabled_rules();
 
-        foreach ($enabled_rules as $rule) {
-            if (!$this->should_process_post($post_id, $rule)) {
-                continue;
-            }
+        $this->processing = true;
+        try {
+            foreach ($enabled_rules as $rule) {
+                if (!$this->should_process_post($post_id, $rule)) {
+                    continue;
+                }
 
-            // Check for ACF taxonomy fields and propagate if necessary
-            $this->process_acf_propagation($post_id, $rule);
+                // Check for ACF taxonomy fields and propagate if necessary
+                $this->process_acf_propagation($post_id, $rule);
+            }
+        } finally {
+            $this->processing = false;
         }
     }
     
@@ -149,25 +197,11 @@ class PropagationHandler extends UnifiedHandlerBase {
         }
     }
     
-    /**
-     * Process a new child post
-     */
-    public function process_new_child_post($post_id, $post) {
-        if ($post->post_parent <= 0) {
-            return;
-        }
-        
-        $enabled_rules = $this->get_enabled_rules();
+    // Removed: process_new_child_post() + the wp_insert_post path (B3). New-child
+    // inheritance now runs on the child's OWN save_post (on_parent_post_save,
+    // post_parent > 0 branch) — reliable across editors and conflict-aware,
+    // unlike the auto-draft-timed wp_insert_post hook it replaces.
 
-        foreach ($enabled_rules as $rule) {
-            if (!$this->should_process_post($post_id, $rule)) {
-                continue;
-            }
-
-            $this->inherit_terms_from_parent($post_id, $post, $rule);
-        }
-    }
-    
     /**
      * Propagate terms from parent to all children
      */
@@ -328,26 +362,78 @@ class PropagationHandler extends UnifiedHandlerBase {
         if (!$parent_post || !$this->should_process_post($parent_id, $rule)) {
             return;
         }
-        
+
         $taxonomy = $rule['taxonomy'];
         $conflict_handling = $rule['conflict_handling'] ?? 'merge';
-        
+
         // Get parent terms
         $parent_terms = $this->get_post_terms($parent_id, $taxonomy);
-        
-        if (!empty($parent_terms)) {
-            $this->apply_terms_to_post($child_id, $taxonomy, $parent_terms, $conflict_handling);
-            
-            // Also update ACF fields if they exist
-            $this->update_acf_fields_for_post($child_id, $taxonomy, $parent_terms, $conflict_handling);
-            
-            $this->debug_log(
-                sprintf('Child %d inherited terms from parent %d', $child_id, $parent_id),
-                array('taxonomy' => $taxonomy, 'terms' => $parent_terms)
-            );
+
+        if (empty($parent_terms)) {
+            return;
+        }
+
+        // No-change short-circuit. WP fires save_post more than once per editor
+        // save (and a create is often two requests), so without this the same
+        // inherit re-runs — redundant write + duplicate debug log. Compute the
+        // would-be end state for this conflict mode and skip if the child is
+        // already there. Cause-agnostic (covers both intra-request double-fire
+        // and cross-request re-save). (V12)
+        if (!$this->child_needs_inherit($child_id, $taxonomy, $parent_terms, $conflict_handling)) {
+            return;
+        }
+
+        $this->apply_terms_to_post($child_id, $taxonomy, $parent_terms, $conflict_handling);
+
+        // Also update ACF fields if they exist
+        $this->update_acf_fields_for_post($child_id, $taxonomy, $parent_terms, $conflict_handling);
+
+        $this->debug_log(
+            sprintf('Child %d inherited terms from parent %d', $child_id, $parent_id),
+            array('taxonomy' => $taxonomy, 'terms' => $parent_terms)
+        );
+    }
+
+    /**
+     * Whether applying $parent_terms to the child under $conflict_handling would
+     * actually change the child's current terms. False ⇒ already in the target
+     * state, skip the write (and the log). Mirrors apply_terms_to_post's per-mode
+     * end state. (V12)
+     *
+     * @param int      $child_id
+     * @param string   $taxonomy
+     * @param int[]    $parent_terms      Term IDs from the parent.
+     * @param string   $conflict_handling merge|replace|skip.
+     * @return bool
+     */
+    private function child_needs_inherit($child_id, $taxonomy, $parent_terms, $conflict_handling): bool {
+        $current = wp_get_object_terms($child_id, $taxonomy, array('fields' => 'ids'));
+        if (is_wp_error($current)) {
+            return true; // can't tell — let the write proceed
+        }
+
+        $current = array_map('absint', $current);
+        $parent  = array_map('absint', $parent_terms);
+        sort($current);
+
+        switch ($conflict_handling) {
+            case 'replace':
+                // Skip only if child already equals the parent set exactly.
+                $target = $parent;
+                sort($target);
+                return $current !== $target;
+
+            case 'skip':
+                // skip mode writes only when the child is empty.
+                return empty($current);
+
+            case 'merge':
+            default:
+                // Skip if the parent set is already a subset of the child's.
+                return !empty(array_diff($parent, $current));
         }
     }
-    
+
     /**
      * Resolve the rule's `post_types` checkboxes to a concrete slug list for
      * the child-post query.

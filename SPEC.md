@@ -86,13 +86,13 @@ NO migration code.
   the handler's `should_process_post` reads it. Shipping the config field without the handler base-flip (or
   vice versa) = a rule that gates on a key nothing produces/consumes ⇒ applies-to-all or applies-to-none.
   Commit + verify them together. (C5, I.*-h + I.*-c)
-- V4. **Loop removal must not break propagation's second entry point.** `on_post_save` loop (I.tax-mgr
-  L200–210) calls `process_post` on every handler; deleting it is safe ONLY because each unified handler
-  registers its own hooks in `init_hooks`. BUT `process_new_child_post` is reached via `on_post_insert`
-  (L223), a SEPARATE hook the loop removal does not touch — it MUST stay wired after propagation migrates.
-  Also: the no-op `process_post` overrides in hierarchical + title_slug handlers exist only to stop the base
-  routing flat rules through `RuleEngine` via the loop; once the loop is gone, re-confirm those no-ops are
-  harmless (still present, no longer load-bearing). (I.tax-mgr, I.prop-h)
+- V4. **Loop removal relies on each unified handler owning its hooks.** `on_post_save` loop (I.tax-mgr) calls
+  `process_post` on every handler; deleting it (T6) is safe because each unified handler registers its own
+  hooks in `init_hooks`. (Propagation's old `process_new_child_post`/`on_post_insert` second entry point was
+  REMOVED in B3's fix — new-child inherit now runs on the child's own `save_post`, so there is no separate
+  insert hook left to preserve.) The no-op `process_post` overrides in hierarchical + title_slug exist only to
+  stop the base routing flat rules through `RuleEngine` via the loop; once the loop is gone, re-confirm those
+  no-ops are harmless (still present, no longer load-bearing). (I.tax-mgr, I.prop-h)
 - V5. **Propagation post-type field is hierarchical-only.** Propagation requires a parent/child relationship,
   so its post-type options MUST come from `get_post_types(['hierarchical'=>true])`, not the all-public-types
   `post_types_field()`. Reusing the shared field blindly offers non-hierarchical types that can never
@@ -130,6 +130,15 @@ it (all 3 are confirmed-working, C7), don't bolt on new logic unless a violation
   absent (= falsy/default); ensure that's the intended value in the hidden state. Each migrated/revisited
   handler's config: convert its description-text conditionals to real `conditions`. (T2 done: level-restriction
   `include_ancestors`; T3/T4 sweep their configs.) (I.*-c)
+- V12. **Propagation upward-inherit fires on the CHILD's own save, honoring `conflict_handling`** (B3).
+  A child gets its parent's terms via `inherit_terms_from_parent` (which applies `conflict_handling`:
+  merge=additive, replace=overwrite, skip=only-if-empty). This MUST trigger on the child's own `save_post`
+  (post has `post_parent > 0`), NOT the `wp_insert_post` `$update===false` path — that path fires at
+  auto-draft creation before terms/parent are ready and is skipped at the real (update) save, so a new child
+  never inherits until the parent is later re-saved. conflict_handling defines the ongoing sync: replace =
+  always-sync, skip = inherit-once, merge = additive. Downward (parent→children) + upward (child←parent) are
+  symmetric, both on `save_post`, both conflict-aware. Guard reentrancy (`$processing`) so the upward write's
+  `set_object_terms` cascade doesn't re-enter within one request (V9). (I.prop-h)
 - V10. **Pre-filter site-wide hooks before expensive work** (arch#8). `set_object_terms` / `save_post` fire
   for EVERY post on the site. level-restriction early-continues on `$rule['taxonomy'] !== $taxonomy` before
   any term math = cheap gate. propagation (`save_post` every post) + time-based (`save_post` + publish every
@@ -154,4 +163,5 @@ it (all 3 are confirmed-working, C7), don't bolt on new logic unless a violation
 | id | date | cause | fix |
 |----|------|-------|-----|
 | B1 | 2026-06-30 | Bulk "process existing posts" inert for hook-driven unified handlers: base `process_existing_posts` calls per-post `process_post`, which migrated handlers no-op (V4). Level-restriction legacy supported bulk via `apply_level_restrictions`; migration drops it (related already inert since 0.4.0). NOT data-corrupting — dead admin button. | Accepted for now (option C): no-op like template, keep `apply_level_restrictions` annotated as the ready primitive. Systemic base fix (apply_to_post route) tracked as issue #31. No new §V — V4 already explains the no-op; this is a known gap, not a recurrence trap. |
+| B3 | 2026-06-30 | New child post doesn't inherit parent terms until parent is re-saved. Upward inherit (`process_new_child_post`) fired only on `wp_insert_post` `$update===false` (TaxonomyManager `on_post_insert`), which hits at auto-draft creation (no parent/terms yet) and is skipped at the real update save. Pre-existing (predates branch), surfaced in T3 sweep. Also: original "inherit only when child empty" idea ignored `conflict_handling`. | Inherit on the CHILD's own `save_post` when it has a parent, via `inherit_terms_from_parent` (honors merge/replace/skip). Add `$processing` reentrancy guard. New §V12. | 
 | B2 | 2026-06-30 | Level-restriction `include_ancestors` description wrong ("only relevant in deepest only") — code also branches in one_per_level with a DIFFERENT meaning (add-ancestors vs don't-prune). Description doing a condition's job (don't #3 workaround). | (a) description rewritten to both behaviors; (c) subfield `conditions` added (Wireframe 1.0.6 #13, restriction_mode `in` [deepest_only, one_per_level]) so the field only shows where it acts. (b) muddled two-meaning semantics flagged for redesign = issue #32. New §V11 generalizes the condition-over-description rule. |
