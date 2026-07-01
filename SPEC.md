@@ -39,7 +39,7 @@ Make MC term-sync reapply on Admin Columns **v7** inline/bulk edits of ACF field
 
 | id | st | task | cites |
 |----|----|------|-------|
-| T1 | . | Add `public function reapply_for_post(int $post_id): void {}` no-op default to `UnifiedHandlerBase` (near `process_post`). H1+H2. | V6,I.base |
+| T1 | x | Add `public function reapply_for_post(int $post_id): void {}` no-op default to `UnifiedHandlerBase` (near `process_post`). H1+H2. | V6,I.base |
 | T2 | . | Override `reapply_for_post` in the 5 ACF-listening handlers = `$this->on_acf_save_post($post_id);`. (related-post-terms, related, level-restriction, propagation, title-slug.) H1+H2. | V2,V6,V7,I.handlers |
 | T3 | . | Register `ac/editing/saved` (4-arg `\AC\Column\Context $column, $id, $value, \AC\TableScreen $table`), v7+ACP gated. On `$column instanceof \AC\Column\CustomFieldContext` → for each handler call `reapply_for_post($id)`. | V1,V3,V5,I.fallback |
 | T4 | . | Delete `class-admin-columns-integration.php` (I.integration) + `bws_process_post_after_column_update` event (I.event). Remove instantiation + import in `class-taxonomy-manager.php` (L17 use, L127-130 boot). Grep-confirm zero refs. H1+H2. | V4,I.integration,I.boot,I.event |
