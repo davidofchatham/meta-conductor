@@ -227,16 +227,7 @@ class WireframeBootstrap {
      * @return string Unescaped, trailing ": " when present.
      */
     private static function propagation_scope_prefix($post_types): string {
-        $slugs = Config\ConfigHelpers::selected_checkbox_slugs($post_types);
-
-        $labels = [];
-        foreach ($slugs as $slug) {
-            $obj = \get_post_type_object((string) $slug);
-            if ($obj) {
-                $labels[] = $obj->label;
-            }
-        }
-
+        $labels = self::post_type_labels($post_types);
         return empty($labels) ? '' : \esc_html(implode(', ', $labels)) . ': ';
     }
 
@@ -318,16 +309,7 @@ class WireframeBootstrap {
      * @return string
      */
     private static function time_based_scope_phrase($post_types): string {
-        $slugs = Config\ConfigHelpers::selected_checkbox_slugs($post_types);
-
-        $labels = [];
-        foreach ($slugs as $slug) {
-            $obj = \get_post_type_object((string) $slug);
-            if ($obj) {
-                $labels[] = $obj->label;
-            }
-        }
-
+        $labels = self::post_type_labels($post_types);
         return empty($labels) ? __('posts', 'bws-meta-manager') : implode(', ', $labels);
     }
 
@@ -458,42 +440,36 @@ class WireframeBootstrap {
     }
 
     /**
-     * Build the post-type scope suffix " (Label, Label)" for the row title.
+     * Resolve a Wireframe post-type checkbox value ({slug:bool} map or slug
+     * list) to a flat array of human post-type labels. Unresolvable slugs (a
+     * type unregistered after save) are dropped. Single source for the three
+     * row-title scope formatters below. (0.6.0 review — was triplicated.)
      *
-     * Returns '' when the rule applies to all post types (empty post_types),
-     * so the dumb-concat title_template renders no trailing space. The " ("
-     * and ")" decoration lives here, not in the template. Accepts the
-     * Wireframe checkbox `{slug: bool}` map and a plain list of slugs.
-     *
-     * @param mixed $post_types Checkbox map or list of post-type slugs.
-     * @return string
+     * @param mixed $post_types
+     * @return string[] Post-type labels.
      */
-    private static function scope_label($post_types): string {
-        if (empty($post_types) || !is_array($post_types)) {
-            return '';
-        }
-
-        // Checkboxes store {slug: bool}; extract truthy keys. A plain list
-        // (array_is_list) is used as-is.
-        $slugs = array_is_list($post_types)
-            ? $post_types
-            : array_keys(array_filter($post_types));
-
+    private static function post_type_labels($post_types): array {
         $labels = [];
-        foreach ($slugs as $slug) {
+        foreach (Config\ConfigHelpers::selected_checkbox_slugs($post_types) as $slug) {
             $obj = \get_post_type_object((string) $slug);
             if ($obj) {
                 $labels[] = $obj->label;
             }
-            // A slug that no longer resolves (post type unregistered after
-            // save) is silently dropped — acceptable pre-1.0.
         }
+        return $labels;
+    }
 
-        if (empty($labels)) {
-            return '';
-        }
-
-        return ' (' . implode(', ', $labels) . ')';
+    /**
+     * Post-type scope SUFFIX " (Label, Label)" for a row title, '' when the rule
+     * applies to all post types. The " (" / ")" decoration lives here, not in
+     * the template.
+     *
+     * @param mixed $post_types
+     * @return string
+     */
+    private static function scope_label($post_types): string {
+        $labels = self::post_type_labels($post_types);
+        return empty($labels) ? '' : ' (' . implode(', ', $labels) . ')';
     }
 
     /**

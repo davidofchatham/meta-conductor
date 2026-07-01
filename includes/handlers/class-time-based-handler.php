@@ -39,11 +39,10 @@ class TimeBasedHandler extends UnifiedHandlerBase {
 
     // NOTE: unlike the hook-into-terms handlers (related/propagation/level-
     // restriction), time-based genuinely USES process_post as its work method —
-    // its own save_post/publish_post hooks call it. So this is NOT a no-op. Until
-    // the Phase-3 teardown (T6) removes the TaxonomyManager on_post_save loop,
-    // process_post runs twice per save (own hook + loop); the writes are
-    // idempotent (has-term / date-range guards), so the double-run is harmless
-    // and closes at T6. (V6)
+    // its own save_post/publish_post hooks call it. So this is NOT a no-op. Runs
+    // once per save now; the redundant TaxonomyManager on_post_save loop that
+    // used to also call it was removed in the Phase-3 teardown. Writes are still
+    // idempotent (has-term / date-range guards). (V6)
     public function process_post($post_id, $post, $update) {
         $enabled_rules = $this->get_enabled_rules();
 
@@ -120,14 +119,22 @@ class TimeBasedHandler extends UnifiedHandlerBase {
      * Check if post matches the filter criteria for a rule
      */
     private function post_matches_filter($post_id, $rule) {
-        // If no filter taxonomies specified, match all posts
-        if (empty($rule['filter_taxonomies']) && empty($rule['filter_terms'])) {
+        // Flatten both filters up front. filter_taxonomies is a Wireframe
+        // checkboxes {slug:bool} map; filter_terms is a token list. Extracting
+        // selected slugs first means an all-unchecked map (non-empty but no
+        // selection) correctly reads as "no filter", and the taxonomy loop never
+        // binds to boolean values. (0.6.0 review)
+        $filter_terms      = \BWS\MetaConductor\Admin\Config\ConfigHelpers::selected_checkbox_slugs($rule['filter_terms'] ?? []);
+        $filter_taxonomies = \BWS\MetaConductor\Admin\Config\ConfigHelpers::selected_checkbox_slugs($rule['filter_taxonomies'] ?? []);
+
+        // No filter → match all posts.
+        if (empty($filter_terms) && empty($filter_taxonomies)) {
             return true;
         }
-        
-        // Check filter terms (if specified)
-        if (!empty($rule['filter_terms'])) {
-            foreach ($rule['filter_terms'] as $filter_term_id) {
+
+        // Check filter terms (if specified).
+        if (!empty($filter_terms)) {
+            foreach ($filter_terms as $filter_term_id) {
                 $filter_term = get_term($filter_term_id);
                 if ($filter_term && !is_wp_error($filter_term)) {
                     if ($this->post_has_terms($post_id, $filter_term->taxonomy, array($filter_term->term_id))) {
@@ -137,17 +144,17 @@ class TimeBasedHandler extends UnifiedHandlerBase {
             }
             return false;
         }
-        
-        // Check filter taxonomies (if specified)
-        if (!empty($rule['filter_taxonomies'])) {
-            foreach ($rule['filter_taxonomies'] as $taxonomy) {
+
+        // Check filter taxonomies (if specified).
+        if (!empty($filter_taxonomies)) {
+            foreach ($filter_taxonomies as $taxonomy) {
                 if ($this->post_has_terms($post_id, $taxonomy)) {
                     return true;
                 }
             }
             return false;
         }
-        
+
         return true;
     }
     

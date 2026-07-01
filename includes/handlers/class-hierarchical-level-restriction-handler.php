@@ -46,9 +46,9 @@ class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
 
     // Intentional no-op (not a forgotten implementation). Level restrictions
     // fire via on_terms_set / on_acf_save_post; the base process_post routes
-    // through RuleEngine, which this handler does not use. The on_post_save
-    // loop in TaxonomyManager calls this; once that loop is removed (Phase 3
-    // teardown) the no-op is harmless dead weight.
+    // through RuleEngine, which this handler does not use. (The redundant
+    // TaxonomyManager on_post_save loop that used to call this was removed in the
+    // Phase-3 teardown; process_existing_posts is the only remaining caller.)
     public function process_post($post_id, $post, $update) {}
 
     /**
@@ -75,9 +75,15 @@ class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
                 continue;
             }
 
+            // Reset even if a downstream hook/filter throws, so later rules in
+            // this request aren't silently skipped by a stuck guard (mirrors the
+            // propagation handler's try/finally).
             $this->processing = true;
-            $this->process_term_level_restrictions($object_id, $taxonomy, $tt_ids, $old_tt_ids, $rule);
-            $this->processing = false;
+            try {
+                $this->process_term_level_restrictions($object_id, $taxonomy, $tt_ids, $old_tt_ids, $rule);
+            } finally {
+                $this->processing = false;
+            }
         }
     }
     

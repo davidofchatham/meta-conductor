@@ -45,8 +45,9 @@ class PropagationHandler extends UnifiedHandlerBase {
     // its own save_post / set_object_terms / acf/save_post hooks (above), with
     // new-child inherit folded into on_parent_post_save (B3); the base
     // process_post routes through RuleEngine, which propagation does not use.
-    // The on_post_save loop in TaxonomyManager calls this until the Phase-3
-    // teardown (T6) removes it.
+    // (The redundant TaxonomyManager on_post_save loop that used to call this was
+    // removed in the Phase-3 teardown; process_existing_posts is the only
+    // remaining caller — see B1/#31.)
     public function process_post($post_id, $post, $update) {}
 
     /**

@@ -39,6 +39,11 @@ the redundant save loop are removed, and each migrated rule type gets a config/l
   unaffected.)
 - **Date Window daily cleanup no longer runs twice** — the scheduled expired-term cleanup was registered
   both directly by the handler and via a redundant relay; the relay is removed.
+- **Date Window "Filter by taxonomies" now works** — the taxonomy filter read the checkbox field in the
+  wrong shape, so a rule with a taxonomy filter set never matched any post. Filtering by specific terms was
+  unaffected.
+- **Post-status gating hardened** — the shared post-status filter didn't normalize its checkbox value, so a
+  status gate could be silently bypassed. (No rule type gates on status via this path yet; fixed proactively.)
 
 ### Removed
 

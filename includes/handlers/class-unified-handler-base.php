@@ -612,11 +612,14 @@ abstract class UnifiedHandlerBase {
             }
         }
 
-        // Check post status
+        // Check post status. Like post_types, the config stores this as a
+        // Wireframe checkboxes {slug:bool} map — flatten to selected slugs first,
+        // else the (array) cast keeps the map and in_array compares against
+        // boolean values (loose match => gate silently bypassed).
         $post_statuses = $rule['post_status'] ?? $rule['source_filters']['post_status'] ?? [];
+        $post_statuses = \BWS\MetaConductor\Admin\Config\ConfigHelpers::selected_checkbox_slugs($post_statuses);
 
         if (!empty($post_statuses)) {
-            $post_statuses = (array)$post_statuses;
             if ($post_statuses[0] !== 'any' && !in_array($post->post_status, $post_statuses)) {
                 return false;
             }
