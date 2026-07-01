@@ -35,6 +35,12 @@ the redundant save loop are removed, and each migrated rule type gets a config/l
 - **Propagation no longer writes/logs a redundant term update** when a post already has the terms — both
   directions (a child inheriting from its parent, and a parent cascading to its children). A no-op parent
   save no longer re-writes terms to every descendant.
+- **Propagation now populates a child's ACF taxonomy field even when the child had no ACF value yet.** Field
+  discovery used `get_field_objects()`, which returns nothing for a post with no saved ACF meta, so a
+  never-populated child could never receive its first ACF write (native terms applied, ACF field left empty).
+  Fields are now resolved from ACF location rules (value-independent), and the first write uses the field key
+  so ACF registers the field reference correctly. The child-inheriting and parent-cascading paths, the
+  ACF-only source read, and the term-removal path all use the same discovery.
 - **Prevented a latent crash**: propagation and level-restriction rules that act on an ACF taxonomy field
   would have hit an undefined-method error after the base migration; the ACF read/write helpers are now on
   the unified base. (Only reachable with an ACF taxonomy field configured; native-taxonomy rules were
@@ -72,6 +78,12 @@ the redundant save loop are removed, and each migrated rule type gets a config/l
   ([#34](https://github.com/davidofchatham/meta-conductor/issues/34)).
 - Bulk "process existing posts" is inert for hook-driven handlers and has no UI trigger yet; systemic fix
   deferred to the Migration/Preview tool ([#31](https://github.com/davidofchatham/meta-conductor/issues/31)).
+- Propagation treats a post's native terms and its ACF taxonomy field as one merged set and mirrors that set
+  into **both** stores on the children. With the ACF field's Load/Save Terms ON (the default) the two stores
+  are already identical, so this is invisible. With Load/Save Terms OFF — where the native and ACF values are
+  intentionally kept separate — propagation collapses that separation on the children (a parent's native-only
+  term appears in the child's ACF field and vice-versa). Propagation is not channel-preserving by design; if a
+  "keep native and ACF separate" model is needed, file an issue.
 
 ## [0.5.0] — 2026-06-30
 

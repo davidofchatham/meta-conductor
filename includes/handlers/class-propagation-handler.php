@@ -177,32 +177,15 @@ class PropagationHandler extends UnifiedHandlerBase {
      * Process ACF field propagation
      */
     private function process_acf_propagation($post_id, $rule) {
-        if (!function_exists('get_field_objects')) {
+        // Only propagate on an ACF save if this post actually carries an ACF
+        // taxonomy field for the rule's taxonomy. Value-independent discovery
+        // (not get_field_objects, which is FALSE for a post with no saved ACF
+        // values). (0.6.0 ACF B-sweep.)
+        if (empty($this->get_acf_taxonomy_fields($post_id, $rule['taxonomy']))) {
             return;
         }
-        
-        $field_objects = get_field_objects($post_id);
-        if (!$field_objects) {
-            return;
-        }
-        
-        $taxonomy = $rule['taxonomy'];
-        $has_taxonomy_field = false;
-        
-        // Check if any ACF fields were updated for this taxonomy
-        foreach ($field_objects as $field) {
-            if ($field['type'] === 'taxonomy' && 
-                isset($field['taxonomy']) && 
-                $field['taxonomy'] === $taxonomy) {
-                $has_taxonomy_field = true;
-                break;
-            }
-        }
-        
-        if ($has_taxonomy_field) {
-            // Propagate to children
-            $this->propagate_terms_to_children($post_id, $rule);
-        }
+
+        $this->propagate_terms_to_children($post_id, $rule);
     }
     
     // Removed: process_new_child_post() + the wp_insert_post path (B3). New-child
@@ -231,18 +214,23 @@ class PropagationHandler extends UnifiedHandlerBase {
         }
 
         foreach ($children as $child_id) {
+            // ACF taxonomy mirror fields are a SEPARATE store from native terms
+            // and can drift out of sync independently (edited out-of-band, a
+            // save_terms-off field, a prior partial write). update_acf_fields_for_post
+            // self-guards (writes only when the ACF value actually differs), so
+            // run it unconditionally — the native-term short-circuit below must
+            // NOT gate it, or a native-correct/ACF-stale child never re-syncs.
+            $this->update_acf_fields_for_post($child_id, $taxonomy, $parent_terms, $conflict_handling);
+
             // No-change short-circuit (symmetric with the upward inherit path):
-            // a no-op parent save would otherwise re-write terms + fire ACF
-            // updates + log for every descendant even when they already hold the
-            // terms. Skip children already in the target state.
+            // a no-op parent save would otherwise re-write NATIVE terms + log for
+            // every descendant even when they already hold the terms. Skip the
+            // native write for children already in the target state.
             if (!$this->write_would_change_terms($child_id, $taxonomy, $parent_terms, $conflict_handling)) {
                 continue;
             }
 
             $this->apply_terms_to_post($child_id, $taxonomy, $parent_terms, $conflict_handling);
-
-            // Also update ACF fields if they exist
-            $this->update_acf_fields_for_post($child_id, $taxonomy, $parent_terms, $conflict_handling);
 
             $this->debug_log(
                 sprintf('Propagated terms from parent %d to child %d', $parent_id, $child_id),
@@ -342,28 +330,16 @@ class PropagationHandler extends UnifiedHandlerBase {
      * @param array $terms_to_remove Term IDs to remove
      */
     private function remove_terms_from_acf_fields($post_id, $taxonomy, $terms_to_remove) {
-        if (!function_exists('get_field_objects')) {
-            return;
-        }
+        // Value-independent discovery (not get_field_objects — FALSE on empty).
+        // (0.6.0 ACF B-sweep.) Removing from an already-empty field is a no-op.
+        foreach ($this->get_acf_taxonomy_fields($post_id, $taxonomy) as $field) {
+            $current_terms = $this->get_acf_taxonomy_value($post_id, $field['name'], $taxonomy);
 
-        $field_objects = get_field_objects($post_id);
-        if (!$field_objects) {
-            return;
-        }
+            // Remove the specified terms
+            $updated_terms = array_diff($current_terms, $terms_to_remove);
 
-        foreach ($field_objects as $field) {
-            if ($field['type'] === 'taxonomy' &&
-                isset($field['taxonomy']) &&
-                $field['taxonomy'] === $taxonomy) {
-
-                $current_terms = $this->get_acf_taxonomy_value($post_id, $field['name'], $taxonomy);
-
-                // Remove the specified terms
-                $updated_terms = array_diff($current_terms, $terms_to_remove);
-
-                if ($updated_terms !== $current_terms) {
-                    $this->set_acf_taxonomy_value($post_id, $field['name'], $updated_terms);
-                }
+            if ($updated_terms !== $current_terms) {
+                $this->set_acf_taxonomy_value($post_id, $field['key'], $updated_terms);
             }
         }
     }
@@ -396,20 +372,24 @@ class PropagationHandler extends UnifiedHandlerBase {
             return;
         }
 
+        // ACF taxonomy mirror fields are a SEPARATE store from native terms and
+        // can drift independently, so re-sync unconditionally — it self-guards
+        // against redundant writes. The native-term short-circuit below must NOT
+        // gate it (symmetric with propagate_terms_to_children), else a
+        // native-correct/ACF-stale child never gets its ACF field repaired.
+        $this->update_acf_fields_for_post($child_id, $taxonomy, $parent_terms, $conflict_handling);
+
         // No-change short-circuit. WP fires save_post more than once per editor
         // save (and a create is often two requests), so without this the same
-        // inherit re-runs — redundant write + duplicate debug log. Compute the
-        // would-be end state for this conflict mode and skip if the child is
-        // already there. Cause-agnostic (covers both intra-request double-fire
-        // and cross-request re-save). (V12)
+        // inherit re-runs — redundant NATIVE write + duplicate debug log. Compute
+        // the would-be end state for this conflict mode and skip the native write
+        // if the child is already there. Cause-agnostic (covers both intra-request
+        // double-fire and cross-request re-save). (V12)
         if (!$this->write_would_change_terms($child_id, $taxonomy, $parent_terms, $conflict_handling)) {
             return;
         }
 
         $this->apply_terms_to_post($child_id, $taxonomy, $parent_terms, $conflict_handling);
-
-        // Also update ACF fields if they exist
-        $this->update_acf_fields_for_post($child_id, $taxonomy, $parent_terms, $conflict_handling);
 
         $this->debug_log(
             sprintf('Child %d inherited terms from parent %d', $child_id, $parent_id),
@@ -518,7 +498,19 @@ class PropagationHandler extends UnifiedHandlerBase {
     }
     
     /**
-     * Get post terms from both native taxonomy and ACF fields
+     * Get post terms as the UNION of the native taxonomy and any ACF taxonomy
+     * field(s) for $taxonomy.
+     *
+     * Propagation treats "the source's terms" as one merged set and mirrors it
+     * into BOTH stores on the targets (native via apply_terms_to_post, ACF via
+     * update_acf_fields_for_post). With the ACF field's Load/Save Terms ON (the
+     * normal case) native == ACF, so the union is a no-op and the two stores stay
+     * in lockstep. With Load/Save Terms OFF the two stores are intentionally
+     * independent — and this union collapses that separation on the targets: a
+     * parent's native-only term lands in the child's ACF field and vice-versa.
+     * That is accepted behavior (0.6.0); propagation is not channel-preserving.
+     * If a "keep native and ACF separate" model is ever needed, this method and
+     * the two writers must track native→native / ACF→ACF as distinct channels.
      */
     private function get_post_terms($post_id, $taxonomy) {
         $terms = array();
@@ -529,22 +521,15 @@ class PropagationHandler extends UnifiedHandlerBase {
             $terms = array_merge($terms, $native_terms);
         }
         
-        // Get ACF taxonomy field terms
-        if (function_exists('get_field_objects')) {
-            $field_objects = get_field_objects($post_id);
-            if ($field_objects) {
-                foreach ($field_objects as $field) {
-                    if ($field['type'] === 'taxonomy' && 
-                        isset($field['taxonomy']) && 
-                        $field['taxonomy'] === $taxonomy) {
-                        
-                        $acf_terms = $this->get_acf_taxonomy_value($post_id, $field['name'], $taxonomy);
-                        $terms = array_merge($terms, $acf_terms);
-                    }
-                }
-            }
+        // Get ACF taxonomy field terms. Value-independent discovery (not
+        // get_field_objects, which returns FALSE for a post with no saved ACF
+        // values) so an ACF-only source whose field is attached-but-empty still
+        // reads correctly. (0.6.0 ACF B-sweep.)
+        foreach ($this->get_acf_taxonomy_fields($post_id, $taxonomy) as $field) {
+            $acf_terms = $this->get_acf_taxonomy_value($post_id, $field['name'], $taxonomy);
+            $terms = array_merge($terms, $acf_terms);
         }
-        
+
         return array_unique(array_filter($terms));
     }
     
@@ -552,26 +537,18 @@ class PropagationHandler extends UnifiedHandlerBase {
      * Update ACF fields for a post with new terms
      */
     private function update_acf_fields_for_post($post_id, $taxonomy, $terms, $conflict_handling) {
-        if (!function_exists('get_field_objects')) {
-            return;
-        }
-        
-        $field_objects = get_field_objects($post_id);
-        if (!$field_objects) {
-            return;
-        }
-        
-        foreach ($field_objects as $field) {
-            if ($field['type'] === 'taxonomy' && 
-                isset($field['taxonomy']) && 
-                $field['taxonomy'] === $taxonomy) {
-                
-                $current_terms = $this->get_acf_taxonomy_value($post_id, $field['name'], $taxonomy);
-                $new_terms = $this->merge_terms_based_on_conflict_handling($current_terms, $terms, $conflict_handling);
-                
-                if ($new_terms !== $current_terms) {
-                    $this->set_acf_taxonomy_value($post_id, $field['name'], $new_terms);
-                }
+        // Value-independent field discovery: get_field_objects() returns FALSE for
+        // a post with no saved ACF values, so a never-populated child could never
+        // get its first ACF write. get_acf_taxonomy_fields resolves by location
+        // rules instead. (0.6.0 ACF B-sweep.)
+        foreach ($this->get_acf_taxonomy_fields($post_id, $taxonomy) as $field) {
+            // Read current value by name (get_field), write by KEY (first-write
+            // reference-row registration — see set_acf_taxonomy_value).
+            $current_terms = $this->get_acf_taxonomy_value($post_id, $field['name'], $taxonomy);
+            $new_terms = $this->merge_terms_based_on_conflict_handling($current_terms, $terms, $conflict_handling);
+
+            if ($new_terms !== $current_terms) {
+                $this->set_acf_taxonomy_value($post_id, $field['key'], $new_terms);
             }
         }
     }

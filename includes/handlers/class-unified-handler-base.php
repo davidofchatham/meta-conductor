@@ -572,7 +572,7 @@ abstract class UnifiedHandlerBase {
      * @param int[]|int $term_ids
      * @return mixed update_field() result, or false when ACF is absent.
      */
-    protected function set_acf_taxonomy_value($post_id, $field_name, $term_ids) {
+    protected function set_acf_taxonomy_value($post_id, $field_selector, $term_ids) {
         if (!function_exists('update_field')) {
             return false;
         }
@@ -581,7 +581,62 @@ abstract class UnifiedHandlerBase {
             $term_ids = array($term_ids);
         }
 
-        return update_field($field_name, $term_ids, $post_id);
+        // $field_selector should be the ACF field KEY (field_xxxx), not the name,
+        // when writing a field that may have NO prior value on this post. On a
+        // first write ACF needs the key to register the hidden _{name} reference
+        // row; passing the name falls back to a bare update_post_meta with no
+        // reference, so get_field() can't later resolve/format the value.
+        // (0.6.0 ACF B-sweep — get_acf_taxonomy_fields yields keys.)
+        return update_field($field_selector, $term_ids, $post_id);
+    }
+
+    /**
+     * Discover a post's ACF taxonomy fields for a taxonomy, INDEPENDENT of
+     * whether the post has any saved field values.
+     *
+     * get_field_objects($post_id) enumerates from stored meta and returns FALSE
+     * for a post with no ACF values yet — so a never-populated child could never
+     * receive its first propagated/restricted ACF write (chicken-and-egg). This
+     * resolves fields from field-group LOCATION rules instead (the same engine
+     * the ACF admin uses), so attached-but-empty fields are found.
+     *
+     * Recurses sub_fields so a taxonomy field nested in a Group/Repeater is seen.
+     *
+     * @param int    $post_id
+     * @param string $taxonomy
+     * @return array[] List of ['name' => string, 'key' => string] for each
+     *                 matching taxonomy field. Empty when ACF is absent or none match.
+     */
+    protected function get_acf_taxonomy_fields($post_id, $taxonomy) {
+        if (!function_exists('acf_get_field_groups') || !function_exists('acf_get_fields')) {
+            return array();
+        }
+
+        $matches = array();
+
+        $walk = function ($fields) use (&$walk, $taxonomy, &$matches) {
+            foreach ((array) $fields as $field) {
+                if (!is_array($field)) {
+                    continue;
+                }
+                if (($field['type'] ?? '') === 'taxonomy'
+                    && ($field['taxonomy'] ?? null) === $taxonomy) {
+                    $matches[] = array(
+                        'name' => $field['name'] ?? '',
+                        'key'  => $field['key'] ?? '',
+                    );
+                }
+                if (!empty($field['sub_fields'])) {
+                    $walk($field['sub_fields']);
+                }
+            }
+        };
+
+        foreach (acf_get_field_groups(array('post_id' => $post_id)) as $group) {
+            $walk(acf_get_fields($group['key']));
+        }
+
+        return $matches;
     }
 
     /**
