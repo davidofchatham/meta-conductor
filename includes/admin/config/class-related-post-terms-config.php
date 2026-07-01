@@ -52,7 +52,7 @@ class RelatedPostTermsConfig {
                                 'id'          => 'acf_field_name',
                                 'type'        => 'select',
                                 'label'       => __('Monitored relationship field', 'bws-meta-manager'),
-                                'description' => __('The post-object or relationship field connecting the two posts. Watched at both ends — a change to either post re-syncs. The post type that OWNS this field is the "field holder"; "Source" below decides which end\'s terms win. ⚠ If two DIFFERENT field groups define separate relationship fields with the SAME field name, reverse-lookup and post-type detection may resolve the wrong one — give same-named fields distinct names, or set an explicit Reverse relationship field below.', 'bws-meta-manager'),
+                                'description' => __('The post-object or relationship field connecting the two posts. Watched at both ends — a change to either post re-syncs. The post type that OWNS this field is the "field holder"; "Source" below decides which end\'s terms win. ⚠ Only top-level relationship/post-object fields are listed — fields nested inside an ACF Group, Repeater, or Flexible Content container are not shown and are not currently supported. ⚠ If two DIFFERENT field groups define separate relationship fields with the SAME field name, reverse-lookup and post-type detection may resolve the wrong one — give same-named fields distinct names, or set an explicit Reverse relationship field below.', 'bws-meta-manager'),
                                 'default'     => '',
                                 'required'    => true,
                                 'columns'     => 12,
@@ -82,7 +82,7 @@ class RelatedPostTermsConfig {
                                 'id'          => 'reverse_acf_field_name',
                                 'type'        => 'select',
                                 'label'       => __('Reverse relationship field (optional)', 'bws-meta-manager'),
-                                'description' => __('The inverse relationship field on the other end, if any. Speeds the reverse lookup. Leave blank to auto-detect ACF bidirectional fields. ⚠ With neither an explicit reverse field nor a detectable bidirectional field, the reverse lookup falls back to an unindexed query on every save — slow on large sites. Set this (or use an ACF bidirectional field) to avoid it.', 'bws-meta-manager'),
+                                'description' => __('The inverse relationship field on the other end, if any. Speeds the reverse lookup. Leave blank to auto-detect ACF bidirectional fields. ⚠ Only top-level relationship/post-object fields are listed — group/repeater/flexible-content-nested fields are not shown or supported. ⚠ With neither an explicit reverse field nor a detectable bidirectional field, the reverse lookup falls back to an unindexed query on every save — slow on large sites. Set this (or use an ACF bidirectional field) to avoid it.', 'bws-meta-manager'),
                                 'default'     => '',
                                 'columns'     => 12,
                                 'args'        => [

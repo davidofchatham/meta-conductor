@@ -160,6 +160,14 @@ Deferred refinements from the 0.5.0 rework (design history in
 - **Motivation**: 5 of 7 handlers still extend the legacy `BWS_Handler_Base` and access settings via the passed-in `$settings` object. Migrating them to `BWS_Unified_Handler_Base` removes the compat shell, lets storage-layer canonical-shape normalization apply uniformly, and prepares for CPT storage.
 - **Sketch**: see ROADMAP.md Phase 3. Migration order: Related → Level Restriction → Propagation → Related Post Terms → Time Based.
 
+### Grouped / nested relationship fields for Related Post Terms (#37)
+
+- **Status**: idea (known capability gap, not a live bug)
+- **Motivation**: `related_post_terms` is verified only for **top-level** ACF relationship/post-object fields. The field picker (`ConfigHelpers::acf_relationship_field_options()`) enumerates top-level fields only — `acf_get_fields($group_key)` does not recurse into Group / Repeater / Flexible-Content subfields — so a nested relationship field never appears as a choice, and the UI now warns as much. No current rule (incl. the live athletics sync) uses a nested field, so nothing is broken today.
+- **Failure modes if a nested field is forced in via config** (see docs/architecture.md handler-invariant #6): ACF's `acf/update_value` `$field['name']` and Admin Columns v7 `get_meta_key()` both return the **bare** subfield name (group prefix stripped), so the capture filter's `acf_field_name === $field_name` match ([class-related-post-terms-handler.php:42]) and the planned AC-v7 reapply fallback silently miss. Additionally, a **Repeater/Flex**-nested field breaks `read_relationship` entirely — `get_field('sub', $post_id)` has no row context. Group-nested `get_field('group_sub')` (qualified) does resolve, so the read is OK for Groups; only the name-matching is wrong.
+- **Sketch**: (1) recurse Group subfields in the options builder (qualified name), (2) match by ACF **field key** (`field_xxxx`) instead of raw name everywhere the rule's `acf_field_name` is compared, or reconcile bare↔qualified, (3) Repeater/Flex support needs row-context resolution — larger, likely out of scope. Drop the UI top-level-only warning once (1)+(2) land for Groups.
+- **Phase**: on demand — only when a real site needs a grouped relationship field. Until then: top-level only, UI-warned; docs/architecture.md handler-invariant #6 documents the trap.
+
 ---
 
 ## UX polish (deferred)

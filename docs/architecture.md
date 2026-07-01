@@ -77,7 +77,20 @@ several).
    LIST of partner keys (resolve all); the old value at `acf/update_value` time
    is an impl-detail ordering (have a `get_post_meta` fallback); relationship
    values serialize as an INT array (`i:42;`, not `s:2:"42"`). Resolve by key;
-   never assume serialization format. (#25, R2#2, R4#1, B4)
+   never assume serialization format. (#25, R2#2, R4#1, B4) **Group prefix is a
+   name-matching landmine of the same class:** a field inside an ACF Group stores
+   and reads by the GROUP-QUALIFIED name (`get_field('group_sub')` resolves), but
+   its runtime "name" — `acf/update_value`'s `$field['name']` AND Admin Columns
+   v7's `AC\Column\Context::get_meta_key()` — is the BARE subfield (`sub`, prefix
+   stripped). Matching a stored qualified name against either by `===` silently
+   misses. `related_post_terms` matches by name and is verified for TOP-LEVEL
+   relationship fields only; `ConfigHelpers::acf_relationship_field_options()`
+   lists top-level fields only (`acf_get_fields($group_key)` doesn't recurse
+   Group/Repeater/Flex), so the picker can't offer a nested field and the config
+   UI warns as much. Any nested-field support must match by field KEY or reconcile
+   bare↔qualified. The AC v7 `ac/editing/saved` reapply fallback (#37) matches
+   `get_meta_key()` — correct for top-level, revisit if nested is ever supported.
+   (#37; future-features.md → grouped relationship fields)
 
 7. **Storage write results must propagate; cache must mirror storage.**
    `update_option` returns false for BOTH a no-op-equal write AND a real failure
