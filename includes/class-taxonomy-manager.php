@@ -126,11 +126,12 @@ class TaxonomyManager {
         // Admin Columns v7 reapply fallback (#37). AC v7 writes ACF fields via
         // update_field(), firing acf/update_value only — never the save_post
         // family the handlers' apply paths listen on. On any AC inline/bulk edit
-        // of an ACF field column, reapply every handler's term-sync. The hook
-        // name ac/editing/saved is v7-only (legacy AC fires acp/editing/saved),
-        // so \ACP\Plugin presence is a sufficient gate — no version parse.
-        // (SPEC §V1/§V3/§V5/§V6)
-        if (class_exists('\\ACP\\Plugin')) {
+        // of an ACF field column, reapply every handler's term-sync. Gate on the
+        // ACP_VERSION constant (defined iff AC Pro active, any v7.x) — NOT a
+        // class_exists on ACP\Plugin, which does NOT exist in v7 (B3/§V5). The
+        // ac/editing/saved hook is itself v7-only, so const + hook name self-gate.
+        // (SPEC §V1/§V3/§V5/§V6, B3)
+        if (defined('ACP_VERSION')) {
             $this->register_admin_columns_v7_reapply();
         }
 
@@ -705,7 +706,9 @@ class TaxonomyManager {
 			),
 			'admin_columns_pro' => array(
 				'required' => 'Optional',
-				'current' => class_exists('ACP\\Plugin') ? 'Active' : 'Not Active',
+				// ACP_VERSION, not class_exists('ACP\Plugin') — the latter is false
+				// on AC Pro v7 (no such class). (B3/§V5)
+				'current' => defined('ACP_VERSION') ? 'Active' : 'Not Active',
 				'met' => true // Optional, so always met
 			)
 		);
