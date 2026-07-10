@@ -45,7 +45,7 @@ Make MC term-sync reapply on Admin Columns **v7** inline/bulk edits of ACF field
 | T4 | x | Delete `class-admin-columns-integration.php` (I.integration) + `bws_process_post_after_column_update` event (I.event). Remove instantiation + import in `class-taxonomy-manager.php` (L17 use, L127-130 boot). Grep-confirm zero refs. H1+H2. | V4,I.integration,I.boot,I.event |
 | T7 | x | Fix the fallback gate (B3): `class_exists('\ACP\Plugin')` → `defined('ACP_VERSION')` in `register_admin_columns_v7_reapply` call site (`class-taxonomy-manager.php`). Also fixed the SAME wrong gate in the diagnostics ACP status readout (L709). H1+H2. | V5,I.boot,B3 |
 | T8 | x | Regression grep-guard `tests/verify-acp-gate.php` (H7): fails on any executable `class_exists('ACP\\Plugin')` in `includes/` (comment-mentions exempt). Verified pass + negative-catch + comment-exempt. | V5,B3 |
-| T5 | . | InstaWP AC-Pro-v7 sweep, LIVE handlers: inline + bulk Quick-Edit `schedule_games` (schedule) + `game_team_schedule_cpt` (event) → `related_post_terms` rules re-sync. Quick-Edit a `related`-rule ACF trigger field → `related` re-syncs. Regression: editor save still syncs, no double-apply. | V1,V2,V6,C5 |
+| T5 | x | AC-Pro-v7 sweep (ADD-path), LIVE `related_post_terms`: inline Quick-Edit `game_team_schedule_cpt` (event end) ✓ syncs; schedule-end apply ✓ (log: related-term apply to schedule 72177); in-editor save ✓; no double-apply ✓. SEVER path (term REMOVAL on dependent-end / bulk-from-schedule drop) excluded — pre-existing B4/#43, not AC/#37. | V1,V2,V6,C5,B4 |
 | T6 | - | Sweep latent handlers (level-restriction, propagation, title-slug) via AC ACF-column edit — deferred, on demand when a live rule of that type exists. Wired (T2) but unswept. | V6,C5 |
 
 ## §B — bugs
