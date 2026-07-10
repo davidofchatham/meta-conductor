@@ -3,7 +3,7 @@
  * Plugin Name: Meta Conductor
  * Plugin URI: https://github.com/davidofchatham/meta-conductor
  * Description: Unified meta and taxonomy management with hierarchical inheritance, entity relationships, data conversion, and intelligent automation
- * Version: 0.5.0
+ * Version: 0.6.0
  * Author: David Mitchell (Bridge Web Solutions) and Claude AI
  * License: GPL-2.0-or-later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('BWS_META_MANAGER_VERSION', '0.5.0');
+define('BWS_META_MANAGER_VERSION', '0.6.0');
 define('BWS_META_MANAGER_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('BWS_META_MANAGER_PLUGIN_URL', plugin_dir_url(__FILE__));
 
@@ -26,7 +26,7 @@ define('BWS_META_MANAGER_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('BWS_META_CONDUCTOR_PATH', plugin_dir_path(__FILE__));
 
 // Backward compatibility constants
-define('BWS_TAX_MANAGER_VERSION', '0.5.0'); // For legacy code
+define('BWS_TAX_MANAGER_VERSION', '0.6.0'); // For legacy code
 define('BWS_TAX_MANAGER_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('BWS_TAX_MANAGER_PLUGIN_URL', plugin_dir_url(__FILE__));
 

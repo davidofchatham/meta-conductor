@@ -1,6 +1,6 @@
 # Meta Conductor: Roadmap
 
-**Current Version**: 0.4.3 (pre-release; `0.x` unstable until `1.0.0`)
+**Current Version**: 0.6.0 (pre-release; `0.x` unstable until `1.0.0`)
 **Target Version**: 1.0.0 (first production-ready cut, after rename + PSR-4 namespacing land)
 **Branch**: `main`
 
@@ -28,6 +28,8 @@ Phase numbers are **stable IDs, not execution order** — work has landed out of
 | ~~5~~ | ~~Settings refactor~~ | cancelled | — | absorbed by 2c; lib delegation folded into 7 |
 
 **Recommended run order:** ~~2a~~ ✅ → ~~3~~ ✅ → **2b** → 4 → (6a, 7) → 6b. Phase 3 landed before 2b so the rename sweep touches already-migrated handlers once. Phase 7 is unblocked and can slot in whenever Conversion is needed.
+
+**Also in 0.6.0 (not a phase — bugfix):** Admin Columns Pro **v7** integration fixed ([#37](https://github.com/davidofchatham/meta-conductor/issues/37)). The pre-v7 integration was dead on AC v7; replaced by a shared `reapply_for_post` seam + `ac/editing/saved` fallback across all ACF-listening handlers, legacy integration deleted. Follow-ups: [#42](https://github.com/davidofchatham/meta-conductor/issues/42) (AC-agnostic apply-on-`acf/update_value`), [#43](https://github.com/davidofchatham/meta-conductor/issues/43) (dependent-end sever gap).
 
 Live defects not yet scheduled to a phase are tracked under each phase section's **Known issues**; the "Open items it closes" column above is the at-a-glance index.
 
@@ -129,7 +131,7 @@ Full admin UI replacement. Hand-rolled settings UI (~5,000 lines across `class-b
 - Hierarchical handler `$this->processed` accumulates indefinitely within a request and silently skips legitimate double-saves. Replace with a clear-after-apply pattern in Phase 3 when the handler is touched again.
 
 **Untested on InstaWP:**
-- Propagation, Level Restriction, Related Post Terms handler runtime
+- Propagation, Level Restriction handler runtime. *(Related Post Terms runtime verified on a live AC Pro v7 site during the #37 Admin Columns fix — add-sync path; the dependent-end sever gap is [#43](https://github.com/davidofchatham/meta-conductor/issues/43).)*
 
 **Plan file:** deleted post-ship; see commit history on `claude/wireframe-swap-2c` and PR #17.
 

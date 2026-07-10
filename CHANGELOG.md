@@ -5,10 +5,11 @@ All notable changes to Meta Conductor (formerly BWS Meta Manager, formerly BWS T
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.6.0] — Unreleased
+## [0.6.0] — 2026-07-10
 
 Phase 3 complete: the last three legacy handlers migrate to the unified base, the legacy base class and
-the redundant save loop are removed, and each migrated rule type gets a config/label pass.
+the redundant save loop are removed, and each migrated rule type gets a config/label pass. Also fixes the
+Admin Columns integration for Admin Columns Pro v7.
 
 ### Changed
 
@@ -63,12 +64,23 @@ the redundant save loop are removed, and each migrated rule type gets a config/l
   `source_filters['post_type']` and so would have scanned only the `post` type for the migrated rule types
   (which now store the plural `post_types` checkboxes). It now reads `post_types` (empty = all), falling back
   to the legacy key. (Not yet reachable via UI — see [#31](https://github.com/davidofchatham/meta-conductor/issues/31).)
+- **Admin Columns Pro v7 edits reapply rules again** — the Admin Columns integration used pre-v7 hook names
+  and signatures, so on AC/ACP v7+ its hooks never fired and inline/quick/bulk-edit changes stopped driving
+  rule reapply. AC v7 writes ACF fields via `update_field()`, which fires `acf/update_value` only — never the
+  save hooks the handlers listen on. A new `ac/editing/saved` fallback now reapplies every ACF-listening
+  handler's sync (ACF reference, Related Term Mapping, Level Restriction, Propagation, Title & Slug) after an
+  AC v7 edit; native taxonomy-column edits were already covered. ([#37](https://github.com/davidofchatham/meta-conductor/issues/37))
+- **Admin Columns Pro is detected correctly on v7** — the "Admin Columns Pro" diagnostics status checked for a
+  class that no longer exists in v7, so it reported "Not Active" even when ACP was active. It now checks the
+  `ACP_VERSION` constant.
 
 ### Removed
 
 - **Legacy `BWS_Handler_Base` class deleted** — all seven rule handlers now share `UnifiedHandlerBase`.
 - **Redundant global save loop removed** — each handler registers its own hooks; the Date Window rule no
   longer runs twice per save.
+- **Dead pre-v7 Admin Columns integration deleted** — the old `class-admin-columns-integration.php` (legacy
+  hook names, an unreachable scheduled reapply event) is replaced by the `ac/editing/saved` fallback above.
 
 ### Known interactions (filed, not blocking)
 
@@ -84,6 +96,13 @@ the redundant save loop are removed, and each migrated rule type gets a config/l
   intentionally kept separate — propagation collapses that separation on the children (a parent's native-only
   term appears in the child's ACF field and vice-versa). Propagation is not channel-preserving by design; if a
   "keep native and ACF separate" model is needed, file an issue.
+- ACF Reference (Related Post Terms) does not strip a synced term when the **dependent** end drops a
+  bidirectional relationship (e.g. clearing the relationship on the event rather than the schedule). The
+  term-removal sever is missed on both the editor and Admin Columns paths; adding a relationship still syncs
+  correctly ([#43](https://github.com/davidofchatham/meta-conductor/issues/43)).
+- The Admin Columns v7 reapply is Admin-Columns-coupled. An AC-agnostic version driven from `acf/update_value`
+  (covering bare `update_field()` and REST writes) is tracked separately
+  ([#42](https://github.com/davidofchatham/meta-conductor/issues/42)).
 
 ## [0.5.0] — 2026-06-30
 
