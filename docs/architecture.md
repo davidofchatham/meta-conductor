@@ -162,6 +162,32 @@ several).
     `get_field()` can't later resolve). Extends #6 (identity by key). Still open
     in level-restriction + related handlers (#41). (0.6.0 ACF sweep)
 
+13. **An external-plugin integration writes term-sync through the plugin's real
+    write hook, and detects that plugin by a verified surface — not an assumed
+    class name.** Two halves, both learned from the Admin Columns v7 fix (#37):
+
+    - *Which hook.* An editor add-on (Admin Columns, bulk editors, REST) may not
+      fire the `save_post`/`acf/save_post` hooks a handler's apply path listens
+      on. AC v7 writes ACF fields via `update_field()` → fires `acf/update_value`
+      ONLY; native taxonomy columns via `wp_set_object_terms` → fires
+      `set_object_terms` (handlers already catch that). So the ACF-column path
+      needs a bridge: AC v7's post-persist `ac/editing/saved` action → a shared
+      `UnifiedHandlerBase::reapply_for_post(int $post_id)` (no-op default; the five
+      ACF-listening handlers override it to delegate to their own gated
+      `on_acf_save_post`). The bridge does NOT dispatch by column type — it hands
+      the post ID to EVERY handler, each self-gating, mirroring how `save_post`
+      fires for every post. Hook post-persist, never the pre-write
+      `acf/update_value` (the capture path reads OLD there — see the sever model).
+    - *How to detect the plugin.* Gate on a surface you have VERIFIED exists in
+      the target version — a constant or bootstrap class you've grepped for — not
+      a class name you assume. AC Pro v7 has NO `ACP\Plugin` class (it uses
+      `ACP\Loader` + defines `ACP_VERSION`), so `class_exists('ACP\Plugin')` is
+      silently false on v7 and the whole integration dead-registers. This is
+      INVISIBLE to `php -l`/autoload and reads as correct on inspection — only a
+      live target-version site reveals it. Gate on `defined('ACP_VERSION')`.
+      Guarded by `tests/verify-acp-gate.php` (H7). (#37; was SPEC §V1/§V5/§V6/§V7,
+      B3. AC-agnostic follow-up #42; dependent-end sever gap #43.)
+
 ## Settings UI — WP Wireframe
 
 The settings UI is a React app provided by `tdrayson/wp-wireframe`. Each rule type has a config class under [includes/admin/config/](../includes/admin/config/) exposing a `section()` method. The top-level composer assembles tabs from sections:
