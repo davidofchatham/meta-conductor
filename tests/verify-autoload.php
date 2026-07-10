@@ -82,8 +82,6 @@ $classes = [
     'BWS\\MetaConductor\\Conversion\\FieldMapper',
     'BWS\\MetaConductor\\Conversion\\DataProcessor',
     'BWS\\MetaConductor\\Conversion\\PreviewSystem',
-    // Integrations\
-    'BWS\\MetaConductor\\Integrations\\AdminColumnsIntegration',
     // Admin\
     'BWS\\MetaConductor\\Admin\\Diagnostics',
     'BWS\\MetaConductor\\Admin\\WireframeBootstrap',

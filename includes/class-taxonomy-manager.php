@@ -14,7 +14,6 @@ use BWS\MetaConductor\Handlers\TimeBasedHandler;
 use BWS\MetaConductor\Handlers\RelatedPostTermsHandler;
 use BWS\MetaConductor\Handlers\HierarchicalLevelRestrictionHandler;
 use BWS\MetaConductor\Handlers\TitleSlugHandler;
-use BWS\MetaConductor\Integrations\AdminColumnsIntegration;
 use BWS\MetaConductor\Conversion\ConversionManager;
 use BWS\MetaConductor\Conversion\ConversionCli;
 use BWS\MetaConductor\Storage\StorageFactory;
@@ -124,9 +123,16 @@ class TaxonomyManager {
 			'title_slug' => new TitleSlugHandler($this->settings),
         );
 
-        // Initialize integrations
-        if (class_exists('AC\\Plugin')) {
-            new AdminColumnsIntegration($this->handlers);
+        // Admin Columns v7 reapply fallback (#37). AC v7 writes ACF fields via
+        // update_field(), firing acf/update_value only — never the save_post
+        // family the handlers' apply paths listen on. On any AC inline/bulk edit
+        // of an ACF field column, reapply every handler's term-sync. Gate on the
+        // ACP_VERSION constant (defined iff AC Pro active, any v7.x) — NOT a
+        // class_exists on ACP\Plugin, which does NOT exist in v7 (B3/§V5). The
+        // ac/editing/saved hook is itself v7-only, so const + hook name self-gate.
+        // (SPEC §V1/§V3/§V5/§V6, B3)
+        if (defined('ACP_VERSION')) {
+            $this->register_admin_columns_v7_reapply();
         }
 
         // Initialize conversion manager
@@ -136,6 +142,46 @@ class TaxonomyManager {
         if (defined('WP_CLI') && WP_CLI) {
             \WP_CLI::add_command('bws-conversion', new ConversionCli($this->conversion_manager));
         }
+    }
+
+    /**
+     * Admin Columns v7 reapply fallback (#37).
+     *
+     * AC v7 inline/bulk edits of an ACF field column write via update_field(),
+     * which fires acf/update_value ONLY — never acf/save_post / save_post /
+     * set_object_terms. So every handler whose apply is gated on the save_post
+     * family (related-post-terms, related, level-restriction, propagation,
+     * title-slug) silently fails to reapply after such an edit. (SPEC §V1/§V6)
+     *
+     * The native taxonomy-column path is already covered — AC v7 writes native
+     * terms via wp_set_object_terms, which fires set_object_terms → the handlers'
+     * own listeners run. So we act ONLY on ACF field columns
+     * (\AC\Column\CustomFieldContext). (SPEC §V1/§V3)
+     *
+     * We do NOT match the column's field name/type here: we hand the post ID to
+     * EVERY handler's reapply_for_post, which re-reads the post's own fields +
+     * rules and self-gates (post-type, rule-match, reentrancy). Same self-filter
+     * pattern as acf/save_post firing for every post. (SPEC §V3/§V6/§V7)
+     *
+     * ac/editing/saved fires AFTER AC's storage write (InlineSave/BulkSave), so
+     * reads see the new value — post-persist, no pre-write hazard. (SPEC §V2)
+     */
+    private function register_admin_columns_v7_reapply() {
+        add_action('ac/editing/saved', function ($column, $id, $value, $table) {
+            // ACF field columns only; native taxonomy edits self-cover (§V1).
+            if (!$column instanceof \AC\Column\CustomFieldContext) {
+                return;
+            }
+
+            $post_id = (int) $id;
+            if ($post_id <= 0) {
+                return;
+            }
+
+            foreach ($this->handlers as $handler) {
+                $handler->reapply_for_post($post_id);
+            }
+        }, 20, 4);
     }
     
     /**
@@ -660,7 +706,9 @@ class TaxonomyManager {
 			),
 			'admin_columns_pro' => array(
 				'required' => 'Optional',
-				'current' => class_exists('ACP\\Plugin') ? 'Active' : 'Not Active',
+				// ACP_VERSION, not class_exists('ACP\Plugin') — the latter is false
+				// on AC Pro v7 (no such class). (B3/§V5)
+				'current' => defined('ACP_VERSION') ? 'Active' : 'Not Active',
 				'met' => true // Optional, so always met
 			)
 		);

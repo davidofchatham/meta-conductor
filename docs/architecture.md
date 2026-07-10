@@ -120,6 +120,48 @@ several).
    deepest_only / one_per_level). Several configs still carry the old workaround;
    convert as each is touched. (don't #3, SPEC §V11)
 
+10. **Parent↔child term sync fires on the CHILD's own `save_post`, honoring
+    `conflict_handling`.** A child inherits its parent's terms via
+    `inherit_terms_from_parent` (merge = additive, replace = overwrite, skip =
+    only-if-empty). This MUST trigger on the child's own `save_post` (post has
+    `post_parent > 0`), NOT the `wp_insert_post` `$update===false` path — that
+    fires at auto-draft creation before parent/terms exist and is skipped at the
+    real update save, so a new child never inherits until the parent is later
+    re-saved. `conflict_handling` defines the ongoing sync semantics: replace =
+    always-sync, skip = inherit-once, merge = additive. Downward (parent→children)
+    and upward (child←parent) are symmetric, both on `save_post`, both
+    conflict-aware; guard reentrancy (`$processing`) so the write's
+    `set_object_terms` cascade doesn't re-enter within one request (see #4).
+    (propagation; was SPEC §V12/B3)
+
+11. **A base-class flip must port EVERY base method the handler still calls, not
+    just the obvious primitives.** Re-parenting a handler (e.g. `HandlerBase →
+    UnifiedHandlerBase`) silently drops any method that lived only on the old
+    base; the call site then resolves to nothing → undefined-method fatal at
+    runtime, INVISIBLE to `php -l` (H1) and the autoload harness (H2), which check
+    declarations, not method resolution. Before deleting an old base, grep the
+    handler for every `$this->`/`parent::` call and confirm each target exists on
+    the new base or the handler itself. This bit the 0.6.0 migration: the ACF
+    helpers (`get_acf_taxonomy_value`/`set_acf_taxonomy_value`) lived only on
+    `HandlerBase` and had to be ported before deletion; the fatal only fires the
+    first time a post has a matching ACF taxonomy field, so native-only testing
+    misses it. (was SPEC §V14/B4)
+
+12. **Discover a post's ACF fields by LOCATION rules, not by stored values.**
+    `get_field_objects($post_id)` enumerates from stored ACF meta and returns
+    FALSE for a post with no saved values — so a field that is *attached* (via
+    field-group location rules) but *empty* is invisible. A handler that needs to
+    POPULATE such a field for the first time (propagation writing a child that has
+    no ACF value yet) hits a chicken-and-egg: no value → not discovered → never
+    written. Use `acf_get_field_groups(['post_id' => $id])` + `acf_get_fields()`
+    (the same engine the ACF admin uses; value-independent, respects location
+    rules; recurse `sub_fields` for nested fields) — see
+    `UnifiedHandlerBase::get_acf_taxonomy_fields()`. And on a FIRST write pass the
+    field KEY (not name) to `update_field()`, so ACF registers the hidden
+    `_{name}` reference row (name-only first writes save a bare meta value
+    `get_field()` can't later resolve). Extends #6 (identity by key). Still open
+    in level-restriction + related handlers (#41). (0.6.0 ACF sweep)
+
 ## Settings UI — WP Wireframe
 
 The settings UI is a React app provided by `tdrayson/wp-wireframe`. Each rule type has a config class under [includes/admin/config/](../includes/admin/config/) exposing a `section()` method. The top-level composer assembles tabs from sections:

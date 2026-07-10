@@ -820,6 +820,25 @@ abstract class UnifiedHandlerBase {
     }
 
     /**
+     * Reapply this handler's term-sync to a single post after an out-of-band
+     * write that fired NO save_post-family hook.
+     *
+     * The Admin Columns v7 reapply fallback (TaxonomyManager) calls this on
+     * EVERY handler after an AC inline/bulk edit of an ACF field column — AC v7
+     * writes ACF fields via update_field(), which fires acf/update_value only,
+     * never acf/save_post/save_post/set_object_terms, so the handlers' normal
+     * apply paths never run. (SPEC §V1/§V6, #37)
+     *
+     * No-op by default: only ACF-listening handlers override it (delegating to
+     * their own gated on_acf_save_post). Handlers whose apply is already covered
+     * by the native set_object_terms/save_post paths need no override — the
+     * fallback calling this on them is a harmless no-op. (SPEC §V6/§V7)
+     *
+     * @param int $post_id Post whose fields were just edited.
+     */
+    public function reapply_for_post(int $post_id): void {}
+
+    /**
      * Public validate_rule method for backward compatibility
      *
      * Wraps the protected validate_rule_internal method and returns array format
