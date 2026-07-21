@@ -162,6 +162,20 @@ Status (L1)          — second root: related/time-based targets live here so
 - hierarchical + propagation — expanded ancestors propagate to child sections.
 - related + time_based sharing `Featured` target — both add/remove same term.
 
+## Cross-blueprint traps
+
+- **`get_posts( name=..., post_status => 'any' )` cannot see non-published
+  posts when logged out** (i.e. under WP-CLI). `name` sets `is_single`, which
+  arms `WP_Query`'s post-query permission re-check; `'any'` leaves `$q_status`
+  as the literal `['any']`, so the escape hatch misses and a draft is wiped
+  after the DB has already returned it. Any blueprint with a draft/pending/
+  private fixture hits this — the lookup reads as "missing", so an upsert
+  re-inserts and duplicates accumulate one per run. Use `post_name__in` with
+  explicit statuses (`mc-rules/lookup.php`). Worth grepping sibling blueprints:
+  they only escape it by having no non-published fixtures.
+- **Assert one-post-per-slug.** The duplication above was invisible for four
+  runs because nothing checked. Cheap assertion, catches a whole bug class.
+
 ## Harnesses
 
 - **H7 — `tests/verify-fixture-manifest.php`** (static, no WP): manifest

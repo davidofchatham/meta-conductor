@@ -42,24 +42,33 @@ $log = function ( $msg ) {
 	WP_CLI::log( '[mc-rules] ' . $msg );
 };
 
+require_once $mc_base . '/lookup.php';
+
 // ---------------------------------------------------------------------------
 // 0. Compose pin — core-structures must satisfy `composes_on`. Sibling-repo
 // path holds on the Windows checkout (D:/Dev/Plugins) and the container
 // mount (/plugins) alike.
 // ---------------------------------------------------------------------------
-$mc_core_manifest_path = dirname( __DIR__, 4 ) . '/bws-gb-dynamic-tags-extensions/tools/fixtures/core-structures/manifest.php';
+$mc_dep_name = $mc_manifest['composes_on']['blueprint'] ?? '';
+$mc_min_core = (int) ( $mc_manifest['composes_on']['min_version'] ?? 0 );
+if ( ! $mc_dep_name || ! $mc_min_core ) {
+	// Guard the two-key shape explicitly. A malformed composes_on would
+	// otherwise read as min_version 0 and silently disable the pin.
+	WP_CLI::error( "composes_on must be array( 'blueprint' => <name>, 'min_version' => <int> )" );
+}
+
+$mc_core_manifest_path = dirname( __DIR__, 4 ) . '/bws-gb-dynamic-tags-extensions/tools/fixtures/' . $mc_dep_name . '/manifest.php';
 if ( ! file_exists( $mc_core_manifest_path ) ) {
-	WP_CLI::error( 'core-structures manifest not found at ' . $mc_core_manifest_path );
+	WP_CLI::error( $mc_dep_name . ' manifest not found at ' . $mc_core_manifest_path );
 }
 $mc_core_manifest = require $mc_core_manifest_path;
-$mc_min_core      = (int) ( $mc_manifest['composes_on']['core-structures'] ?? 0 );
 if ( (int) $mc_core_manifest['version'] < $mc_min_core ) {
 	WP_CLI::error( sprintf(
-		'core-structures manifest v%d < pinned min v%d — update the pin or reseed against a newer core.',
-		$mc_core_manifest['version'], $mc_min_core
+		'%s manifest v%d < pinned min v%d — update the pin or reseed against a newer core.',
+		$mc_dep_name, $mc_core_manifest['version'], $mc_min_core
 	) );
 }
-$log( sprintf( 'compose pin OK (core-structures v%d >= v%d)', $mc_core_manifest['version'], $mc_min_core ) );
+$log( sprintf( 'compose pin OK (%s v%d >= v%d)', $mc_dep_name, $mc_core_manifest['version'], $mc_min_core ) );
 
 // Collision guard — this blueprint must not redefine core-structures keys.
 foreach ( array( 'post_types', 'taxonomies', 'acf_groups' ) as $mc_kind ) {
@@ -186,16 +195,9 @@ foreach ( $mc_manifest['posts'] as $mc_slug => $mc_def ) {
 		$mc_args['post_parent'] = $mc_post_ids[ $mc_def['parent'] ];
 	}
 
-	$mc_existing = get_posts(
-		array(
-			'name'        => $mc_def['post_name'],
-			'post_type'   => $mc_def['post_type'],
-			'post_status' => 'any',
-			'numberposts' => 1,
-		)
-	);
+	$mc_existing = mc_fixture_find_post( $mc_def['post_name'], $mc_def['post_type'] );
 	if ( $mc_existing ) {
-		$mc_args['ID']           = $mc_existing[0]->ID;
+		$mc_args['ID']           = $mc_existing;
 		$mc_post_ids[ $mc_slug ] = (int) wp_update_post( $mc_args );
 	} else {
 		$mc_post_ids[ $mc_slug ] = (int) wp_insert_post( $mc_args );

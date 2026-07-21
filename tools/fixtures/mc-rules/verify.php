@@ -38,21 +38,15 @@ $check = function ( $label, $ok, $detail = '' ) use ( &$mc_pass, &$mc_fail ) {
 	WP_CLI::warning( 'FAIL ' . $label . ( $detail ? " — {$detail}" : '' ) );
 };
 
-/** Resolve a fixture post slug → ID (any status). */
+require_once $mc_base . '/lookup.php';
+
+/** Resolve a fixture post slug → ID (any status, oldest match). */
 $mc_post = function ( $fixture_slug ) use ( $mc_manifest ) {
 	$def = $mc_manifest['posts'][ $fixture_slug ] ?? null;
 	if ( ! $def ) {
 		return 0;
 	}
-	$found = get_posts(
-		array(
-			'name'        => $def['post_name'],
-			'post_type'   => $def['post_type'],
-			'post_status' => 'any',
-			'numberposts' => 1,
-		)
-	);
-	return $found ? (int) $found[0]->ID : 0;
+	return mc_fixture_find_post( $def['post_name'], $def['post_type'] );
 };
 
 /** Resolve a fixture term slug → term_id. */
@@ -91,6 +85,19 @@ if ( $mc_harbor ) {
 // A3. Posts resolve; propagation chain wired; draft child is draft.
 foreach ( array_keys( $mc_manifest['posts'] ) as $mc_slug ) {
 	$check( "post {$mc_slug} exists", $mc_post( $mc_slug ) > 0 );
+}
+
+// A3b. Idempotency — exactly ONE post per fixture slug. A blind existence
+// check made the seeder re-insert `section-draft` on every run; four copies
+// accumulated before the missing-fixture failure gave it away. Assert the
+// invariant directly so duplication can't grow silently again.
+foreach ( $mc_manifest['posts'] as $mc_slug => $mc_def ) {
+	$mc_dupes = mc_fixture_count_posts( $mc_def['post_name'], $mc_def['post_type'] );
+	$check(
+		"post {$mc_slug}: exactly one copy (seed idempotent)",
+		count( $mc_dupes ) === 1,
+		count( $mc_dupes ) . ' copies: [' . implode( ',', $mc_dupes ) . ']'
+	);
 }
 $mc_parent = $mc_post( 'section-parent' );
 $mc_child  = $mc_post( 'section-child' );
@@ -188,15 +195,11 @@ if ( ! $mc_core_manifest ) {
 		if ( ! $def ) {
 			return 0;
 		}
-		$found = get_posts(
-			array(
-				'name'        => $def['post_name'],
-				'post_type'   => $def['post_type'],
-				'post_status' => 'any',
-				'numberposts' => 1,
-			)
-		);
-		return $found ? (int) $found[0]->ID : 0;
+		// Same status-blind trap as the MC lookup (see lookup.php). Every
+		// core-structures fixture is published today, so `'any'` would work
+		// here by luck — use the safe helper anyway so a future non-published
+		// core fixture doesn't silently read as missing.
+		return mc_fixture_find_post( $def['post_name'], $def['post_type'] );
 	};
 
 	// B1. department term assignments still match the core manifest.

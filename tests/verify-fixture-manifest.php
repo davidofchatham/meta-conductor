@@ -28,6 +28,24 @@ $m = require $manifest_path;
 
 $fail = array();
 
+// Structural gate. Without it a manifest missing a top-level key fatals deep in
+// a loop (in_array on null) instead of reporting a failure — a harness that
+// crashes on malformed input is telling you less than one that fails cleanly.
+foreach ( array( 'terms', 'posts', 'defines', 'mc_rules', 'post_terms', 'post_fields' ) as $key ) {
+	if ( ! isset( $m[ $key ] ) || ! is_array( $m[ $key ] ) ) {
+		$fail[] = "manifest: missing or non-array top-level key '{$key}'";
+	}
+}
+foreach ( array( 'post_types', 'taxonomies' ) as $key ) {
+	if ( ! isset( $m['defines'][ $key ] ) || ! is_array( $m['defines'][ $key ] ) ) {
+		$fail[] = "manifest: missing or non-array defines['{$key}']";
+	}
+}
+if ( $fail ) {
+	echo "FAIL (structure — later checks skipped):\n - " . implode( "\n - ", $fail ) . "\n";
+	exit( 1 );
+}
+
 $terms       = array_keys( $m['terms'] );
 $posts       = array_keys( $m['posts'] );
 $owned_types = $m['defines']['post_types'];
@@ -43,6 +61,27 @@ $valid_types = array(
 	'hierarchical_level_restriction_rules',
 	'title_slug_rules',
 );
+
+// ── composes_on: family-standard two-key shape.
+//
+// The seed orchestrator (bin/seed-all.sh --only) builds its dependency graph by
+// parsing this key across every blueprint in the family. A one-key variant
+// ({name: version}) parses as neither, which is what forced the edge list to be
+// hardcoded in bash. Keep the shape uniform so that table can be generated.
+if ( ! isset( $m['composes_on'] ) ) {
+	$fail[] = 'composes_on: missing (every composing blueprint must declare its dependency)';
+} else {
+	$c = $m['composes_on'];
+	if ( ! isset( $c['blueprint'] ) || ! is_string( $c['blueprint'] ) || '' === $c['blueprint'] ) {
+		$fail[] = "composes_on: missing string 'blueprint' key — family shape is array( 'blueprint' => <name>, 'min_version' => <int> )";
+	}
+	if ( ! isset( $c['min_version'] ) || ! is_int( $c['min_version'] ) || $c['min_version'] < 1 ) {
+		$fail[] = "composes_on: missing int 'min_version' >= 1 — a 0/absent pin silently disables version enforcement";
+	}
+	if ( array_diff( array_keys( $c ), array( 'blueprint', 'min_version' ) ) ) {
+		$fail[] = 'composes_on: unexpected keys ' . implode( ',', array_diff( array_keys( $c ), array( 'blueprint', 'min_version' ) ) );
+	}
+}
 
 // ── Terms: parent defined earlier (seed applies in manifest order), MC-owned tax.
 $seen = array();

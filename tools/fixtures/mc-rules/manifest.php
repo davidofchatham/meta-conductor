@@ -12,8 +12,13 @@
 
 return array(
 	'blueprint'   => 'mc-rules',
-	'version'     => 1,
-	'composes_on' => array( 'core-structures' => 4 ),
+	'version'     => 2, // 2: composes_on normalized to the family two-key shape (blueprint/min_version) so the seed orchestrator can parse the dep graph. 1: initial.
+	// Family-standard shape — matches layout-states and view-structures.
+	// bin/seed-all.sh --only builds its dependency graph from this.
+	'composes_on' => array(
+		'blueprint'   => 'core-structures',
+		'min_version' => 4,
+	),
 
 	'defines' => array(
 		'post_types' => array( 'mc_item', 'mc_section' ),
