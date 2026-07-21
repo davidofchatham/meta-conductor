@@ -1,14 +1,25 @@
 # Auto detect text files and perform LF normalization
 * text=auto
 
-# Dev-only files excluded from distribution archives (git archive / release ZIP).
+# SINGLE SOURCE OF TRUTH for what ships in the release ZIP. The build is
+# `git archive` (.github/workflows/release.yml), which reads ONLY the
+# export-ignore rules below. A .distignore file would have no effect here
+# (that is a `wp-cli dist-archive` convention; this repo does not use it) —
+# add exclusions to this list, nowhere else.
+#
 # vendor/ and libs/ are runtime-required and intentionally NOT export-ignored.
+#
+# Anything listed here is ABSENT from every installed site. Never require/include
+# such a path from shipped code without a file_exists() guard — the dev checkout
+# has the file and the release does not, so the fatal only appears post-install.
 /.github            export-ignore
 /.gitignore         export-ignore
 /.gitattributes     export-ignore
 /docs               export-ignore
 /debug              export-ignore
 /tests              export-ignore
+/tools              export-ignore
+/plugins-to-integrate export-ignore
 /ROADMAP.md         export-ignore
 /SPEC.md            export-ignore
 /CONTEXT.md         export-ignore
