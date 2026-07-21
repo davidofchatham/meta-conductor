@@ -12,7 +12,7 @@
 
 return array(
 	'blueprint'   => 'mc-rules',
-	'version'     => 2, // 2: composes_on normalized to the family two-key shape (blueprint/min_version) so the seed orchestrator can parse the dep graph. 1: initial.
+	'version'     => 3, // 3: added item-solo-a/b clobber-free sweep subjects (no holder refs, no seeded terms). 2: composes_on normalized to the family two-key shape. 1: initial.
 	// Family-standard shape — matches layout-states and view-structures.
 	// bin/seed-all.sh --only builds its dependency graph from this.
 	'composes_on' => array(
@@ -48,8 +48,30 @@ return array(
 	// 'parent' = fixture slug (post_parent), resolved at seed.
 	'posts' => array(
 		// Clean-slate scenario subjects (no seeded terms — sweeps assign).
+		// alpha/beta are referenced by section-holder's relationship field, so a
+		// live related_post_terms rule PUSHES the holder's terms onto them on any
+		// term edit (keep_in_sync source). Use them for related_post_terms and
+		// interaction sweeps, NOT for isolated single-handler sweeps.
 		'item-alpha' => array( 'post_type' => 'mc_item', 'post_name' => 'mc-item-alpha', 'post_title' => 'MC Item Alpha' ),
 		'item-beta'  => array( 'post_type' => 'mc_item', 'post_name' => 'mc-item-beta', 'post_title' => 'MC Item Beta' ),
+
+		// Push-free subjects: referenced by NO holder, carry NO seeded terms — so
+		// the related_post_terms *push* (holder → referenced item) can't reach
+		// them. This removes the one non-obvious, reference-based clobber.
+		//
+		// It does NOT fully isolate a single handler: related_rules,
+		// level_restriction and time_based all also scope mc_item + mc_topic, so
+		// they still fire on any mc_topic edit here. Verified: assigning Harbor to
+		// solo-a with all rules live yields [Region,Coastal,Harbor,Featured] — the
+		// hierarchical expansion, PLUS related adds Featured (Coastal⇒Featured),
+		// then one_per_level prunes East (East and Featured are both L2). All
+		// three handlers correctly composing.
+		//
+		// So: use solo-a/b to dodge the confusing holder push; still empty the
+		// OTHER mc_item rule arrays when you need a pure single-handler read.
+		// (Per-request handler dedup applies regardless — one user-edit per eval.)
+		'item-solo-a' => array( 'post_type' => 'mc_item', 'post_name' => 'mc-item-solo-a', 'post_title' => 'MC Item Solo A' ),
+		'item-solo-b' => array( 'post_type' => 'mc_item', 'post_name' => 'mc-item-solo-b', 'post_title' => 'MC Item Solo B' ),
 
 		// time_based filter subjects: gamma matches filter (holds Coastal),
 		// delta does not.

@@ -155,6 +155,64 @@ Status (L1)          — second root: related/time-based targets live here so
 | time_based | — | p20 | — | publish_post p10, cron daily |
 | title_slug | — | p99 (no-ACF only) | p99 | wp_insert_post_data p1 |
 
+## Sweep method (learned running §1 on the live testbed)
+
+Two constraints that shape EVERY per-handler sweep — not §1-specific:
+
+1. **Per-handler sweeps require single-handler isolation.** All 7 handlers hook
+   at boot; emptying a rule *array* just makes that handler's loop no-op, but
+   the hooks stay live. Two kinds of interference on `mc_item` + `mc_topic`:
+
+   - **Reference-based (the non-obvious one):** the `related_post_terms` holder
+     `section-holder` (`mc_related_items => [item-alpha, item-beta]`,
+     `keep_in_sync=true`, role `source`) **pushes its own terms onto both
+     referenced items on any term edit** — a hierarchical/level/related/time
+     edit on `item-alpha`/`item-beta` gets clobbered to the holder's set
+     (observed: Harbor expansion `[13,14,15,16]` overwritten to `[14,15]` by the
+     p15 push). **Dodge it** by using the push-free subjects `item-solo-a` /
+     `item-solo-b` (referenced by no holder, no seeded terms).
+   - **Rule-scope overlap (expected, visible):** `related_rules`,
+     `level_restriction`, and `time_based` all also scope `mc_item` + `mc_topic`.
+     On a solo subject with all rules live, assigning Harbor yields
+     `[Region,Coastal,Harbor,Featured]` — hierarchical expands, related adds
+     Featured (Coastal⇒Featured), one_per_level then prunes East (East and
+     Featured are both L2). Correct composition, but NOT a pure single-handler
+     read. For that, still empty the other `mc_item` rule arrays.
+
+   Isolate + push-free subject for a pure single-handler read:
+   ```
+   eval1: empty every OTHER mc_rules type + clear_cache + setup solo subject
+   eval2: act + assert            (fresh request — see #2)
+   restore: re-seed (rebuilds the full option deterministically)
+   ```
+   Do NOT back up the option to `/tmp` between calls — each `docker compose run`
+   is a fresh container; `/tmp` does not persist. `update_option` DOES persist
+   (it's in the DB), so cross-eval isolation is fine; re-seed is the restore.
+
+2. **Handler dedup is per-request.** `HierarchicalHandler::$processed[post:tax]`
+   (and siblings) short-circuit a second `apply_rule` for the same post+taxonomy
+   within one PHP request. Two user-edits in one `wp eval` → the second is a
+   silent no-op. Each user-edit scenario needs its **own eval** (one WP-CLI call
+   = one request = fresh dedup). A single-eval multi-edit sweep reports artifacts
+   (e.g. "removal did nothing"), not real behavior.
+
+### §1 hierarchical — results
+
+- **§1a expand** ✅ Harbor(L4) → `[Region,East,Coastal,Harbor]`,
+  `_bws_auto_terms.mc_topic = [Region,East,Coastal]`.
+- **§1b remove leaf only** — NOT a cascade. Removing just Harbor from the
+  expanded set leaves `[Region,East,Coastal]`, `auto=[]`: the surviving
+  ancestors are **promoted to user terms** (class docblock: "kept by the user
+  after its source is removed → promoted"). To drop ancestors the user must
+  remove them in the same edit. Matrix's original "remove" row was
+  underspecified — this is documented, correct behavior.
+- **§1c promotion + re-expand** ✅ From `[13,14,15,16]` keep only East(14):
+  East promoted → child_to_parent re-expands → Region(13) re-added.
+  Result `terms=[Region,East]`, `auto=[Region]`.
+- Negative controls after sweep: `staff` `department` terms, matrix/ls page
+  slugs, and `bws_dynamic_tags_settings` all unchanged (MC only ever writes
+  `mc_topic` on `mc_item`).
+
 ## Cross-handler interaction scenarios (later phase, own snapshot each)
 
 - level_restriction (p5) + hierarchical (p10) same taxonomy — prune-then-expand
