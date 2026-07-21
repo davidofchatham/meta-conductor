@@ -160,3 +160,10 @@ function bws_fixture_mc_rules_register_acf() {
 		)
 	);
 }
+
+// Runtime registration (mu-plugin stub path). During seeding the applier calls
+// these directly — init/acf/init have already fired in the CLI run.
+if ( function_exists( 'add_action' ) && ! defined( 'BWS_FIXTURE_SEEDING' ) ) {
+	add_action( 'init', 'bws_fixture_mc_rules_register_types', 5 );
+	add_action( 'acf/init', 'bws_fixture_mc_rules_register_acf', 5 );
+}

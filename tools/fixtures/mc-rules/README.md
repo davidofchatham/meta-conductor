@@ -32,10 +32,29 @@ Requirements source: [`../handler-fixture-matrix.md`](../handler-fixture-matrix.
 Prereqs: core-structures already seeded (needs ACF Pro active; GB Pro not
 required for MC), meta-conductor plugin active on the site.
 
+Check the manifest statically first — no WP needed, catches dangling slugs and
+isolation violations before anything touches a site:
+
+```bash
+php tests/verify-fixture-manifest.php     # H7
+```
+
+Then seed and smoke-test:
+
 ```bash
 bin/wp.sh <site> eval-file <mc-repo-path>/tools/fixtures/mc-rules/seed.php
 bin/wp.sh <site> eval-file <mc-repo-path>/tools/fixtures/mc-rules/verify.php
 ```
+
+### Seed order is load-bearing
+
+`seed.php` **empties the MC rule arrays before writing any content** and
+restores the baselines last. Every upsert fires `save_post` /
+`set_object_terms` / `acf/save_post`; with a prior seed's rules live, handlers
+would rewrite terms mid-seed and the result wouldn't match the manifest. The
+storage request-cache is cleared on both sides of that window (the handlers
+hold a `StorageFactory` instance from plugin boot, so a raw `update_option`
+alone leaves them serving stale rules).
 
 ## Sweep discipline
 

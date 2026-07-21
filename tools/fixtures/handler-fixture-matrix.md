@@ -162,6 +162,17 @@ Status (L1)          — second root: related/time-based targets live here so
 - hierarchical + propagation — expanded ancestors propagate to child sections.
 - related + time_based sharing `Featured` target — both add/remove same term.
 
+## Harnesses
+
+- **H7 — `tests/verify-fixture-manifest.php`** (static, no WP): manifest
+  coherence — dangling fixture slugs, parent-before-child ordering, unknown
+  rule types/value tokens, and the isolation invariant (every rule's post-type
+  scope pinned to MC-owned types). Run before any seed. Fault-injection
+  verified: catches unpinned scope, unknown `{TERM:}` token, dangling post ref.
+- **`tools/fixtures/mc-rules/verify.php`** (WP, post-seed): seeded surface
+  assertions (section A) + core-structures negative controls (section B).
+  Re-run section B after every behavior sweep, pre-restore.
+
 ## Negative-control assertions (every sweep, cheap)
 
 1. `wp post term list <matrix-page-ids> department` unchanged vs manifest.
