@@ -213,6 +213,49 @@ Two constraints that shape EVERY per-handler sweep — not §1-specific:
   slugs, and `bws_dynamic_tags_settings` all unchanged (MC only ever writes
   `mc_topic` on `mc_item`).
 
+### §2 level_restriction — results
+
+Handler level convention: **root = level 0** (`get_term_level`). Tree levels:
+Region L0 › East/West L1 › Coastal/Inland L2 › Harbor L3. (Watch the tree:
+Inland is a child of East = L2, NOT an L1 sibling — a same-L1 pair is
+**East + West**, not East + Inland.)
+
+Run against `item-solo-a`, level_restriction isolated (other rule arrays
+emptied), one scenario per eval, rule mode edited between scenarios.
+
+- **§2a one_per_level** ✅ East(14)+West(18), both L1 → `[West]`. Keeps
+  `end()` of the level group = last-added. Confirmed same-level pruning.
+- **§2b deepest_only** ✅ Region+East+Coastal+Harbor (L0–L3) → `[Harbor]`.
+  With `include_ancestors=true` → `[Region,East,Coastal,Harbor]` (full chain).
+- **§2c shallowest_only** ✅ same mixed set → `[Region]` (L0 only).
+- **§2d ACF path** ✅ set `mc_topics` field to East+West + `acf/save_post` →
+  prune to `[West]` lands in BOTH the ACF field value and native terms
+  (dual-channel sync). Note the taxonomy field has `save_terms=1`, so the
+  native-write also trips the p5 `set_object_terms` path — both converge.
+- Negative controls (staff/dept, matrix slugs, dynamic-tags) unchanged.
+
+### §3 related — results
+
+Seeded rules: [0] term-trigger Coastal(15)⇒Featured(20), bidirectional;
+[1] taxonomy-trigger any `mc_flag`⇒Featured(20), one-directional.
+Run against `item-solo-a`, related isolated, one scenario per eval.
+
+- **§3a term add** ✅ assign Coastal(15) → `[Coastal,Featured]`.
+- **§3b bidirectional remove** ✅ remove Coastal (last trigger) → `[]`.
+  Featured dropped — `get_trigger_terms` confirmed no trigger remains
+  (checked across ALL taxonomies, not just the changed one).
+- **§3c multi-trigger keep** ✅ rule[0] edited to `trigger_term_id=[15,14]`
+  (Coastal+East). From `[Coastal,East,Featured]` remove Coastal → `[East,Featured]`.
+  One trigger removed, the other still present → target retained (V4 semantics).
+- **§3d taxonomy trigger** ✅ assign Priority(22, `mc_flag`) → Featured(20)
+  added to `mc_topic`. Cross-taxonomy trigger→target: `mc_flag` change drives
+  an `mc_topic` write.
+- Negative controls unchanged.
+- Note: apply is merge-add; removal fires ONLY when a trigger was actually
+  removed in the change AND none remains (absence alone never removes —
+  `apply_related_terms` needs the old/new tt_id diff, so a plain re-save of a
+  post that lacks the trigger is a no-op, not a removal).
+
 ## Cross-handler interaction scenarios (later phase, own snapshot each)
 
 - level_restriction (p5) + hierarchical (p10) same taxonomy — prune-then-expand
