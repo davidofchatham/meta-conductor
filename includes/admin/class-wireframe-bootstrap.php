@@ -585,7 +585,7 @@ class WireframeBootstrap {
         \Wireframe\App::boot([
             'prefix'     => 'bws-meta-conductor',
             'capability' => 'manage_options',
-            'version'    => defined('BWS_META_MANAGER_VERSION') ? BWS_META_MANAGER_VERSION : '0.3.0',
+            'version'    => defined('META_CONDUCTOR_VERSION') ? META_CONDUCTOR_VERSION : '0.3.0',
             // Symlinked installs (local dev) resolve the package via realpath()
             // to a path outside WP_PLUGIN_DIR, so Wireframe's assetsUrl() prefix
             // match fails and emits a broken asset base. plugins_url() keyed off

@@ -17,18 +17,13 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('BWS_META_MANAGER_VERSION', '0.6.2');
-define('BWS_META_MANAGER_PLUGIN_DIR', plugin_dir_path(__FILE__));
-define('BWS_META_MANAGER_PLUGIN_URL', plugin_dir_url(__FILE__));
+define('META_CONDUCTOR_VERSION', '0.6.2');
+define('META_CONDUCTOR_PLUGIN_DIR', plugin_dir_path(__FILE__));
+define('META_CONDUCTOR_PLUGIN_URL', plugin_dir_url(__FILE__));
 
-// PSR-4 autoloader base path (Phase 2a). Distinct from the legacy
-// BWS_META_MANAGER_PLUGIN_DIR; the kebab autoloader keys off this.
+// PSR-4 autoloader base path (Phase 2a). Same value as
+// META_CONDUCTOR_PLUGIN_DIR; the kebab autoloader keys off this.
 define('BWS_META_CONDUCTOR_PATH', plugin_dir_path(__FILE__));
-
-// Backward compatibility constants
-define('BWS_TAX_MANAGER_VERSION', '0.6.2'); // For legacy code
-define('BWS_TAX_MANAGER_PLUGIN_DIR', plugin_dir_path(__FILE__));
-define('BWS_TAX_MANAGER_PLUGIN_URL', plugin_dir_url(__FILE__));
 
 /**
  * Check if BWS Meta Manager class exists to prevent conflicts
@@ -46,8 +41,8 @@ if (!function_exists('bws_meta_manager_init')) {
         }
 
         // Composer autoloader (WP Wireframe + rakit/validation)
-        if (file_exists(BWS_META_MANAGER_PLUGIN_DIR . 'vendor/autoload.php')) {
-            require_once BWS_META_MANAGER_PLUGIN_DIR . 'vendor/autoload.php';
+        if (file_exists(META_CONDUCTOR_PLUGIN_DIR . 'vendor/autoload.php')) {
+            require_once META_CONDUCTOR_PLUGIN_DIR . 'vendor/autoload.php';
         }
 
         // PSR-4 autoloader for plugin classes (BWS\MetaConductor\). Loaded after
@@ -59,8 +54,8 @@ if (!function_exists('bws_meta_manager_init')) {
         // Plugin Update Checker — pulls updates from public GitHub releases.
         // Matches the release ZIP attached by .github/workflows/release.yml on each
         // `v*` tag. Slug must equal the installed plugin folder (meta-conductor).
-        if (file_exists(BWS_META_MANAGER_PLUGIN_DIR . 'libs/plugin-update-checker/load-v5p7.php')) {
-            require_once BWS_META_MANAGER_PLUGIN_DIR . 'libs/plugin-update-checker/load-v5p7.php';
+        if (file_exists(META_CONDUCTOR_PLUGIN_DIR . 'libs/plugin-update-checker/load-v5p7.php')) {
+            require_once META_CONDUCTOR_PLUGIN_DIR . 'libs/plugin-update-checker/load-v5p7.php';
 
             $bws_mc_update_checker = \YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
                 'https://github.com/davidofchatham/meta-conductor/',
@@ -414,8 +409,8 @@ if (!function_exists('bws_meta_manager_init')) {
 	function bws_taxonomy_manager_check_version() {
 		$current_version = get_option('bws_meta_conductor_version');
 
-		if ($current_version !== BWS_META_MANAGER_VERSION) {
-			update_option('bws_meta_conductor_version', BWS_META_MANAGER_VERSION);
+		if ($current_version !== META_CONDUCTOR_VERSION) {
+			update_option('bws_meta_conductor_version', META_CONDUCTOR_VERSION);
 			bws_taxonomy_manager_clear_caches();
 		}
 	}

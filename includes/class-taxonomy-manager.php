@@ -207,17 +207,17 @@ class TaxonomyManager {
 
         wp_enqueue_script(
             'bws-conversion-admin',
-            BWS_META_MANAGER_PLUGIN_URL . 'assets/js/conversion-admin.js',
+            META_CONDUCTOR_PLUGIN_URL . 'assets/js/conversion-admin.js',
             array('jquery', 'wp-util'),
-            BWS_META_MANAGER_VERSION,
+            META_CONDUCTOR_VERSION,
             true
         );
 
         wp_enqueue_style(
             'bws-conversion-admin',
-            BWS_META_MANAGER_PLUGIN_URL . 'assets/css/conversion-admin.css',
+            META_CONDUCTOR_PLUGIN_URL . 'assets/css/conversion-admin.css',
             array(),
-            BWS_META_MANAGER_VERSION
+            META_CONDUCTOR_VERSION
         );
 
         wp_localize_script('bws-conversion-admin', 'bwsMetaManager', array(
