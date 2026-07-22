@@ -70,7 +70,7 @@ class StorageFactory {
         }
 
         // Allow filtering the storage type
-        $storage_type = apply_filters('bws_meta_manager_storage_type', self::$config['type']);
+        $storage_type = apply_filters('bws_meta_conductor_storage_type', self::$config['type']);
 
         switch ($storage_type) {
             case 'cpt':
@@ -185,7 +185,7 @@ class StorageFactory {
                 break;
         }
 
-        return apply_filters('bws_meta_manager_storage_info', $info);
+        return apply_filters('bws_meta_conductor_storage_info', $info);
     }
 
     /**

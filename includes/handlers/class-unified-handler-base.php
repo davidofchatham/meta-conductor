@@ -102,13 +102,13 @@ abstract class UnifiedHandlerBase {
         }
 
         // Pre-process hook
-        do_action("bws_meta_manager_before_process_{$this->handler_type}", $rule);
+        do_action("bws_meta_conductor_before_process_{$this->handler_type}", $rule);
 
         // Process via unified engine
         $results = $this->rule_engine->process_rule($rule);
 
         // Post-process hook
-        do_action("bws_meta_manager_after_process_{$this->handler_type}", $rule, $results);
+        do_action("bws_meta_conductor_after_process_{$this->handler_type}", $rule, $results);
 
         // Log results
         $this->log_results($rule, $results);
@@ -745,9 +745,9 @@ abstract class UnifiedHandlerBase {
      */
     public function clear_cache() {
         // Base implementation - override in child classes if needed
-        delete_transient("bws_meta_manager_{$this->handler_type}_cache");
+        delete_transient("bws_meta_conductor_{$this->handler_type}_cache");
 
-        do_action("bws_meta_manager_clear_{$this->handler_type}_cache");
+        do_action("bws_meta_conductor_clear_{$this->handler_type}_cache");
     }
 
     /**
