@@ -127,8 +127,18 @@ foreach ( $m['post_fields'] as $p => $fields ) {
 			continue;
 		}
 		foreach ( $v as $ref ) {
-			// Relationship/post_object values are arrays of fixture post slugs.
-			if ( is_string( $ref ) && ! in_array( $ref, $posts, true ) ) {
+			if ( ! is_string( $ref ) ) {
+				continue;
+			}
+			// Taxonomy-field values are {TERM:slug} tokens — validate against terms.
+			if ( preg_match( '/^\{TERM:(.+)\}$/', $ref, $tm ) ) {
+				if ( ! in_array( $tm[1], $terms, true ) ) {
+					$fail[] = "post_fields[{$p}][{$name}]: unknown term token {$tm[1]}";
+				}
+				continue;
+			}
+			// Otherwise a relationship/post_object value = fixture post slug.
+			if ( ! in_array( $ref, $posts, true ) ) {
 				$fail[] = "post_fields[{$p}][{$name}]: unknown post ref {$ref}";
 			}
 		}

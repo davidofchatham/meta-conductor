@@ -256,6 +256,128 @@ Run against `item-solo-a`, related isolated, one scenario per eval.
   `apply_related_terms` needs the old/new tt_id diff, so a plain re-save of a
   post that lacks the trigger is a no-op, not a removal).
 
+### §4 related_post_terms — results
+
+Seeded rule: PUSH source, field `mc_section:mc_related_items` (relationship),
+taxonomy `mc_topic`, `keep_in_sync=true`. `section-holder` (terms
+Coastal+East) references `item-alpha`/`item-beta`; `section-holder2` is the
+second-holder subject. This is the handler whose push clobbers plain mc_item
+sweeps — tested here WITH itself isolated (other rule arrays emptied).
+
+**CLI trigger note (handler KNOWN LIMIT, ~line 417):** a bare
+`update_field($f,$v,$id)` fires `acf/update_value` (→ sever capture) but
+neither `save_post` NOR `acf/save_post`, so the sever is captured but never
+drained. Every relationship edit in a sweep must be followed by
+`do_action('acf/save_post', $holder_id)` to flush. All §4 evals do this.
+
+- **§4a push** ✅ save holder → `item-alpha`/`item-beta` both replaced with the
+  holder set `[East,Coastal]` (keep_in_sync replace; a stale term on an item
+  from a prior sweep was wiped).
+- **§4b sever (edit)** ✅ drop `item-beta` from the relationship + flush →
+  `item-beta` emptied (severed, keep_in_sync, no other holder); `item-alpha`
+  retained. `capture_removed_dependents` + `process_severed` path.
+- **§4c delete holder** ✅ make holder the SOLE source of `item-alpha`, then
+  `wp_delete_post(holder, true)` → `item-alpha` orphan-cleaned to `[]`
+  (`before_delete_post` capture → `deleted_post` strip). Re-seed recreates the
+  holder (new post ID — fixtures address by slug, not ID; the old 104 became
+  124, harmless).
+- **§4d multi-holder union** ✅ two holders reference `item-alpha` (holder1
+  `[East,Coastal]`, holder2 `[West]`) → union `[East,Coastal,West]`. Sever from
+  holder1 → recompute from remaining source (holder2) → `[West]`. Declarative
+  source-authoritative recompute confirmed: a severed dependent keeps other
+  holders' contributions, not blindly emptied.
+- Negative controls unchanged. Restore = re-seed (recreates the force-deleted
+  holder and its relationship + terms).
+
+### §5 propagation — results
+
+Chain `section-grand → section-parent → section-child` (+ `section-draft`
+under parent). Rule: merge, `mc_section` pinned. Run against the chain,
+propagation isolated, one edit per eval.
+
+**Fixture fix (manifest v3→v4, B1):** `section-child`'s independent term (West)
+was seeded native-only via `post_terms`, leaving its `mc_topics` ACF mirror
+empty. Propagation's ACF-merge write then merged against the empty ACF value
+and the save_terms sync clobbered the native-only term. Moved it to
+`post_fields` (`mc_topics => [{TERM:topic-west}]`); seed.php now resolves
+`{TERM:}` tokens in taxonomy fields, and `save_terms=1` populates both stores.
+H7 extended to validate `{TERM:}` tokens in `post_fields`.
+
+- **§5a down-propagate** ✅ Coastal on grandparent → parent + child + DRAFT all
+  receive it (`get_all_child_posts` includes publish/draft/private, recursive);
+  child keeps its independent West via merge. (Only passes once both of the
+  child's channels agree — see the fixture fix.)
+- **§5b removal — CONFIRMED BUG.** Removing a term from the parent NEVER
+  propagates to descendants when the parent carries an `mc_topics` ACF mirror
+  field. `on_parent_terms_set` runs removal-propagation (strips the term from
+  children) AND `propagate_terms_to_children` in the same handler pass; the
+  add-side reads `get_post_terms(parent)` = union(native, ACF), and the parent's
+  ACF mirror still returns the OLD value at that instant, so the just-stripped
+  term is immediately RE-propagated. Traced: `SET 102 new=[18]` (strip) →
+  `SET 102 new=[15,18]` (re-add) within one request. Independent of removal
+  method (`wp_set_object_terms([])`, `update_field([])`; `wp_remove_object_terms`
+  doesn't even fire the removal path). Down-ADD works; down-REMOVE is broken by
+  the union read racing the ACF write. → **GitHub issue #45.**
+- **§5c new-child inherit** ✅ new `mc_section` created under the parent inherits
+  the parent's terms on its own save (the `post_parent > 0` branch of
+  `on_parent_post_save`, not `wp_insert_post`).
+- **§5d conflict modes** ✅ merge → child = `[Coastal, West]` (independent term
+  kept); replace → child = `[Coastal]` (independent term dropped, as designed).
+- Negative controls unchanged. Restore = re-seed (reverts conflict_handling to
+  merge, resets the chain).
+
+### §6 time_based — results
+
+3 seeded rules (dates relative to seed day): [0] in-range `{TODAY-1}..{TODAY+7}`
+→ Featured, filter `mc_topic`; [1] expired `{TODAY-30}..{TODAY-2}` → Archived,
+no filter; [2] future `{TODAY+10}..{TODAY+20}` → Archived. Fires on
+`save_post`/`publish_post` + the daily `bws_taxonomy_manager_cleanup` cron.
+String Y-m-d comparison. Run against gamma/delta/solo subjects, time_based
+isolated. (Seeded on 2026-07-21; the ± windows are re-resolved every seed, so
+this is date-independent.)
+
+- **§6a in-range apply** ✅ save `item-gamma` (holds Coastal ⇒ has an `mc_topic`
+  term ⇒ passes the `mc_topic` filter) → Featured merge-added.
+- **§6d filter miss** ✅ save `item-delta` (no `mc_topic` term) → Featured NOT
+  added (`post_matches_filter` returns false).
+- **§6b future no-op** ✅ save a clean item → the future rule adds nothing.
+- **§6c expired removal on save** ✅ item holding Archived → save → the expired
+  rule removes it (`!in_date_range && has_target`). (Side effect: an item whose
+  only `mc_topic` term is Archived momentarily satisfies rule[0]'s taxonomy
+  filter, so Featured is added in the same save — expected multi-rule
+  composition, not a defect.)
+- **§6e cron cleanup** ✅ `do_action('bws_taxonomy_manager_cleanup')` strips the
+  expired rule's Archived target from ALL matching `mc_item` posts in one pass.
+  This is the documented **over-removal**: no per-post ownership tracking, so it
+  removes Archived from every matching post regardless of how it got there.
+- Negative controls unchanged.
+
+### §7 title_slug — results
+
+Seeded rule: `mc_item`, `slug_pattern = {default_slug}-{date_year:mc_event_date}`,
+mode replace, `date_escalation=true`, `date_field=mc_event_date`. It's a META
+pattern (`date_year:`) so it runs POST-write (`acf/save_post` p99), not the
+pre-write `wp_insert_post_data` path. Subjects: `item-alpha` (event 2030-03-15),
+`item-slug-a`/`item-slug-b` (both titled "Slug Probe", both event 2030-04-01 —
+a deliberate slug collision). Run title_slug isolated, `do_action('acf/save_post', id)`.
+
+- **§7a slug build** ✅ save `item-alpha` → `mc-item-alpha-2030` (default_slug +
+  meta year, replace mode).
+- **§7b collision escalation** ✅ `item-slug-a` → `slug-probe-2030`; `item-slug-b`
+  collides → escalates year→month → `slug-probe-2030-04` (month spliced adjacent
+  to the year, not appended). Ladder confirmed.
+- **§7c idempotent re-save** ✅ re-saving either subject twice more leaves the
+  slug unchanged — no drift, no further escalation.
+- Negative controls unchanged.
+
+**RESTORE GOTCHA (this handler only): it renames `post_name`.** Re-seed's
+`mc_fixture_find_post` addresses posts by `post_name`, so a renamed subject reads
+as missing and the seeder INSERTS a duplicate. Before re-seeding after a
+title_slug sweep you MUST first (a) empty the `title_slug_rules` array (so the
+rename doesn't re-fire) and (b) `wp_update_post` the subjects' `post_name` back to
+their manifest values. Then re-seed. Verified afterward: `mc_item` count = 8
+(6 fixtures + 2 solo), all unique names, rule live, no duplicates.
+
 ## Cross-handler interaction scenarios (later phase, own snapshot each)
 
 - level_restriction (p5) + hierarchical (p10) same taxonomy — prune-then-expand

@@ -242,6 +242,13 @@ $mc_field_keys = array(
 	),
 );
 $mc_ref_fields = array( 'mc_related_items', 'mc_primary_item' );
+// Taxonomy ACF fields: values are {TERM:slug} tokens resolved to term IDs.
+// These fields have save_terms=1, so update_field() ALSO writes native terms —
+// seeding an independent term here (not via post_terms) keeps the ACF mirror and
+// the native store in agreement, matching a real editor save. A native-only seed
+// leaves the ACF field empty, and propagation's ACF-merge write (which merges
+// against the empty ACF value) then clobbers the native-only term. (§5 sweep B1)
+$mc_tax_fields = array( 'mc_topics' );
 
 foreach ( $mc_manifest['post_fields'] as $mc_slug => $mc_fields ) {
 	if ( ! isset( $mc_post_ids[ $mc_slug ] ) ) {
@@ -254,6 +261,16 @@ foreach ( $mc_manifest['post_fields'] as $mc_slug => $mc_fields ) {
 			$mc_value = array_values( array_filter( array_map(
 				function ( $ref ) use ( $mc_post_ids ) {
 					return $mc_post_ids[ $ref ] ?? 0;
+				},
+				(array) $mc_value
+			) ) );
+		} elseif ( in_array( $mc_name, $mc_tax_fields, true ) ) {
+			$mc_value = array_values( array_filter( array_map(
+				function ( $ref ) use ( $mc_term_ids ) {
+					if ( is_string( $ref ) && preg_match( '/^\{TERM:([a-z0-9\-]+)\}$/', $ref, $m ) ) {
+						return $mc_term_ids[ $m[1] ] ?? 0;
+					}
+					return is_numeric( $ref ) ? (int) $ref : 0;
 				},
 				(array) $mc_value
 			) ) );

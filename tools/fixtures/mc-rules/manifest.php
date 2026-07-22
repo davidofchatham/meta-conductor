@@ -12,7 +12,7 @@
 
 return array(
 	'blueprint'   => 'mc-rules',
-	'version'     => 3, // 3: added item-solo-a/b clobber-free sweep subjects (no holder refs, no seeded terms). 2: composes_on normalized to the family two-key shape. 1: initial.
+	'version'     => 4, // 4: section-child independent term moved native→ACF field (both channels agree; propagation ACF-merge no longer clobbers it). 3: item-solo-a/b clobber-free subjects. 2: composes_on two-key shape. 1: initial.
 	// Family-standard shape — matches layout-states and view-structures.
 	// bin/seed-all.sh --only builds its dependency graph from this.
 	'composes_on' => array(
@@ -97,8 +97,9 @@ return array(
 	// ── Seeded term assignments (fixture slugs) ─────────────────────────
 	'post_terms' => array(
 		'item-gamma'      => array( 'topic-coastal' ),            // time_based filter match
-		'section-child'   => array( 'topic-west' ),               // independent term — removal propagation must not strip
 		'section-holder'  => array( 'topic-coastal', 'topic-east' ), // push source set
+		// section-child's independent term is seeded via post_fields (ACF) so BOTH
+		// the native store and the save_terms ACF mirror agree — see below.
 	),
 
 	// ── ACF field values (update_field at seed) ─────────────────────────
@@ -108,6 +109,11 @@ return array(
 		'item-slug-b'    => array( 'mc_event_date' => '20300401' ), // same date → slug collision
 		// Relationship values: fixture slugs resolved to IDs at seed.
 		'section-holder' => array( 'mc_related_items' => array( 'item-alpha', 'item-beta' ) ),
+		// section-child's independent term (removal-propagation must not strip it).
+		// Seeded via the ACF taxonomy field (save_terms=1 syncs native too) so both
+		// channels agree — a native-only seed would let propagation's ACF-merge
+		// write clobber it. Taxonomy-field values use {TERM:slug} tokens.
+		'section-child'  => array( 'mc_topics' => array( '{TERM:topic-west}' ) ),
 	),
 
 	// ── Rule baselines (merged into bws_meta_conductor_settings LAST) ───
