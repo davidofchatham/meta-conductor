@@ -20,7 +20,7 @@ Phase numbers are **stable IDs, not execution order** — work has landed out of
 | 3 | Migrate 5 legacy handlers → UnifiedHandlerBase — **✅ done (0.6.0)**. All 7 handlers on `UnifiedHandlerBase`; legacy `BWS_Handler_Base` deleted; redundant `on_post_save` loop removed | ✅ done | 2a ✅ | legacy handler base; dual-base divergence; `on_post_save` loop double-run |
 | 2b | Rename sweep — text domain, constants, nonces, core hooks, log table + migration all done (0.6.3, PR #48; real-Athletics verified). JS object + conversion cron/AJAX/transients deferred to P7; internal fn names deferred | ✅ done (0.6.3) | 2a ✅ | mixed text domains |
 | **4** | Config page split (storage blast-radius) — *was CPT storage; CPT deferred* | **next** | 3 ✅ | one-blob clobber radius; per-page autoload; gives UBT its own option |
-| 7 | Unified migration / preview tool | queued | — (ungated; can run anytime) | `lib/` classes instantiated but never called; tab-aware save bug; Conversion subpage taxonomy selectors |
+| 7 | Unified migration / preview tool | queued | — (ungated; can run anytime) | `lib/` classes instantiated but never called; tab-aware save bug; Conversion subpage taxonomy selectors; **rename remainder #13** (conversion JS global/cron/AJAX/transients) |
 | 6a | Options-compatible integrations | queued | 3 | — |
 | 6b | BWS User Based Terms (→ Options, Personalize page) | queued | 4 | UBT merge; needs Personalize page option from P4 |
 | ~~5~~ | ~~Settings refactor~~ | cancelled | — | absorbed by 2c; lib delegation folded into 7 |
@@ -289,7 +289,12 @@ Reframes the existing ACF "Data Conversion" page as a general-purpose Migration 
 
 **Storage:** none new. Recipes are registered code, not user-saved config.
 
-**End of phase**: Update CLAUDE.md, drop legacy Data Conversion submenu in favor of the unified one.
+**Rename remainder (carried from 2b, [issue #13](https://github.com/davidofchatham/meta-conductor/issues/13)):** the conversion subsystem's identifiers were deferred here because renaming them in isolation would churn code this phase rewrites. When the conversion code is reworked, finish:
+- JS global `bwsMetaManager` → `bwsMetaConductor` (26 refs in `assets/js/conversion-admin.js`) + the PHP `wp_localize_script()` object name
+- Conversion cron `*_conversion_cleanup`, AJAX actions `wp_ajax_*_conversion_*`, transient keys `*_conversion_*`
+- Verify conversion AJAX succeeds under the unified JS global + nonce — this closes the last two AC on #13.
+
+**End of phase**: Update CLAUDE.md, drop legacy Data Conversion submenu in favor of the unified one, **close #13**.
 
 ---
 
