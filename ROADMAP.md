@@ -127,8 +127,8 @@ Full admin UI replacement. Hand-rolled settings UI (~5,000 lines across `class-b
 
 **Known issues:**
 - Conversion subpage: taxonomy selectors not populating (AJAX endpoints likely broken under new menu structure). Resolve in Phase 7 migration tool rewrite or earlier if Conversion is needed before then.
-- `BWS_Option_Rule_Storage::update_settings()` does a blunt top-level `array_merge`. If a legacy handler writes `['hierarchical_rules' => $rules]` it clobbers every other rule array. Live code path for the 3 remaining legacy handlers. Resolve when those handlers migrate to `BWS_Unified_Handler_Base` in Phase 3.
-- Hierarchical handler `$this->processed` accumulates indefinitely within a request and silently skips legitimate double-saves. Replace with a clear-after-apply pattern in Phase 3 when the handler is touched again.
+- ~~`BWS_Option_Rule_Storage::update_settings()` blunt top-level `array_merge` clobbers sibling rule arrays~~ ◐ **dormant, not removed** — the clobber *path* is dead: all migrated handlers now write via `OptionRuleStorage::save_rule()` (per-type merge into `get_all_settings()`, no cross-type clobber). But the offending method still exists — `class-settings.php:81` `update_settings()` still does the blunt top-level `array_merge` (line 83). No live caller reaches it. Fully closed when the dead `class-settings.php` compat shell is deleted (queued — see CLAUDE.md Phase-2c quirks).
+- ~~Hierarchical handler `$this->processed` accumulates indefinitely within a request and silently skips legitimate double-saves~~ ✅ **fixed** — `$processed` map removed entirely. Re-entrant recursion was already blocked by the `$processing` flag; `apply_rule()` reads terms + auto-meta fresh each call (idempotent), so legit double-saves within one request now recompute instead of being skipped.
 
 **Untested on InstaWP:**
 - Propagation, Level Restriction handler runtime. *(Related Post Terms runtime verified on a live AC Pro v7 site during the #37 Admin Columns fix — add-sync path; the dependent-end sever gap is [#43](https://github.com/davidofchatham/meta-conductor/issues/43).)*
