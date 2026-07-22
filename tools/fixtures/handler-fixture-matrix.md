@@ -189,12 +189,19 @@ Two constraints that shape EVERY per-handler sweep — not §1-specific:
    is a fresh container; `/tmp` does not persist. `update_option` DOES persist
    (it's in the DB), so cross-eval isolation is fine; re-seed is the restore.
 
-2. **Handler dedup is per-request.** `HierarchicalHandler::$processed[post:tax]`
-   (and siblings) short-circuit a second `apply_rule` for the same post+taxonomy
-   within one PHP request. Two user-edits in one `wp eval` → the second is a
-   silent no-op. Each user-edit scenario needs its **own eval** (one WP-CLI call
-   = one request = fresh dedup). A single-eval multi-edit sweep reports artifacts
-   (e.g. "removal did nothing"), not real behavior.
+2. **Handler dedup is per-request — but NOT for hierarchical anymore (0.6.2).**
+   Some handlers keep a per-request `$processed[key]` map (`UnifiedHandlerBase`,
+   `TitleSlugHandler`) that short-circuits a second apply for the same subject
+   within one PHP request. For THOSE, two user-edits in one `wp eval` → the second
+   is a silent no-op; give each user-edit scenario its **own eval** (one WP-CLI
+   call = one request = fresh dedup), or a single-eval multi-edit sweep reports
+   artifacts (e.g. "removal did nothing"), not real behavior.
+   **`HierarchicalHandler` no longer has this map** — it was removed (commit
+   `03ee8b4`) because it silently skipped legitimate double-saves. Re-entrant
+   recursion is still blocked by the separate `$processing` flag, and `apply_rule`
+   recomputes from current terms + `_bws_auto_terms` fresh each call (idempotent),
+   so a second hierarchical edit in the same eval now recomputes correctly.
+   Confirmed on the testbed (§1d).
 
 ### §1 hierarchical — results
 
@@ -209,6 +216,14 @@ Two constraints that shape EVERY per-handler sweep — not §1-specific:
 - **§1c promotion + re-expand** ✅ From `[13,14,15,16]` keep only East(14):
   East promoted → child_to_parent re-expands → Region(13) re-added.
   Result `terms=[Region,East]`, `auto=[Region]`.
+- **§1d double-save in one request** ✅ (0.6.2, `$processed`-removal regression
+  guard). In ONE eval: edit1 assign Harbor → `[Region,East,Coastal,Harbor]`;
+  edit2 SAME request set only West → `[Region,West]`, `auto={mc_topic:[Region]}`.
+  The second edit recomputes (pre-0.6.2 the `$processed` map would have skipped
+  it → raw `[West]`, stale Harbor-chain auto). No recursion/hang — `$processing`
+  caught the handler's own write. **This is the one scenario that must live in a
+  single eval**, opposite the usual one-edit-per-eval rule — it exists to prove
+  the dedup map is gone.
 - Negative controls after sweep: `staff` `department` terms, matrix/ls page
   slugs, and `bws_dynamic_tags_settings` all unchanged (MC only ever writes
   `mc_topic` on `mc_item`).
