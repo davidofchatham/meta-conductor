@@ -93,7 +93,7 @@ if (!function_exists('bws_meta_manager_init')) {
      */
     function bws_meta_manager_php_version_notice() {
         echo '<div class="notice notice-error"><p>';
-        echo esc_html__('BWS Meta Manager requires PHP 8.1 or higher. Please update your PHP version.', 'meta-conductor');
+        echo esc_html__('Meta Conductor requires PHP 8.1 or higher. Please update your PHP version.', 'meta-conductor');
         echo '</p></div>';
     }
 
@@ -113,7 +113,7 @@ if (!function_exists('bws_meta_manager_init')) {
 		if (version_compare(PHP_VERSION, '8.1', '<')) {
 			deactivate_plugins(plugin_basename(__FILE__));
 			wp_die(
-				__('BWS Taxonomy Manager requires PHP 8.1 or higher. Please update your PHP version.', 'meta-conductor'),
+				__('Meta Conductor requires PHP 8.1 or higher. Please update your PHP version.', 'meta-conductor'),
 				__('Plugin Activation Error', 'meta-conductor'),
 				array('back_link' => true)
 			);
@@ -291,23 +291,6 @@ if (!function_exists('bws_meta_manager_init')) {
 			KEY created_at (created_at)
 		) $charset_collate;";
 
-		// Legacy log table (for backward compatibility - will be migrated)
-		$legacy_log_table = $wpdb->prefix . 'bws_taxonomy_manager_log';
-		$legacy_log_sql = "CREATE TABLE $legacy_log_table (
-			id bigint(20) NOT NULL AUTO_INCREMENT,
-			post_id bigint(20) NOT NULL,
-			rule_type varchar(50) NOT NULL,
-			rule_data text,
-			taxonomy varchar(100) NOT NULL,
-			terms_applied text,
-			applied_at datetime DEFAULT CURRENT_TIMESTAMP,
-			PRIMARY KEY (id),
-			KEY post_id (post_id),
-			KEY rule_type (rule_type),
-			KEY taxonomy (taxonomy),
-			KEY applied_at (applied_at)
-		) $charset_collate;";
-
 		// Execute dbDelta to create tables
 		require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
 		dbDelta($log_sql);
@@ -315,7 +298,6 @@ if (!function_exists('bws_meta_manager_init')) {
 		dbDelta($sessions_sql);
 		dbDelta($relationship_sql);
 		dbDelta($queue_sql);
-		dbDelta($legacy_log_sql);
 
 		// Verify all tables were created successfully
 		$required_tables = [
@@ -324,7 +306,6 @@ if (!function_exists('bws_meta_manager_init')) {
 			'bws_acf_conversion_sessions' => 'Conversion session tracking',
 			'bws_relationship_log' => 'Relationship tracking',
 			'bws_batch_queue' => 'Background job queue',
-			'bws_taxonomy_manager_log' => 'Legacy log table (backward compatibility)',
 		];
 
 		foreach ($required_tables as $table => $description) {
@@ -333,7 +314,7 @@ if (!function_exists('bws_meta_manager_init')) {
 			if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table_name)) !== $table_name) {
 				$error_msg = sprintf('Failed to create table: %s (%s)', $table, $description);
 				$errors[] = $error_msg;
-				error_log('BWS Meta Manager: ' . $error_msg);
+				error_log('Meta Conductor: ' . $error_msg);
 			}
 		}
 
@@ -364,7 +345,7 @@ if (!function_exists('bws_meta_manager_init')) {
 		}
 
 		echo '<div class="notice notice-error is-dismissible"><p>';
-		echo '<strong>' . esc_html__('BWS Meta Manager: Database table creation failed', 'meta-conductor') . '</strong><br>';
+		echo '<strong>' . esc_html__('Meta Conductor: Database table creation failed', 'meta-conductor') . '</strong><br>';
 		echo esc_html__('The following tables could not be created. Some features may not work correctly:', 'meta-conductor') . '<br>';
 		echo '<ul style="list-style: disc; margin-left: 20px;">';
 		foreach ($errors as $error) {
@@ -510,7 +491,7 @@ if (!function_exists('bws_meta_manager_init')) {
 		// Check PHP version
 		if (version_compare(PHP_VERSION, '8.1', '<')) {
 			$errors[] = sprintf(
-				__('BWS Taxonomy Manager requires PHP 8.1 or higher. You are running PHP %s.', 'meta-conductor'),
+				__('Meta Conductor requires PHP 8.1 or higher. You are running PHP %s.', 'meta-conductor'),
 				PHP_VERSION
 			);
 		}
@@ -518,7 +499,7 @@ if (!function_exists('bws_meta_manager_init')) {
 		// Check WordPress version
 		if (version_compare(get_bloginfo('version'), '5.0', '<')) {
 			$errors[] = sprintf(
-				__('BWS Taxonomy Manager requires WordPress 5.0 or higher. You are running WordPress %s.', 'meta-conductor'),
+				__('Meta Conductor requires WordPress 5.0 or higher. You are running WordPress %s.', 'meta-conductor'),
 				get_bloginfo('version')
 			);
 		}
@@ -536,7 +517,7 @@ if (!function_exists('bws_meta_manager_init')) {
 		
 		// Display errors and warnings
 		if (!empty($errors)) {
-			$error_message = '<h3>' . __('BWS Taxonomy Manager Requirements Not Met', 'meta-conductor') . '</h3>';
+			$error_message = '<h3>' . __('Meta Conductor Requirements Not Met', 'meta-conductor') . '</h3>';
 			$error_message .= '<ul><li>' . implode('</li><li>', $errors) . '</li></ul>';
 			
 			wp_die($error_message, __('Plugin Activation Error', 'meta-conductor'), array('back_link' => true));
@@ -557,7 +538,7 @@ if (!function_exists('bws_meta_manager_init')) {
 			delete_transient('bws_taxonomy_manager_warnings');
 			?>
 			<div class="notice notice-warning is-dismissible">
-				<h3><?php _e('BWS Taxonomy Manager Recommendations', 'meta-conductor'); ?></h3>
+				<h3><?php _e('Meta Conductor Recommendations', 'meta-conductor'); ?></h3>
 				<ul>
 					<?php foreach ($warnings as $warning): ?>
 						<li><?php echo esc_html($warning); ?></li>

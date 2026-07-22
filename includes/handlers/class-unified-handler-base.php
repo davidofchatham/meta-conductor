@@ -302,7 +302,7 @@ abstract class UnifiedHandlerBase {
         $rule_name = $rule['name'] ?? 'Unnamed rule';
 
         $message = sprintf(
-            '[BWS Meta Manager - %s] Rule: %s | Processed: %d | Updated: %d | Skipped: %d',
+            '[Meta Conductor - %s] Rule: %s | Processed: %d | Updated: %d | Skipped: %d',
             $this->handler_type,
             $rule_name,
             $results['processed'],

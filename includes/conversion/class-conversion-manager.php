@@ -258,7 +258,7 @@ class ConversionManager {
 		if ( $deleted_sessions || $deleted_previews ) {
 			error_log(
 				sprintf(
-					'BWS Meta Manager Conversion Cleanup: Deleted %d sessions and %d preview records',
+					'Meta Conductor Conversion Cleanup: Deleted %d sessions and %d preview records',
 					$deleted_sessions,
 					$deleted_previews
 				)
