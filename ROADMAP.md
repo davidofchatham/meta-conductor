@@ -20,7 +20,7 @@ Phase numbers are **stable IDs, not execution order** — work has landed out of
 | 0.3.1 | PR #17 review pass | ✅ done | — | — |
 | 2a | PSR-4 namespacing (+ `lib/`→`Support\`, abstracts co-located, `tests/` harness) | ✅ done (0.4.0) | — | manual `require_once` chains; `includes/abstracts/` + `includes/lib/` |
 | **3** | Migrate 5 legacy handlers → UnifiedHandlerBase — **✅ done (0.6.0)**. All 7 handlers on `UnifiedHandlerBase`; legacy `BWS_Handler_Base` deleted; redundant `on_post_save` loop removed | ✅ done | 2a ✅ | legacy handler base; dual-base divergence; `on_post_save` loop double-run |
-| 2b | Rename sweep — text domain, constants, nonces, core hooks, log table + migration all done (0.6.3). JS object + conversion cron/AJAX/transients deferred to P7; internal fn names deferred | ✅ done (0.6.3) | 2a ✅ | mixed text domains |
+| 2b | Rename sweep — text domain, constants, nonces, core hooks, log table + migration all done (0.6.3, PR #48; real-Athletics verified). JS object + conversion cron/AJAX/transients deferred to P7; internal fn names deferred | ✅ done (0.6.3) | 2a ✅ | mixed text domains |
 | 4 | Config page split (storage blast-radius) — *was CPT storage; CPT deferred* | queued | 3 | one-blob clobber radius; per-page autoload; gives UBT its own option |
 | 7 | Unified migration / preview tool | queued | — (ungated; can run anytime) | `lib/` classes instantiated but never called; tab-aware save bug; Conversion subpage taxonomy selectors |
 | 6a | Options-compatible integrations | queued | 3 | — |
@@ -174,7 +174,7 @@ Visible change — rename the plugin, migrate the option key, update all strings
 
 Follow the **Naming Surface (0.x)** table in the decisions section above for which layers drop `bws-` and which keep `bws_`/`BWS\`.
 
-> **✅ Done (0.6.3, branch `claude/rename-2b`).** User-facing rename landed early (2c + release-infra); the code-internal sweep completed in 2b: text domain, `META_CONDUCTOR_*` constants (no aliases), nonces, core hooks, and the log-table rename+migration. Deferred to Phase 7: the JS localized object and all conversion-subsystem identifiers (cron/AJAX/transients), left with the code being reworked there.
+> **✅ Done (0.6.3, branch `claude/rename-2b`, [PR #48](https://github.com/davidofchatham/meta-conductor/pull/48)).** User-facing rename landed early (2c + release-infra); the code-internal sweep completed in 2b: text domain, `META_CONDUCTOR_*` constants (no aliases), nonces, core hooks, and the log-table rename+migration. Two-axis code review clean; static gates (H1/H2) green; testbed mc-rules sweep + **real Athletics data** (hargrave 0.6.3 dev-swap) both verified — migration no-ops on the real DB and a live cross-taxonomy Baseball connector rule fired correctly under the renamed hooks. Deferred to Phase 7: the JS localized object and all conversion-subsystem identifiers (cron/AJAX/transients), left with the code being reworked there.
 
 - ~~Rename plugin folder: `bws-meta-manager` → `meta-conductor`~~ ✅ done (repo, GitHub, local dev folder, test-site install all renamed)
 - ~~Rename main file: `bws-taxonomy-manager.php` → `meta-conductor.php`~~ ✅ done
@@ -182,11 +182,13 @@ Follow the **Naming Surface (0.x)** table in the decisions section above for whi
 - ~~Rename option key: `bws_taxonomy_manager_settings` → `bws_meta_conductor_settings`~~ ✅ done in Phase 2c (Wireframe boots against the new key; tested on InstaWP)
 - ~~Update admin menu label and page title~~ ✅ done in Phase 2c (`class-wireframe-bootstrap.php` `page_title`/`menu_title`/`menu_slug`)
 - ~~Update settings page H1~~ ✅ done in Phase 2c (`class-wireframe-config.php` `title`)
-- ~~Update all nonce action strings to `bws_meta_conductor_*` pattern~~ ✅ done in 2b (0.6.3) — `bws_taxonomy_manager_nonce` → `bws_meta_conductor_nonce`, 21 sites
-- ~~Unify text domain to `meta-conductor` throughout~~ ✅ done in 2b (0.6.3) — 510 args / 29 files
+- ~~Update all nonce action strings to `bws_meta_conductor_*` pattern~~ ✅ done in 2b (0.6.3) — `bws_taxonomy_manager_nonce` → `bws_meta_conductor_nonce`, 23 sites
+- ~~Unify text domain to `meta-conductor` throughout~~ ✅ done in 2b (0.6.3) — 509 i18n args / 29 files
 - ~~Update constants to `META_CONDUCTOR_*`~~ ✅ done in 2b (0.6.3) — **no aliases** (confirmed no external consumer); dropped the 3 dead `BWS_TAX_MANAGER_*` defines
 - ~~Update hook/filter prefix to `bws_meta_conductor_*`~~ ✅ done in 2b (0.6.3) for **core** hooks (rule-engine, condition/action, storage-factory, unified-base). No aliases.
 - ~~Log table renamed~~ ✅ done in 2b (0.6.3) — `bws_meta_manager_log` → `bws_meta_conductor_log` + idempotent `RENAME TABLE` migration (testbed-verified, rows preserved)
+- ~~Drop dead legacy log-table create~~ ✅ done in 2b (0.6.3, post-review) — fresh installs no longer create `bws_taxonomy_manager_log`; uninstall drop-list still cleans it on legacy installs
+- ~~Rebrand user-facing runtime strings~~ ✅ done in 2b (0.6.3, post-review) — `BWS Meta Manager`/`BWS Taxonomy Manager` → `Meta Conductor` (requirement/table-error notices, handler log prefix, conversion cleanup log). Text-domain args were already correct.
 - **Deferred to Phase 7 (conversion subsystem):** JS localized object `bwsMetaManager` → `bwsMetaConductor` + PHP enqueue; conversion cron `*_conversion_cleanup`, AJAX `wp_ajax_*_conversion_*`, transient keys `*_conversion_*`. Left with the conversion code that's mid-rework in P7.
 - **Deferred (low value):** internal function names (`bws_meta_manager_init`, `bws_taxonomy_manager_activate/deactivate/uninstall`) — not user-facing, no BC pressure. Rename opportunistically or in a later tidy pass.
 - **Flagged bug (P7):** conversion tab-URL builder targets `admin_url('tools.php')` but the menu registers elsewhere — verify parent when conversion is revisited.
