@@ -344,7 +344,7 @@ abstract class UnifiedHandlerBase {
     protected function store_log_entry($rule, $results) {
         global $wpdb;
 
-        $table = $wpdb->prefix . 'bws_meta_manager_log';
+        $table = $wpdb->prefix . 'bws_meta_conductor_log';
 
         // Store summary entry
         $wpdb->insert(
@@ -718,7 +718,7 @@ abstract class UnifiedHandlerBase {
     public function get_statistics() {
         global $wpdb;
 
-        $table = $wpdb->prefix . 'bws_meta_manager_log';
+        $table = $wpdb->prefix . 'bws_meta_conductor_log';
 
         $stats = $wpdb->get_row($wpdb->prepare(
             "SELECT

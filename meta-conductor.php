@@ -3,7 +3,7 @@
  * Plugin Name: Meta Conductor
  * Plugin URI: https://github.com/davidofchatham/meta-conductor
  * Description: Unified meta and taxonomy management with hierarchical inheritance, entity relationships, data conversion, and intelligent automation
- * Version: 0.6.2
+ * Version: 0.6.3
  * Author: David Mitchell (Bridge Web Solutions) and Claude AI
  * License: GPL-2.0-or-later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('META_CONDUCTOR_VERSION', '0.6.2');
+define('META_CONDUCTOR_VERSION', '0.6.3');
 define('META_CONDUCTOR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('META_CONDUCTOR_PLUGIN_URL', plugin_dir_url(__FILE__));
 
@@ -207,7 +207,7 @@ if (!function_exists('bws_meta_manager_init')) {
 		$errors = [];
 
 		// Enhanced log table with entity support (unified-framework layer)
-		$log_table = $wpdb->prefix . 'bws_meta_manager_log';
+		$log_table = $wpdb->prefix . 'bws_meta_conductor_log';
 		$log_sql = "CREATE TABLE $log_table (
 			id bigint(20) NOT NULL AUTO_INCREMENT,
 			rule_id varchar(100) NOT NULL,
@@ -319,7 +319,7 @@ if (!function_exists('bws_meta_manager_init')) {
 
 		// Verify all tables were created successfully
 		$required_tables = [
-			'bws_meta_manager_log' => 'Enhanced log table with entity support',
+			'bws_meta_conductor_log' => 'Enhanced log table with entity support',
 			'bws_acf_conversion_preview' => 'ACF conversion preview data',
 			'bws_acf_conversion_sessions' => 'Conversion session tracking',
 			'bws_relationship_log' => 'Relationship tracking',
@@ -383,9 +383,14 @@ if (!function_exists('bws_meta_manager_init')) {
 	 */
 	function bws_taxonomy_manager_drop_tables() {
 		global $wpdb;
-		
-		$table_name = $wpdb->prefix . 'bws_taxonomy_manager_log';
-		$wpdb->query("DROP TABLE IF EXISTS $table_name");
+
+		// Core log table (renamed in 2b) + its legacy predecessor and the
+		// pre-2b name, so uninstall leaves nothing behind regardless of which
+		// version the table was created under.
+		foreach (['bws_meta_conductor_log', 'bws_meta_manager_log', 'bws_taxonomy_manager_log'] as $t) {
+			$table_name = $wpdb->prefix . $t;
+			$wpdb->query("DROP TABLE IF EXISTS `$table_name`");
+		}
 	}
 	
 	/**
@@ -402,17 +407,44 @@ if (!function_exists('bws_meta_manager_init')) {
 	/**
 	 * Check for plugin updates and migrations.
 	 *
-	 * Tracks the installed version under `bws_meta_conductor_version`. No
-	 * upgrade branches yet — nothing has shipped to a deployment. Add
+	 * Tracks the installed version under `bws_meta_conductor_version`. Add
 	 * version_compare branches here when shipping schema changes.
 	 */
 	function bws_taxonomy_manager_check_version() {
 		$current_version = get_option('bws_meta_conductor_version');
 
 		if ($current_version !== META_CONDUCTOR_VERSION) {
+			// Phase 2b (0.6.3): rename the core log table to the new brand.
+			// Idempotent — only renames when the old table exists and the new
+			// one does not, so re-runs and fresh installs are both safe. Uses
+			// RENAME TABLE to preserve existing log rows.
+			bws_meta_conductor_migrate_log_table();
+
 			update_option('bws_meta_conductor_version', META_CONDUCTOR_VERSION);
 			bws_taxonomy_manager_clear_caches();
 		}
+	}
+
+	/**
+	 * Rename {prefix}bws_meta_manager_log -> {prefix}bws_meta_conductor_log.
+	 *
+	 * Guarded so it runs at most once: renames only if the old table is
+	 * present and the new name is not yet taken. Preserves all rows.
+	 */
+	function bws_meta_conductor_migrate_log_table() {
+		global $wpdb;
+
+		$old = $wpdb->prefix . 'bws_meta_manager_log';
+		$new = $wpdb->prefix . 'bws_meta_conductor_log';
+
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
+		$old_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $old)) === $old;
+		$new_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $new)) === $new;
+
+		if ($old_exists && !$new_exists) {
+			$wpdb->query("RENAME TABLE `$old` TO `$new`");
+		}
+		// phpcs:enable
 	}
 	
 	/**
