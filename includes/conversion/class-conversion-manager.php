@@ -287,25 +287,25 @@ class ConversionManager {
 
 		// Common validation
 		if ( empty( $config['content_type'] ) ) {
-			$errors[] = __( 'Content type is required.', 'bws-meta-manager' );
+			$errors[] = __( 'Content type is required.', 'meta-conductor' );
 		}
 
 		if ( empty( $config['source_field'] ) && $type !== 'copy_data' ) {
-			$errors[] = __( 'Source field is required.', 'bws-meta-manager' );
+			$errors[] = __( 'Source field is required.', 'meta-conductor' );
 		}
 
 		// Type-specific validation
 		if ( $type === 'copy_data' ) {
 			if ( empty( $config['copy_type'] ) ) {
-				$errors[] = __( 'Copy type is required.', 'bws-meta-manager' );
+				$errors[] = __( 'Copy type is required.', 'meta-conductor' );
 			}
 		} elseif ( $type === 'map_data' ) {
 			if ( empty( $config['target_type'] ) ) {
-				$errors[] = __( 'Target type is required.', 'bws-meta-manager' );
+				$errors[] = __( 'Target type is required.', 'meta-conductor' );
 			}
 
 			if ( empty( $config['mappings'] ) ) {
-				$errors[] = __( 'Value mappings are required.', 'bws-meta-manager' );
+				$errors[] = __( 'Value mappings are required.', 'meta-conductor' );
 			}
 		}
 

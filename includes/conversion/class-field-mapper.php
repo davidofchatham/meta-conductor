@@ -885,12 +885,12 @@ class FieldMapper {
         ];
 
         if ( ! $source_field ) {
-            $result['errors'][] = __( 'Source field not found.', 'bws-meta-manager' );
+            $result['errors'][] = __( 'Source field not found.', 'meta-conductor' );
             return $result;
         }
 
         if ( ! $target_field ) {
-            $result['errors'][] = __( 'Target field not found.', 'bws-meta-manager' );
+            $result['errors'][] = __( 'Target field not found.', 'meta-conductor' );
             return $result;
         }
 
@@ -898,7 +898,7 @@ class FieldMapper {
         if ( ! $source_field['supported'] ) {
             $result['errors'][] = sprintf(
                 /* translators: %s: field type */
-                __( 'Source field type "%s" is not supported for conversion.', 'bws-meta-manager' ),
+                __( 'Source field type "%s" is not supported for conversion.', 'meta-conductor' ),
                 $source_field['type']
             );
         }
@@ -906,7 +906,7 @@ class FieldMapper {
         if ( ! $target_field['supported'] ) {
             $result['errors'][] = sprintf(
                 /* translators: %s: field type */
-                __( 'Target field type "%s" is not supported for conversion.', 'bws-meta-manager' ),
+                __( 'Target field type "%s" is not supported for conversion.', 'meta-conductor' ),
                 $target_field['type']
             );
         }
@@ -934,7 +934,7 @@ class FieldMapper {
 
         if ( in_array( $source_field['type'], $complex_types, true ) && 
              in_array( $target_field['type'], $simple_types, true ) ) {
-            $result['warnings'][] = __( 'Converting from complex field type to simple type may result in data loss.', 'bws-meta-manager' );
+            $result['warnings'][] = __( 'Converting from complex field type to simple type may result in data loss.', 'meta-conductor' );
         }
 
         // Multiple values to single value
@@ -943,12 +943,12 @@ class FieldMapper {
 
         if ( in_array( $source_field['type'], $multiple_types, true ) && 
              in_array( $target_field['type'], $single_types, true ) ) {
-            $result['warnings'][] = __( 'Converting from multiple-value field to single-value field may result in data loss.', 'bws-meta-manager' );
+            $result['warnings'][] = __( 'Converting from multiple-value field to single-value field may result in data loss.', 'meta-conductor' );
         }
 
         // Numeric to text conversions
         if ( 'number' === $source_field['type'] && 'text' !== $target_field['type'] ) {
-            $result['warnings'][] = __( 'Converting from number field may require validation in target field.', 'bws-meta-manager' );
+            $result['warnings'][] = __( 'Converting from number field may require validation in target field.', 'meta-conductor' );
         }
 
         // Option field compatibility
@@ -960,7 +960,7 @@ class FieldMapper {
             if ( ! empty( $missing_options ) ) {
                 $result['warnings'][] = sprintf(
                     /* translators: %s: list of missing options */
-                    __( 'Target field is missing these options: %s', 'bws-meta-manager' ),
+                    __( 'Target field is missing these options: %s', 'meta-conductor' ),
                     implode( ', ', $missing_options )
                 );
             }
@@ -1002,7 +1002,7 @@ class FieldMapper {
      */
     public function create_taxonomy_term( string $taxonomy, string $term_name, array $args = [] ) {
         if ( ! taxonomy_exists( $taxonomy ) ) {
-            return new \WP_Error( 'invalid_taxonomy', __( 'Taxonomy does not exist.', 'bws-meta-manager' ) );
+            return new \WP_Error( 'invalid_taxonomy', __( 'Taxonomy does not exist.', 'meta-conductor' ) );
         }
 
         // Check if term already exists
@@ -1090,19 +1090,19 @@ class FieldMapper {
 
         $field = $this->get_field_by_key( $field_key );
         if ( ! $field ) {
-            $result['errors'][] = __( 'Field not found.', 'bws-meta-manager' );
+            $result['errors'][] = __( 'Field not found.', 'meta-conductor' );
             return $result;
         }
 
         if ( ! taxonomy_exists( $taxonomy ) ) {
-            $result['errors'][] = __( 'Taxonomy does not exist.', 'bws-meta-manager' );
+            $result['errors'][] = __( 'Taxonomy does not exist.', 'meta-conductor' );
             return $result;
         }
 
         if ( ! $field['taxonomy_mappable'] ) {
             $result['errors'][] = sprintf(
                 /* translators: %s: field type */
-                __( 'Field type "%s" cannot be mapped to taxonomy.', 'bws-meta-manager' ),
+                __( 'Field type "%s" cannot be mapped to taxonomy.', 'meta-conductor' ),
                 $field['type']
             );
             return $result;
@@ -1113,7 +1113,7 @@ class FieldMapper {
         $multiple_value_types = [ 'checkbox', 'repeater', 'gallery' ];
         
         if ( in_array( $field['type'], $multiple_value_types, true ) && ! $taxonomy_obj->hierarchical ) {
-            $result['warnings'][] = __( 'Mapping multiple values to non-hierarchical taxonomy may create many terms.', 'bws-meta-manager' );
+            $result['warnings'][] = __( 'Mapping multiple values to non-hierarchical taxonomy may create many terms.', 'meta-conductor' );
         }
 
         $result['valid'] = empty( $result['errors'] );

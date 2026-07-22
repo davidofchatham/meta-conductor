@@ -224,12 +224,12 @@ class TaxonomyManager {
             'ajaxUrl' => admin_url('admin-ajax.php'),
             'nonce'   => wp_create_nonce('bws_taxonomy_manager_nonce'),
             'strings' => array(
-                'confirm_conversion' => __('This will convert data. Continue?', 'bws-meta-manager'),
-                'confirm_preview'    => __('Generate preview?', 'bws-meta-manager'),
-                'skip_unmapped'      => __('Skip this value', 'bws-meta-manager'),
-                'processing'         => __('Processing...', 'bws-meta-manager'),
-                'complete'           => __('Conversion complete!', 'bws-meta-manager'),
-                'error'              => __('An error occurred. Please try again.', 'bws-meta-manager'),
+                'confirm_conversion' => __('This will convert data. Continue?', 'meta-conductor'),
+                'confirm_preview'    => __('Generate preview?', 'meta-conductor'),
+                'skip_unmapped'      => __('Skip this value', 'meta-conductor'),
+                'processing'         => __('Processing...', 'meta-conductor'),
+                'complete'           => __('Conversion complete!', 'meta-conductor'),
+                'error'              => __('An error occurred. Please try again.', 'meta-conductor'),
             )
         ));
     }
@@ -241,19 +241,19 @@ class TaxonomyManager {
 		check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
 		
 		if (!current_user_can('manage_options')) {
-			wp_die(__('You do not have sufficient permissions to access this page.', 'bws-taxonomy-manager'));
+			wp_die(__('You do not have sufficient permissions to access this page.', 'meta-conductor'));
 		}
 		
 		$field_name = sanitize_text_field($_POST['field_name'] ?? '');
 		
 		if (empty($field_name)) {
-			wp_send_json_error(__('Field name is required.', 'bws-taxonomy-manager'));
+			wp_send_json_error(__('Field name is required.', 'meta-conductor'));
 		}
 		
 		if (!function_exists('acf_get_field')) {
 			wp_send_json_success(array(
 				'exists' => false,
-				'message' => __('ACF Pro not available for field validation.', 'bws-taxonomy-manager')
+				'message' => __('ACF Pro not available for field validation.', 'meta-conductor')
 			));
 		}
 		
@@ -273,7 +273,7 @@ class TaxonomyManager {
 		} else {
 			wp_send_json_success(array(
 				'exists' => false,
-				'message' => __('Field not found in ACF.', 'bws-taxonomy-manager')
+				'message' => __('Field not found in ACF.', 'meta-conductor')
 			));
 		}
 	}
@@ -285,14 +285,14 @@ class TaxonomyManager {
 		check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
 		
 		if (!current_user_can('manage_options')) {
-			wp_die(__('You do not have sufficient permissions to access this page.', 'bws-taxonomy-manager'));
+			wp_die(__('You do not have sufficient permissions to access this page.', 'meta-conductor'));
 		}
 		
 		$post_type = sanitize_text_field($_POST['post_type'] ?? '');
 		$field_types = $_POST['field_types'] ?? array('post_object', 'relationship');
 		
 		if (!post_type_exists($post_type)) {
-			wp_send_json_error(__('Invalid post type.', 'bws-taxonomy-manager'));
+			wp_send_json_error(__('Invalid post type.', 'meta-conductor'));
 		}
 		
 		$fields = array();
@@ -331,18 +331,18 @@ class TaxonomyManager {
 		check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
 		
 		if (!current_user_can('manage_options')) {
-			wp_die(__('You do not have sufficient permissions to access this page.', 'bws-taxonomy-manager'));
+			wp_die(__('You do not have sufficient permissions to access this page.', 'meta-conductor'));
 		}
 		
 		$post_id = absint($_POST['post_id'] ?? 0);
 		$acf_field_name = sanitize_text_field($_POST['acf_field_name'] ?? '');
 		
 		if (!$post_id || !get_post($post_id)) {
-			wp_send_json_error(__('Invalid post ID.', 'bws-taxonomy-manager'));
+			wp_send_json_error(__('Invalid post ID.', 'meta-conductor'));
 		}
 		
 		if (empty($acf_field_name)) {
-			wp_send_json_error(__('ACF field name is required.', 'bws-taxonomy-manager'));
+			wp_send_json_error(__('ACF field name is required.', 'meta-conductor'));
 		}
 		
 		// Get related posts
@@ -404,7 +404,7 @@ class TaxonomyManager {
 		check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
 		
 		if (!current_user_can('manage_options')) {
-			wp_die(__('You do not have sufficient permissions to access this page.', 'bws-taxonomy-manager'));
+			wp_die(__('You do not have sufficient permissions to access this page.', 'meta-conductor'));
 		}
 		
 		$taxonomy = sanitize_text_field($_POST['taxonomy'] ?? '');
@@ -413,7 +413,7 @@ class TaxonomyManager {
 		$include_ancestors = !empty($_POST['include_ancestors']);
 		
 		if (!taxonomy_exists($taxonomy)) {
-			wp_send_json_error(__('Invalid taxonomy.', 'bws-taxonomy-manager'));
+			wp_send_json_error(__('Invalid taxonomy.', 'meta-conductor'));
 		}
 		
 		if (empty($term_ids)) {
@@ -421,7 +421,7 @@ class TaxonomyManager {
 				'original_terms' => array(),
 				'restricted_terms' => array(),
 				'removed_terms' => array(),
-				'preview' => __('No terms selected.', 'bws-taxonomy-manager')
+				'preview' => __('No terms selected.', 'meta-conductor')
 			));
 		}
 		
@@ -542,27 +542,27 @@ class TaxonomyManager {
 	private function generate_restriction_preview($original, $restricted, $removed, $mode) {
 		$preview = '';
 		
-		$preview .= '<strong>' . __('Original terms:', 'bws-taxonomy-manager') . '</strong><br>';
+		$preview .= '<strong>' . __('Original terms:', 'meta-conductor') . '</strong><br>';
 		$preview .= implode(', ', $original) . '<br><br>';
 		
-		$preview .= '<strong>' . __('After restrictions:', 'bws-taxonomy-manager') . '</strong><br>';
+		$preview .= '<strong>' . __('After restrictions:', 'meta-conductor') . '</strong><br>';
 		$preview .= implode(', ', $restricted) . '<br><br>';
 		
 		if (!empty($removed)) {
-			$preview .= '<strong style="color: #d63638;">' . __('Removed terms:', 'bws-taxonomy-manager') . '</strong><br>';
+			$preview .= '<strong style="color: #d63638;">' . __('Removed terms:', 'meta-conductor') . '</strong><br>';
 			$preview .= '<span style="color: #d63638;">' . implode(', ', $removed) . '</span><br><br>';
 		}
 		
 		$mode_description = '';
 		switch ($mode) {
 			case 'one_per_level':
-				$mode_description = __('Only one term per hierarchical level is allowed.', 'bws-taxonomy-manager');
+				$mode_description = __('Only one term per hierarchical level is allowed.', 'meta-conductor');
 				break;
 			case 'deepest_only':
-				$mode_description = __('Only the deepest level terms are kept.', 'bws-taxonomy-manager');
+				$mode_description = __('Only the deepest level terms are kept.', 'meta-conductor');
 				break;
 			case 'shallowest_only':
-				$mode_description = __('Only the shallowest level terms are kept.', 'bws-taxonomy-manager');
+				$mode_description = __('Only the shallowest level terms are kept.', 'meta-conductor');
 				break;
 		}
 		
@@ -578,13 +578,13 @@ class TaxonomyManager {
         check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
         
         if (!current_user_can('manage_options')) {
-            wp_die(__('You do not have sufficient permissions to access this page.', 'bws-taxonomy-manager'));
+            wp_die(__('You do not have sufficient permissions to access this page.', 'meta-conductor'));
         }
         
         $taxonomy = sanitize_text_field($_POST['taxonomy'] ?? '');
         
         if (!taxonomy_exists($taxonomy)) {
-            wp_send_json_error(__('Invalid taxonomy.', 'bws-taxonomy-manager'));
+            wp_send_json_error(__('Invalid taxonomy.', 'meta-conductor'));
         }
         
         $terms = get_terms(array(
@@ -594,7 +594,7 @@ class TaxonomyManager {
         ));
         
         if (is_wp_error($terms)) {
-            wp_send_json_error(__('Error loading terms.', 'bws-taxonomy-manager'));
+            wp_send_json_error(__('Error loading terms.', 'meta-conductor'));
         }
         
         $formatted_terms = array();
@@ -616,13 +616,13 @@ class TaxonomyManager {
         check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
         
         if (!current_user_can('manage_options')) {
-            wp_die(__('You do not have sufficient permissions to access this page.', 'bws-taxonomy-manager'));
+            wp_die(__('You do not have sufficient permissions to access this page.', 'meta-conductor'));
         }
         
         $post_type = sanitize_text_field($_POST['post_type'] ?? '');
         
         if (!post_type_exists($post_type)) {
-            wp_send_json_error(__('Invalid post type.', 'bws-taxonomy-manager'));
+            wp_send_json_error(__('Invalid post type.', 'meta-conductor'));
         }
         
         $taxonomies = get_object_taxonomies($post_type, 'objects');
@@ -776,7 +776,7 @@ class TaxonomyManager {
 		check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
 
 		if (!current_user_can('manage_options')) {
-			wp_die(__('You do not have sufficient permissions to access this page.', 'bws-taxonomy-manager'));
+			wp_die(__('You do not have sufficient permissions to access this page.', 'meta-conductor'));
 		}
 
 		$stats = $this->get_dashboard_stats();
@@ -795,7 +795,7 @@ class TaxonomyManager {
 		check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
 
 		if (!current_user_can('manage_options')) {
-			wp_send_json_error(['message' => __('Insufficient permissions', 'bws-meta-manager')]);
+			wp_send_json_error(['message' => __('Insufficient permissions', 'meta-conductor')]);
 		}
 
 		// Get all field groups
@@ -832,7 +832,7 @@ class TaxonomyManager {
 		check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
 
 		if (!current_user_can('manage_options')) {
-			wp_send_json_error(['message' => __('Insufficient permissions', 'bws-meta-manager')]);
+			wp_send_json_error(['message' => __('Insufficient permissions', 'meta-conductor')]);
 		}
 
 		$taxonomies = $this->conversion_manager->get_taxonomies();
@@ -848,13 +848,13 @@ class TaxonomyManager {
 		check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
 
 		if (!current_user_can('manage_options')) {
-			wp_send_json_error(['message' => __('Insufficient permissions', 'bws-meta-manager')]);
+			wp_send_json_error(['message' => __('Insufficient permissions', 'meta-conductor')]);
 		}
 
 		$taxonomy = sanitize_text_field($_POST['taxonomy'] ?? '');
 
 		if (empty($taxonomy)) {
-			wp_send_json_error(['message' => __('Taxonomy is required', 'bws-meta-manager')]);
+			wp_send_json_error(['message' => __('Taxonomy is required', 'meta-conductor')]);
 		}
 
 		$terms = get_terms([
@@ -876,19 +876,19 @@ class TaxonomyManager {
 		check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
 
 		if (!current_user_can('manage_options')) {
-			wp_send_json_error(['message' => __('Insufficient permissions', 'bws-meta-manager')]);
+			wp_send_json_error(['message' => __('Insufficient permissions', 'meta-conductor')]);
 		}
 
 		$field_key = sanitize_text_field($_POST['field_key'] ?? '');
 
 		if (empty($field_key)) {
-			wp_send_json_error(['message' => __('Field key is required', 'bws-meta-manager')]);
+			wp_send_json_error(['message' => __('Field key is required', 'meta-conductor')]);
 		}
 
 		$field_data = $this->conversion_manager->get_field_by_key($field_key);
 
 		if (!$field_data || empty($field_data['choices'])) {
-			wp_send_json_error(['message' => __('Field has no options', 'bws-meta-manager')]);
+			wp_send_json_error(['message' => __('Field has no options', 'meta-conductor')]);
 		}
 
 		wp_send_json_success(['options' => $field_data['choices']]);
@@ -901,7 +901,7 @@ class TaxonomyManager {
 		check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
 
 		if (!current_user_can('manage_options')) {
-			wp_send_json_error(['message' => __('Insufficient permissions', 'bws-meta-manager')]);
+			wp_send_json_error(['message' => __('Insufficient permissions', 'meta-conductor')]);
 		}
 
 		// For now, return a simple estimate
@@ -919,7 +919,7 @@ class TaxonomyManager {
 		check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
 
 		if (!current_user_can('manage_options')) {
-			wp_send_json_error(['message' => __('Insufficient permissions', 'bws-meta-manager')]);
+			wp_send_json_error(['message' => __('Insufficient permissions', 'meta-conductor')]);
 		}
 
 		// For now, return success
@@ -938,14 +938,14 @@ class TaxonomyManager {
 		check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
 
 		if (!current_user_can('manage_options')) {
-			wp_send_json_error(['message' => __('Insufficient permissions', 'bws-meta-manager')]);
+			wp_send_json_error(['message' => __('Insufficient permissions', 'meta-conductor')]);
 		}
 
 		$conversion_type = sanitize_text_field($_POST['conversion_type'] ?? '');
 		$config = $_POST['config'] ?? [];
 
 		if (empty($conversion_type)) {
-			wp_send_json_error(['message' => __('Conversion type is required', 'bws-meta-manager')]);
+			wp_send_json_error(['message' => __('Conversion type is required', 'meta-conductor')]);
 		}
 
 		try {
@@ -954,7 +954,7 @@ class TaxonomyManager {
 			} elseif ($conversion_type === 'map_data') {
 				$result = $this->conversion_manager->execute_map_conversion($config);
 			} else {
-				wp_send_json_error(['message' => __('Invalid conversion type', 'bws-meta-manager')]);
+				wp_send_json_error(['message' => __('Invalid conversion type', 'meta-conductor')]);
 				return;
 			}
 
@@ -971,7 +971,7 @@ class TaxonomyManager {
 		check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
 
 		if (!current_user_can('manage_options')) {
-			wp_send_json_error(['message' => __('Insufficient permissions', 'bws-meta-manager')]);
+			wp_send_json_error(['message' => __('Insufficient permissions', 'meta-conductor')]);
 		}
 
 		$conversion_type = sanitize_text_field($_POST['conversion_type'] ?? '');
@@ -979,7 +979,7 @@ class TaxonomyManager {
 		$sample_count = intval($_POST['sample_count'] ?? 10);
 
 		if (empty($conversion_type)) {
-			wp_send_json_error(['message' => __('Conversion type is required', 'bws-meta-manager')]);
+			wp_send_json_error(['message' => __('Conversion type is required', 'meta-conductor')]);
 		}
 
 		try {
@@ -988,7 +988,7 @@ class TaxonomyManager {
 			} elseif ($conversion_type === 'map_data') {
 				$result = $this->conversion_manager->generate_map_preview($config, $sample_count);
 			} else {
-				wp_send_json_error(['message' => __('Invalid conversion type', 'bws-meta-manager')]);
+				wp_send_json_error(['message' => __('Invalid conversion type', 'meta-conductor')]);
 				return;
 			}
 
@@ -1001,14 +1001,14 @@ class TaxonomyManager {
     public function ajax_title_slug_preview() {
         check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
         if (!current_user_can('manage_options')) {
-            wp_send_json_error(['message' => __('Insufficient permissions', 'bws-taxonomy-manager')]);
+            wp_send_json_error(['message' => __('Insufficient permissions', 'meta-conductor')]);
         }
         $rule_index = intval($_POST['rule_index'] ?? -1);
         $storage    = StorageFactory::get_instance();
         $rules      = $storage->get_rules('title_slug_rules');
         $rule       = $rules[$rule_index] ?? null;
         if (!$rule) {
-            wp_send_json_error(['message' => __('Rule not found', 'bws-taxonomy-manager')]);
+            wp_send_json_error(['message' => __('Rule not found', 'meta-conductor')]);
         }
         $result = $this->handlers['title_slug']->preview_rule($rule);
         isset($result['error']) ? wp_send_json_error($result) : wp_send_json_success($result);
@@ -1017,7 +1017,7 @@ class TaxonomyManager {
     public function ajax_title_slug_process_existing() {
         check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
         if (!current_user_can('manage_options')) {
-            wp_send_json_error(['message' => __('Insufficient permissions', 'bws-taxonomy-manager')]);
+            wp_send_json_error(['message' => __('Insufficient permissions', 'meta-conductor')]);
         }
         $batch_size = intval($_POST['batch_size'] ?? 50);
         $offset     = intval($_POST['offset'] ?? 0);

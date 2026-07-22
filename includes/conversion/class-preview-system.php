@@ -91,7 +91,7 @@ class PreviewSystem {
         $sample_items = $this->get_sample_items_for_conversion( $config, $sample_count );
         
         if ( empty( $sample_items ) ) {
-            $result['error'] = __( 'No items found to preview.', 'bws-meta-manager' );
+            $result['error'] = __( 'No items found to preview.', 'meta-conductor' );
             return $result;
         }
 
@@ -114,7 +114,7 @@ class PreviewSystem {
                 break;
                 
             default:
-                $result['error'] = __( 'Invalid copy type.', 'bws-meta-manager' );
+                $result['error'] = __( 'Invalid copy type.', 'meta-conductor' );
                 return $result;
         }
 
@@ -158,7 +158,7 @@ class PreviewSystem {
         
         if ( ! $source_field_data ) {
             $result['error'] = sprintf( 
-                __( 'Source field not found. Field key: %s', 'bws-meta-manager' ),
+                __( 'Source field not found. Field key: %s', 'meta-conductor' ),
                 $config['source_field'] 
             );
             error_log('Source field not found for key: ' . $config['source_field']);
@@ -171,7 +171,7 @@ class PreviewSystem {
         // Check if field has options (required for mapping)
         if ( ! $source_field_data['has_options'] ) {
             $result['error'] = sprintf(
-                __( 'Source field "%s" does not support options. Only select, checkbox, radio, and button_group fields can be mapped.', 'bws-meta-manager' ),
+                __( 'Source field "%s" does not support options. Only select, checkbox, radio, and button_group fields can be mapped.', 'meta-conductor' ),
                 $source_field_data['label']
             );
             error_log('Source field does not have options: ' . $source_field_data['type']);
@@ -186,7 +186,7 @@ class PreviewSystem {
         
         if ( empty( $sample_items ) ) {
             $result['error'] = sprintf(
-                __( 'No items found with data in field "%s" (%s). Checked %d %s with field key "%s".', 'bws-meta-manager' ),
+                __( 'No items found with data in field "%s" (%s). Checked %d %s with field key "%s".', 'meta-conductor' ),
                 $source_field_data['label'],
                 $this->get_actual_field_name($source_field_data),
                 $this->last_query_debug_info['total_items_checked'] ?? 0,
@@ -745,7 +745,7 @@ class PreviewSystem {
                 'mapping_details' => $mapped_values,
                 'target_type' => $config['target_type'],
                 'message' => ! empty( $unmapped_values ) ? 
-                    sprintf( __( 'Note: %d value(s) will be skipped (no mapping defined).', 'bws-meta-manager' ), count( $unmapped_values ) ) : 
+                    sprintf( __( 'Note: %d value(s) will be skipped (no mapping defined).', 'meta-conductor' ), count( $unmapped_values ) ) : 
                     ''
             ];
 

@@ -80,7 +80,7 @@ class StorageFactory {
                 // }
                 // Fall back to options if CPT not available
                 // translators: %s is the storage type
-                error_log(sprintf(__('BWS Meta Manager: CPT storage not yet implemented, falling back to options storage', 'bws-meta-manager')));
+                error_log(sprintf(__('BWS Meta Manager: CPT storage not yet implemented, falling back to options storage', 'meta-conductor')));
                 return new OptionRuleStorage();
 
             case 'options':

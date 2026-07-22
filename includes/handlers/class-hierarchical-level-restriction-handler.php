@@ -420,13 +420,13 @@ class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
         
         // Validate taxonomy
         if (empty($rule_data['taxonomy'])) {
-            $errors[] = __('Taxonomy is required.', 'bws-taxonomy-manager');
+            $errors[] = __('Taxonomy is required.', 'meta-conductor');
         } elseif (!taxonomy_exists($rule_data['taxonomy'])) {
-            $errors[] = __('Selected taxonomy does not exist.', 'bws-taxonomy-manager');
+            $errors[] = __('Selected taxonomy does not exist.', 'meta-conductor');
         } else {
             $taxonomy = get_taxonomy($rule_data['taxonomy']);
             if (!$taxonomy->hierarchical) {
-                $errors[] = __('Selected taxonomy must be hierarchical.', 'bws-taxonomy-manager');
+                $errors[] = __('Selected taxonomy must be hierarchical.', 'meta-conductor');
             }
         }
         
@@ -434,14 +434,14 @@ class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
         $valid_modes = array('one_per_level', 'deepest_only', 'shallowest_only');
         if (!empty($rule_data['restriction_mode']) && 
             !in_array($rule_data['restriction_mode'], $valid_modes)) {
-            $errors[] = __('Invalid restriction mode selected.', 'bws-taxonomy-manager');
+            $errors[] = __('Invalid restriction mode selected.', 'meta-conductor');
         }
         
         // Validate post types (if specified)
         if (!empty($rule_data['post_types'])) {
             foreach ($rule_data['post_types'] as $post_type) {
                 if (!post_type_exists($post_type)) {
-                    $errors[] = sprintf(__('Post type "%s" does not exist.', 'bws-taxonomy-manager'), $post_type);
+                    $errors[] = sprintf(__('Post type "%s" does not exist.', 'meta-conductor'), $post_type);
                 }
             }
         }

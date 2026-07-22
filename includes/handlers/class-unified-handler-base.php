@@ -913,7 +913,7 @@ abstract class UnifiedHandlerBase {
 
         // Basic validation
         if (empty($rule_data['name'])) {
-            $errors[] = __('Rule name is required.', 'bws-meta-manager');
+            $errors[] = __('Rule name is required.', 'meta-conductor');
         }
 
         // Call the protected validate_rule_internal for handler-specific validation
@@ -924,7 +924,7 @@ abstract class UnifiedHandlerBase {
             $is_valid = $this->validate_rule_internal($temp_rule);
 
             if (!$is_valid) {
-                $errors[] = __('Rule configuration is invalid.', 'bws-meta-manager');
+                $errors[] = __('Rule configuration is invalid.', 'meta-conductor');
             }
         } catch (\Exception $e) {
             $errors[] = $e->getMessage();
@@ -951,7 +951,7 @@ abstract class UnifiedHandlerBase {
                 'processed' => 0,
                 'total' => 0,
                 'complete' => true,
-                'message' => __('No rules configured for this handler.', 'bws-meta-manager')
+                'message' => __('No rules configured for this handler.', 'meta-conductor')
             ];
         }
 
@@ -996,7 +996,7 @@ abstract class UnifiedHandlerBase {
                 'processed' => 0,
                 'total' => 0,
                 'complete' => true,
-                'message' => __('No applicable post types found.', 'bws-meta-manager')
+                'message' => __('No applicable post types found.', 'meta-conductor')
             ];
         }
 
@@ -1058,7 +1058,7 @@ abstract class UnifiedHandlerBase {
             // scanned posts — mixing per-batch numerator with a cumulative
             // denominator would misreport under pagination.
             'message' => sprintf(
-                __('Applied to %d of %d posts scanned.', 'bws-meta-manager'),
+                __('Applied to %d of %d posts scanned.', 'meta-conductor'),
                 $processed,
                 count($query->posts)
             )

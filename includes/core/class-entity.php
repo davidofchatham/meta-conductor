@@ -371,7 +371,7 @@ class Entity {
                 return $this->entity_object->display_name;
 
             case 'comment':
-                return sprintf(__('Comment #%d', 'bws-meta-manager'), $this->entity_id);
+                return sprintf(__('Comment #%d', 'meta-conductor'), $this->entity_id);
         }
 
         return '';

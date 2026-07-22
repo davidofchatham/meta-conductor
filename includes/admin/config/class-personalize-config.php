@@ -19,12 +19,12 @@ class PersonalizeConfig {
     public static function tab(): array {
         return [
             'id'       => 'personalize',
-            'title'    => __('Personalize by User', 'bws-meta-manager'),
+            'title'    => __('Personalize by User', 'meta-conductor'),
             'sections' => [
                 [
                     'id'          => 'personalize_intro',
-                    'title'       => __('User-driven term rules', 'bws-meta-manager'),
-                    'description' => __('Rules whose trigger or constraint depends on the current user — role, capability, or specific user ID.', 'bws-meta-manager'),
+                    'title'       => __('User-driven term rules', 'meta-conductor'),
+                    'description' => __('Rules whose trigger or constraint depends on the current user — role, capability, or specific user ID.', 'meta-conductor'),
                     'fields'      => [
                         [
                             'id'      => 'personalize_intro_html',
@@ -32,8 +32,8 @@ class PersonalizeConfig {
                             'columns' => 12,
                             'args'    => [
                                 'variant' => 'info',
-                                'content' => '<p>' . esc_html__('User-based rule types are planned but not yet implemented.', 'bws-meta-manager') . '</p>'
-                                           . '<p>' . esc_html__('Coming: auto-set terms by user role, lock taxonomies to specific roles, pre-select terms for specific users.', 'bws-meta-manager') . '</p>',
+                                'content' => '<p>' . esc_html__('User-based rule types are planned but not yet implemented.', 'meta-conductor') . '</p>'
+                                           . '<p>' . esc_html__('Coming: auto-set terms by user role, lock taxonomies to specific roles, pre-select terms for specific users.', 'meta-conductor') . '</p>',
                             ],
                         ],
                     ],

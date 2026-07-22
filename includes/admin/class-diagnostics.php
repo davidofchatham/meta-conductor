@@ -32,8 +32,8 @@ class Diagnostics {
 
         add_submenu_page(
             'meta-conductor',
-            __('Diagnostics', 'bws-meta-manager'),
-            __('Diagnostics', 'bws-meta-manager'),
+            __('Diagnostics', 'meta-conductor'),
+            __('Diagnostics', 'meta-conductor'),
             'manage_options',
             'meta-conductor-diagnostics',
             [self::class, 'render']
@@ -67,16 +67,16 @@ class Diagnostics {
 
     public static function render(): void {
         if (!current_user_can('manage_options')) {
-            wp_die(esc_html__('Access denied.', 'bws-meta-manager'));
+            wp_die(esc_html__('Access denied.', 'meta-conductor'));
         }
 
         echo '<div class="wrap">';
-        echo '<h1>' . esc_html__('Meta Conductor Diagnostics', 'bws-meta-manager') . '</h1>';
+        echo '<h1>' . esc_html__('Meta Conductor Diagnostics', 'meta-conductor') . '</h1>';
 
         if (self::is_dev_mode()) {
             self::render_storage_section();
         } else {
-            echo '<p>' . esc_html__('User-level diagnostics coming soon. Enable WP_DEBUG to see dev sections.', 'bws-meta-manager') . '</p>';
+            echo '<p>' . esc_html__('User-level diagnostics coming soon. Enable WP_DEBUG to see dev sections.', 'meta-conductor') . '</p>';
         }
 
         echo '</div>';
@@ -86,17 +86,17 @@ class Diagnostics {
         $option = get_option('bws_meta_conductor_settings', null);
         $legacy = get_option('bws_taxonomy_manager_settings', null);
 
-        echo '<h2>' . esc_html__('Storage', 'bws-meta-manager') . '</h2>';
-        echo '<p class="description">' . esc_html__('Raw contents of plugin option keys. Dev-only.', 'bws-meta-manager') . '</p>';
+        echo '<h2>' . esc_html__('Storage', 'meta-conductor') . '</h2>';
+        echo '<p class="description">' . esc_html__('Raw contents of plugin option keys. Dev-only.', 'meta-conductor') . '</p>';
 
-        self::render_option_dump('bws_meta_conductor_settings', $option, __('New — Wireframe writes here', 'bws-meta-manager'));
-        self::render_option_dump('bws_taxonomy_manager_settings', $legacy, __('Legacy — old UI writes here', 'bws-meta-manager'));
+        self::render_option_dump('bws_meta_conductor_settings', $option, __('New — Wireframe writes here', 'meta-conductor'));
+        self::render_option_dump('bws_taxonomy_manager_settings', $legacy, __('Legacy — old UI writes here', 'meta-conductor'));
     }
 
     private static function render_option_dump(string $key, mixed $value, string $note): void {
         echo '<h3><code>' . esc_html($key) . '</code> <span style="font-weight:normal;color:#646970;">— ' . esc_html($note) . '</span></h3>';
         echo '<pre style="background:#fff;padding:12px;border:1px solid #ccd0d4;overflow:auto;max-height:400px;">';
-        echo esc_html($value === null ? __('(option not set)', 'bws-meta-manager') : wp_json_encode($value, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        echo esc_html($value === null ? __('(option not set)', 'meta-conductor') : wp_json_encode($value, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
         echo '</pre>';
     }
 }

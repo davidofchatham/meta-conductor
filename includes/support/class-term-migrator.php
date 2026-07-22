@@ -62,7 +62,7 @@ class TermMigrator implements TermMigratorInterface {
                 'skipped'  => 0,
                 'failed'   => 0,
                 'term_map' => [],
-                'errors'   => [ __( 'One or both taxonomies do not exist.', 'bws-meta-manager' ) ],
+                'errors'   => [ __( 'One or both taxonomies do not exist.', 'meta-conductor' ) ],
             ];
         }
 
@@ -96,7 +96,7 @@ class TermMigrator implements TermMigratorInterface {
                 'skipped'  => 0,
                 'failed'   => 0,
                 'term_map' => [],
-                'errors'   => [ __( 'No terms found to migrate.', 'bws-meta-manager' ) ],
+                'errors'   => [ __( 'No terms found to migrate.', 'meta-conductor' ) ],
             ];
         }
 
@@ -129,9 +129,9 @@ class TermMigrator implements TermMigratorInterface {
             } else {
                 $result['failed']++;
                 $result['errors'][] = sprintf(
-                    __( 'Failed to migrate term "%s": %s', 'bws-meta-manager' ),
+                    __( 'Failed to migrate term "%s": %s', 'meta-conductor' ),
                     $source_term->name,
-                    $copy_result['error'] ?? __( 'Unknown error', 'bws-meta-manager' )
+                    $copy_result['error'] ?? __( 'Unknown error', 'meta-conductor' )
                 );
             }
         }
@@ -175,7 +175,7 @@ class TermMigrator implements TermMigratorInterface {
             return [
                 'success'        => false,
                 'target_term_id' => null,
-                'error'          => __( 'Source term not found.', 'bws-meta-manager' ),
+                'error'          => __( 'Source term not found.', 'meta-conductor' ),
             ];
         }
 
@@ -226,7 +226,7 @@ class TermMigrator implements TermMigratorInterface {
                     return [
                         'success'        => false,
                         'target_term_id' => null,
-                        'error'          => __( 'Invalid conflict strategy.', 'bws-meta-manager' ),
+                        'error'          => __( 'Invalid conflict strategy.', 'meta-conductor' ),
                     ];
             }
         } else {
@@ -345,7 +345,7 @@ class TermMigrator implements TermMigratorInterface {
             // Check if parent was also migrated
             if ( ! isset( $term_map[ $source_term->parent ] ) ) {
                 $result['errors'][] = sprintf(
-                    __( 'Parent term not migrated for "%s"', 'bws-meta-manager' ),
+                    __( 'Parent term not migrated for "%s"', 'meta-conductor' ),
                     $source_term->name
                 );
                 continue;
@@ -362,7 +362,7 @@ class TermMigrator implements TermMigratorInterface {
             if ( is_wp_error( $update_result ) ) {
                 $result['success'] = false;
                 $result['errors'][] = sprintf(
-                    __( 'Failed to set parent for "%s": %s', 'bws-meta-manager' ),
+                    __( 'Failed to set parent for "%s": %s', 'meta-conductor' ),
                     $source_term->name,
                     $update_result->get_error_message()
                 );

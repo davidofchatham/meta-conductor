@@ -319,14 +319,14 @@ class ValueMapper implements ValueMapperInterface {
 
         // Check if any mappings exist
         if ( empty( $this->mappings ) ) {
-            $warnings[] = __( 'No mappings defined.', 'bws-meta-manager' );
+            $warnings[] = __( 'No mappings defined.', 'meta-conductor' );
         }
 
         // Check for empty target values
         foreach ( $this->mappings as $source => $target ) {
             if ( empty( $target ) && $target !== '0' ) {
                 $warnings[] = sprintf(
-                    __( 'Mapping for "%s" has empty target value.', 'bws-meta-manager' ),
+                    __( 'Mapping for "%s" has empty target value.', 'meta-conductor' ),
                     $source
                 );
             }
@@ -338,7 +338,7 @@ class ValueMapper implements ValueMapperInterface {
 
         if ( ! empty( $duplicates ) ) {
             $warnings[] = sprintf(
-                __( '%d source values map to the same target value.', 'bws-meta-manager' ),
+                __( '%d source values map to the same target value.', 'meta-conductor' ),
                 count( $duplicates )
             );
         }
@@ -346,14 +346,14 @@ class ValueMapper implements ValueMapperInterface {
         // Validate unmapped handler
         if ( ! in_array( $this->unmapped_handler, $this->valid_handlers, true ) ) {
             $errors[] = sprintf(
-                __( 'Invalid unmapped handler: "%s"', 'bws-meta-manager' ),
+                __( 'Invalid unmapped handler: "%s"', 'meta-conductor' ),
                 $this->unmapped_handler
             );
         }
 
         // Check if default value is set when using 'use_default' handler
         if ( $this->unmapped_handler === 'use_default' && $this->default_value === null ) {
-            $warnings[] = __( 'Unmapped handler is set to "use_default" but no default value is specified.', 'bws-meta-manager' );
+            $warnings[] = __( 'Unmapped handler is set to "use_default" but no default value is specified.', 'meta-conductor' );
         }
 
         return [

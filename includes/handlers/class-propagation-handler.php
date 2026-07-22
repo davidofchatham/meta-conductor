@@ -798,27 +798,27 @@ class PropagationHandler extends UnifiedHandlerBase {
         $post_types = \BWS\MetaConductor\Admin\Config\ConfigHelpers::selected_checkbox_slugs($rule_data['post_types'] ?? []);
         foreach ($post_types as $post_type) {
             if (!post_type_exists($post_type)) {
-                $errors[] = sprintf(__('Post type "%s" does not exist.', 'bws-meta-manager'), $post_type);
+                $errors[] = sprintf(__('Post type "%s" does not exist.', 'meta-conductor'), $post_type);
                 continue;
             }
             $post_type_obj = get_post_type_object($post_type);
             if (!$post_type_obj->hierarchical) {
-                $errors[] = sprintf(__('Post type "%s" must be hierarchical for propagation rules.', 'bws-meta-manager'), $post_type);
+                $errors[] = sprintf(__('Post type "%s" must be hierarchical for propagation rules.', 'meta-conductor'), $post_type);
             }
         }
 
         // Validate taxonomy
         if (empty($rule_data['taxonomy'])) {
-            $errors[] = __('Taxonomy is required.', 'bws-meta-manager');
+            $errors[] = __('Taxonomy is required.', 'meta-conductor');
         } elseif (!taxonomy_exists($rule_data['taxonomy'])) {
-            $errors[] = __('Selected taxonomy does not exist.', 'bws-meta-manager');
+            $errors[] = __('Selected taxonomy does not exist.', 'meta-conductor');
         }
 
         // Validate conflict handling
         $valid_handling = array('replace', 'merge', 'skip');
         if (!empty($rule_data['conflict_handling']) &&
             !in_array($rule_data['conflict_handling'], $valid_handling)) {
-            $errors[] = __('Invalid conflict handling method selected.', 'bws-meta-manager');
+            $errors[] = __('Invalid conflict handling method selected.', 'meta-conductor');
         }
 
         return array(

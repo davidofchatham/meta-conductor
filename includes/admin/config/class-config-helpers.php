@@ -21,7 +21,7 @@ class ConfigHelpers {
      * All public taxonomies, with placeholder.
      */
     public static function taxonomy_options(string $placeholder = ''): array {
-        $options    = ['' => $placeholder ?: __('— Select taxonomy —', 'bws-meta-manager')];
+        $options    = ['' => $placeholder ?: __('— Select taxonomy —', 'meta-conductor')];
         $taxonomies = get_taxonomies(['public' => true], 'objects');
 
         foreach ($taxonomies as $taxonomy) {
@@ -35,7 +35,7 @@ class ConfigHelpers {
      * Hierarchical public taxonomies, with placeholder.
      */
     public static function hierarchical_taxonomy_options(string $placeholder = ''): array {
-        $options    = ['' => $placeholder ?: __('— Select taxonomy —', 'bws-meta-manager')];
+        $options    = ['' => $placeholder ?: __('— Select taxonomy —', 'meta-conductor')];
         $taxonomies = get_taxonomies(['public' => true, 'hierarchical' => true], 'objects');
 
         foreach ($taxonomies as $taxonomy) {
@@ -49,7 +49,7 @@ class ConfigHelpers {
      * All public post types, with placeholder.
      */
     public static function post_type_options(string $placeholder = ''): array {
-        $options    = ['' => $placeholder ?: __('— Select post type —', 'bws-meta-manager')];
+        $options    = ['' => $placeholder ?: __('— Select post type —', 'meta-conductor')];
         $post_types = get_post_types(['public' => true], 'objects');
 
         foreach ($post_types as $post_type) {
@@ -63,7 +63,7 @@ class ConfigHelpers {
      * Hierarchical public post types (for parent → child propagation).
      */
     public static function hierarchical_post_type_options(string $placeholder = ''): array {
-        $options    = ['' => $placeholder ?: __('— Select post type —', 'bws-meta-manager')];
+        $options    = ['' => $placeholder ?: __('— Select post type —', 'meta-conductor')];
         $post_types = get_post_types(['public' => true, 'hierarchical' => true], 'objects');
 
         foreach ($post_types as $post_type) {
@@ -108,8 +108,8 @@ class ConfigHelpers {
         // force the canonical id.
         return array_merge([
             'type'        => 'checkboxes',
-            'label'       => __('Limit to post types', 'bws-meta-manager'),
-            'description' => __('Leave all unchecked to apply to every post type using this taxonomy.', 'bws-meta-manager'),
+            'label'       => __('Limit to post types', 'meta-conductor'),
+            'description' => __('Leave all unchecked to apply to every post type using this taxonomy.', 'meta-conductor'),
             'columns'     => 12,
             'args'        => [
                 'options' => self::post_types_checkbox_options(),
@@ -153,8 +153,8 @@ class ConfigHelpers {
         // overrides first, then force the canonical id.
         return array_merge([
             'type'        => 'checkboxes',
-            'label'       => __('Limit to post types', 'bws-meta-manager'),
-            'description' => __('Only hierarchical post types appear — propagation requires a parent/child relationship. Leave all unchecked to apply to every hierarchical post type.', 'bws-meta-manager'),
+            'label'       => __('Limit to post types', 'meta-conductor'),
+            'description' => __('Only hierarchical post types appear — propagation requires a parent/child relationship. Leave all unchecked to apply to every hierarchical post type.', 'meta-conductor'),
             'columns'     => 12,
             'args'        => [
                 'options' => self::hierarchical_post_types_checkbox_options(),
@@ -232,8 +232,8 @@ class ConfigHelpers {
         // key by name. Merge overrides first, then force the canonical id.
         return array_merge([
             'type'        => 'checkboxes',
-            'label'       => __('Limit to post statuses', 'bws-meta-manager'),
-            'description' => __('Leave all unchecked to apply to every status.', 'bws-meta-manager'),
+            'label'       => __('Limit to post statuses', 'meta-conductor'),
+            'description' => __('Leave all unchecked to apply to every status.', 'meta-conductor'),
             'columns'     => 12,
             'args'        => [
                 'options' => self::post_status_checkbox_options(),
@@ -297,7 +297,7 @@ class ConfigHelpers {
         // get their own first option instead of the first caller's cached one.
         static $fields_cache = null;
 
-        $placeholder_row = ['' => $placeholder ?: __('— Select ACF field —', 'bws-meta-manager')];
+        $placeholder_row = ['' => $placeholder ?: __('— Select ACF field —', 'meta-conductor')];
 
         if ($fields_cache !== null) {
             return $placeholder_row + $fields_cache;
