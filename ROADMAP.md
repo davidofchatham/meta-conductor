@@ -1,10 +1,8 @@
 # Meta Conductor: Roadmap
 
-**Current Version**: 0.6.0 (pre-release; `0.x` unstable until `1.0.0`)
-**Target Version**: 1.0.0 (first production-ready cut, after rename + PSR-4 namespacing land)
-**Branch**: `main`
+Pre-release `0.x` line — unstable until the first production-ready cut graduates to `1.0.0`. Runtime version is **not** tracked here (drifts too fast); source of truth is the plugin header + `META_CONDUCTOR_VERSION` in `meta-conductor.php`.
 
-The refactor is an **incremental migration, not a rewrite** — the core business logic works; the remaining work is structural (finish the unified-framework handler migration, complete the rename, PSR-4 namespacing, config page split). This document tracks the phased plan and the decisions behind it.
+The refactor is an **incremental migration, not a rewrite** — the core business logic works; the remaining work is structural (config page split, integrations). Rename (2b) and PSR-4 namespacing (2a) have landed. This document tracks the phased plan and the decisions behind it.
 
 ---
 
@@ -19,15 +17,15 @@ Phase numbers are **stable IDs, not execution order** — work has landed out of
 | 2c | Wireframe UI swap | ✅ done | — | god-class `BWS_Settings` → 60-line shell; mixed JS globals (legacy JS deleted) |
 | 0.3.1 | PR #17 review pass | ✅ done | — | — |
 | 2a | PSR-4 namespacing (+ `lib/`→`Support\`, abstracts co-located, `tests/` harness) | ✅ done (0.4.0) | — | manual `require_once` chains; `includes/abstracts/` + `includes/lib/` |
-| **3** | Migrate 5 legacy handlers → UnifiedHandlerBase — **✅ done (0.6.0)**. All 7 handlers on `UnifiedHandlerBase`; legacy `BWS_Handler_Base` deleted; redundant `on_post_save` loop removed | ✅ done | 2a ✅ | legacy handler base; dual-base divergence; `on_post_save` loop double-run |
-| 2b | Rename sweep — *user-facing rename done* (folder, file, header, option key, menu/title/H1); only code-internal strings left (`__()` sweep, constants, hooks, JS) | ◐ partial | 2a ✅ | mixed text domains |
-| 4 | Config page split (storage blast-radius) — *was CPT storage; CPT deferred* | queued | 3 | one-blob clobber radius; per-page autoload; gives UBT its own option |
+| 3 | Migrate 5 legacy handlers → UnifiedHandlerBase — **✅ done (0.6.0)**. All 7 handlers on `UnifiedHandlerBase`; legacy `BWS_Handler_Base` deleted; redundant `on_post_save` loop removed | ✅ done | 2a ✅ | legacy handler base; dual-base divergence; `on_post_save` loop double-run |
+| 2b | Rename sweep — text domain, constants, nonces, core hooks, log table + migration all done (0.6.3, PR #48; real-Athletics verified). JS object + conversion cron/AJAX/transients deferred to P7; internal fn names deferred | ✅ done (0.6.3) | 2a ✅ | mixed text domains |
+| **4** | Config page split (storage blast-radius) — *was CPT storage; CPT deferred* | **next** | 3 ✅ | one-blob clobber radius; per-page autoload; gives UBT its own option |
 | 7 | Unified migration / preview tool | queued | — (ungated; can run anytime) | `lib/` classes instantiated but never called; tab-aware save bug; Conversion subpage taxonomy selectors |
 | 6a | Options-compatible integrations | queued | 3 | — |
 | 6b | BWS User Based Terms (→ Options, Personalize page) | queued | 4 | UBT merge; needs Personalize page option from P4 |
 | ~~5~~ | ~~Settings refactor~~ | cancelled | — | absorbed by 2c; lib delegation folded into 7 |
 
-**Recommended run order:** ~~2a~~ ✅ → ~~3~~ ✅ → **2b** → 4 → (6a, 7) → 6b. Phase 3 landed before 2b so the rename sweep touches already-migrated handlers once. Phase 7 is unblocked and can slot in whenever Conversion is needed.
+**Recommended run order:** ~~2a~~ ✅ → ~~3~~ ✅ → ~~2b~~ ✅ → **4** → (6a, 7) → 6b. Phase 3 landed before 2b so the rename sweep touches already-migrated handlers once. Phase 7 is unblocked and can slot in whenever Conversion is needed.
 
 **Also in 0.6.0 (not a phase — bugfix):** Admin Columns Pro **v7** integration fixed ([#37](https://github.com/davidofchatham/meta-conductor/issues/37)). The pre-v7 integration was dead on AC v7; replaced by a shared `reapply_for_post` seam + `ac/editing/saved` fallback across all ACF-listening handlers, legacy integration deleted. Follow-ups: [#42](https://github.com/davidofchatham/meta-conductor/issues/42) (AC-agnostic apply-on-`acf/update_value`), [#43](https://github.com/davidofchatham/meta-conductor/issues/43) (dependent-end sever gap).
 
@@ -42,7 +40,7 @@ Status column: ✅ = actioned · Pn = pending in that phase · standing = ongoin
 | Decision | Choice | Status | Notes |
 |----------|--------|--------|-------|
 | **Plugin name** | **Meta Conductor** | ✅ | Display name and slug both drop "BWS". See "Naming surface" table below. |
-| **Naming surface** | Split by layer | ◐ partial (P2b) | Folder/main-file/text-domain done; constants, hooks, JS, `__()` sweep remain in 2b. |
+| **Naming surface** | Split by layer | ✅ (P2b, 0.6.3) | Folder/main-file/text-domain/constants/nonces/core-hooks/log-table all done. JS object + conversion cron/AJAX/transients + internal fn names deferred to P7/tidy. |
 | **PSR-4 namespacing** | Yes | ✅ (0.4.0) | Custom `spl_autoload_register()` autoloader (root `autoload.php`); namespace `BWS\MetaConductor\` |
 | **Abstracts directory** | Co-locate with implementations | ✅ (0.4.0) | `Storage\RuleStorage`, `Handlers\UnifiedHandlerBase` — `includes/abstracts/` eliminated |
 | **Interface file naming** | Use `class-` prefix for all | ✅ (0.4.0) | Autoloader generates `class-{name}.php`; interfaces follow same convention |
@@ -127,8 +125,8 @@ Full admin UI replacement. Hand-rolled settings UI (~5,000 lines across `class-b
 
 **Known issues:**
 - Conversion subpage: taxonomy selectors not populating (AJAX endpoints likely broken under new menu structure). Resolve in Phase 7 migration tool rewrite or earlier if Conversion is needed before then.
-- `BWS_Option_Rule_Storage::update_settings()` does a blunt top-level `array_merge`. If a legacy handler writes `['hierarchical_rules' => $rules]` it clobbers every other rule array. Live code path for the 3 remaining legacy handlers. Resolve when those handlers migrate to `BWS_Unified_Handler_Base` in Phase 3.
-- Hierarchical handler `$this->processed` accumulates indefinitely within a request and silently skips legitimate double-saves. Replace with a clear-after-apply pattern in Phase 3 when the handler is touched again.
+- ~~`BWS_Option_Rule_Storage::update_settings()` blunt top-level `array_merge` clobbers sibling rule arrays~~ ◐ **dormant, not removed** — the clobber *path* is dead: all migrated handlers now write via `OptionRuleStorage::save_rule()` (per-type merge into `get_all_settings()`, no cross-type clobber). But the offending method still exists — `class-settings.php:81` `update_settings()` still does the blunt top-level `array_merge` (line 83). No live caller reaches it. Fully closed when the dead `class-settings.php` compat shell is deleted (queued — see CLAUDE.md Phase-2c quirks).
+- ~~Hierarchical handler `$this->processed` accumulates indefinitely within a request and silently skips legitimate double-saves~~ ✅ **fixed** — `$processed` map removed entirely. Re-entrant recursion was already blocked by the `$processing` flag; `apply_rule()` reads terms + auto-meta fresh each call (idempotent), so legit double-saves within one request now recompute instead of being skipped.
 
 **Untested on InstaWP:**
 - Propagation, Level Restriction handler runtime. *(Related Post Terms runtime verified on a live AC Pro v7 site during the #37 Admin Columns fix — add-sync path; the dependent-end sever gap is [#43](https://github.com/davidofchatham/meta-conductor/issues/43).)*
@@ -174,7 +172,7 @@ Visible change — rename the plugin, migrate the option key, update all strings
 
 Follow the **Naming Surface (0.x)** table in the decisions section above for which layers drop `bws-` and which keep `bws_`/`BWS\`.
 
-> **Largely landed early:** the user-facing rename is effectively done — folder, main file, header, option key, menu/page titles, and settings H1 all shipped across Phase 2c + the release-infra branch (some ahead of schedule to unblock the self-hosted release pipeline). **Remaining 2b work** is code-internal: the ~600-call `__()` text-domain sweep (Wireframe args still pass `'bws-meta-manager'`), constant aliases, nonce/hook prefix rename, JS object rename — all gated on Phase 2a (PSR-4) per Hard Constraints.
+> **✅ Done (0.6.3, branch `claude/rename-2b`, [PR #48](https://github.com/davidofchatham/meta-conductor/pull/48)).** User-facing rename landed early (2c + release-infra); the code-internal sweep completed in 2b: text domain, `META_CONDUCTOR_*` constants (no aliases), nonces, core hooks, and the log-table rename+migration. Two-axis code review clean; static gates (H1/H2) green; testbed mc-rules sweep + **real Athletics data** (hargrave 0.6.3 dev-swap) both verified — migration no-ops on the real DB and a live cross-taxonomy Baseball connector rule fired correctly under the renamed hooks. Deferred to Phase 7: the JS localized object and all conversion-subsystem identifiers (cron/AJAX/transients), left with the code being reworked there.
 
 - ~~Rename plugin folder: `bws-meta-manager` → `meta-conductor`~~ ✅ done (repo, GitHub, local dev folder, test-site install all renamed)
 - ~~Rename main file: `bws-taxonomy-manager.php` → `meta-conductor.php`~~ ✅ done
@@ -182,11 +180,16 @@ Follow the **Naming Surface (0.x)** table in the decisions section above for whi
 - ~~Rename option key: `bws_taxonomy_manager_settings` → `bws_meta_conductor_settings`~~ ✅ done in Phase 2c (Wireframe boots against the new key; tested on InstaWP)
 - ~~Update admin menu label and page title~~ ✅ done in Phase 2c (`class-wireframe-bootstrap.php` `page_title`/`menu_title`/`menu_slug`)
 - ~~Update settings page H1~~ ✅ done in Phase 2c (`class-wireframe-config.php` `title`)
-- Update all nonce action strings to `bws_meta_conductor_*` pattern
-- Unify text domain to `meta-conductor` throughout (~600 calls to convert) — **the bulk of remaining 2b work.** Note: Wireframe `__()` args still pass `'bws-meta-manager'`.
-- Update constants to `META_CONDUCTOR_*` (keep backward-compat aliases for `BWS_TAX_MANAGER_*` and `BWS_META_MANAGER_*`)
-- Update JS localized object key to `bwsMetaConductor` in PHP enqueue
-- Update hook/filter prefix to `bws_meta_conductor_*` (paired with option keys)
+- ~~Update all nonce action strings to `bws_meta_conductor_*` pattern~~ ✅ done in 2b (0.6.3) — `bws_taxonomy_manager_nonce` → `bws_meta_conductor_nonce`, 23 sites
+- ~~Unify text domain to `meta-conductor` throughout~~ ✅ done in 2b (0.6.3) — 509 i18n args / 29 files
+- ~~Update constants to `META_CONDUCTOR_*`~~ ✅ done in 2b (0.6.3) — **no aliases** (confirmed no external consumer); dropped the 3 dead `BWS_TAX_MANAGER_*` defines
+- ~~Update hook/filter prefix to `bws_meta_conductor_*`~~ ✅ done in 2b (0.6.3) for **core** hooks (rule-engine, condition/action, storage-factory, unified-base). No aliases.
+- ~~Log table renamed~~ ✅ done in 2b (0.6.3) — `bws_meta_manager_log` → `bws_meta_conductor_log` + idempotent `RENAME TABLE` migration (testbed-verified, rows preserved)
+- ~~Drop dead legacy log-table create~~ ✅ done in 2b (0.6.3, post-review) — fresh installs no longer create `bws_taxonomy_manager_log`; uninstall drop-list still cleans it on legacy installs
+- ~~Rebrand user-facing runtime strings~~ ✅ done in 2b (0.6.3, post-review) — `BWS Meta Manager`/`BWS Taxonomy Manager` → `Meta Conductor` (requirement/table-error notices, handler log prefix, conversion cleanup log). Text-domain args were already correct.
+- **Deferred to Phase 7 (conversion subsystem):** JS localized object `bwsMetaManager` → `bwsMetaConductor` + PHP enqueue; conversion cron `*_conversion_cleanup`, AJAX `wp_ajax_*_conversion_*`, transient keys `*_conversion_*`. Left with the conversion code that's mid-rework in P7.
+- **Deferred (low value):** internal function names (`bws_meta_manager_init`, `bws_taxonomy_manager_activate/deactivate/uninstall`) — not user-facing, no BC pressure. Rename opportunistically or in a later tidy pass.
+- **Flagged bug (P7):** conversion tab-URL builder targets `admin_url('tools.php')` but the menu registers elsewhere — verify parent when conversion is revisited.
 
 **Files**: `meta-conductor.php`, `includes/class-taxonomy-manager.php`, `includes/class-settings.php`, `includes/storage/class-option-rule-storage.php`, `includes/handlers/class-unified-handler-base.php`, plus every file containing `__()` / `_e()` / `_x()` / `_n()` calls (paths post-2a)
 

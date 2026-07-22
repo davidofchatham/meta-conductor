@@ -1,9 +1,59 @@
 # Changelog
 
-All notable changes to Meta Conductor (formerly BWS Meta Manager, formerly BWS Taxonomy Manager) are documented in this file.
+All notable changes to Meta Conductor are documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.6.3] — Unreleased
+
+### Changed
+
+- **Phase 2b rename sweep (internal identifiers).** Completes the branding pass begun in 2c:
+  - Text domain unified to `meta-conductor` across all `__()`/`_e()` calls (510 args, 29 files). Cosmetic
+    (private plugin, no `.po` files) but removes the mixed `bws-meta-manager`/`bws-taxonomy-manager` domains.
+  - Plugin constants renamed `BWS_META_MANAGER_*` → `META_CONDUCTOR_*` (`VERSION`/`PLUGIN_DIR`/`PLUGIN_URL`).
+    The 3 dead `BWS_TAX_MANAGER_*` defines (zero references) were dropped. No back-compat aliases — no external
+    consumer references them.
+  - Nonce action `bws_taxonomy_manager_nonce` → `bws_meta_conductor_nonce` (21 sites).
+  - Core hooks (rule-engine, condition/action, storage-factory, unified-base) renamed `bws_meta_manager_*` →
+    `bws_meta_conductor_*`, including the dynamic `before/after_process_{type}` and `clear_{type}_cache`
+    actions and paired transient key. No aliases (no external listeners). Conversion-subsystem hooks
+    (cron/AJAX/transients) and the JS localized object deferred to Phase 7.
+  - Fixed a latent stale admin-page slug (`bws-meta-manager` → `meta-conductor`) in the conversion tab-URL
+    builder.
+
+### Migrated
+
+- **Core log table renamed** `{prefix}bws_meta_manager_log` → `{prefix}bws_meta_conductor_log` via an
+  idempotent `RENAME TABLE` in the `admin_init` version-check seam (fires on the 0.6.2→0.6.3 bump; guarded so
+  it runs at most once and preserves existing rows). Uninstall now drops all three historical table names.
+
+### Fixed
+
+- **Bulk "process existing posts" now works for the hook-driven handlers (was an inert, over-reporting
+  button).** `process_existing_posts()` drove bulk re-apply through `process_post()`, which the hook-driven
+  handlers (related, propagation, level-restriction) override as a no-op — so bulk did nothing yet reported
+  every scanned post as processed. The base now routes bulk through a new `apply_to_post(int, array): bool`
+  primitive that each hook-driven handler overrides from its own per-post logic (level-restriction wires the
+  long-kept-ready `apply_level_restrictions()`; related re-uses its add-only `process_related_terms`;
+  propagation runs its down/up walk; time-based its date-range apply). `apply_to_post` returns whether the
+  post's terms *actually changed* (measured by a before/after taxonomy fingerprint — target-term taxonomy for
+  related/time-based, self∪descendants for propagation), and the batch message now reports changed-of-scanned
+  per batch, so the count is honest instead of "Processed N of N" while writing nothing. (#31)
+- **Propagation: removing a term from a parent now sticks on its descendants.** When a parent carried an ACF
+  taxonomy mirror field (the normal case), a down-removal was undone within the same request: the removal
+  pass stripped the term from every descendant, then the add pass re-read the parent as
+  native∪ACF and — because the parent's ACF mirror still held the pre-removal value — re-pushed the
+  just-removed term back onto them. The add pass now excludes the same-request removals from its source, so
+  removals persist. Method-independent (`wp_set_object_terms([])` and `update_field([])` both hit it). (#45)
+- **Propagation: `wp_remove_object_terms()` on a parent now propagates the removal down.** That function fires
+  `deleted_term_relationships`, not `set_object_terms`, so the removal-propagation path was never reached and
+  descendants silently kept the term (sibling gap to #45, which fixed the `set_object_terms` path). A new
+  `deleted_term_relationships` hook runs the removal walk under the same reentrancy guard. On the plain
+  `wp_set_object_terms` path — where WordPress removes dropped terms via an internal `wp_remove_object_terms`
+  and both hooks would see the same removal — the delete hook records the handled term-taxonomy IDs so the
+  set hook does not walk them a second time. (#47)
 
 ## [0.6.1] — 2026-07-17
 

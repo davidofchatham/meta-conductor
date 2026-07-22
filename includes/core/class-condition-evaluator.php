@@ -76,7 +76,7 @@ class ConditionEvaluator {
                 return $this->evaluate_multiple($entity, $condition);
 
             default:
-                return apply_filters('bws_meta_manager_evaluate_custom_condition', false, $entity, $condition);
+                return apply_filters('bws_meta_conductor_evaluate_custom_condition', false, $entity, $condition);
         }
     }
 

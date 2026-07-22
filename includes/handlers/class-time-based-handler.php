@@ -54,7 +54,36 @@ class TimeBasedHandler extends UnifiedHandlerBase {
             $this->apply_time_based_rule($post_id, $post, $rule);
         }
     }
-    
+
+    /**
+     * Bulk-apply primitive (#31). Delegates to apply_time_based_rule for one
+     * rule + post. Overrides the base default (which routes RuleEngine) because
+     * time-based's real work is the date-range apply, not RuleEngine. No
+     * $processing guard needed — writes are idempotent (has-term / date-range
+     * guards) and time-based fires no re-entrant term hooks of its own. Returns
+     * whether the target-term taxonomy changed (in-range+already-tagged, or
+     * out-of-range+absent, are both no-ops ⇒ false), so the bulk count is honest
+     * (#31).
+     */
+    public function apply_to_post(int $post_id, array $rule): bool {
+        if (!$this->should_process_post($post_id, $rule)) {
+            return false;
+        }
+        $post = get_post($post_id);
+        if (!$post) {
+            return false;
+        }
+        // Time-based writes the TARGET term's taxonomy — fingerprint that.
+        $taxonomy    = '';
+        $target_term = get_term((int) ($rule['target_term_id'] ?? 0));
+        if ($target_term && !is_wp_error($target_term)) {
+            $taxonomy = $target_term->taxonomy;
+        }
+        $before = $this->terms_fingerprint($post_id, $taxonomy);
+        $this->apply_time_based_rule($post_id, $post, $rule);
+        return $this->terms_fingerprint($post_id, $taxonomy) !== $before;
+    }
+
     /**
      * Handle post save events
      */
@@ -273,35 +302,35 @@ class TimeBasedHandler extends UnifiedHandlerBase {
         $post_types = \BWS\MetaConductor\Admin\Config\ConfigHelpers::selected_checkbox_slugs($rule_data['post_types'] ?? []);
         foreach ($post_types as $post_type) {
             if (!post_type_exists($post_type)) {
-                $errors[] = sprintf(__('Post type "%s" does not exist.', 'bws-meta-manager'), $post_type);
+                $errors[] = sprintf(__('Post type "%s" does not exist.', 'meta-conductor'), $post_type);
             }
         }
 
         // Validate target term
         if (empty($rule_data['target_term_id'])) {
-            $errors[] = __('Target term is required.', 'bws-taxonomy-manager');
+            $errors[] = __('Target term is required.', 'meta-conductor');
         } elseif (!get_term($rule_data['target_term_id'])) {
-            $errors[] = __('Selected target term does not exist.', 'bws-taxonomy-manager');
+            $errors[] = __('Selected target term does not exist.', 'meta-conductor');
         }
         
         // Validate dates
         if (empty($rule_data['start_date'])) {
-            $errors[] = __('Start date is required.', 'bws-taxonomy-manager');
+            $errors[] = __('Start date is required.', 'meta-conductor');
         } elseif (!$this->is_valid_date($rule_data['start_date'])) {
-            $errors[] = __('Start date must be in YYYY-MM-DD format.', 'bws-taxonomy-manager');
+            $errors[] = __('Start date must be in YYYY-MM-DD format.', 'meta-conductor');
         }
         
         if (empty($rule_data['end_date'])) {
-            $errors[] = __('End date is required.', 'bws-taxonomy-manager');
+            $errors[] = __('End date is required.', 'meta-conductor');
         } elseif (!$this->is_valid_date($rule_data['end_date'])) {
-            $errors[] = __('End date must be in YYYY-MM-DD format.', 'bws-taxonomy-manager');
+            $errors[] = __('End date must be in YYYY-MM-DD format.', 'meta-conductor');
         }
         
         // Validate date range
         if (!empty($rule_data['start_date']) && !empty($rule_data['end_date']) &&
             $this->is_valid_date($rule_data['start_date']) && $this->is_valid_date($rule_data['end_date'])) {
             if ($rule_data['start_date'] > $rule_data['end_date']) {
-                $errors[] = __('Start date must be before end date.', 'bws-taxonomy-manager');
+                $errors[] = __('Start date must be before end date.', 'meta-conductor');
             }
         }
         
@@ -309,7 +338,7 @@ class TimeBasedHandler extends UnifiedHandlerBase {
         if (!empty($rule_data['filter_taxonomies'])) {
             foreach ($rule_data['filter_taxonomies'] as $taxonomy) {
                 if (!taxonomy_exists($taxonomy)) {
-                    $errors[] = sprintf(__('Filter taxonomy "%s" does not exist.', 'bws-taxonomy-manager'), $taxonomy);
+                    $errors[] = sprintf(__('Filter taxonomy "%s" does not exist.', 'meta-conductor'), $taxonomy);
                 }
             }
         }
@@ -318,7 +347,7 @@ class TimeBasedHandler extends UnifiedHandlerBase {
         if (!empty($rule_data['filter_terms'])) {
             foreach ($rule_data['filter_terms'] as $term_id) {
                 if (!get_term($term_id)) {
-                    $errors[] = sprintf(__('Filter term ID "%s" does not exist.', 'bws-taxonomy-manager'), $term_id);
+                    $errors[] = sprintf(__('Filter term ID "%s" does not exist.', 'meta-conductor'), $term_id);
                 }
             }
         }
@@ -365,7 +394,7 @@ class TimeBasedHandler extends UnifiedHandlerBase {
             $active_rules_count = count($this->get_active_rules($current_date));
             
             $result['message'] = sprintf(
-                __('Processed %d posts for time-based rules (date: %s, %d active rules). %d of %d total posts complete.', 'bws-taxonomy-manager'),
+                __('Processed %d posts for time-based rules (date: %s, %d active rules). %d of %d total posts complete.', 'meta-conductor'),
                 $result['processed'],
                 $current_date,
                 $active_rules_count,

@@ -42,6 +42,37 @@ class RelatedHandler extends UnifiedHandlerBase {
     public function process_post($post_id, $post, $update) {}
 
     /**
+     * Bulk-apply primitive (#31). Re-applies the rule to one existing post using
+     * its CURRENT trigger state — delegates to process_related_terms, the same
+     * add-only path on_acf_save_post uses. ADD-only by design: removal needs a
+     * real old→new delta (apply_related_terms), which a standing bulk re-apply
+     * has no basis to synthesize, so bulk never phantom-removes a target.
+     * Guards $processing so the write doesn't re-enter on_terms_set. Returns
+     * whether the target-term taxonomy actually changed (no trigger present ⇒
+     * no write ⇒ false), so the bulk count is honest (#31).
+     */
+    public function apply_to_post(int $post_id, array $rule): bool {
+        if (!$this->should_process_post($post_id, $rule)) {
+            return false;
+        }
+        // Related writes the TARGET term's taxonomy, which may differ from any
+        // trigger taxonomy — fingerprint that.
+        $taxonomy    = '';
+        $target_term = \get_term((int) ($rule['target_term_id'] ?? 0));
+        if ($target_term && !\is_wp_error($target_term)) {
+            $taxonomy = $target_term->taxonomy;
+        }
+        $before = $this->terms_fingerprint($post_id, $taxonomy);
+        $this->processing = true;
+        try {
+            $this->process_related_terms($post_id, $rule);
+        } finally {
+            $this->processing = false;
+        }
+        return $this->terms_fingerprint($post_id, $taxonomy) !== $before;
+    }
+
+    /**
      * Handle terms being set
      */
     public function on_terms_set($object_id, $terms, $tt_ids, $taxonomy, $append, $old_tt_ids) {

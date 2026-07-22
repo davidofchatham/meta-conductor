@@ -62,7 +62,7 @@ class ActionExecutor {
                 return $this->execute_multiple($entity, $action, $source_entity);
 
             default:
-                return apply_filters('bws_meta_manager_execute_custom_action', false, $entity, $action, $source_entity);
+                return apply_filters('bws_meta_conductor_execute_custom_action', false, $entity, $action, $source_entity);
         }
     }
 

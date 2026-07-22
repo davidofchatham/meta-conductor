@@ -20,26 +20,26 @@ class TimeBasedConfig {
     public static function section(): array {
         return [
             'id'          => 'time_based',
-            'title'       => __('Date window', 'bws-meta-manager'),
-            'description' => __('Apply a term when the current date is within a configured window.', 'bws-meta-manager'),
+            'title'       => __('Date window', 'meta-conductor'),
+            'description' => __('Apply a term when the current date is within a configured window.', 'meta-conductor'),
             'fields'      => [
                 [
                     'id'    => 'time_based_rules',
                     'type'  => 'repeater',
-                    'label' => __('Date window rules', 'bws-meta-manager'),
+                    'label' => __('Date window rules', 'meta-conductor'),
                     'args'  => [
                         'sortable'       => true,
                         'collapsible'    => true,
                         'collapsed'      => true,
                         'duplicate_row'  => true,
-                        'add_label'      => __('Add date window rule', 'bws-meta-manager'),
-                        'empty_message'  => __('No date window rules configured.', 'bws-meta-manager'),
+                        'add_label'      => __('Add date window rule', 'meta-conductor'),
+                        'empty_message'  => __('No date window rules configured.', 'meta-conductor'),
                         'title_template' => '{row_title}',
                         'subfields'      => [
                             [
                                 'id'      => 'enabled',
                                 'type'    => 'toggle',
-                                'label'   => __('Enabled', 'bws-meta-manager'),
+                                'label'   => __('Enabled', 'meta-conductor'),
                                 'default' => true,
                                 'columns' => 12,
                             ],
@@ -47,8 +47,8 @@ class TimeBasedConfig {
                             [
                                 'id'          => 'filter_taxonomies',
                                 'type'        => 'checkboxes',
-                                'label'       => __('Filter by taxonomies (optional)', 'bws-meta-manager'),
-                                'description' => __('Only apply to posts with terms in these taxonomies. Leave empty for all posts.', 'bws-meta-manager'),
+                                'label'       => __('Filter by taxonomies (optional)', 'meta-conductor'),
+                                'description' => __('Only apply to posts with terms in these taxonomies. Leave empty for all posts.', 'meta-conductor'),
                                 'columns'     => 12,
                                 'args'        => [
                                     'options' => self::taxonomy_options_no_placeholder(),
@@ -57,8 +57,8 @@ class TimeBasedConfig {
                             [
                                 'id'          => 'filter_terms',
                                 'type'        => 'select',
-                                'label'       => __('Filter by specific terms (optional)', 'bws-meta-manager'),
-                                'description' => __('Only apply to posts with these terms. Leave empty to use taxonomy filter only.', 'bws-meta-manager'),
+                                'label'       => __('Filter by specific terms (optional)', 'meta-conductor'),
+                                'description' => __('Only apply to posts with these terms. Leave empty to use taxonomy filter only.', 'meta-conductor'),
                                 'columns'     => 12,
                                 'args'        => [
                                     'multiple' => true,
@@ -68,21 +68,21 @@ class TimeBasedConfig {
                             [
                                 'id'       => 'start_date',
                                 'type'     => 'date',
-                                'label'    => __('Start date', 'bws-meta-manager'),
+                                'label'    => __('Start date', 'meta-conductor'),
                                 'required' => true,
                                 'columns'  => 12,
                             ],
                             [
                                 'id'       => 'end_date',
                                 'type'     => 'date',
-                                'label'    => __('End date', 'bws-meta-manager'),
+                                'label'    => __('End date', 'meta-conductor'),
                                 'required' => true,
                                 'columns'  => 12,
                             ],
                             [
                                 'id'      => 'target_term_id',
                                 'type'    => 'select',
-                                'label'   => __('Target term to apply', 'bws-meta-manager'),
+                                'label'   => __('Target term to apply', 'meta-conductor'),
                                 'default' => '',
                                 'columns' => 12,
                                 'args'    => [

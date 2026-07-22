@@ -67,8 +67,8 @@ class RuleEngine {
      *               - 'skipped' (int): Entities that failed conditions
      *               - 'errors' (array): Error messages for failed operations
      *
-     * @fires bws_meta_manager_before_process_rule Before processing starts
-     * @fires bws_meta_manager_after_process_rule After processing completes
+     * @fires bws_meta_conductor_before_process_rule Before processing starts
+     * @fires bws_meta_conductor_after_process_rule After processing completes
      */
     public function process_rule($rule) {
         $results = [
@@ -79,7 +79,7 @@ class RuleEngine {
         ];
 
         // Pre-process hook
-        do_action('bws_meta_manager_before_process_rule', $rule);
+        do_action('bws_meta_conductor_before_process_rule', $rule);
 
         try {
             // 1. Get source entities
@@ -133,7 +133,7 @@ class RuleEngine {
         }
 
         // Post-process hook
-        do_action('bws_meta_manager_after_process_rule', $rule, $results);
+        do_action('bws_meta_conductor_after_process_rule', $rule, $results);
 
         return $results;
     }
@@ -171,7 +171,7 @@ class RuleEngine {
                 break;
         }
 
-        return apply_filters('bws_meta_manager_source_entities', $entities, $rule);
+        return apply_filters('bws_meta_conductor_source_entities', $entities, $rule);
     }
 
     /**

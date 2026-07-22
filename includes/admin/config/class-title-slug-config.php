@@ -22,43 +22,43 @@ class TitleSlugConfig {
     public static function section(): array {
         return [
             'id'          => 'title_slug',
-            'title'       => __('Title & slug patterns', 'bws-meta-manager'),
-            'description' => __('Generate post titles and slugs from a pattern of tokens (meta fields, dates, terms).', 'bws-meta-manager'),
+            'title'       => __('Title & slug patterns', 'meta-conductor'),
+            'description' => __('Generate post titles and slugs from a pattern of tokens (meta fields, dates, terms).', 'meta-conductor'),
             'fields'      => [
                 [
                     'id'    => 'title_slug_rules',
                     'type'  => 'repeater',
-                    'label' => __('Title & slug rules', 'bws-meta-manager'),
+                    'label' => __('Title & slug rules', 'meta-conductor'),
                     'args'  => [
                         'sortable'       => true,
                         'collapsible'    => true,
                         'collapsed'      => true,
                         'duplicate_row'  => true,
-                        'add_label'      => __('Add title/slug rule', 'bws-meta-manager'),
-                        'empty_message'  => __('No title/slug rules configured.', 'bws-meta-manager'),
+                        'add_label'      => __('Add title/slug rule', 'meta-conductor'),
+                        'empty_message'  => __('No title/slug rules configured.', 'meta-conductor'),
                         'title_template' => '{name}',
                         'subfields'      => [
                             [
                                 'id'      => 'enabled',
                                 'type'    => 'toggle',
-                                'label'   => __('Enabled', 'bws-meta-manager'),
+                                'label'   => __('Enabled', 'meta-conductor'),
                                 'default' => true,
                                 'columns' => 12,
                             ],
                             [
                                 'id'       => 'name',
                                 'type'     => 'text',
-                                'label'    => __('Rule name', 'bws-meta-manager'),
+                                'label'    => __('Rule name', 'meta-conductor'),
                                 'required' => true,
                                 'columns'  => 12,
                                 'args'     => [
-                                    'placeholder' => __('e.g. Personnel Title & Slug', 'bws-meta-manager'),
+                                    'placeholder' => __('e.g. Personnel Title & Slug', 'meta-conductor'),
                                 ],
                             ],
                             [
                                 'id'       => 'post_type',
                                 'type'     => 'select',
-                                'label'    => __('Post type', 'bws-meta-manager'),
+                                'label'    => __('Post type', 'meta-conductor'),
                                 'default'  => '',
                                 'required' => true,
                                 'columns'  => 12,
@@ -69,11 +69,11 @@ class TitleSlugConfig {
                             [
                                 'id'          => 'title_pattern',
                                 'type'        => 'text',
-                                'label'       => __('Title pattern', 'bws-meta-manager'),
-                                'description' => __('Optional. Leave blank to skip title modification. Use tokens like {meta:first_name}.', 'bws-meta-manager'),
+                                'label'       => __('Title pattern', 'meta-conductor'),
+                                'description' => __('Optional. Leave blank to skip title modification. Use tokens like {meta:first_name}.', 'meta-conductor'),
                                 'columns'     => 12,
                                 'args'        => [
-                                    'placeholder' => __('e.g. {meta:first_name} {meta:last_name}', 'bws-meta-manager'),
+                                    'placeholder' => __('e.g. {meta:first_name} {meta:last_name}', 'meta-conductor'),
                                 ],
                             ],
                             [
@@ -88,44 +88,44 @@ class TitleSlugConfig {
                             [
                                 'id'          => 'slug_pattern',
                                 'type'        => 'text',
-                                'label'       => __('Slug pattern', 'bws-meta-manager'),
-                                'description' => __('Optional. Leave blank to derive slug from computed title.', 'bws-meta-manager'),
+                                'label'       => __('Slug pattern', 'meta-conductor'),
+                                'description' => __('Optional. Leave blank to derive slug from computed title.', 'meta-conductor'),
                                 'columns'     => 12,
                                 'args'        => [
-                                    'placeholder' => __('e.g. {pub_year}-{meta:first_name}-{meta:last_name}', 'bws-meta-manager'),
+                                    'placeholder' => __('e.g. {pub_year}-{meta:first_name}-{meta:last_name}', 'meta-conductor'),
                                 ],
                             ],
                             [
                                 'id'          => 'slug_mode',
                                 'type'        => 'select',
-                                'label'       => __('Slug mode', 'bws-meta-manager'),
-                                'description' => __('How the slug pattern combines with the default slug. Only used when a slug pattern is set. Automatically forced to Replace when the pattern contains {default_slug}.', 'bws-meta-manager'),
+                                'label'       => __('Slug mode', 'meta-conductor'),
+                                'description' => __('How the slug pattern combines with the default slug. Only used when a slug pattern is set. Automatically forced to Replace when the pattern contains {default_slug}.', 'meta-conductor'),
                                 'default'     => 'prefix',
                                 'columns'     => 12,
                                 'args'        => [
                                     'options' => [
-                                        'prefix'  => __('Prefix — pattern-default-slug', 'bws-meta-manager'),
-                                        'suffix'  => __('Suffix — default-slug-pattern', 'bws-meta-manager'),
-                                        'replace' => __('Replace — pattern only', 'bws-meta-manager'),
+                                        'prefix'  => __('Prefix — pattern-default-slug', 'meta-conductor'),
+                                        'suffix'  => __('Suffix — default-slug-pattern', 'meta-conductor'),
+                                        'replace' => __('Replace — pattern only', 'meta-conductor'),
                                     ],
                                 ],
                             ],
                             [
                                 'id'          => 'date_escalation',
                                 'type'        => 'toggle',
-                                'label'       => __('Collision avoidance via date escalation', 'bws-meta-manager'),
-                                'description' => __('When a generated slug collides with an existing post, append progressively more date precision (year → month → day → hour → minute) before falling back to WordPress unique-slug suffixes.', 'bws-meta-manager'),
+                                'label'       => __('Collision avoidance via date escalation', 'meta-conductor'),
+                                'description' => __('When a generated slug collides with an existing post, append progressively more date precision (year → month → day → hour → minute) before falling back to WordPress unique-slug suffixes.', 'meta-conductor'),
                                 'default'     => false,
                                 'columns'     => 12,
                             ],
                             [
                                 'id'          => 'date_field',
                                 'type'        => 'text',
-                                'label'       => __('Date field for collision avoidance', 'bws-meta-manager'),
-                                'description' => __('Optional. Meta field key to read dates from. Leave blank to use publication date. Only used when collision avoidance is on.', 'bws-meta-manager'),
+                                'label'       => __('Date field for collision avoidance', 'meta-conductor'),
+                                'description' => __('Optional. Meta field key to read dates from. Leave blank to use publication date. Only used when collision avoidance is on.', 'meta-conductor'),
                                 'columns'     => 12,
                                 'args'        => [
-                                    'placeholder' => __('e.g. event_date', 'bws-meta-manager'),
+                                    'placeholder' => __('e.g. event_date', 'meta-conductor'),
                                 ],
                             ],
                         ],
@@ -137,8 +137,8 @@ class TitleSlugConfig {
                     'columns' => 12,
                     'args'    => [
                         'variant' => 'info',
-                        'content' => '<p><strong>' . esc_html__('Preview & Apply to Existing Posts:', 'bws-meta-manager') . '</strong> '
-                                   . esc_html__('Coming as part of the unified Migration / Preview tool. Active rules still apply automatically when posts are saved.', 'bws-meta-manager') . '</p>',
+                        'content' => '<p><strong>' . esc_html__('Preview & Apply to Existing Posts:', 'meta-conductor') . '</strong> '
+                                   . esc_html__('Coming as part of the unified Migration / Preview tool. Active rules still apply automatically when posts are saved.', 'meta-conductor') . '</p>',
                     ],
                 ],
             ],
@@ -149,7 +149,7 @@ class TitleSlugConfig {
      * Public post types minus attachment (title/slug rules don't apply to media).
      */
     private static function post_type_options_no_attachment(): array {
-        $options    = ['' => __('— Select post type —', 'bws-meta-manager')];
+        $options    = ['' => __('— Select post type —', 'meta-conductor')];
         $post_types = get_post_types(['public' => true], 'objects');
         unset($post_types['attachment']);
 
@@ -165,23 +165,23 @@ class TitleSlugConfig {
      */
     private static function token_reference_html(): string {
         $rows = [
-            ['<code>{meta:field_name}</code>', __('Raw field value', 'bws-meta-manager'), __('Sanitized value', 'bws-meta-manager')],
-            ['<code>{default_title}</code>',   __('Title before this rule runs', 'bws-meta-manager'), '—'],
-            ['<code>{default_slug}</code>',    '—', __('Slug derived from computed title', 'bws-meta-manager')],
+            ['<code>{meta:field_name}</code>', __('Raw field value', 'meta-conductor'), __('Sanitized value', 'meta-conductor')],
+            ['<code>{default_title}</code>',   __('Title before this rule runs', 'meta-conductor'), '—'],
+            ['<code>{default_slug}</code>',    '—', __('Slug derived from computed title', 'meta-conductor')],
             ['<code>{date_year:field}</code>', '2024', '2024'],
-            ['<code>{date_month:field}</code>', __('March', 'bws-meta-manager'), '03'],
+            ['<code>{date_month:field}</code>', __('March', 'meta-conductor'), '03'],
             ['<code>{date_day:field}</code>', '15', '15'],
             ['<code>{date_hour:field}</code>', '14', '14'],
             ['<code>{date_minute:field}</code>', '30', '30'],
-            ['<code>{pub_year}</code>', __('2024 (publication date, local time)', 'bws-meta-manager'), '2024'],
-            ['<code>{pub_month}</code>', __('March', 'bws-meta-manager'), '03'],
-            ['<code>{pub_day} / {pub_hour} / {pub_minute}</code>', __('Same numeric pattern as above', 'bws-meta-manager'), ''],
-            ['<code>{term:taxonomy}</code>', __('First term name (alpha)', 'bws-meta-manager'), __('First term slug', 'bws-meta-manager')],
-            ['<code>{terms:taxonomy}</code>', __('All term names, comma-joined', 'bws-meta-manager'), __('All slugs, hyphen-joined', 'bws-meta-manager')],
+            ['<code>{pub_year}</code>', __('2024 (publication date, local time)', 'meta-conductor'), '2024'],
+            ['<code>{pub_month}</code>', __('March', 'meta-conductor'), '03'],
+            ['<code>{pub_day} / {pub_hour} / {pub_minute}</code>', __('Same numeric pattern as above', 'meta-conductor'), ''],
+            ['<code>{term:taxonomy}</code>', __('First term name (alpha)', 'meta-conductor'), __('First term slug', 'meta-conductor')],
+            ['<code>{terms:taxonomy}</code>', __('All term names, comma-joined', 'meta-conductor'), __('All slugs, hyphen-joined', 'meta-conductor')],
         ];
 
-        $html  = '<details><summary style="cursor:pointer;"><strong>' . esc_html__('Available tokens', 'bws-meta-manager') . '</strong></summary>';
-        $html .= '<table class="widefat" style="margin-top:8px;font-size:12px;"><thead><tr><th>' . esc_html__('Token', 'bws-meta-manager') . '</th><th>' . esc_html__('Title output', 'bws-meta-manager') . '</th><th>' . esc_html__('Slug output', 'bws-meta-manager') . '</th></tr></thead><tbody>';
+        $html  = '<details><summary style="cursor:pointer;"><strong>' . esc_html__('Available tokens', 'meta-conductor') . '</strong></summary>';
+        $html .= '<table class="widefat" style="margin-top:8px;font-size:12px;"><thead><tr><th>' . esc_html__('Token', 'meta-conductor') . '</th><th>' . esc_html__('Title output', 'meta-conductor') . '</th><th>' . esc_html__('Slug output', 'meta-conductor') . '</th></tr></thead><tbody>';
 
         foreach ($rows as $row) {
             $html .= '<tr><td>' . $row[0] . '</td><td>' . esc_html($row[1]) . '</td><td>' . esc_html($row[2]) . '</td></tr>';

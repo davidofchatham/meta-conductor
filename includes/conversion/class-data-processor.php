@@ -157,7 +157,7 @@ class DataProcessor {
         $result['total_items'] = count( $items );
 
         if ( empty( $items ) ) {
-            $result['message'] = __( 'No items found to copy.', 'bws-meta-manager' );
+            $result['message'] = __( 'No items found to copy.', 'meta-conductor' );
             return $result;
         }
 
@@ -181,7 +181,7 @@ class DataProcessor {
             // Check memory and time limits
             if ( $this->should_stop_processing() ) {
                 $result['stopped_early'] = true;
-                $result['message'] = __( 'Processing stopped due to resource limits.', 'bws-meta-manager' );
+                $result['message'] = __( 'Processing stopped due to resource limits.', 'meta-conductor' );
                 break;
             }
         }
@@ -225,7 +225,7 @@ class DataProcessor {
 
         if ( empty( $items ) ) {
             $error_message = sprintf(
-                __( 'No items found with data in the source field. Checked field "%s" (%s) in %d %s.', 'bws-meta-manager' ),
+                __( 'No items found with data in the source field. Checked field "%s" (%s) in %d %s.', 'meta-conductor' ),
                 $this->last_conversion_debug_info['field_name'] ?? 'unknown',
                 $this->last_conversion_debug_info['actual_field_name'] ?? 'unknown',
                 $this->last_conversion_debug_info['total_items_checked'] ?? 0,
@@ -263,7 +263,7 @@ class DataProcessor {
             // Check memory and time limits
             if ( $this->should_stop_processing() ) {
                 $result['stopped_early'] = true;
-                $result['message'] = __( 'Processing stopped due to resource limits.', 'bws-meta-manager' );
+                $result['message'] = __( 'Processing stopped due to resource limits.', 'meta-conductor' );
                 break;
             }
         }
@@ -297,13 +297,13 @@ public function process_conversion_chunk( array $config, bool $dry_run = false, 
         // First chunk - initialize session
         $session_data = $this->initialize_conversion_session( $config, $session_id );
         if ( ! $session_data ) {
-            $result['errors'] = [ __( 'Failed to initialize conversion session.', 'bws-meta-manager' ) ];
+            $result['errors'] = [ __( 'Failed to initialize conversion session.', 'meta-conductor' ) ];
             return $result;
         }
     }
     
     if ( ! $session_data ) {
-        $result['errors'] = [ __( 'Invalid session. Please restart the conversion.', 'bws-meta-manager' ) ];
+        $result['errors'] = [ __( 'Invalid session. Please restart the conversion.', 'meta-conductor' ) ];
         return $result;
     }
     
@@ -439,7 +439,7 @@ private function process_conversion_batch_by_type( array $items, array $config, 
         'processed' => 0,
         'successful' => 0,
         'failed' => count( $items ),
-        'errors' => [ __( 'Invalid conversion type.', 'bws-meta-manager' ) ],
+        'errors' => [ __( 'Invalid conversion type.', 'meta-conductor' ) ],
         'start_time' => microtime( true ),
         'end_time' => microtime( true ),
         'execution_time' => 0
@@ -692,7 +692,7 @@ public function cleanup_old_sessions(): void {
         ];
         
         if ( empty( $config['source_field'] ) ) {
-            $result['errors'][] = __( 'Source field is required.', 'bws-meta-manager' );
+            $result['errors'][] = __( 'Source field is required.', 'meta-conductor' );
             return $result;
         }
         
@@ -700,7 +700,7 @@ public function cleanup_old_sessions(): void {
         
         if ( ! $source_field_data ) {
             $result['errors'][] = sprintf(
-                __( 'Source field not found. Field key: %s', 'bws-meta-manager' ),
+                __( 'Source field not found. Field key: %s', 'meta-conductor' ),
                 $config['source_field']
             );
             return $result;
@@ -709,7 +709,7 @@ public function cleanup_old_sessions(): void {
         // For map data, check if field supports options
         if ( ! empty( $config['mappings'] ) && ! $source_field_data['has_options'] ) {
             $result['errors'][] = sprintf(
-                __( 'Source field "%s" (%s) does not support options. Only select, checkbox, radio, and button_group fields can be mapped.', 'bws-meta-manager' ),
+                __( 'Source field "%s" (%s) does not support options. Only select, checkbox, radio, and button_group fields can be mapped.', 'meta-conductor' ),
                 $source_field_data['label'],
                 $source_field_data['type']
             );
@@ -969,7 +969,7 @@ public function cleanup_old_sessions(): void {
                     $batch_result['failed']++;
                     $batch_result['errors'][] = sprintf(
                         /* translators: %1$s: item type, %2$d: item ID, %3$s: error message */
-                        __( '%1$s %2$d: %3$s', 'bws-meta-manager' ),
+                        __( '%1$s %2$d: %3$s', 'meta-conductor' ),
                         $config['content_type'] === 'posts' ? 'Post' : 'Term',
                         $item['id'],
                         $conversion_result['error']
@@ -979,7 +979,7 @@ public function cleanup_old_sessions(): void {
                 $batch_result['failed']++;
                 $batch_result['errors'][] = sprintf(
                     /* translators: %1$s: item type, %2$d: item ID, %3$s: error message */
-                    __( '%1$s %2$d: %3$s', 'bws-meta-manager' ),
+                    __( '%1$s %2$d: %3$s', 'meta-conductor' ),
                     $config['content_type'] === 'posts' ? 'Post' : 'Term',
                     $item['id'],
                     $e->getMessage()
@@ -1030,7 +1030,7 @@ public function cleanup_old_sessions(): void {
                     $batch_result['failed']++;
                     $error_message = sprintf(
                         /* translators: %1$s: item type, %2$d: item ID, %3$s: error message */
-                        __( '%1$s %2$d: %3$s', 'bws-meta-manager' ),
+                        __( '%1$s %2$d: %3$s', 'meta-conductor' ),
                         $config['content_type'] === 'posts' ? 'Post' : 'Term',
                         $item['id'],
                         $conversion_result['error'] ?? 'Unknown error'
@@ -1042,7 +1042,7 @@ public function cleanup_old_sessions(): void {
                 $batch_result['failed']++;
                 $error_message = sprintf(
                     /* translators: %1$s: item type, %2$d: item ID, %3$s: error message */
-                    __( '%1$s %2$d: %3$s', 'bws-meta-manager' ),
+                    __( '%1$s %2$d: %3$s', 'meta-conductor' ),
                     $config['content_type'] === 'posts' ? 'Post' : 'Term',
                     $item['id'],
                     $e->getMessage()
@@ -1053,7 +1053,7 @@ public function cleanup_old_sessions(): void {
 
             // Check if we should stop early
             if ( $this->should_stop_batch_processing( $batch_result['start_time'] ) ) {
-                $batch_result['warnings'][] = __( 'Batch stopped early due to resource limits.', 'bws-meta-manager' );
+                $batch_result['warnings'][] = __( 'Batch stopped early due to resource limits.', 'meta-conductor' );
                 break;
             }
         }
@@ -1088,7 +1088,7 @@ public function cleanup_old_sessions(): void {
             default:
                 return [
                     'success' => false,
-                    'error' => __( 'Invalid copy type.', 'bws-meta-manager' )
+                    'error' => __( 'Invalid copy type.', 'meta-conductor' )
                 ];
         }
     }
@@ -1102,7 +1102,7 @@ public function cleanup_old_sessions(): void {
         if ( ! $source_field_data ) {
             return [
                 'success' => false,
-                'error' => __( 'Source field not found.', 'bws-meta-manager' )
+                'error' => __( 'Source field not found.', 'meta-conductor' )
             ];
         }
 
@@ -1117,7 +1117,7 @@ public function cleanup_old_sessions(): void {
         if ( empty( $source_value ) ) {
             return [
                 'success' => true,
-                'message' => __( 'No data to map.', 'bws-meta-manager' )
+                'message' => __( 'No data to map.', 'meta-conductor' )
             ];
         }
 
@@ -1139,7 +1139,7 @@ public function cleanup_old_sessions(): void {
         if ( ! $source_field_data || ! $target_field_data ) {
             return [
                 'success' => false,
-                'error' => __( 'Field data not found.', 'bws-meta-manager' )
+                'error' => __( 'Field data not found.', 'meta-conductor' )
             ];
         }
 
@@ -1154,7 +1154,7 @@ public function cleanup_old_sessions(): void {
         if ( empty( $source_value ) && ! is_numeric( $source_value ) ) {
             return [
                 'success' => true,
-                'message' => __( 'No data to copy.', 'bws-meta-manager' )
+                'message' => __( 'No data to copy.', 'meta-conductor' )
             ];
         }
 
@@ -1172,7 +1172,7 @@ public function cleanup_old_sessions(): void {
             if ( ! $update_result ) {
                 return [
                     'success' => false,
-                    'error' => __( 'Failed to update field value.', 'bws-meta-manager' )
+                    'error' => __( 'Failed to update field value.', 'meta-conductor' )
                 ];
             }
         }
@@ -1193,7 +1193,7 @@ public function cleanup_old_sessions(): void {
         if ( ! $source_field_data ) {
             return [
                 'success' => false,
-                'error' => __( 'Source field not found.', 'bws-meta-manager' )
+                'error' => __( 'Source field not found.', 'meta-conductor' )
             ];
         }
 
@@ -1207,7 +1207,7 @@ public function cleanup_old_sessions(): void {
         if ( empty( $source_value ) ) {
             return [
                 'success' => true,
-                'message' => __( 'No data to copy.', 'bws-meta-manager' )
+                'message' => __( 'No data to copy.', 'meta-conductor' )
             ];
         }
 
@@ -1217,7 +1217,7 @@ public function cleanup_old_sessions(): void {
         if ( empty( $term_names ) ) {
             return [
                 'success' => true,
-                'message' => __( 'No valid terms extracted.', 'bws-meta-manager' )
+                'message' => __( 'No valid terms extracted.', 'meta-conductor' )
             ];
         }
 
@@ -1270,7 +1270,7 @@ public function cleanup_old_sessions(): void {
         if ( ! $target_field_data ) {
             return [
                 'success' => false,
-                'error' => __( 'Target field not found.', 'bws-meta-manager' )
+                'error' => __( 'Target field not found.', 'meta-conductor' )
             ];
         }
 
@@ -1285,7 +1285,7 @@ public function cleanup_old_sessions(): void {
         if ( is_wp_error( $terms ) || empty( $terms ) ) {
             return [
                 'success' => true,
-                'message' => __( 'No terms to copy.', 'bws-meta-manager' )
+                'message' => __( 'No terms to copy.', 'meta-conductor' )
             ];
         }
 
@@ -1306,7 +1306,7 @@ public function cleanup_old_sessions(): void {
             if ( ! $update_result ) {
                 return [
                     'success' => false,
-                    'error' => __( 'Failed to update field value.', 'bws-meta-manager' )
+                    'error' => __( 'Failed to update field value.', 'meta-conductor' )
                 ];
             }
         }
@@ -1325,7 +1325,7 @@ public function cleanup_old_sessions(): void {
         if ( $config['content_type'] !== 'posts' ) {
             return [
                 'success' => false,
-                'error' => __( 'Taxonomy to taxonomy copying only supported for posts.', 'bws-meta-manager' )
+                'error' => __( 'Taxonomy to taxonomy copying only supported for posts.', 'meta-conductor' )
             ];
         }
 
@@ -1335,7 +1335,7 @@ public function cleanup_old_sessions(): void {
         if ( is_wp_error( $source_terms ) || empty( $source_terms ) ) {
             return [
                 'success' => true,
-                'message' => __( 'No terms to copy.', 'bws-meta-manager' )
+                'message' => __( 'No terms to copy.', 'meta-conductor' )
             ];
         }
 
@@ -1391,7 +1391,7 @@ public function cleanup_old_sessions(): void {
         if ( ! $target_field_data ) {
             return [
                 'success' => false,
-                'error' => __( 'Target field not found.', 'bws-meta-manager' )
+                'error' => __( 'Target field not found.', 'meta-conductor' )
             ];
         }
 
@@ -1429,7 +1429,7 @@ public function cleanup_old_sessions(): void {
             if ( ! $update_result ) {
                 return [
                     'success' => false,
-                    'error' => __( 'Failed to update target field.', 'bws-meta-manager' )
+                    'error' => __( 'Failed to update target field.', 'meta-conductor' )
                 ];
             }
         }
@@ -1713,48 +1713,48 @@ public function cleanup_old_sessions(): void {
         $errors = [];
 
         if ( empty( $config['content_type'] ) || ! in_array( $config['content_type'], [ 'posts', 'taxonomy_terms' ], true ) ) {
-            $errors[] = __( 'Valid content type is required.', 'bws-meta-manager' );
+            $errors[] = __( 'Valid content type is required.', 'meta-conductor' );
         }
 
         if ( empty( $config['copy_type'] ) || ! in_array( $config['copy_type'], self::COPY_TYPES, true ) ) {
-            $errors[] = __( 'Valid copy type is required.', 'bws-meta-manager' );
+            $errors[] = __( 'Valid copy type is required.', 'meta-conductor' );
         }
 
         // Validate specific copy type requirements
         switch ( $config['copy_type'] ?? '' ) {
             case 'field_to_field':
                 if ( empty( $config['source_field'] ) ) {
-                    $errors[] = __( 'Source field is required.', 'bws-meta-manager' );
+                    $errors[] = __( 'Source field is required.', 'meta-conductor' );
                 }
                 if ( empty( $config['target_field'] ) ) {
-                    $errors[] = __( 'Target field is required.', 'bws-meta-manager' );
+                    $errors[] = __( 'Target field is required.', 'meta-conductor' );
                 }
                 break;
                 
             case 'field_to_taxonomy':
                 if ( empty( $config['source_field'] ) ) {
-                    $errors[] = __( 'Source field is required.', 'bws-meta-manager' );
+                    $errors[] = __( 'Source field is required.', 'meta-conductor' );
                 }
                 if ( empty( $config['target_taxonomy'] ) ) {
-                    $errors[] = __( 'Target taxonomy is required.', 'bws-meta-manager' );
+                    $errors[] = __( 'Target taxonomy is required.', 'meta-conductor' );
                 }
                 break;
                 
             case 'taxonomy_to_field':
                 if ( empty( $config['source_taxonomy'] ) ) {
-                    $errors[] = __( 'Source taxonomy is required.', 'bws-meta-manager' );
+                    $errors[] = __( 'Source taxonomy is required.', 'meta-conductor' );
                 }
                 if ( empty( $config['target_field'] ) ) {
-                    $errors[] = __( 'Target field is required.', 'bws-meta-manager' );
+                    $errors[] = __( 'Target field is required.', 'meta-conductor' );
                 }
                 break;
                 
             case 'taxonomy_to_taxonomy':
                 if ( empty( $config['source_taxonomy'] ) ) {
-                    $errors[] = __( 'Source taxonomy is required.', 'bws-meta-manager' );
+                    $errors[] = __( 'Source taxonomy is required.', 'meta-conductor' );
                 }
                 if ( empty( $config['target_taxonomy'] ) ) {
-                    $errors[] = __( 'Target taxonomy is required.', 'bws-meta-manager' );
+                    $errors[] = __( 'Target taxonomy is required.', 'meta-conductor' );
                 }
                 break;
         }
@@ -1772,27 +1772,27 @@ public function cleanup_old_sessions(): void {
         $errors = [];
 
         if ( empty( $config['content_type'] ) || ! in_array( $config['content_type'], [ 'posts', 'taxonomy_terms' ], true ) ) {
-            $errors[] = __( 'Valid content type is required.', 'bws-meta-manager' );
+            $errors[] = __( 'Valid content type is required.', 'meta-conductor' );
         }
 
         if ( empty( $config['source_field'] ) ) {
-            $errors[] = __( 'Source field is required.', 'bws-meta-manager' );
+            $errors[] = __( 'Source field is required.', 'meta-conductor' );
         }
 
         if ( empty( $config['mappings'] ) || ! is_array( $config['mappings'] ) ) {
-            $errors[] = __( 'Option mappings are required.', 'bws-meta-manager' );
+            $errors[] = __( 'Option mappings are required.', 'meta-conductor' );
         }
 
         if ( empty( $config['target_type'] ) || ! in_array( $config['target_type'], [ 'field', 'taxonomy' ], true ) ) {
-            $errors[] = __( 'Valid target type is required.', 'bws-meta-manager' );
+            $errors[] = __( 'Valid target type is required.', 'meta-conductor' );
         }
 
         if ( $config['target_type'] === 'field' && empty( $config['target_field'] ) ) {
-            $errors[] = __( 'Target field is required when mapping to field.', 'bws-meta-manager' );
+            $errors[] = __( 'Target field is required when mapping to field.', 'meta-conductor' );
         }
 
         if ( $config['target_type'] === 'taxonomy' && empty( $config['target_taxonomy'] ) ) {
-            $errors[] = __( 'Target taxonomy is required when mapping to taxonomy.', 'bws-meta-manager' );
+            $errors[] = __( 'Target taxonomy is required when mapping to taxonomy.', 'meta-conductor' );
         }
 
         return [

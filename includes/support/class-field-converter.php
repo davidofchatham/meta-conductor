@@ -304,7 +304,7 @@ class FieldConverter implements FieldConverterInterface {
         if ( ! in_array( $source_type, $this->supported_types, true ) ) {
             return [
                 'valid'   => false,
-                'message' => sprintf( __( 'Source field type "%s" is not supported.', 'bws-meta-manager' ), $source_type ),
+                'message' => sprintf( __( 'Source field type "%s" is not supported.', 'meta-conductor' ), $source_type ),
                 'warning' => '',
             ];
         }
@@ -312,7 +312,7 @@ class FieldConverter implements FieldConverterInterface {
         if ( ! in_array( $target_type, $this->supported_types, true ) ) {
             return [
                 'valid'   => false,
-                'message' => sprintf( __( 'Target field type "%s" is not supported.', 'bws-meta-manager' ), $target_type ),
+                'message' => sprintf( __( 'Target field type "%s" is not supported.', 'meta-conductor' ), $target_type ),
                 'warning' => '',
             ];
         }
@@ -322,17 +322,17 @@ class FieldConverter implements FieldConverterInterface {
 
         // Multi-value to single-value conversion
         if ( $this->is_multi_value_type( $source_type ) && ! $this->is_multi_value_type( $target_type ) ) {
-            $warning = __( 'Converting from multi-value to single-value field may result in data loss. Only the first value will be retained.', 'bws-meta-manager' );
+            $warning = __( 'Converting from multi-value to single-value field may result in data loss. Only the first value will be retained.', 'meta-conductor' );
         }
 
         // Structured to unstructured conversion
         if ( in_array( $source_type, [ 'wysiwyg', 'oembed' ], true ) && in_array( $target_type, [ 'text', 'email', 'url' ], true ) ) {
-            $warning = __( 'Converting from rich content field to plain text will strip formatting.', 'bws-meta-manager' );
+            $warning = __( 'Converting from rich content field to plain text will strip formatting.', 'meta-conductor' );
         }
 
         // Numeric conversions
         if ( $source_type === 'number' && ! in_array( $target_type, [ 'number', 'text', 'textarea' ], true ) ) {
-            $warning = __( 'Converting from number field may produce unexpected results.', 'bws-meta-manager' );
+            $warning = __( 'Converting from number field may produce unexpected results.', 'meta-conductor' );
         }
 
         return [
@@ -418,7 +418,7 @@ class FieldConverter implements FieldConverterInterface {
         $normalized = $this->normalize_to_array( $value, $field_type );
 
         if ( empty( $normalized ) ) {
-            return __( '(empty)', 'bws-meta-manager' );
+            return __( '(empty)', 'meta-conductor' );
         }
 
         // Limit items if specified
@@ -426,7 +426,7 @@ class FieldConverter implements FieldConverterInterface {
             $display_items = array_slice( $normalized, 0, $options['max_items'] );
             $remaining     = count( $normalized ) - $options['max_items'];
             $display       = implode( $options['delimiter'], $display_items );
-            return sprintf( '%s %s', $display, sprintf( __( '(+%d more)', 'bws-meta-manager' ), $remaining ) );
+            return sprintf( '%s %s', $display, sprintf( __( '(+%d more)', 'meta-conductor' ), $remaining ) );
         }
 
         return implode( $options['delimiter'], $normalized );

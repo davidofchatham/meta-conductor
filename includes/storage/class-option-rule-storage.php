@@ -640,7 +640,7 @@ class OptionRuleStorage implements RuleStorage {
      */
     public function export_rules(array $filters = []): array {
         $export = [
-            'version' => defined('BWS_META_MANAGER_VERSION') ? BWS_META_MANAGER_VERSION : '0.3.0',
+            'version' => defined('META_CONDUCTOR_VERSION') ? META_CONDUCTOR_VERSION : '0.3.0',
             'storage_type' => 'options',
             'exported_at' => current_time('mysql'),
             'rules' => [],

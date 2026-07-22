@@ -27,8 +27,8 @@ class WireframeConfig {
         // Sibling config classes (ConfigHelpers, *Config) autoload via PSR-4
         // (autoload.php); no manual require chain (Phase 2a).
         return [
-            'title'    => __('Meta Conductor', 'bws-meta-manager'),
-            'subtitle' => __('Unified meta and taxonomy management.', 'bws-meta-manager'),
+            'title'    => __('Meta Conductor', 'meta-conductor'),
+            'subtitle' => __('Unified meta and taxonomy management.', 'meta-conductor'),
             'tabs'     => [
                 self::auto_set_tab(),
                 self::format_transform_tab(),
@@ -45,7 +45,7 @@ class WireframeConfig {
     private static function format_transform_tab(): array {
         return [
             'id'       => 'format-transform',
-            'title'    => __('Format & Transform', 'bws-meta-manager'),
+            'title'    => __('Format & Transform', 'meta-conductor'),
             'sections' => [
                 TitleSlugConfig::section(),
             ],
@@ -58,7 +58,7 @@ class WireframeConfig {
     private static function auto_set_tab(): array {
         return [
             'id'       => 'auto-set',
-            'title'    => __('Auto-Set Terms', 'bws-meta-manager'),
+            'title'    => __('Auto-Set Terms', 'meta-conductor'),
             'sections' => [
                 // Group B: based on terms on a related post (highest deployment priority)
                 PropagationConfig::section(),
@@ -78,7 +78,7 @@ class WireframeConfig {
     private static function restrict_tab(): array {
         return [
             'id'       => 'restrict',
-            'title'    => __('Restrict', 'bws-meta-manager'),
+            'title'    => __('Restrict', 'meta-conductor'),
             'sections' => [
                 LevelRestrictionConfig::section(),
             ],

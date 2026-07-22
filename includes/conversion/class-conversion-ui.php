@@ -101,9 +101,9 @@ class ConversionUi {
     public function render_page(): void {
         ?>
         <div class="wrap">
-            <h1><?php esc_html_e('Data Conversion', 'bws-meta-manager'); ?></h1>
+            <h1><?php esc_html_e('Data Conversion', 'meta-conductor'); ?></h1>
             <p class="description">
-                <?php esc_html_e('Convert ACF field data into taxonomy terms or between field types.', 'bws-meta-manager'); ?>
+                <?php esc_html_e('Convert ACF field data into taxonomy terms or between field types.', 'meta-conductor'); ?>
             </p>
             <?php $this->render_tab_content(); ?>
         </div>
@@ -119,8 +119,8 @@ class ConversionUi {
             ?>
             <div class="notice notice-error">
                 <p>
-                    <strong><?php esc_html_e( 'ACF Data Conversion Tool', 'bws-meta-manager' ); ?></strong><br>
-                    <?php esc_html_e( 'Advanced Custom Fields Pro is required for this tool to function properly.', 'bws-meta-manager' ); ?>
+                    <strong><?php esc_html_e( 'ACF Data Conversion Tool', 'meta-conductor' ); ?></strong><br>
+                    <?php esc_html_e( 'Advanced Custom Fields Pro is required for this tool to function properly.', 'meta-conductor' ); ?>
                 </p>
             </div>
             <?php
@@ -139,7 +139,7 @@ class ConversionUi {
                     <?php echo esc_html( $message ); ?>
                     <?php if ( 'success' === $result ) : ?>
                         <a href="#" class="button button-secondary view-conversion-report" style="margin-left: 10px;">
-                            <?php esc_html_e( 'View Conversion Report', 'bws-meta-manager' ); ?>
+                            <?php esc_html_e( 'View Conversion Report', 'meta-conductor' ); ?>
                         </a>
                     <?php endif; ?>
                 </p>
@@ -189,13 +189,13 @@ class ConversionUi {
         ?>
         <div class="bws-conversion-tab-content">
             <div class="bws-conversion-section">
-                <h2><?php esc_html_e( 'Copy Data', 'bws-meta-manager' ); ?></h2>
+                <h2><?php esc_html_e( 'Copy Data', 'meta-conductor' ); ?></h2>
                 <p class="description">
-                    <?php esc_html_e( 'Copy data as-is between ACF fields, or between taxonomy terms. Original data is preserved and copied to the target location.', 'bws-meta-manager' ); ?>
+                    <?php esc_html_e( 'Copy data as-is between ACF fields, or between taxonomy terms. Original data is preserved and copied to the target location.', 'meta-conductor' ); ?>
                 </p>
 
                 <form id="copy-data-form" class="bws-conversion-form">
-                    <?php wp_nonce_field( 'bws_taxonomy_manager_nonce', 'nonce' ); ?>
+                    <?php wp_nonce_field( 'bws_meta_conductor_nonce', 'nonce' ); ?>
                     <input type="hidden" name="conversion_type" value="copy_data">
 
                     <table class="form-table" role="presentation">
@@ -203,48 +203,48 @@ class ConversionUi {
                             <!-- Content Filter Section -->
                             <tr>
                                 <th scope="row">
-                                    <label for="content_type"><?php esc_html_e( 'Content Type', 'bws-meta-manager' ); ?></label>
+                                    <label for="content_type"><?php esc_html_e( 'Content Type', 'meta-conductor' ); ?></label>
                                 </th>
                                 <td>
                                     <select name="content_type" id="content_type" class="regular-text" required>
-                                        <option value=""><?php esc_html_e( 'Select content type...', 'bws-meta-manager' ); ?></option>
-                                        <option value="posts"><?php esc_html_e( 'Posts', 'bws-meta-manager' ); ?></option>
-                                        <option value="taxonomy_terms"><?php esc_html_e( 'Taxonomy Terms', 'bws-meta-manager' ); ?></option>
+                                        <option value=""><?php esc_html_e( 'Select content type...', 'meta-conductor' ); ?></option>
+                                        <option value="posts"><?php esc_html_e( 'Posts', 'meta-conductor' ); ?></option>
+                                        <option value="taxonomy_terms"><?php esc_html_e( 'Taxonomy Terms', 'meta-conductor' ); ?></option>
                                     </select>
-                                    <p class="description"><?php esc_html_e( 'Whether to work with posts or taxonomy terms.', 'bws-meta-manager' ); ?></p>
+                                    <p class="description"><?php esc_html_e( 'Whether to work with posts or taxonomy terms.', 'meta-conductor' ); ?></p>
                                 </td>
                             </tr>
 
                             <!-- Post Type Selection (shown when content_type = posts) -->
                             <tr id="post_types_row" style="display: none;">
                                 <th scope="row">
-                                    <label for="post_types"><?php esc_html_e( 'Post Types', 'bws-meta-manager' ); ?></label>
+                                    <label for="post_types"><?php esc_html_e( 'Post Types', 'meta-conductor' ); ?></label>
                                 </th>
                                 <td>
                                     <?php $this->render_post_types_select(); ?>
-                                    <p class="description"><?php esc_html_e( 'Select which post types to include.', 'bws-meta-manager' ); ?></p>
+                                    <p class="description"><?php esc_html_e( 'Select which post types to include.', 'meta-conductor' ); ?></p>
                                 </td>
                             </tr>
 
                             <!-- Post Status Selection (shown when content_type = posts) -->
                             <tr id="post_status_row" style="display: none;">
                                 <th scope="row">
-                                    <label for="post_status"><?php esc_html_e( 'Post Status', 'bws-meta-manager' ); ?></label>
+                                    <label for="post_status"><?php esc_html_e( 'Post Status', 'meta-conductor' ); ?></label>
                                 </th>
                                 <td>
                                     <?php $this->render_post_status_select(); ?>
-                                    <p class="description"><?php esc_html_e( 'Select which post statuses to include.', 'bws-meta-manager' ); ?></p>
+                                    <p class="description"><?php esc_html_e( 'Select which post statuses to include.', 'meta-conductor' ); ?></p>
                                 </td>
                             </tr>
 
                             <!-- Taxonomy Selection (shown when content_type = taxonomy_terms) -->
                             <tr id="taxonomies_row" style="display: none;">
                                 <th scope="row">
-                                    <label for="taxonomies"><?php esc_html_e( 'Taxonomies', 'bws-meta-manager' ); ?></label>
+                                    <label for="taxonomies"><?php esc_html_e( 'Taxonomies', 'meta-conductor' ); ?></label>
                                 </th>
                                 <td>
                                     <?php $this->render_taxonomies_select(); ?>
-                                    <p class="description"><?php esc_html_e( 'Select which taxonomies to include.', 'bws-meta-manager' ); ?></p>
+                                    <p class="description"><?php esc_html_e( 'Select which taxonomies to include.', 'meta-conductor' ); ?></p>
                                 </td>
                             </tr>
 
@@ -252,80 +252,80 @@ class ConversionUi {
                             <?php 
 							echo '<tr id="copy_type_row" style="display: none;">
 								<th scope="row">
-									' . esc_html__( 'Copy Type', 'bws-meta-manager' ) . ' <span class="required">*</span>
+									' . esc_html__( 'Copy Type', 'meta-conductor' ) . ' <span class="required">*</span>
 								</th>
 								<td>
 									<fieldset>
 										<label>
 											<input type="radio" name="copy_type" value="field_to_field" id="copy_field_to_field" required>
-											' . esc_html__( 'Between ACF Fields', 'bws-meta-manager' ) . '
+											' . esc_html__( 'Between ACF Fields', 'meta-conductor' ) . '
 										</label><br>
 										<label>
 											<input type="radio" name="copy_type" value="field_to_taxonomy" id="copy_field_to_taxonomy">
-											' . esc_html__( 'ACF Field to Taxonomy Terms', 'bws-meta-manager' ) . '
+											' . esc_html__( 'ACF Field to Taxonomy Terms', 'meta-conductor' ) . '
 										</label><br>
 										<label>
 											<input type="radio" name="copy_type" value="taxonomy_to_field" id="copy_taxonomy_to_field">
-											' . esc_html__( 'Taxonomy Terms to ACF Field', 'bws-meta-manager' ) . '
+											' . esc_html__( 'Taxonomy Terms to ACF Field', 'meta-conductor' ) . '
 										</label><br>
 										<label>
 											<input type="radio" name="copy_type" value="taxonomy_to_taxonomy" id="copy_taxonomy_to_taxonomy">
-											' . esc_html__( 'Between Taxonomies', 'bws-meta-manager' ) . '
+											' . esc_html__( 'Between Taxonomies', 'meta-conductor' ) . '
 										</label>
 									</fieldset>
-									<p class="description">' . esc_html__( 'Choose the type of data copying operation.', 'bws-meta-manager' ) . '</p>
+									<p class="description">' . esc_html__( 'Choose the type of data copying operation.', 'meta-conductor' ) . '</p>
 								</td>
 							</tr>';
 							
 							// Source Field Selection
 							echo '<tr id="source_field_row" style="display: none;">
 								<th scope="row">
-									<label for="source_field">' . esc_html__( 'Source Field', 'bws-meta-manager' ) . ' <span class="required">*</span></label>
+									<label for="source_field">' . esc_html__( 'Source Field', 'meta-conductor' ) . ' <span class="required">*</span></label>
 								</th>
 								<td>
 									<select name="source_field" id="source_field" class="regular-text" data-conditional-required="field_to_field,field_to_taxonomy">
-										<option value="">' . esc_html__( 'Select source field...', 'bws-meta-manager' ) . '</option>
+										<option value="">' . esc_html__( 'Select source field...', 'meta-conductor' ) . '</option>
 									</select>
-									<p class="description">' . esc_html__( 'Field containing the data to copy.', 'bws-meta-manager' ) . '</p>
+									<p class="description">' . esc_html__( 'Field containing the data to copy.', 'meta-conductor' ) . '</p>
 								</td>
 							</tr>';
 							
 							// Source Taxonomy Selection
 							echo '<tr id="source_taxonomy_row" style="display: none;">
 								<th scope="row">
-									<label for="source_taxonomy">' . esc_html__( 'Source Taxonomy', 'bws-meta-manager' ) . ' <span class="required">*</span></label>
+									<label for="source_taxonomy">' . esc_html__( 'Source Taxonomy', 'meta-conductor' ) . ' <span class="required">*</span></label>
 								</th>
 								<td>
 									<select name="source_taxonomy" id="source_taxonomy" class="regular-text" data-conditional-required="taxonomy_to_field,taxonomy_to_taxonomy">
-										<option value="">' . esc_html__( 'Select source taxonomy...', 'bws-meta-manager' ) . '</option>
+										<option value="">' . esc_html__( 'Select source taxonomy...', 'meta-conductor' ) . '</option>
 									</select>
-									<p class="description">' . esc_html__( 'Taxonomy containing the terms to copy.', 'bws-meta-manager' ) . '</p>
+									<p class="description">' . esc_html__( 'Taxonomy containing the terms to copy.', 'meta-conductor' ) . '</p>
 								</td>
 							</tr>';
 							
 							// Target Field Selection
 							echo '<tr id="target_field_row" style="display: none;">
 								<th scope="row">
-									<label for="target_field">' . esc_html__( 'Target Field', 'bws-meta-manager' ) . ' <span class="required">*</span></label>
+									<label for="target_field">' . esc_html__( 'Target Field', 'meta-conductor' ) . ' <span class="required">*</span></label>
 								</th>
 								<td>
 									<select name="target_field" id="target_field" class="regular-text" data-conditional-required="field_to_field,taxonomy_to_field">
-										<option value="">' . esc_html__( 'Select target field...', 'bws-meta-manager' ) . '</option>
+										<option value="">' . esc_html__( 'Select target field...', 'meta-conductor' ) . '</option>
 									</select>
-									<p class="description">' . esc_html__( 'Field where the data will be copied.', 'bws-meta-manager' ) . '</p>
+									<p class="description">' . esc_html__( 'Field where the data will be copied.', 'meta-conductor' ) . '</p>
 								</td>
 							</tr>';
 							
 							// Target Taxonomy Selection
 							echo '<tr id="target_taxonomy_row" style="display: none;">
 								<th scope="row">
-									<label for="target_taxonomy">' . esc_html__( 'Target Taxonomy', 'bws-meta-manager' ) . ' <span class="required">*</span></label>
+									<label for="target_taxonomy">' . esc_html__( 'Target Taxonomy', 'meta-conductor' ) . ' <span class="required">*</span></label>
 								</th>
 								<td>
 									<select name="target_taxonomy" id="target_taxonomy" class="regular-text" data-conditional-required="field_to_taxonomy,taxonomy_to_taxonomy">
-										<option value="">' . esc_html__( 'Select target taxonomy...', 'bws-meta-manager' ) . '</option>
+										<option value="">' . esc_html__( 'Select target taxonomy...', 'meta-conductor' ) . '</option>
 									</select>
-									<p class="description">' . esc_html__( 'Taxonomy where terms will be created/assigned.', 'bws-meta-manager' ) . '</p>
+									<p class="description">' . esc_html__( 'Taxonomy where terms will be created/assigned.', 'meta-conductor' ) . '</p>
 								</td>
 							</tr>';
 							?>
@@ -333,38 +333,38 @@ class ConversionUi {
                             <!-- Term Assignment Options -->
                             <tr id="term_assignment_row" style="display: none;">
                                 <th scope="row">
-                                    <?php esc_html_e( 'Term Assignment', 'bws-meta-manager' ); ?>
+                                    <?php esc_html_e( 'Term Assignment', 'meta-conductor' ); ?>
                                 </th>
                                 <td>
                                     <fieldset>
                                         <label>
                                             <input type="radio" name="append_terms" value="0" checked>
-                                            <?php esc_html_e( 'Replace existing terms', 'bws-meta-manager' ); ?>
+                                            <?php esc_html_e( 'Replace existing terms', 'meta-conductor' ); ?>
                                         </label><br>
                                         <label>
                                             <input type="radio" name="append_terms" value="1">
-                                            <?php esc_html_e( 'Add to existing terms', 'bws-meta-manager' ); ?>
+                                            <?php esc_html_e( 'Add to existing terms', 'meta-conductor' ); ?>
                                         </label>
                                     </fieldset>
-                                    <p class="description"><?php esc_html_e( 'How to handle existing terms.', 'bws-meta-manager' ); ?></p>
+                                    <p class="description"><?php esc_html_e( 'How to handle existing terms.', 'meta-conductor' ); ?></p>
                                 </td>
                             </tr>
 
                             <!-- Batch Size -->
                             <tr id="batch_size_row" style="display: none;">
                                 <th scope="row">
-                                    <label for="batch_size"><?php esc_html_e( 'Batch Size', 'bws-meta-manager' ); ?></label>
+                                    <label for="batch_size"><?php esc_html_e( 'Batch Size', 'meta-conductor' ); ?></label>
                                 </th>
                                 <td>
                                     <input type="number" name="batch_size" id="batch_size" value="25" min="5" max="100" class="small-text">
-                                    <p class="description"><?php esc_html_e( 'Number of items to process per batch.', 'bws-meta-manager' ); ?></p>
+                                    <p class="description"><?php esc_html_e( 'Number of items to process per batch.', 'meta-conductor' ); ?></p>
                                 </td>
                             </tr>
                         </tbody>
                     </table>
 
                     <div class="bws-conversion-validation" id="copy-data-validation" style="display: none;">
-                        <h3><?php esc_html_e( 'Validation Results', 'bws-meta-manager' ); ?></h3>
+                        <h3><?php esc_html_e( 'Validation Results', 'meta-conductor' ); ?></h3>
                         <div class="validation-content"></div>
                     </div>
 
@@ -382,13 +382,13 @@ class ConversionUi {
         ?>
         <div class="bws-conversion-tab-content">
             <div class="bws-conversion-section">
-                <h2><?php esc_html_e( 'Map Data', 'bws-meta-manager' ); ?></h2>
+                <h2><?php esc_html_e( 'Map Data', 'meta-conductor' ); ?></h2>
                 <p class="description">
-                    <?php esc_html_e( 'Transform option field values by mapping them to new values in another field or to taxonomy terms.', 'bws-meta-manager' ); ?>
+                    <?php esc_html_e( 'Transform option field values by mapping them to new values in another field or to taxonomy terms.', 'meta-conductor' ); ?>
                 </p>
 
                 <form id="map-data-form" class="bws-conversion-form">
-                    <?php wp_nonce_field( 'bws_taxonomy_manager_nonce', 'nonce' ); ?>
+                    <?php wp_nonce_field( 'bws_meta_conductor_nonce', 'nonce' ); ?>
                     <input type="hidden" name="conversion_type" value="map_data">
 
                     <table class="form-table" role="presentation">
@@ -396,48 +396,48 @@ class ConversionUi {
                             <!-- Content Filter Section -->
                             <tr>
                                 <th scope="row">
-                                    <label for="map_content_type"><?php esc_html_e( 'Content Type', 'bws-meta-manager' ); ?></label>
+                                    <label for="map_content_type"><?php esc_html_e( 'Content Type', 'meta-conductor' ); ?></label>
                                 </th>
                                 <td>
                                     <select name="content_type" id="map_content_type" class="regular-text" required>
-                                        <option value=""><?php esc_html_e( 'Select content type...', 'bws-meta-manager' ); ?></option>
-                                        <option value="posts"><?php esc_html_e( 'Posts', 'bws-meta-manager' ); ?></option>
-                                        <option value="taxonomy_terms"><?php esc_html_e( 'Taxonomy Terms', 'bws-meta-manager' ); ?></option>
+                                        <option value=""><?php esc_html_e( 'Select content type...', 'meta-conductor' ); ?></option>
+                                        <option value="posts"><?php esc_html_e( 'Posts', 'meta-conductor' ); ?></option>
+                                        <option value="taxonomy_terms"><?php esc_html_e( 'Taxonomy Terms', 'meta-conductor' ); ?></option>
                                     </select>
-                                    <p class="description"><?php esc_html_e( 'Whether to work with posts or taxonomy terms.', 'bws-meta-manager' ); ?></p>
+                                    <p class="description"><?php esc_html_e( 'Whether to work with posts or taxonomy terms.', 'meta-conductor' ); ?></p>
                                 </td>
                             </tr>
 
                             <!-- Post Type Selection (shown when content_type = posts) -->
                             <tr id="map_post_types_row" style="display: none;">
                                 <th scope="row">
-                                    <label for="map_post_types"><?php esc_html_e( 'Post Types', 'bws-meta-manager' ); ?></label>
+                                    <label for="map_post_types"><?php esc_html_e( 'Post Types', 'meta-conductor' ); ?></label>
                                 </th>
                                 <td>
                                     <?php $this->render_post_types_select( 'map_post_types' ); ?>
-                                    <p class="description"><?php esc_html_e( 'Select which post types to include.', 'bws-meta-manager' ); ?></p>
+                                    <p class="description"><?php esc_html_e( 'Select which post types to include.', 'meta-conductor' ); ?></p>
                                 </td>
                             </tr>
 
                             <!-- Post Status Selection (shown when content_type = posts) -->
                             <tr id="map_post_status_row" style="display: none;">
                                 <th scope="row">
-                                    <label for="map_post_status"><?php esc_html_e( 'Post Status', 'bws-meta-manager' ); ?></label>
+                                    <label for="map_post_status"><?php esc_html_e( 'Post Status', 'meta-conductor' ); ?></label>
                                 </th>
                                 <td>
                                     <?php $this->render_post_status_select( 'map_post_status' ); ?>
-                                    <p class="description"><?php esc_html_e( 'Select which post statuses to include.', 'bws-meta-manager' ); ?></p>
+                                    <p class="description"><?php esc_html_e( 'Select which post statuses to include.', 'meta-conductor' ); ?></p>
                                 </td>
                             </tr>
 
                             <!-- Taxonomy Selection (shown when content_type = taxonomy_terms) -->
                             <tr id="map_taxonomies_row" style="display: none;">
                                 <th scope="row">
-                                    <label for="map_taxonomies"><?php esc_html_e( 'Taxonomies', 'bws-meta-manager' ); ?></label>
+                                    <label for="map_taxonomies"><?php esc_html_e( 'Taxonomies', 'meta-conductor' ); ?></label>
                                 </th>
                                 <td>
                                     <?php $this->render_taxonomies_select( 'map_taxonomies' ); ?>
-                                    <p class="description"><?php esc_html_e( 'Select which taxonomies to include.', 'bws-meta-manager' ); ?></p>
+                                    <p class="description"><?php esc_html_e( 'Select which taxonomies to include.', 'meta-conductor' ); ?></p>
                                 </td>
                             </tr>
 
@@ -445,13 +445,13 @@ class ConversionUi {
                             <?php
                             echo '<tr id="map_source_field_row" style="display: none;">
 								<th scope="row">
-									<label for="map_source_field">' . esc_html__( 'Source Field', 'bws-meta-manager' ) . ' <span class="required">*</span></label>
+									<label for="map_source_field">' . esc_html__( 'Source Field', 'meta-conductor' ) . ' <span class="required">*</span></label>
 								</th>
 								<td>
 									<select name="source_field" id="map_source_field" class="regular-text" required>
-										<option value="">' . esc_html__( 'Select source field...', 'bws-meta-manager' ) . '</option>
+										<option value="">' . esc_html__( 'Select source field...', 'meta-conductor' ) . '</option>
 									</select>
-									<p class="description">' . esc_html__( 'Option field containing values to map.', 'bws-meta-manager' ) . '</p>
+									<p class="description">' . esc_html__( 'Option field containing values to map.', 'meta-conductor' ) . '</p>
 								</td>
 							</tr>';
 							?>
@@ -460,17 +460,17 @@ class ConversionUi {
                             <?php
                             echo '<tr id="map_target_type_row" style="display: none;">
 								<th scope="row">
-									' . esc_html__( 'Map To', 'bws-meta-manager' ) . ' <span class="required">*</span>
+									' . esc_html__( 'Map To', 'meta-conductor' ) . ' <span class="required">*</span>
 								</th>
 								<td>
 									<fieldset>
 										<label>
 											<input type="radio" name="target_type" value="field" id="map_target_type_field" required>
-											' . esc_html__( 'Another ACF Field', 'bws-meta-manager' ) . '
+											' . esc_html__( 'Another ACF Field', 'meta-conductor' ) . '
 										</label><br>
 										<label>
 											<input type="radio" name="target_type" value="taxonomy" id="map_target_type_taxonomy">
-											' . esc_html__( 'Taxonomy Terms', 'bws-meta-manager' ) . '
+											' . esc_html__( 'Taxonomy Terms', 'meta-conductor' ) . '
 										</label>
 									</fieldset>
 								</td>
@@ -480,21 +480,21 @@ class ConversionUi {
                             <!-- Target Field Selection -->
                             <tr id="map_target_field_row" style="display: none;">
                                 <th scope="row">
-                                    <label for="map_target_field"><?php esc_html_e( 'Target Field', 'bws-meta-manager' ); ?> <span class="required">*</span></label>
+                                    <label for="map_target_field"><?php esc_html_e( 'Target Field', 'meta-conductor' ); ?> <span class="required">*</span></label>
                                 </th>
                                 <td>
                                     <select name="target_field" id="map_target_field" class="regular-text" data-conditional-required="field">
-                                        <option value=""><?php esc_html_e( 'Select target field...', 'bws-meta-manager' ); ?></option>
+                                        <option value=""><?php esc_html_e( 'Select target field...', 'meta-conductor' ); ?></option>
                                     </select>
-                                    <p class="description"><?php esc_html_e( 'Field where mapped values will be stored.', 'bws-meta-manager' ); ?></p>
+                                    <p class="description"><?php esc_html_e( 'Field where mapped values will be stored.', 'meta-conductor' ); ?></p>
                                     
                                     <!-- Option Mappings for Field Target -->
                                     <div class="bws-conversion-mappings" id="field-option-mappings" style="display: none; margin-top: 15px;">
-                                        <h4><?php esc_html_e( 'Value Mappings', 'bws-meta-manager' ); ?></h4>
-                                        <p class="description"><?php esc_html_e( 'Map each source option to a target field option.', 'bws-meta-manager' ); ?></p>
+                                        <h4><?php esc_html_e( 'Value Mappings', 'meta-conductor' ); ?></h4>
+                                        <p class="description"><?php esc_html_e( 'Map each source option to a target field option.', 'meta-conductor' ); ?></p>
                                         <div class="unmapped-behavior-notice" style="background: #fff3cd; border: 1px solid #ffecb5; padding: 10px; margin: 10px 0; border-radius: 4px;">
-                                            <strong><?php esc_html_e( 'Unmapped Values:', 'bws-meta-manager' ); ?></strong>
-                                            <?php esc_html_e( 'Values without mappings will be skipped and not copied to the target field.', 'bws-meta-manager' ); ?>
+                                            <strong><?php esc_html_e( 'Unmapped Values:', 'meta-conductor' ); ?></strong>
+                                            <?php esc_html_e( 'Values without mappings will be skipped and not copied to the target field.', 'meta-conductor' ); ?>
                                         </div>
                                         <div class="mappings-content"></div>
                                     </div>
@@ -504,36 +504,36 @@ class ConversionUi {
                             <!-- Target Taxonomy Selection -->
                             <tr id="map_target_taxonomy_row" style="display: none;">
                                 <th scope="row">
-                                    <label for="map_target_taxonomy"><?php esc_html_e( 'Target Taxonomy', 'bws-meta-manager' ); ?> <span class="required">*</span></label>
+                                    <label for="map_target_taxonomy"><?php esc_html_e( 'Target Taxonomy', 'meta-conductor' ); ?> <span class="required">*</span></label>
                                 </th>
                                 <td>
                                     <select name="target_taxonomy" id="map_target_taxonomy" class="regular-text" data-conditional-required="taxonomy">
-                                        <option value=""><?php esc_html_e( 'Select target taxonomy...', 'bws-meta-manager' ); ?></option>
+                                        <option value=""><?php esc_html_e( 'Select target taxonomy...', 'meta-conductor' ); ?></option>
                                     </select>
-                                    <p class="description"><?php esc_html_e( 'Taxonomy where terms will be created.', 'bws-meta-manager' ); ?></p>
+                                    <p class="description"><?php esc_html_e( 'Taxonomy where terms will be created.', 'meta-conductor' ); ?></p>
                                     
                                     <!-- Term Assignment Options for Taxonomy Target -->
                                     <div id="taxonomy-term-assignment" style="display: none; margin-top: 15px;">
                                         <fieldset>
-                                            <legend><?php esc_html_e( 'Term Assignment', 'bws-meta-manager' ); ?></legend>
+                                            <legend><?php esc_html_e( 'Term Assignment', 'meta-conductor' ); ?></legend>
                                             <label>
                                                 <input type="radio" name="append_terms" value="0" checked>
-                                                <?php esc_html_e( 'Replace existing terms', 'bws-meta-manager' ); ?>
+                                                <?php esc_html_e( 'Replace existing terms', 'meta-conductor' ); ?>
                                             </label><br>
                                             <label>
                                                 <input type="radio" name="append_terms" value="1">
-                                                <?php esc_html_e( 'Add to existing terms', 'bws-meta-manager' ); ?>
+                                                <?php esc_html_e( 'Add to existing terms', 'meta-conductor' ); ?>
                                             </label>
                                         </fieldset>
                                     </div>
 
                                     <!-- Option Mappings for Taxonomy Target -->
                                     <div class="bws-conversion-mappings" id="taxonomy-option-mappings" style="display: none; margin-top: 15px;">
-                                        <h4><?php esc_html_e( 'Value Mappings', 'bws-meta-manager' ); ?></h4>
-                                        <p class="description"><?php esc_html_e( 'Map each source option to a taxonomy term.', 'bws-meta-manager' ); ?></p>
+                                        <h4><?php esc_html_e( 'Value Mappings', 'meta-conductor' ); ?></h4>
+                                        <p class="description"><?php esc_html_e( 'Map each source option to a taxonomy term.', 'meta-conductor' ); ?></p>
                                         <div class="unmapped-behavior-notice" style="background: #fff3cd; border: 1px solid #ffecb5; padding: 10px; margin: 10px 0; border-radius: 4px;">
-                                            <strong><?php esc_html_e( 'Unmapped Values:', 'bws-meta-manager' ); ?></strong>
-                                            <?php esc_html_e( 'Values without mappings will be skipped and no taxonomy terms will be assigned for those values.', 'bws-meta-manager' ); ?>
+                                            <strong><?php esc_html_e( 'Unmapped Values:', 'meta-conductor' ); ?></strong>
+                                            <?php esc_html_e( 'Values without mappings will be skipped and no taxonomy terms will be assigned for those values.', 'meta-conductor' ); ?>
                                         </div>
                                         <div class="mappings-content"></div>
                                     </div>
@@ -543,18 +543,18 @@ class ConversionUi {
                             <!-- Batch Size -->
                             <tr id="map_batch_size_row" style="display: none;">
                                 <th scope="row">
-                                    <label for="map_batch_size"><?php esc_html_e( 'Batch Size', 'bws-meta-manager' ); ?></label>
+                                    <label for="map_batch_size"><?php esc_html_e( 'Batch Size', 'meta-conductor' ); ?></label>
                                 </th>
                                 <td>
                                     <input type="number" name="batch_size" id="map_batch_size" value="25" min="5" max="100" class="small-text">
-                                    <p class="description"><?php esc_html_e( 'Number of items to process per batch.', 'bws-meta-manager' ); ?></p>
+                                    <p class="description"><?php esc_html_e( 'Number of items to process per batch.', 'meta-conductor' ); ?></p>
                                 </td>
                             </tr>
                         </tbody>
                     </table>
 
                     <div class="bws-conversion-validation" id="map-data-validation" style="display: none;">
-                        <h3><?php esc_html_e( 'Validation Results', 'bws-meta-manager' ); ?></h3>
+                        <h3><?php esc_html_e( 'Validation Results', 'meta-conductor' ); ?></h3>
                         <div class="validation-content"></div>
                     </div>
 
@@ -573,12 +573,12 @@ class ConversionUi {
         <div class="bws-conversion-actions">
             <button type="button" class="button button-secondary bws-preview-btn">
                 <span class="dashicons dashicons-visibility"></span>
-                <?php esc_html_e( 'Generate Preview', 'bws-meta-manager' ); ?>
+                <?php esc_html_e( 'Generate Preview', 'meta-conductor' ); ?>
             </button>
             
             <button type="submit" class="button button-primary bws-convert-btn" disabled>
                 <span class="dashicons dashicons-update"></span>
-                <?php esc_html_e( 'Start Copying', 'bws-meta-manager' ); ?>
+                <?php esc_html_e( 'Start Copying', 'meta-conductor' ); ?>
             </button>
 
             <div class="bws-conversion-status" style="display: none;">
@@ -599,7 +599,7 @@ class ConversionUi {
         <div id="bws-conversion-modal" class="bws-acf-modal" style="display: none;">
             <div class="bws-acf-modal-content">
                 <div class="bws-acf-modal-header">
-                    <h2 id="modal-title"><?php esc_html_e( 'Processing', 'bws-meta-manager' ); ?></h2>
+                    <h2 id="modal-title"><?php esc_html_e( 'Processing', 'meta-conductor' ); ?></h2>
                     <button type="button" class="bws-acf-modal-close">&times;</button>
                 </div>
                 
@@ -614,7 +614,7 @@ class ConversionUi {
                     <div class="status-messages">
                         <div class="current-status"></div>
                         <div class="detailed-log" style="display: none;">
-                            <h4><?php esc_html_e( 'Detailed Log', 'bws-meta-manager' ); ?></h4>
+                            <h4><?php esc_html_e( 'Detailed Log', 'meta-conductor' ); ?></h4>
                             <div class="log-content"></div>
                         </div>
                     </div>
@@ -622,10 +622,10 @@ class ConversionUi {
                 
                 <div class="bws-acf-modal-footer">
                     <button type="button" class="button button-secondary toggle-log">
-                        <?php esc_html_e( 'Show Details', 'bws-meta-manager' ); ?>
+                        <?php esc_html_e( 'Show Details', 'meta-conductor' ); ?>
                     </button>
                     <button type="button" class="button button-primary modal-close" style="display: none;">
-                        <?php esc_html_e( 'Close', 'bws-meta-manager' ); ?>
+                        <?php esc_html_e( 'Close', 'meta-conductor' ); ?>
                     </button>
                 </div>
             </div>
@@ -641,7 +641,7 @@ class ConversionUi {
         <div id="bws-conversion-report-modal" class="bws-acf-modal" style="display: none;">
             <div class="bws-acf-modal-content">
                 <div class="bws-acf-modal-header">
-                    <h2><?php esc_html_e( 'Conversion Report', 'bws-meta-manager' ); ?></h2>
+                    <h2><?php esc_html_e( 'Conversion Report', 'meta-conductor' ); ?></h2>
                     <button type="button" class="bws-acf-modal-close">&times;</button>
                 </div>
                 
@@ -653,7 +653,7 @@ class ConversionUi {
                 
                 <div class="bws-acf-modal-footer">
                     <button type="button" class="button button-primary modal-close">
-                        <?php esc_html_e( 'Close', 'bws-meta-manager' ); ?>
+                        <?php esc_html_e( 'Close', 'meta-conductor' ); ?>
                     </button>
                 </div>
             </div>
@@ -686,7 +686,7 @@ class ConversionUi {
             default:
                 $result = [
                     'success' => false,
-                    'errors' => [ __( 'Invalid conversion type.', 'bws-meta-manager' ) ]
+                    'errors' => [ __( 'Invalid conversion type.', 'meta-conductor' ) ]
                 ];
         }
 
@@ -719,7 +719,7 @@ class ConversionUi {
             default:
                 $result = [
                     'success' => false,
-                    'error' => __( 'Invalid conversion type.', 'bws-meta-manager' )
+                    'error' => __( 'Invalid conversion type.', 'meta-conductor' )
                 ];
         }
 
@@ -735,7 +735,7 @@ class ConversionUi {
         $taxonomy = sanitize_text_field( $_POST['taxonomy'] ?? '' );
         
         if ( ! $taxonomy || ! taxonomy_exists( $taxonomy ) ) {
-            wp_send_json_error( __( 'Invalid taxonomy.', 'bws-meta-manager' ) );
+            wp_send_json_error( __( 'Invalid taxonomy.', 'meta-conductor' ) );
         }
 
         $terms = $this->components['field_mapper']->get_taxonomy_terms( $taxonomy, [
@@ -752,10 +752,10 @@ class ConversionUi {
      */
     private function verify_ajax_request(): void {
         // Verify nonce
-        if ( ! check_ajax_referer( 'bws_taxonomy_manager_nonce', 'nonce', false ) ) {
+        if ( ! check_ajax_referer( 'bws_meta_conductor_nonce', 'nonce', false ) ) {
             wp_die( 
-                esc_html__( 'Security check failed.', 'bws-meta-manager' ),
-                esc_html__( 'Forbidden', 'bws-meta-manager' ),
+                esc_html__( 'Security check failed.', 'meta-conductor' ),
+                esc_html__( 'Forbidden', 'meta-conductor' ),
                 [ 'response' => 403 ]
             );
         }
@@ -763,8 +763,8 @@ class ConversionUi {
         // Verify capabilities
         if ( ! current_user_can( 'manage_options' ) ) {
             wp_die(
-                esc_html__( 'You do not have permission to perform this action.', 'bws-meta-manager' ),
-                esc_html__( 'Forbidden', 'bws-meta-manager' ),
+                esc_html__( 'You do not have permission to perform this action.', 'meta-conductor' ),
+                esc_html__( 'Forbidden', 'meta-conductor' ),
                 [ 'response' => 403 ]
             );
         }
@@ -803,7 +803,7 @@ class ConversionUi {
             $options = $field_data['options'] ?? [];
             wp_send_json_success( $options );
         } else {
-            wp_send_json_error( __( 'Field key is required.', 'bws-meta-manager' ) );
+            wp_send_json_error( __( 'Field key is required.', 'meta-conductor' ) );
         }
     }
 
@@ -823,7 +823,7 @@ class ConversionUi {
         $post_types = get_post_types( [ 'public' => true ], 'objects' );
         ?>
         <select name="post_types[]" id="<?php echo esc_attr( $field_id ); ?>" class="regular-text" multiple>
-            <option value="any" selected><?php esc_html_e( 'All Post Types', 'bws-meta-manager' ); ?></option>
+            <option value="any" selected><?php esc_html_e( 'All Post Types', 'meta-conductor' ); ?></option>
             <?php foreach ( $post_types as $post_type ) : ?>
                 <option value="<?php echo esc_attr( $post_type->name ); ?>">
                     <?php echo esc_html( $post_type->label ); ?>
@@ -839,10 +839,10 @@ class ConversionUi {
     private function render_post_status_select( string $field_id = 'post_status' ): void {
         ?>
         <select name="post_status[]" id="<?php echo esc_attr( $field_id ); ?>" class="regular-text" multiple>
-            <option value="publish" selected><?php esc_html_e( 'Published', 'bws-meta-manager' ); ?></option>
-            <option value="draft"><?php esc_html_e( 'Draft', 'bws-meta-manager' ); ?></option>
-            <option value="private"><?php esc_html_e( 'Private', 'bws-meta-manager' ); ?></option>
-            <option value="pending"><?php esc_html_e( 'Pending', 'bws-meta-manager' ); ?></option>
+            <option value="publish" selected><?php esc_html_e( 'Published', 'meta-conductor' ); ?></option>
+            <option value="draft"><?php esc_html_e( 'Draft', 'meta-conductor' ); ?></option>
+            <option value="private"><?php esc_html_e( 'Private', 'meta-conductor' ); ?></option>
+            <option value="pending"><?php esc_html_e( 'Pending', 'meta-conductor' ); ?></option>
         </select>
         <?php
     }
@@ -854,12 +854,12 @@ class ConversionUi {
         $taxonomies = $this->components['field_mapper']->get_taxonomies();
         ?>
         <select name="taxonomies[]" id="<?php echo esc_attr( $field_id ); ?>" class="regular-text" multiple>
-            <option value="any" selected><?php esc_html_e( 'All Taxonomies', 'bws-meta-manager' ); ?></option>
+            <option value="any" selected><?php esc_html_e( 'All Taxonomies', 'meta-conductor' ); ?></option>
             <?php foreach ( $taxonomies as $taxonomy ) : ?>
                 <option value="<?php echo esc_attr( $taxonomy['name'] ); ?>">
                     <?php echo esc_html( $taxonomy['label'] ); ?>
                     <?php if ( $taxonomy['hierarchical'] ) : ?>
-                        (<?php esc_html_e( 'Hierarchical', 'bws-meta-manager' ); ?>)
+                        (<?php esc_html_e( 'Hierarchical', 'meta-conductor' ); ?>)
                     <?php endif; ?>
                 </option>
             <?php endforeach; ?>
@@ -872,7 +872,7 @@ class ConversionUi {
      */
     private function get_tab_url( string $tab ): string {
         return add_query_arg( [
-            'page' => 'bws-meta-manager',
+            'page' => 'meta-conductor',
             'tab' => $tab
         ], admin_url( 'tools.php' ) );
     }
@@ -947,7 +947,7 @@ public function handle_estimate_conversion_size_ajax(): void {
             error_log('Invalid conversion type detected: ' . $conversion_type);
             wp_send_json_error( [ 
                 'message' => sprintf( 
-                    __( 'Invalid conversion type: %s. Expected copy_data or map_data.', 'bws-meta-manager' ), 
+                    __( 'Invalid conversion type: %s. Expected copy_data or map_data.', 'meta-conductor' ), 
                     $conversion_type 
                 )
             ] );
@@ -1269,16 +1269,16 @@ private function sanitize_conversion_config( array $raw_config ): array {
 	 */
 	private function format_duration( int $seconds ): string {
 		if ( $seconds < 60 ) {
-			return sprintf( _n( '%d second', '%d seconds', $seconds, 'bws-meta-manager' ), $seconds );
+			return sprintf( _n( '%d second', '%d seconds', $seconds, 'meta-conductor' ), $seconds );
 		} elseif ( $seconds < 3600 ) {
 			$minutes = intval( $seconds / 60 );
 			$remaining_seconds = $seconds % 60;
 			
 			if ( $remaining_seconds === 0 ) {
-				return sprintf( _n( '%d minute', '%d minutes', $minutes, 'bws-meta-manager' ), $minutes );
+				return sprintf( _n( '%d minute', '%d minutes', $minutes, 'meta-conductor' ), $minutes );
 			} else {
 				return sprintf( 
-					__( '%d minutes, %d seconds', 'bws-meta-manager' ), 
+					__( '%d minutes, %d seconds', 'meta-conductor' ), 
 					$minutes, 
 					$remaining_seconds 
 				);
@@ -1288,10 +1288,10 @@ private function sanitize_conversion_config( array $raw_config ): array {
 			$remaining_minutes = intval( ( $seconds % 3600 ) / 60 );
 			
 			if ( $remaining_minutes === 0 ) {
-				return sprintf( _n( '%d hour', '%d hours', $hours, 'bws-meta-manager' ), $hours );
+				return sprintf( _n( '%d hour', '%d hours', $hours, 'meta-conductor' ), $hours );
 			} else {
 				return sprintf( 
-					__( '%d hours, %d minutes', 'bws-meta-manager' ), 
+					__( '%d hours, %d minutes', 'meta-conductor' ), 
 					$hours, 
 					$remaining_minutes 
 				);

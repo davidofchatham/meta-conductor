@@ -70,7 +70,7 @@ class StorageFactory {
         }
 
         // Allow filtering the storage type
-        $storage_type = apply_filters('bws_meta_manager_storage_type', self::$config['type']);
+        $storage_type = apply_filters('bws_meta_conductor_storage_type', self::$config['type']);
 
         switch ($storage_type) {
             case 'cpt':
@@ -80,7 +80,7 @@ class StorageFactory {
                 // }
                 // Fall back to options if CPT not available
                 // translators: %s is the storage type
-                error_log(sprintf(__('BWS Meta Manager: CPT storage not yet implemented, falling back to options storage', 'bws-meta-manager')));
+                error_log(sprintf(__('Meta Conductor: CPT storage not yet implemented, falling back to options storage', 'meta-conductor')));
                 return new OptionRuleStorage();
 
             case 'options':
@@ -185,7 +185,7 @@ class StorageFactory {
                 break;
         }
 
-        return apply_filters('bws_meta_manager_storage_info', $info);
+        return apply_filters('bws_meta_conductor_storage_info', $info);
     }
 
     /**

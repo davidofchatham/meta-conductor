@@ -52,6 +52,31 @@ class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
     public function process_post($post_id, $post, $update) {}
 
     /**
+     * Bulk-apply primitive (#31). Delegates to apply_level_restrictions for one
+     * rule + post, gated by the post-type check. Guards $processing so the
+     * wp_set_object_terms it fires doesn't re-enter on_terms_set. Returns whether
+     * the post's terms actually changed (a post already within the restriction is
+     * a no-op → false), so the bulk count reflects posts pruned (#31).
+     */
+    public function apply_to_post(int $post_id, array $rule): bool {
+        if (!$this->should_process_post($post_id, $rule)) {
+            return false;
+        }
+        $taxonomy = $rule['taxonomy'] ?? '';
+        if ($taxonomy === '' || !taxonomy_exists($taxonomy)) {
+            return false;
+        }
+        $before = $this->terms_fingerprint($post_id, $taxonomy);
+        $this->processing = true;
+        try {
+            $this->apply_level_restrictions($post_id, $taxonomy, $rule);
+        } finally {
+            $this->processing = false;
+        }
+        return $this->terms_fingerprint($post_id, $taxonomy) !== $before;
+    }
+
+    /**
      * Handle terms being set on an object
      */
     public function on_terms_set($object_id, $terms, $tt_ids, $taxonomy, $append, $old_tt_ids) {
@@ -395,13 +420,13 @@ class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
         
         // Validate taxonomy
         if (empty($rule_data['taxonomy'])) {
-            $errors[] = __('Taxonomy is required.', 'bws-taxonomy-manager');
+            $errors[] = __('Taxonomy is required.', 'meta-conductor');
         } elseif (!taxonomy_exists($rule_data['taxonomy'])) {
-            $errors[] = __('Selected taxonomy does not exist.', 'bws-taxonomy-manager');
+            $errors[] = __('Selected taxonomy does not exist.', 'meta-conductor');
         } else {
             $taxonomy = get_taxonomy($rule_data['taxonomy']);
             if (!$taxonomy->hierarchical) {
-                $errors[] = __('Selected taxonomy must be hierarchical.', 'bws-taxonomy-manager');
+                $errors[] = __('Selected taxonomy must be hierarchical.', 'meta-conductor');
             }
         }
         
@@ -409,14 +434,14 @@ class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
         $valid_modes = array('one_per_level', 'deepest_only', 'shallowest_only');
         if (!empty($rule_data['restriction_mode']) && 
             !in_array($rule_data['restriction_mode'], $valid_modes)) {
-            $errors[] = __('Invalid restriction mode selected.', 'bws-taxonomy-manager');
+            $errors[] = __('Invalid restriction mode selected.', 'meta-conductor');
         }
         
         // Validate post types (if specified)
         if (!empty($rule_data['post_types'])) {
             foreach ($rule_data['post_types'] as $post_type) {
                 if (!post_type_exists($post_type)) {
-                    $errors[] = sprintf(__('Post type "%s" does not exist.', 'bws-taxonomy-manager'), $post_type);
+                    $errors[] = sprintf(__('Post type "%s" does not exist.', 'meta-conductor'), $post_type);
                 }
             }
         }

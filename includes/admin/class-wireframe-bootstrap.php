@@ -105,7 +105,7 @@ class WireframeBootstrap {
         // `enabled` defaults true; a rule missing the key (legacy) is treated
         // as enabled, matching the config default and the handler gate.
         $enabled = !array_key_exists('enabled', $rule) || !empty($rule['enabled']);
-        return $enabled ? '' : \esc_html__('[Disabled] ', 'bws-meta-manager');
+        return $enabled ? '' : \esc_html__('[Disabled] ', 'meta-conductor');
     }
 
     /**
@@ -136,8 +136,8 @@ class WireframeBootstrap {
             }
 
             $verb = !empty($rule['keep_in_sync'])
-                ? __('Sync', 'bws-meta-manager')
-                : __('Copy', 'bws-meta-manager');
+                ? __('Sync', 'meta-conductor')
+                : __('Copy', 'meta-conductor');
 
             // Default an ABSENT holder_role to 'target', matching the handler
             // (holder_is_source) and the storage migration — NOT 'source'. The
@@ -146,8 +146,8 @@ class WireframeBootstrap {
             // row title that lies about the rule's runtime direction. A new rule
             // always carries an explicit holder_role. (PR#24 round 4 #2)
             $prep = (($rule['holder_role'] ?? 'target') === 'source')
-                ? __('to', 'bws-meta-manager')
-                : __('from', 'bws-meta-manager');
+                ? __('to', 'meta-conductor')
+                : __('from', 'meta-conductor');
 
             $tax_label   = self::taxonomy_label($rule['taxonomy'] ?? '');
             $field_label = self::acf_field_label($rule['acf_field_name'] ?? '');
@@ -156,7 +156,7 @@ class WireframeBootstrap {
             // Assemble; tolerate empty parts gracefully.
             $title = trim(sprintf(
                 /* translators: 1: Copy/Sync 2: taxonomy 3: to/from 4: field label */
-                __('%1$s %2$s terms %3$s %4$s', 'bws-meta-manager'),
+                __('%1$s %2$s terms %3$s %4$s', 'meta-conductor'),
                 $verb,
                 $tax_label,
                 $prep,
@@ -164,7 +164,7 @@ class WireframeBootstrap {
             ));
 
             if ($gate !== '') {
-                $title .= ' ' . sprintf(__('on %s', 'bws-meta-manager'), $gate);
+                $title .= ' ' . sprintf(__('on %s', 'meta-conductor'), $gate);
             }
 
             // Flag disabled rules in the collapsed title (see disabled_prefix).
@@ -206,7 +206,7 @@ class WireframeBootstrap {
 
             $title = sprintf(
                 /* translators: 1: taxonomy label 2: conflict mode */
-                __('Copy %1$s terms to children (%2$s)', 'bws-meta-manager'),
+                __('Copy %1$s terms to children (%2$s)', 'meta-conductor'),
                 $tax,
                 $conflict
             );
@@ -240,12 +240,12 @@ class WireframeBootstrap {
     private static function conflict_label($value): string {
         switch ($value) {
             case 'replace':
-                return __('replace', 'bws-meta-manager');
+                return __('replace', 'meta-conductor');
             case 'skip':
-                return __('skip if set', 'bws-meta-manager');
+                return __('skip if set', 'meta-conductor');
             case 'merge':
             default:
-                return __('merge', 'bws-meta-manager');
+                return __('merge', 'meta-conductor');
         }
     }
 
@@ -286,8 +286,8 @@ class WireframeBootstrap {
 
             $sentence = sprintf(
                 /* translators: 1: target term 2: post-type scope phrase */
-                __('Apply %1$s to %2$s', 'bws-meta-manager'),
-                $target !== '' ? $target : __('(no term)', 'bws-meta-manager'),
+                __('Apply %1$s to %2$s', 'meta-conductor'),
+                $target !== '' ? $target : __('(no term)', 'meta-conductor'),
                 $scope
             );
 
@@ -310,7 +310,7 @@ class WireframeBootstrap {
      */
     private static function time_based_scope_phrase($post_types): string {
         $labels = self::post_type_labels($post_types);
-        return empty($labels) ? __('posts', 'bws-meta-manager') : implode(', ', $labels);
+        return empty($labels) ? __('posts', 'meta-conductor') : implode(', ', $labels);
     }
 
     /**
@@ -324,7 +324,7 @@ class WireframeBootstrap {
     private static function time_based_filter_clause(array $rule): string {
         $terms = self::trigger_terms_label($rule['filter_terms'] ?? null);
         if ($terms !== '') {
-            return ' ' . sprintf(__('with %s', 'bws-meta-manager'), $terms);
+            return ' ' . sprintf(__('with %s', 'meta-conductor'), $terms);
         }
 
         $taxonomies = Config\ConfigHelpers::selected_checkbox_slugs($rule['filter_taxonomies'] ?? []);
@@ -336,7 +336,7 @@ class WireframeBootstrap {
             }
         }
         if (!empty($labels)) {
-            return ' ' . sprintf(__('with any %s term', 'bws-meta-manager'), implode(', ', $labels));
+            return ' ' . sprintf(__('with any %s term', 'meta-conductor'), implode(', ', $labels));
         }
 
         return '';
@@ -509,8 +509,8 @@ class WireframeBootstrap {
 
         add_submenu_page(
             'meta-conductor',
-            __('Data Conversion', 'bws-meta-manager'),
-            __('Data Conversion', 'bws-meta-manager'),
+            __('Data Conversion', 'meta-conductor'),
+            __('Data Conversion', 'meta-conductor'),
             'manage_options',
             'meta-conductor-conversion',
             [self::class, 'render_conversion_page']
@@ -522,15 +522,15 @@ class WireframeBootstrap {
      */
     public static function render_conversion_page(): void {
         if (!class_exists(ConversionUi::class) || !class_exists(TaxonomyManager::class)) {
-            wp_die(esc_html__('Conversion components unavailable.', 'bws-meta-manager'));
+            wp_die(esc_html__('Conversion components unavailable.', 'meta-conductor'));
         }
 
         $plugin             = TaxonomyManager::get_instance();
         $conversion_manager = method_exists($plugin, 'get_conversion_manager') ? $plugin->get_conversion_manager() : null;
 
         if (!$conversion_manager) {
-            echo '<div class="wrap"><h1>' . esc_html__('Data Conversion', 'bws-meta-manager') . '</h1>';
-            echo '<div class="notice notice-error"><p>' . esc_html__('Conversion manager not initialized.', 'bws-meta-manager') . '</p></div>';
+            echo '<div class="wrap"><h1>' . esc_html__('Data Conversion', 'meta-conductor') . '</h1>';
+            echo '<div class="notice notice-error"><p>' . esc_html__('Conversion manager not initialized.', 'meta-conductor') . '</p></div>';
             echo '</div>';
             return;
         }
@@ -585,7 +585,7 @@ class WireframeBootstrap {
         \Wireframe\App::boot([
             'prefix'     => 'bws-meta-conductor',
             'capability' => 'manage_options',
-            'version'    => defined('BWS_META_MANAGER_VERSION') ? BWS_META_MANAGER_VERSION : '0.3.0',
+            'version'    => defined('META_CONDUCTOR_VERSION') ? META_CONDUCTOR_VERSION : '0.3.0',
             // Symlinked installs (local dev) resolve the package via realpath()
             // to a path outside WP_PLUGIN_DIR, so Wireframe's assetsUrl() prefix
             // match fails and emits a broken asset base. plugins_url() keyed off
@@ -599,8 +599,8 @@ class WireframeBootstrap {
                 [
                     'id'            => 'settings',
                     'option_key'    => 'bws_meta_conductor_settings',
-                    'page_title'    => __('Meta Conductor', 'bws-meta-manager'),
-                    'menu_title'    => __('Meta Conductor', 'bws-meta-manager'),
+                    'page_title'    => __('Meta Conductor', 'meta-conductor'),
+                    'menu_title'    => __('Meta Conductor', 'meta-conductor'),
                     'menu_slug'     => 'meta-conductor',
                     'menu_icon'     => 'dashicons-category',
                     'menu_position' => 80,

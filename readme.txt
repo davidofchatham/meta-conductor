@@ -4,7 +4,7 @@ Tags: taxonomy, meta, acf, automation, hierarchical
 Requires at least: 6.5
 Tested up to: 7.0
 Requires PHP: 8.1
-Stable tag: 0.6.1
+Stable tag: 0.6.3
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -21,8 +21,6 @@ Meta Conductor adds rule-driven automation to WordPress taxonomies and meta fiel
 * One-shot ACF → taxonomy data conversion wizard
 
 Each rule type has its own settings tab. Rules apply automatically on `save_post`, plus a bulk-apply tool for existing posts.
-
-Formerly distributed as BWS Meta Manager / BWS Taxonomy Manager.
 
 == Installation ==
 

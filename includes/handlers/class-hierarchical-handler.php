@@ -27,7 +27,6 @@ class HierarchicalHandler extends UnifiedHandlerBase {
     private const AUTO_TERMS_META = '_bws_auto_terms';
 
     private bool $processing = false;
-    private array $processed = [];
 
     protected function init_hooks() {
         add_action('set_object_terms', array($this, 'on_terms_set'), 10, 6);
@@ -76,11 +75,6 @@ class HierarchicalHandler extends UnifiedHandlerBase {
             return;
         }
 
-        $key = "{$post_id}:{$taxonomy}";
-        if (isset($this->processed[$key])) {
-            return;
-        }
-
         $current_terms = wp_get_object_terms($post_id, $taxonomy, ['fields' => 'ids']);
         if (is_wp_error($current_terms)) {
             $current_terms = [];
@@ -114,7 +108,6 @@ class HierarchicalHandler extends UnifiedHandlerBase {
         }
 
         $this->set_auto_terms($post_id, $taxonomy, $auto_terms);
-        $this->processed[$key] = true;
 
         $final = array_values(array_unique(array_merge($user_terms, $auto_terms)));
         sort($final);

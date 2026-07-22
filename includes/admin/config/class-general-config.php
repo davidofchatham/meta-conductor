@@ -19,7 +19,7 @@ class GeneralConfig {
     public static function tab(): array {
         return [
             'id'       => 'general',
-            'title'    => __('General', 'bws-meta-manager'),
+            'title'    => __('General', 'meta-conductor'),
             'sections' => [
                 self::conflict_handling_section(),
                 self::processing_section(),
@@ -39,26 +39,26 @@ class GeneralConfig {
     private static function conflict_handling_section(): array {
         return [
             'id'          => 'conflict_handling',
-            'title'       => __('Global conflict handling', 'bws-meta-manager'),
-            'description' => __('Default behavior when an existing post already has terms in a taxonomy and a rule wants to apply more. Individual rules can override these defaults. Taxonomies without an entry default to "Merge".', 'bws-meta-manager'),
+            'title'       => __('Global conflict handling', 'meta-conductor'),
+            'description' => __('Default behavior when an existing post already has terms in a taxonomy and a rule wants to apply more. Individual rules can override these defaults. Taxonomies without an entry default to "Merge".', 'meta-conductor'),
             'fields'      => [
                 [
                     'id'    => 'conflict_handling_overrides',
                     'type'  => 'repeater',
-                    'label' => __('Conflict handling per taxonomy', 'bws-meta-manager'),
+                    'label' => __('Conflict handling per taxonomy', 'meta-conductor'),
                     'args'  => [
                         'sortable'       => true,
                         'collapsible'    => true,
                         'collapsed'      => true,
                         'duplicate_row'  => false,
-                        'add_label'      => __('Add taxonomy override', 'bws-meta-manager'),
-                        'empty_message'  => __('No overrides — all taxonomies default to "Merge".', 'bws-meta-manager'),
+                        'add_label'      => __('Add taxonomy override', 'meta-conductor'),
+                        'empty_message'  => __('No overrides — all taxonomies default to "Merge".', 'meta-conductor'),
                         'title_template' => '{taxonomy}: {mode}',
                         'subfields'      => [
                             [
                                 'id'       => 'taxonomy',
                                 'type'     => 'select',
-                                'label'    => __('Taxonomy', 'bws-meta-manager'),
+                                'label'    => __('Taxonomy', 'meta-conductor'),
                                 'default'  => '',
                                 'required' => true,
                                 'columns'  => 12,
@@ -69,14 +69,14 @@ class GeneralConfig {
                             [
                                 'id'      => 'mode',
                                 'type'    => 'select',
-                                'label'   => __('Conflict handling mode', 'bws-meta-manager'),
+                                'label'   => __('Conflict handling mode', 'meta-conductor'),
                                 'default' => 'merge',
                                 'columns' => 12,
                                 'args'    => [
                                     'options' => [
-                                        'merge'   => __('Merge with existing terms', 'bws-meta-manager'),
-                                        'replace' => __('Replace existing terms', 'bws-meta-manager'),
-                                        'skip'    => __('Skip if terms exist', 'bws-meta-manager'),
+                                        'merge'   => __('Merge with existing terms', 'meta-conductor'),
+                                        'replace' => __('Replace existing terms', 'meta-conductor'),
+                                        'skip'    => __('Skip if terms exist', 'meta-conductor'),
                                     ],
                                 ],
                             ],
@@ -93,14 +93,14 @@ class GeneralConfig {
     private static function processing_section(): array {
         return [
             'id'          => 'processing',
-            'title'       => __('Processing options', 'bws-meta-manager'),
-            'description' => __('Bulk-operation safeguards.', 'bws-meta-manager'),
+            'title'       => __('Processing options', 'meta-conductor'),
+            'description' => __('Bulk-operation safeguards.', 'meta-conductor'),
             'fields'      => [
                 [
                     'id'          => 'manual_processing_enabled',
                     'type'        => 'toggle',
-                    'label'       => __('Enable bulk "Apply to Existing Posts" actions', 'bws-meta-manager'),
-                    'description' => __('When off, bulk-apply buttons are hidden — useful on production sites to prevent accidental sweeping changes.', 'bws-meta-manager'),
+                    'label'       => __('Enable bulk "Apply to Existing Posts" actions', 'meta-conductor'),
+                    'description' => __('When off, bulk-apply buttons are hidden — useful on production sites to prevent accidental sweeping changes.', 'meta-conductor'),
                     'default'     => true,
                     'columns'     => 12,
                 ],

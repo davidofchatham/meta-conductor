@@ -189,12 +189,19 @@ Two constraints that shape EVERY per-handler sweep — not §1-specific:
    is a fresh container; `/tmp` does not persist. `update_option` DOES persist
    (it's in the DB), so cross-eval isolation is fine; re-seed is the restore.
 
-2. **Handler dedup is per-request.** `HierarchicalHandler::$processed[post:tax]`
-   (and siblings) short-circuit a second `apply_rule` for the same post+taxonomy
-   within one PHP request. Two user-edits in one `wp eval` → the second is a
-   silent no-op. Each user-edit scenario needs its **own eval** (one WP-CLI call
-   = one request = fresh dedup). A single-eval multi-edit sweep reports artifacts
-   (e.g. "removal did nothing"), not real behavior.
+2. **Handler dedup is per-request — but NOT for hierarchical anymore (0.6.2).**
+   Some handlers keep a per-request `$processed[key]` map (`UnifiedHandlerBase`,
+   `TitleSlugHandler`) that short-circuits a second apply for the same subject
+   within one PHP request. For THOSE, two user-edits in one `wp eval` → the second
+   is a silent no-op; give each user-edit scenario its **own eval** (one WP-CLI
+   call = one request = fresh dedup), or a single-eval multi-edit sweep reports
+   artifacts (e.g. "removal did nothing"), not real behavior.
+   **`HierarchicalHandler` no longer has this map** — it was removed (commit
+   `03ee8b4`) because it silently skipped legitimate double-saves. Re-entrant
+   recursion is still blocked by the separate `$processing` flag, and `apply_rule`
+   recomputes from current terms + `_bws_auto_terms` fresh each call (idempotent),
+   so a second hierarchical edit in the same eval now recomputes correctly.
+   Confirmed on the testbed (§1d).
 
 ### §1 hierarchical — results
 
@@ -209,6 +216,14 @@ Two constraints that shape EVERY per-handler sweep — not §1-specific:
 - **§1c promotion + re-expand** ✅ From `[13,14,15,16]` keep only East(14):
   East promoted → child_to_parent re-expands → Region(13) re-added.
   Result `terms=[Region,East]`, `auto=[Region]`.
+- **§1d double-save in one request** ✅ (0.6.2, `$processed`-removal regression
+  guard). In ONE eval: edit1 assign Harbor → `[Region,East,Coastal,Harbor]`;
+  edit2 SAME request set only West → `[Region,West]`, `auto={mc_topic:[Region]}`.
+  The second edit recomputes (pre-0.6.2 the `$processed` map would have skipped
+  it → raw `[West]`, stale Harbor-chain auto). No recursion/hang — `$processing`
+  caught the handler's own write. **This is the one scenario that must live in a
+  single eval**, opposite the usual one-edit-per-eval rule — it exists to prove
+  the dedup map is gone.
 - Negative controls after sweep: `staff` `department` terms, matrix/ls page
   slugs, and `bws_dynamic_tags_settings` all unchanged (MC only ever writes
   `mc_topic` on `mc_item`).
@@ -307,17 +322,43 @@ H7 extended to validate `{TERM:}` tokens in `post_fields`.
   receive it (`get_all_child_posts` includes publish/draft/private, recursive);
   child keeps its independent West via merge. (Only passes once both of the
   child's channels agree — see the fixture fix.)
-- **§5b removal — CONFIRMED BUG.** Removing a term from the parent NEVER
+- **§5b removal — FIXED (0.6.2, #45).** Removing a term from the parent now
   propagates to descendants when the parent carries an `mc_topics` ACF mirror
-  field. `on_parent_terms_set` runs removal-propagation (strips the term from
-  children) AND `propagate_terms_to_children` in the same handler pass; the
-  add-side reads `get_post_terms(parent)` = union(native, ACF), and the parent's
-  ACF mirror still returns the OLD value at that instant, so the just-stripped
-  term is immediately RE-propagated. Traced: `SET 102 new=[18]` (strip) →
-  `SET 102 new=[15,18]` (re-add) within one request. Independent of removal
-  method (`wp_set_object_terms([])`, `update_field([])`; `wp_remove_object_terms`
-  doesn't even fire the removal path). Down-ADD works; down-REMOVE is broken by
-  the union read racing the ACF write. → **GitHub issue #45.**
+  field. Old bug: `on_parent_terms_set` ran removal-propagation (strips the term
+  from children) AND `propagate_terms_to_children` in the same handler pass; the
+  add-side read `get_post_terms(parent)` = union(native, ACF), the parent's ACF
+  mirror still returned the OLD value at that instant, and the just-stripped term
+  was immediately RE-propagated (`SET 102 new=[18]` strip → `SET 102 new=[15,18]`
+  re-add, one request). Fix: `on_parent_terms_set` subtracts the same-pass
+  removed term IDs from `propagate_terms_to_children`'s add source
+  (`$exclude_term_ids`). Verified on the local testbed both ways: child `[15,18]`
+  → `[18]` (Coastal stripped, stays gone; independent West kept) for
+  `wp_set_object_terms([])` AND `update_field([])` (the true mirror-lag path,
+  field key `field_mc_topics_section`). Down-ADD unchanged.
+  **Coverage caveat (Load/Save-Terms ON only).** The fix lives in
+  `on_parent_terms_set` (the `set_object_terms` hook). It covers `update_field([])`
+  only because the field's save_terms=ON sync writes native and fires
+  `set_object_terms`. On a **save_terms-OFF** field, `update_field([])` clears the
+  ACF mirror WITHOUT firing `set_object_terms`, so the exclude list is empty and the
+  bounce is NOT suppressed. Accepted: OFF fields are an intentionally separate store
+  and `get_post_terms`'s docblock already states propagation is not
+  channel-preserving there. The tested fixtures are all save_terms=ON. If a
+  channel-separate model is ever needed, an ACF-side entry point (or the
+  native/ACF split in `get_post_terms`) closes this.
+- **§5e removal via `wp_remove_object_terms` — FIXED (#47).** `wp_remove_object_terms($parent, $term, $tax)`
+  fires `deleted_term_relationships`, NOT `set_object_terms`, so before the fix
+  the removal never reached `propagate_term_removals_to_children` and descendants
+  silently kept the term. Fix: new `on_parent_terms_deleted` hook on
+  `deleted_term_relationships` runs the removal walk (same `$processing` guard).
+  Double-fire on the plain-set path is real — `wp_set_object_terms` removes
+  dropped terms via an INTERNAL `wp_remove_object_terms` (taxonomy.php:2924) whose
+  `deleted_term_relationships` fires FIRST, then `set_object_terms` — so the delete
+  hook records handled tt_ids in `$removals_handled` and `on_parent_terms_set`
+  subtracts them from the removal WALK (not from the #45 add-pass exclude list,
+  which must stay full). Verified on the local testbed: put Coastal on parent →
+  child `[15,18]`; `wp_remove_object_terms(parent, Coastal)` → child `[18]`
+  (Coastal gone native + ACF, independent West kept), draft-child `[]` too. #45
+  plain-set path re-swept green in the same run — one removal pass, no bounce-back.
 - **§5c new-child inherit** ✅ new `mc_section` created under the parent inherits
   the parent's terms on its own save (the `post_parent > 0` branch of
   `on_parent_post_save`, not `wp_insert_post`).
