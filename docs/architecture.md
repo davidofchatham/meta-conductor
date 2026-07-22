@@ -141,11 +141,16 @@ several).
     runtime, INVISIBLE to `php -l` (H1) and the autoload harness (H2), which check
     declarations, not method resolution. Before deleting an old base, grep the
     handler for every `$this->`/`parent::` call and confirm each target exists on
-    the new base or the handler itself. This bit the 0.6.0 migration: the ACF
-    helpers (`get_acf_taxonomy_value`/`set_acf_taxonomy_value`) lived only on
-    `HandlerBase` and had to be ported before deletion; the fatal only fires the
-    first time a post has a matching ACF taxonomy field, so native-only testing
-    misses it. (was SPEC §V14/B4)
+    the new base, a trait the base composes, or the handler itself. This bit the
+    0.6.0 migration: the ACF helpers (`get_acf_taxonomy_value`/`set_acf_taxonomy_value`)
+    lived only on `HandlerBase` and had to be ported before deletion; the fatal
+    only fires the first time a post has a matching ACF taxonomy field, so
+    native-only testing misses it. The same trap re-opens if these primitives are
+    composed per-handler rather than on the base: a later handler that calls one
+    without `use`-ing the trait resolves to nothing. As of 0.6.3 they live in the
+    `TermOperations`/`AcfBridge` traits, `use`d on `UnifiedHandlerBase` itself so
+    every handler inherits them — grep the trait files, not just the base body.
+    (was SPEC §V14/B4)
 
 12. **Discover a post's ACF fields by LOCATION rules, not by stored values.**
     `get_field_objects($post_id)` enumerates from stored ACF meta and returns
@@ -156,7 +161,8 @@ several).
     written. Use `acf_get_field_groups(['post_id' => $id])` + `acf_get_fields()`
     (the same engine the ACF admin uses; value-independent, respects location
     rules; recurse `sub_fields` for nested fields) — see
-    `UnifiedHandlerBase::get_acf_taxonomy_fields()`. And on a FIRST write pass the
+    `UnifiedHandlerBase::get_acf_taxonomy_fields()` (defined in trait `AcfBridge`,
+    `class-acf-bridge.php`, as of 0.6.3). And on a FIRST write pass the
     field KEY (not name) to `update_field()`, so ACF registers the hidden
     `_{name}` reference row (name-only first writes save a bare meta value
     `get_field()` can't later resolve). Extends #6 (identity by key). Still open

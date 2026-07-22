@@ -112,6 +112,14 @@ $interfaces = [
     'BWS\\MetaConductor\\Support\\TermMigratorInterface',
 ];
 
+// Handler traits composed into UnifiedHandlerBase (0.6.3). class_exists() does
+// NOT see traits, so a moved-file typo (bad namespace/kebab, `trait` keyword
+// slipped to `class`) would pass the class loop silently — check them here.
+$traits = [
+    'BWS\\MetaConductor\\Handlers\\TermOperations',
+    'BWS\\MetaConductor\\Handlers\\AcfBridge',
+];
+
 $missing = [];
 foreach ($classes as $fqn) {
     if (!class_exists($fqn)) {
@@ -123,8 +131,13 @@ foreach ($interfaces as $fqn) {
         $missing[] = "interface $fqn";
     }
 }
+foreach ($traits as $fqn) {
+    if (!trait_exists($fqn)) {
+        $missing[] = "trait     $fqn";
+    }
+}
 
-$total = count($classes) + count($interfaces);
+$total = count($classes) + count($interfaces) + count($traits);
 if ($missing) {
     fwrite(STDERR, "\nAUTOLOAD FAIL — " . count($missing) . "/$total did not resolve:\n");
     foreach ($missing as $m) {
@@ -134,5 +147,5 @@ if ($missing) {
     exit(1);
 }
 
-fwrite(STDOUT, "AUTOLOAD OK — all $total FQNs resolved (" . count($classes) . " classes, " . count($interfaces) . " interfaces).\n");
+fwrite(STDOUT, "AUTOLOAD OK — all $total FQNs resolved (" . count($classes) . " classes, " . count($interfaces) . " interfaces, " . count($traits) . " traits).\n");
 exit(0);

@@ -9,6 +9,12 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **`UnifiedHandlerBase` split into traits (agent-friendliness; no behavior change).** The shared term +
+  ACF primitives moved out of the 1067-line base into two composed traits: `TermOperations`
+  (`apply_terms_to_post`/`remove_terms_from_post`/`post_has_terms`/`terms_fingerprint`) and `AcfBridge`
+  (`get_acf_taxonomy_value`/`set_acf_taxonomy_value`/`get_acf_taxonomy_fields`). Both are `use`d on the base
+  itself, so every handler still resolves them via `$this->…` unchanged — pure structural refactor. Base
+  drops to ~800 lines. H2 autoload harness now `trait_exists`-checks both.
 - **Phase 2b rename sweep (internal identifiers).** Completes the branding pass begun in 2c:
   - Text domain unified to `meta-conductor` across all `__()`/`_e()` calls (510 args, 29 files). Cosmetic
     (private plugin, no `.po` files) but removes the mixed `bws-meta-manager`/`bws-taxonomy-manager` domains.
