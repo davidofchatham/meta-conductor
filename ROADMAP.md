@@ -19,9 +19,9 @@ Phase numbers are **stable IDs, not execution order** — work has landed out of
 | 2c | Wireframe UI swap | ✅ done | — | god-class `BWS_Settings` → 60-line shell; mixed JS globals (legacy JS deleted) |
 | 0.3.1 | PR #17 review pass | ✅ done | — | — |
 | 2a | PSR-4 namespacing (+ `lib/`→`Support\`, abstracts co-located, `tests/` harness) | ✅ done (0.4.0) | — | manual `require_once` chains; `includes/abstracts/` + `includes/lib/` |
-| **3** | Migrate 5 legacy handlers → UnifiedHandlerBase — **✅ done (0.6.0)**. All 7 handlers on `UnifiedHandlerBase`; legacy `BWS_Handler_Base` deleted; redundant `on_post_save` loop removed | ✅ done | 2a ✅ | legacy handler base; dual-base divergence; `on_post_save` loop double-run |
+| 3 | Migrate 5 legacy handlers → UnifiedHandlerBase — **✅ done (0.6.0)**. All 7 handlers on `UnifiedHandlerBase`; legacy `BWS_Handler_Base` deleted; redundant `on_post_save` loop removed | ✅ done | 2a ✅ | legacy handler base; dual-base divergence; `on_post_save` loop double-run |
 | 2b | Rename sweep — text domain, constants, nonces, core hooks, log table + migration all done (0.6.3, PR #48; real-Athletics verified). JS object + conversion cron/AJAX/transients deferred to P7; internal fn names deferred | ✅ done (0.6.3) | 2a ✅ | mixed text domains |
-| 4 | Config page split (storage blast-radius) — *was CPT storage; CPT deferred* | queued | 3 | one-blob clobber radius; per-page autoload; gives UBT its own option |
+| **4** | Config page split (storage blast-radius) — *was CPT storage; CPT deferred* | **next** | 3 ✅ | one-blob clobber radius; per-page autoload; gives UBT its own option |
 | 7 | Unified migration / preview tool | queued | — (ungated; can run anytime) | `lib/` classes instantiated but never called; tab-aware save bug; Conversion subpage taxonomy selectors |
 | 6a | Options-compatible integrations | queued | 3 | — |
 | 6b | BWS User Based Terms (→ Options, Personalize page) | queued | 4 | UBT merge; needs Personalize page option from P4 |
