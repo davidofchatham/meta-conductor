@@ -320,6 +320,16 @@ H7 extended to validate `{TERM:}` tokens in `post_fields`.
   → `[18]` (Coastal stripped, stays gone; independent West kept) for
   `wp_set_object_terms([])` AND `update_field([])` (the true mirror-lag path,
   field key `field_mc_topics_section`). Down-ADD unchanged.
+  **Coverage caveat (Load/Save-Terms ON only).** The fix lives in
+  `on_parent_terms_set` (the `set_object_terms` hook). It covers `update_field([])`
+  only because the field's save_terms=ON sync writes native and fires
+  `set_object_terms`. On a **save_terms-OFF** field, `update_field([])` clears the
+  ACF mirror WITHOUT firing `set_object_terms`, so the exclude list is empty and the
+  bounce is NOT suppressed. Accepted: OFF fields are an intentionally separate store
+  and `get_post_terms`'s docblock already states propagation is not
+  channel-preserving there. The tested fixtures are all save_terms=ON. If a
+  channel-separate model is ever needed, an ACF-side entry point (or the
+  native/ACF split in `get_post_terms`) closes this.
 - **§5e removal via `wp_remove_object_terms` — FIXED (#47).** `wp_remove_object_terms($parent, $term, $tax)`
   fires `deleted_term_relationships`, NOT `set_object_terms`, so before the fix
   the removal never reached `propagate_term_removals_to_children` and descendants
