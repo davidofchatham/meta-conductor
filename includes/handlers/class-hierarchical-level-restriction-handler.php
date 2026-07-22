@@ -52,6 +52,31 @@ class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
     public function process_post($post_id, $post, $update) {}
 
     /**
+     * Bulk-apply primitive (#31). Delegates to apply_level_restrictions for one
+     * rule + post, gated by the post-type check. Guards $processing so the
+     * wp_set_object_terms it fires doesn't re-enter on_terms_set. Returns whether
+     * the post's terms actually changed (a post already within the restriction is
+     * a no-op → false), so the bulk count reflects posts pruned (#31).
+     */
+    public function apply_to_post(int $post_id, array $rule): bool {
+        if (!$this->should_process_post($post_id, $rule)) {
+            return false;
+        }
+        $taxonomy = $rule['taxonomy'] ?? '';
+        if ($taxonomy === '' || !taxonomy_exists($taxonomy)) {
+            return false;
+        }
+        $before = $this->terms_fingerprint($post_id, $taxonomy);
+        $this->processing = true;
+        try {
+            $this->apply_level_restrictions($post_id, $taxonomy, $rule);
+        } finally {
+            $this->processing = false;
+        }
+        return $this->terms_fingerprint($post_id, $taxonomy) !== $before;
+    }
+
+    /**
      * Handle terms being set on an object
      */
     public function on_terms_set($object_id, $terms, $tt_ids, $taxonomy, $append, $old_tt_ids) {

@@ -9,6 +9,16 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Bulk "process existing posts" now works for the hook-driven handlers (was an inert, over-reporting
+  button).** `process_existing_posts()` drove bulk re-apply through `process_post()`, which the hook-driven
+  handlers (related, propagation, level-restriction) override as a no-op — so bulk did nothing yet reported
+  every scanned post as processed. The base now routes bulk through a new `apply_to_post(int, array): bool`
+  primitive that each hook-driven handler overrides from its own per-post logic (level-restriction wires the
+  long-kept-ready `apply_level_restrictions()`; related re-uses its add-only `process_related_terms`;
+  propagation runs its down/up walk; time-based its date-range apply). `apply_to_post` returns whether the
+  post's terms *actually changed* (measured by a before/after taxonomy fingerprint — target-term taxonomy for
+  related/time-based, self∪descendants for propagation), and the batch message now reports changed-of-scanned
+  per batch, so the count is honest instead of "Processed N of N" while writing nothing. (#31)
 - **Propagation: removing a term from a parent now sticks on its descendants.** When a parent carried an ACF
   taxonomy mirror field (the normal case), a down-removal was undone within the same request: the removal
   pass stripped the term from every descendant, then the add pass re-read the parent as

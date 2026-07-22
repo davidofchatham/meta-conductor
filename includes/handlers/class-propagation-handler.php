@@ -86,6 +86,68 @@ class PropagationHandler extends UnifiedHandlerBase {
     public function process_post($post_id, $post, $update) {}
 
     /**
+     * Bulk-apply primitive (#31). Runs the same per-rule down/up propagation
+     * on_parent_post_save does, for one rule + post, out of band. Guards
+     * $processing so the writes it fires don't re-enter this handler's own
+     * set_object_terms/save_post hooks.
+     *
+     * Returns whether this apply changed ANY post in the affected set — the post
+     * itself (inherit-up) OR any descendant (propagate-down). A self-only measure
+     * would misreport: down-propagation writes the CHILDREN during the parent's
+     * call, so the change is invisible on the parent's own fingerprint. Measure
+     * self ∪ descendants so a real propagation is counted on the call that made
+     * it. Cross-call double counting is bounded — a subtree already settled by an
+     * ancestor's call is a no-op on the descendant's own call (#31 honest count).
+     */
+    public function apply_to_post(int $post_id, array $rule): bool {
+        if (!$this->should_process_post($post_id, $rule)) {
+            return false;
+        }
+        $post = get_post($post_id);
+        if (!$post) {
+            return false;
+        }
+        $taxonomy = $rule['taxonomy'] ?? '';
+
+        // Affected set = this post + every descendant propagate_terms_to_children
+        // could write. Fingerprint the whole set before/after so a downward write
+        // is attributed to this call.
+        $affected = array_merge(
+            array($post_id),
+            $this->get_all_child_posts($post_id, $this->resolve_child_post_types($rule))
+        );
+        $before = $this->subtree_fingerprint($affected, $taxonomy);
+
+        $this->processing = true;
+        try {
+            if ($post->post_parent > 0) {
+                $this->inherit_terms_from_parent($post_id, $post, $rule);
+            }
+            $this->propagate_terms_to_children($post_id, $rule);
+        } finally {
+            $this->processing = false;
+        }
+        return $this->subtree_fingerprint($affected, $taxonomy) !== $before;
+    }
+
+    /**
+     * Combined term fingerprint over a set of posts, for propagation's
+     * self-∪-descendants change detection (#31).
+     *
+     * @param int[]  $post_ids
+     * @param string $taxonomy
+     * @return string
+     */
+    private function subtree_fingerprint(array $post_ids, string $taxonomy): string {
+        $parts = array();
+        foreach ($post_ids as $pid) {
+            $parts[] = $pid . ':' . $this->terms_fingerprint((int) $pid, $taxonomy);
+        }
+        sort($parts);
+        return implode('|', $parts);
+    }
+
+    /**
      * Handle a post save: propagate DOWN to children, and (if the post itself
      * has a parent) inherit UP from its parent. Both directions honor the rule's
      * conflict_handling. Upward inherit lives here — on the child's own save —

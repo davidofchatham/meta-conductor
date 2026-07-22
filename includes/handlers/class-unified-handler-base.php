@@ -820,6 +820,67 @@ abstract class UnifiedHandlerBase {
     }
 
     /**
+     * Apply ONE rule to ONE existing post OUT OF BAND — the bulk-apply primitive
+     * process_existing_posts() drives, decoupled from the hook-path process_post.
+     *
+     * Why this exists (#31): the hook-driven handlers (related, propagation,
+     * level-restriction) make process_post a no-op — their real work fires from
+     * their own set_object_terms/save_post/acf hooks, so the base process_post
+     * (which routes through RuleEngine) must NOT run for them. That left the bulk
+     * "process existing posts" tool inert: it looped process_post, which did
+     * nothing, yet counted every post as processed (the "lying button"). Bulk now
+     * loops THIS instead. Each hook-driven handler overrides it, delegating to its
+     * own per-post primitive with the same $processing re-entry guard its hooks
+     * use; RuleEngine handlers (hierarchical, title-slug, and time-based via its
+     * functional process_post) inherit this default.
+     *
+     * @param int   $post_id Post to apply the rule to.
+     * @param array $rule    One enabled rule (canonical shape).
+     * @return bool True if the rule actually CHANGED the post's terms; false if
+     *              the post-type gate rejected it OR the apply was a no-op (post
+     *              already in the target state). Callers count only true — so the
+     *              bulk tool reports posts genuinely touched, not merely scanned
+     *              (#31: the honest-count contract is "changed", not "applicable").
+     */
+    public function apply_to_post(int $post_id, array $rule): bool {
+        if (!$this->should_process_post($post_id, $rule)) {
+            return false;
+        }
+
+        // RuleEngine handlers (hierarchical) write the rule's own taxonomy;
+        // fingerprint it across the apply so a no-op re-apply reports false.
+        $taxonomy = $rule['taxonomy'] ?? '';
+        $before   = $this->terms_fingerprint($post_id, $taxonomy);
+
+        $entity = new Entity('post', $post_id);
+        $this->process_entity($entity, $rule);
+
+        return $this->terms_fingerprint($post_id, $taxonomy) !== $before;
+    }
+
+    /**
+     * Stable fingerprint of a post's native term IDs in one taxonomy, for
+     * before/after change detection in apply_to_post (#31). Empty taxonomy or a
+     * WP_Error reads as the empty set — a subsequent real write then differs.
+     *
+     * @param int    $post_id
+     * @param string $taxonomy
+     * @return string Sorted comma-joined term IDs (e.g. "13,14,15").
+     */
+    protected function terms_fingerprint(int $post_id, string $taxonomy): string {
+        if ($taxonomy === '') {
+            return '';
+        }
+        $ids = wp_get_object_terms($post_id, $taxonomy, ['fields' => 'ids']);
+        if (is_wp_error($ids)) {
+            return '';
+        }
+        $ids = array_map('intval', $ids);
+        sort($ids);
+        return implode(',', $ids);
+    }
+
+    /**
      * Reapply this handler's term-sync to a single post after an out-of-band
      * write that fired NO save_post-family hook.
      *
@@ -961,10 +1022,23 @@ abstract class UnifiedHandlerBase {
 
         $processed = 0;
 
+        // Loop rules × posts through apply_to_post (the bulk primitive), NOT
+        // process_post — the hook-driven handlers no-op process_post (#31). Count
+        // a post as processed only when at least one rule actually applied to it,
+        // so the reported total reflects work done, not just posts iterated (the
+        // old loop counted every iteration → "Processed N of N" while writing
+        // nothing).
         foreach ($query->posts as $post_id) {
-            $post = get_post($post_id);
-            if ($post) {
-                $this->process_post($post_id, $post, true);
+            if (!get_post($post_id)) {
+                continue;
+            }
+            $applied = false;
+            foreach ($rules as $rule) {
+                if ($this->apply_to_post($post_id, $rule)) {
+                    $applied = true;
+                }
+            }
+            if ($applied) {
                 $processed++;
             }
         }
@@ -976,10 +1050,17 @@ abstract class UnifiedHandlerBase {
             'total' => $total,
             'offset' => $offset + $batch_size,
             'complete' => $complete,
+            // Report posts ACTUALLY changed out of those scanned THIS batch, not
+            // raw iteration count — an applicable-to-none rule set now reads
+            // "Applied to 0 of N" instead of a false "Processed N of N" (#31).
+            // Both numerator and denominator are per-batch: $processed counts
+            // this batch's changed posts, count($query->posts) is this batch's
+            // scanned posts — mixing per-batch numerator with a cumulative
+            // denominator would misreport under pagination.
             'message' => sprintf(
-                __('Processed %d of %d posts.', 'bws-meta-manager'),
-                min($offset + $batch_size, $total),
-                $total
+                __('Applied to %d of %d posts scanned.', 'bws-meta-manager'),
+                $processed,
+                count($query->posts)
             )
         ];
     }

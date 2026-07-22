@@ -54,7 +54,36 @@ class TimeBasedHandler extends UnifiedHandlerBase {
             $this->apply_time_based_rule($post_id, $post, $rule);
         }
     }
-    
+
+    /**
+     * Bulk-apply primitive (#31). Delegates to apply_time_based_rule for one
+     * rule + post. Overrides the base default (which routes RuleEngine) because
+     * time-based's real work is the date-range apply, not RuleEngine. No
+     * $processing guard needed — writes are idempotent (has-term / date-range
+     * guards) and time-based fires no re-entrant term hooks of its own. Returns
+     * whether the target-term taxonomy changed (in-range+already-tagged, or
+     * out-of-range+absent, are both no-ops ⇒ false), so the bulk count is honest
+     * (#31).
+     */
+    public function apply_to_post(int $post_id, array $rule): bool {
+        if (!$this->should_process_post($post_id, $rule)) {
+            return false;
+        }
+        $post = get_post($post_id);
+        if (!$post) {
+            return false;
+        }
+        // Time-based writes the TARGET term's taxonomy — fingerprint that.
+        $taxonomy    = '';
+        $target_term = get_term((int) ($rule['target_term_id'] ?? 0));
+        if ($target_term && !is_wp_error($target_term)) {
+            $taxonomy = $target_term->taxonomy;
+        }
+        $before = $this->terms_fingerprint($post_id, $taxonomy);
+        $this->apply_time_based_rule($post_id, $post, $rule);
+        return $this->terms_fingerprint($post_id, $taxonomy) !== $before;
+    }
+
     /**
      * Handle post save events
      */
