@@ -124,14 +124,23 @@ class PropagationHandler extends UnifiedHandlerBase {
 
                 // Calculate which terms were removed from parent
                 $removed_tt_ids = array_diff($old_tt_ids ?? array(), $tt_ids ?? array());
+                $removed_term_ids = $this->convert_tt_ids_to_term_ids($removed_tt_ids, $taxonomy);
 
                 // Propagate term removals to children FIRST
                 if (!empty($removed_tt_ids)) {
                     $this->propagate_term_removals_to_children($object_id, $rule, $removed_tt_ids);
                 }
 
-                // Then propagate new/current terms to children
-                $this->propagate_terms_to_children($object_id, $rule);
+                // Then propagate new/current terms to children.
+                //
+                // get_post_terms reads native∪ACF. At set_object_terms time the
+                // native store already reflects this removal, but the parent's ACF
+                // MIRROR field is still PRE-removal (its acf/save_post write hasn't
+                // fired yet), so the union re-reads the just-removed term as still
+                // present and would RE-PUSH it onto every descendant the removal
+                // pass just cleaned — the term bounces back within one request (#45).
+                // Exclude the same-pass removals from the add source to break that.
+                $this->propagate_terms_to_children($object_id, $rule, $removed_term_ids);
             }
         } finally {
             $this->processing = false;
@@ -203,8 +212,15 @@ class PropagationHandler extends UnifiedHandlerBase {
 
     /**
      * Propagate terms from parent to all children
+     *
+     * @param int   $parent_id
+     * @param array $rule
+     * @param int[] $exclude_term_ids Term IDs to drop from the add source. Set by
+     *        on_parent_terms_set to the same-pass removals: get_post_terms reads
+     *        native∪ACF and the parent's ACF mirror lags native within one request,
+     *        so a just-removed term would otherwise re-propagate. (#45)
      */
-    private function propagate_terms_to_children($parent_id, $rule) {
+    private function propagate_terms_to_children($parent_id, $rule, $exclude_term_ids = array()) {
         $children = $this->get_all_child_posts($parent_id, $this->resolve_child_post_types($rule));
 
         if (empty($children)) {
@@ -216,6 +232,10 @@ class PropagationHandler extends UnifiedHandlerBase {
 
         // Get parent terms (both native and ACF)
         $parent_terms = $this->get_post_terms($parent_id, $taxonomy);
+
+        if (!empty($exclude_term_ids)) {
+            $parent_terms = array_diff($parent_terms, array_map('absint', $exclude_term_ids));
+        }
 
         if (empty($parent_terms)) {
             return;

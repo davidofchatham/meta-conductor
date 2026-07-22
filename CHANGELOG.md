@@ -5,6 +5,17 @@ All notable changes to Meta Conductor (formerly BWS Meta Manager, formerly BWS T
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.2] — Unreleased
+
+### Fixed
+
+- **Propagation: removing a term from a parent now sticks on its descendants.** When a parent carried an ACF
+  taxonomy mirror field (the normal case), a down-removal was undone within the same request: the removal
+  pass stripped the term from every descendant, then the add pass re-read the parent as
+  native∪ACF and — because the parent's ACF mirror still held the pre-removal value — re-pushed the
+  just-removed term back onto them. The add pass now excludes the same-request removals from its source, so
+  removals persist. Method-independent (`wp_set_object_terms([])` and `update_field([])` both hit it). (#45)
+
 ## [0.6.1] — 2026-07-17
 
 ### Fixed
