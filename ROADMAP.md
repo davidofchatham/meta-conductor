@@ -1,10 +1,8 @@
 # Meta Conductor: Roadmap
 
-**Current Version**: 0.6.0 (pre-release; `0.x` unstable until `1.0.0`)
-**Target Version**: 1.0.0 (first production-ready cut, after rename + PSR-4 namespacing land)
-**Branch**: `main`
+Pre-release `0.x` line — unstable until the first production-ready cut graduates to `1.0.0`. Runtime version is **not** tracked here (drifts too fast); source of truth is the plugin header + `META_CONDUCTOR_VERSION` in `meta-conductor.php`.
 
-The refactor is an **incremental migration, not a rewrite** — the core business logic works; the remaining work is structural (finish the unified-framework handler migration, complete the rename, PSR-4 namespacing, config page split). This document tracks the phased plan and the decisions behind it.
+The refactor is an **incremental migration, not a rewrite** — the core business logic works; the remaining work is structural (config page split, integrations). Rename (2b) and PSR-4 namespacing (2a) have landed. This document tracks the phased plan and the decisions behind it.
 
 ---
 
