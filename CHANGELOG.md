@@ -15,6 +15,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   native∪ACF and — because the parent's ACF mirror still held the pre-removal value — re-pushed the
   just-removed term back onto them. The add pass now excludes the same-request removals from its source, so
   removals persist. Method-independent (`wp_set_object_terms([])` and `update_field([])` both hit it). (#45)
+- **Propagation: `wp_remove_object_terms()` on a parent now propagates the removal down.** That function fires
+  `deleted_term_relationships`, not `set_object_terms`, so the removal-propagation path was never reached and
+  descendants silently kept the term (sibling gap to #45, which fixed the `set_object_terms` path). A new
+  `deleted_term_relationships` hook runs the removal walk under the same reentrancy guard. On the plain
+  `wp_set_object_terms` path — where WordPress removes dropped terms via an internal `wp_remove_object_terms`
+  and both hooks would see the same removal — the delete hook records the handled term-taxonomy IDs so the
+  set hook does not walk them a second time. (#47)
 
 ## [0.6.1] — 2026-07-17
 

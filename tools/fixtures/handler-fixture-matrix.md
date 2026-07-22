@@ -319,10 +319,21 @@ H7 extended to validate `{TERM:}` tokens in `post_fields`.
   (`$exclude_term_ids`). Verified on the local testbed both ways: child `[15,18]`
   → `[18]` (Coastal stripped, stays gone; independent West kept) for
   `wp_set_object_terms([])` AND `update_field([])` (the true mirror-lag path,
-  field key `field_mc_topics_section`). Down-ADD unchanged. `wp_remove_object_terms`
-  still doesn't fire the removal path at all — separate gap, **GitHub issue #47**
-  (handler hooks `set_object_terms`, not `deleted_term_relationships`); needs its
-  own matrix row when fixed.
+  field key `field_mc_topics_section`). Down-ADD unchanged.
+- **§5e removal via `wp_remove_object_terms` — FIXED (#47).** `wp_remove_object_terms($parent, $term, $tax)`
+  fires `deleted_term_relationships`, NOT `set_object_terms`, so before the fix
+  the removal never reached `propagate_term_removals_to_children` and descendants
+  silently kept the term. Fix: new `on_parent_terms_deleted` hook on
+  `deleted_term_relationships` runs the removal walk (same `$processing` guard).
+  Double-fire on the plain-set path is real — `wp_set_object_terms` removes
+  dropped terms via an INTERNAL `wp_remove_object_terms` (taxonomy.php:2924) whose
+  `deleted_term_relationships` fires FIRST, then `set_object_terms` — so the delete
+  hook records handled tt_ids in `$removals_handled` and `on_parent_terms_set`
+  subtracts them from the removal WALK (not from the #45 add-pass exclude list,
+  which must stay full). Verified on the local testbed: put Coastal on parent →
+  child `[15,18]`; `wp_remove_object_terms(parent, Coastal)` → child `[18]`
+  (Coastal gone native + ACF, independent West kept), draft-child `[]` too. #45
+  plain-set path re-swept green in the same run — one removal pass, no bounce-back.
 - **§5c new-child inherit** ✅ new `mc_section` created under the parent inherits
   the parent's terms on its own save (the `post_parent > 0` branch of
   `on_parent_post_save`, not `wp_insert_post`).

@@ -22,6 +22,32 @@ class PropagationHandler extends UnifiedHandlerBase {
      */
     private $processing = false;
 
+    /**
+     * Per-request record of term_taxonomy IDs whose removal was already
+     * propagated by on_parent_terms_deleted (the deleted_term_relationships
+     * hook), keyed by "object_id:taxonomy".
+     *
+     * wp_set_object_terms() removes dropped terms via an INTERNAL
+     * wp_remove_object_terms() call (taxonomy.php:2924), which fires
+     * deleted_term_relationships BEFORE the outer set_object_terms fires. So on
+     * the plain-set path both hooks see the same removal. This map lets
+     * on_parent_terms_set subtract the tt_ids the delete hook already handled,
+     * so the removal propagates exactly once (no redundant child walk / double
+     * debug log).
+     *
+     * Lifecycle: the delete hook OVERWRITES this object's key with the current
+     * removal (never appends); on_parent_terms_set CONSUMES it (subtract then
+     * unset). A bare wp_remove_object_terms with no following set leaves the key
+     * set for the rest of the request — harmless (per-request instance state,
+     * overwritten by the next removal on the same key), but a later plain-set in
+     * the SAME request that dropped DIFFERENT terms on this object+taxonomy could
+     * otherwise read a stale key, so the delete hook clears its own key on entry.
+     * (#47)
+     *
+     * @var array<string,int[]>
+     */
+    private $removals_handled = array();
+
     public function get_handler_type(): string {
         return 'propagation';
     }
@@ -36,6 +62,15 @@ class PropagationHandler extends UnifiedHandlerBase {
     protected function init_hooks() {
         add_action('save_post', array($this, 'on_parent_post_save'), 15, 3);
         add_action('set_object_terms', array($this, 'on_parent_terms_set'), 10, 6);
+
+        // wp_remove_object_terms() fires deleted_term_relationships, NOT
+        // set_object_terms, so a term removed from a parent that way never
+        // reaches on_parent_terms_set. Hook it here so the removal still
+        // propagates down. On the plain wp_set_object_terms path this fires
+        // first (WP removes dropped terms via an internal wp_remove_object_terms
+        // at taxonomy.php:2924) and records the tt_ids in $removals_handled so
+        // on_parent_terms_set does not re-propagate them. (#47)
+        add_action('deleted_term_relationships', array($this, 'on_parent_terms_deleted'), 10, 3);
 
         // Hook into ACF field updates
         add_action('acf/save_post', array($this, 'on_acf_save_post'), 25);
@@ -122,13 +157,36 @@ class PropagationHandler extends UnifiedHandlerBase {
                     continue;
                 }
 
-                // Calculate which terms were removed from parent
+                // Calculate which terms were removed from parent (full set).
                 $removed_tt_ids = array_diff($old_tt_ids ?? array(), $tt_ids ?? array());
+
+                // Full removed term IDs — the #45 add-pass exclude list below
+                // MUST cover EVERY removed term (including ones the delete hook
+                // already propagated), or a just-removed term bounces back onto
+                // descendants via the lagging ACF mirror. Computed from the full
+                // set BEFORE the dedup subtraction.
                 $removed_term_ids = $this->convert_tt_ids_to_term_ids($removed_tt_ids, $taxonomy);
 
-                // Propagate term removals to children FIRST
-                if (!empty($removed_tt_ids)) {
-                    $this->propagate_term_removals_to_children($object_id, $rule, $removed_tt_ids);
+                // Removal WALK dedup: drop tt_ids the deleted_term_relationships
+                // hook already propagated this request. On the plain
+                // wp_set_object_terms path WP removes dropped terms via an
+                // internal wp_remove_object_terms (taxonomy.php:2924) whose
+                // deleted_term_relationships fires BEFORE this set hook, so
+                // on_parent_terms_deleted has already walked the children for
+                // these tt_ids. Subtracting them keeps the removal WALK to one
+                // pass (no redundant walk / double debug log) WITHOUT shrinking
+                // the add-pass exclude list above. Consume-and-clear so a later
+                // independent set is unaffected. (#47)
+                $walk_tt_ids = $removed_tt_ids;
+                $handled_key = $this->removal_key($object_id, $taxonomy);
+                if (!empty($this->removals_handled[$handled_key])) {
+                    $walk_tt_ids = array_diff($removed_tt_ids, $this->removals_handled[$handled_key]);
+                    unset($this->removals_handled[$handled_key]);
+                }
+
+                // Propagate term removals to children FIRST (deduped walk).
+                if (!empty($walk_tt_ids)) {
+                    $this->propagate_term_removals_to_children($object_id, $rule, $walk_tt_ids);
                 }
 
                 // Then propagate new/current terms to children.
@@ -139,7 +197,9 @@ class PropagationHandler extends UnifiedHandlerBase {
                 // fired yet), so the union re-reads the just-removed term as still
                 // present and would RE-PUSH it onto every descendant the removal
                 // pass just cleaned — the term bounces back within one request (#45).
-                // Exclude the same-pass removals from the add source to break that.
+                // Exclude the FULL same-pass removals from the add source to break
+                // that (not the deduped walk set — the ACF lag applies to every
+                // removed term regardless of which hook walked it).
                 $this->propagate_terms_to_children($object_id, $rule, $removed_term_ids);
             }
         } finally {
@@ -147,6 +207,59 @@ class PropagationHandler extends UnifiedHandlerBase {
         }
     }
     
+    /**
+     * Handle an object-term relationship deletion on a parent post.
+     *
+     * Fires for wp_remove_object_terms($parent, $term, $tax) — which does NOT
+     * fire set_object_terms — so this is the ONLY entry point that propagates
+     * that removal down to descendants. It also fires (first) on the plain
+     * wp_set_object_terms path via WP's internal wp_remove_object_terms; in that
+     * case it records the handled tt_ids in $removals_handled so the following
+     * on_parent_terms_set does not double-propagate the same removal. (#47)
+     *
+     * @param int    $object_id Parent post ID.
+     * @param int[]  $tt_ids    Removed term_taxonomy IDs.
+     * @param string $taxonomy  Taxonomy slug.
+     */
+    public function on_parent_terms_deleted($object_id, $tt_ids, $taxonomy) {
+        // Record for on_parent_terms_set's dedup even when we ourselves are
+        // re-entrant or bail below — the plain-set path fires this hook first
+        // regardless, and set_object_terms must not re-propagate what a
+        // WP-internal removal already covered here. This OVERWRITES the key
+        // (empty tt_ids ⇒ empty record), so a stale entry left by an earlier
+        // bare wp_remove_object_terms on the same object+taxonomy can never
+        // survive into a later same-request set. (#47)
+        $this->removals_handled[$this->removal_key($object_id, $taxonomy)] = array_map('absint', (array) $tt_ids);
+
+        if ($this->processing) {
+            return;
+        }
+
+        if (empty($tt_ids)) {
+            return;
+        }
+
+        $enabled_rules = $this->get_enabled_rules();
+
+        $this->processing = true;
+        try {
+            foreach ($enabled_rules as $rule) {
+                if ($rule['taxonomy'] !== $taxonomy) {
+                    continue;
+                }
+
+                $post = get_post($object_id);
+                if (!$post || !$this->should_process_post($object_id, $rule)) {
+                    continue;
+                }
+
+                $this->propagate_term_removals_to_children($object_id, $rule, $tt_ids);
+            }
+        } finally {
+            $this->processing = false;
+        }
+    }
+
     /**
      * AC v7 reapply seam (SPEC §V2/§V6). Delegates to the gated on_acf_save_post
      * — the apply path AC v7's update_field() bypasses.
@@ -322,6 +435,19 @@ class PropagationHandler extends UnifiedHandlerBase {
                 );
             }
         }
+    }
+
+    /**
+     * Composite key into $removals_handled. Written by on_parent_terms_deleted,
+     * read+cleared by on_parent_terms_set — one place so the shape can't drift
+     * between the two sites. (#47)
+     *
+     * @param int    $object_id
+     * @param string $taxonomy
+     * @return string
+     */
+    private function removal_key($object_id, $taxonomy): string {
+        return $object_id . ':' . $taxonomy;
     }
 
     /**
