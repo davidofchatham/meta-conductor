@@ -7,6 +7,26 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.6.3] — Unreleased
 
+### Fixed
+
+- **Value-independent ACF field discovery in level-restriction + related handlers (#41).** Both handlers
+  discovered ACF taxonomy fields via `get_field_objects($post_id)`, which returns `FALSE` for a post with
+  no saved ACF meta — so an attached-but-empty ACF taxonomy field was never found and the ACF path silently
+  no-opped. Rewired to the shared `get_acf_taxonomy_fields()` (resolves fields from field-group *location*
+  rules, value-independent; same fix landed for propagation in `f9f4926`). Level-restriction now writes by
+  field **key** so a first write registers the ACF reference row. Verified on the local testbed: a
+  previously-empty subject's ACF taxonomy field is discovered and pruned to `one_per_level`, native +
+  ACF channels agree.
+
+### Removed
+
+- **Dead `validate_rule()` handler overrides + orphaned helpers (#40).** The public `validate_rule()`
+  overrides on the time-based, propagation, level-restriction, and title-slug handlers had **zero call
+  sites** (whole-tree grep confirmed) — rule saving goes through Wireframe → storage normalization, never
+  a handler `validate_rule`. Removed the 4 overrides plus their sole-caller-orphaned `sanitize_rule_data`
+  (×3) and `is_valid_date` (×1). Live paths (`validate_rule_internal`, the base compat wrapper) untouched.
+  Net −254/+33 lines across the handlers; H1–H6 green.
+
 ### Changed
 
 - **`UnifiedHandlerBase` split into traits (agent-friendliness; no behavior change).** The shared term +

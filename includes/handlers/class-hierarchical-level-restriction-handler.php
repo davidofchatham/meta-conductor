@@ -192,42 +192,33 @@ class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
      * Process ACF level restrictions
      */
     private function process_acf_level_restrictions($post_id, $taxonomy, $rule) {
-        if (!function_exists('get_field_objects')) {
-            return;
-        }
-        
-        $field_objects = get_field_objects($post_id);
-        if (!$field_objects) {
-            return;
-        }
-        
-        foreach ($field_objects as $field) {
-            // Check if this is a taxonomy field for our taxonomy
-            if ($field['type'] === 'taxonomy' && 
-                isset($field['taxonomy']) && 
-                $field['taxonomy'] === $taxonomy) {
-                
-                $current_terms = $this->get_acf_taxonomy_value($post_id, $field['name'], $taxonomy);
-                
-                if (empty($current_terms)) {
-                    continue;
-                }
-                
-                // Apply level restrictions
-                $restricted_terms = $this->calculate_restricted_terms($current_terms, $taxonomy, $rule);
-                
-                if ($restricted_terms !== $current_terms) {
-                    // Update ACF field
-                    $this->set_acf_taxonomy_value($post_id, $field['name'], $restricted_terms);
-                    
-                    // Update native taxonomy terms
-                    wp_set_object_terms($post_id, $restricted_terms, $taxonomy);
-                    
-                    $this->debug_log(
-                        sprintf('Applied ACF level restrictions to post %d for taxonomy %s', $post_id, $taxonomy),
-                        array('field' => $field['name'], 'restricted_terms' => $restricted_terms)
-                    );
-                }
+        // Value-independent discovery (0.6.x ACF B-sweep, #41): resolve fields
+        // from field-group LOCATION rules, not stored meta, so an attached-but-
+        // empty ACF taxonomy field is still found. Read by name, write by key.
+        $fields = $this->get_acf_taxonomy_fields($post_id, $taxonomy);
+
+        foreach ($fields as $field) {
+            $current_terms = $this->get_acf_taxonomy_value($post_id, $field['name'], $taxonomy);
+
+            if (empty($current_terms)) {
+                continue;
+            }
+
+            // Apply level restrictions
+            $restricted_terms = $this->calculate_restricted_terms($current_terms, $taxonomy, $rule);
+
+            if ($restricted_terms !== $current_terms) {
+                // Update ACF field — write by KEY so a first-write registers the
+                // ACF reference row (see set_acf_taxonomy_value docblock).
+                $this->set_acf_taxonomy_value($post_id, $field['key'], $restricted_terms);
+
+                // Update native taxonomy terms
+                wp_set_object_terms($post_id, $restricted_terms, $taxonomy);
+
+                $this->debug_log(
+                    sprintf('Applied ACF level restrictions to post %d for taxonomy %s', $post_id, $taxonomy),
+                    array('field' => $field['name'], 'restricted_terms' => $restricted_terms)
+                );
             }
         }
     }
