@@ -24,6 +24,8 @@ Requirements source: [`../handler-fixture-matrix.md`](../handler-fixture-matrix.
 |---|---|
 | `manifest.php` | Data contract — terms tree, posts, ACF values, rule baselines. Consumers pin `version`. |
 | `lookup.php` | Shared fixture-post lookup. Read its header before touching any post query here — see the trap below. |
+| `resolve.php` | Shared rule token resolver (`{TERM:}` / `{TODAY±N}`). Used by both seed.php and sweep-lib.php so seed-time and restore-time rules never diverge. |
+| `sweep-lib.php` | Behavior-sweep helper library (isolate / read / assert / restore without a full re-seed). See Sweep discipline. |
 | `schema.php` | CPT/taxonomy registration + ACF groups. Loaded by mu-plugin stub seed.php installs. |
 | `seed.php` | Idempotent applier. Order matters: schema → terms → posts → post fields → **rules last** (rules fire on save hooks; posts must land before rules exist). |
 | `verify.php` | Post-seed smoke + negative-control assertions. Not a behavior-sweep replacement. |
@@ -86,6 +88,35 @@ mutated terms. Cycle: **snapshot → seed → sweep → restore**. Never trust a
 reseed to clean up after a behavior sweep.
 
 Cron scenarios: `bin/wp.sh <site> cron event run bws_taxonomy_manager_cleanup`.
+
+### sweep-lib.php — helper library
+
+`sweep-lib.php` collapses the per-eval boilerplate. Load it at the top of a
+sweep eval:
+
+```php
+require_once '<mount>/tools/fixtures/mc-rules/sweep-lib.php';
+mc_isolate( 'hierarchical_rules' );                 // empty every OTHER rule type + clear cache
+$solo = mc_pid( 'item-solo-a' );                    // fixture slug → live post ID (draft-safe)
+mc_reset_subject( $solo );                           // clear terms + _bws_auto_terms
+wp_set_object_terms( $solo, array( mc_tid( 'topic-harbor' ) ), 'mc_topic' );
+mc_assert( '§1a', mc_terms( $solo ),                 // sorted, order-insensitive PASS/FAIL
+    array( mc_tid('topic-region'), mc_tid('topic-east'), mc_tid('topic-coastal'), mc_tid('topic-harbor') ) );
+mc_restore( array( $solo ) );                        // rebuild ALL rules from manifest + reset the subject
+```
+
+Helpers: `mc_isolate($keep)`, `mc_restore($reset_ids=[])`, `mc_reset_subject($id)`,
+`mc_pid($slug)`, `mc_tid($slug)`, `mc_terms($id,$tax)`, `mc_acf($id,$key)`,
+`mc_assert($label,$got,$want)`.
+
+**`mc_restore()` avoids a full re-seed** — it rewrites the rule arrays
+(token-resolved, shared with seed.php via `resolve.php`) and resets named
+subjects, skipping the post upserts + rewrite flush. Fall back to the full
+`seed.php` ONLY when a sweep deleted a post (§4c delete-holder) or renamed one
+(§7 title_slug — restore the `post_name` first, else the by-name lookup
+duplicates it). What sweep-lib does NOT change: isolation is still required
+(handlers hook at boot), and handler dedup is still per-request (one user-edit
+per eval).
 
 ## Term tree (mc_topic)
 

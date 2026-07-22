@@ -290,33 +290,14 @@ $log( 'post fields applied' );
 // ---------------------------------------------------------------------------
 $mc_owned_types = $mc_manifest['defines']['post_types'];
 
-/**
- * Resolve {TERM:slug} and {TODAY±N} tokens through a rule array.
- */
-$mc_resolve = function ( $value ) use ( &$mc_resolve, $mc_term_ids ) {
-	if ( is_array( $value ) ) {
-		return array_map( $mc_resolve, $value );
-	}
-	if ( ! is_string( $value ) ) {
-		return $value;
-	}
-	if ( preg_match( '/^\{TERM:([a-z0-9\-]+)\}$/', $value, $m ) ) {
-		if ( ! isset( $mc_term_ids[ $m[1] ] ) ) {
-			WP_CLI::error( 'rule token {TERM:' . $m[1] . '} — no such fixture term' );
-		}
-		return $mc_term_ids[ $m[1] ];
-	}
-	if ( preg_match( '/^\{TODAY([+-]\d+)?\}$/', $value, $m ) ) {
-		$offset = isset( $m[1] ) && '' !== $m[1] ? (int) $m[1] : 0;
-		return wp_date( 'Y-m-d', strtotime( $offset . ' days', current_time( 'timestamp' ) ) );
-	}
-	return $value;
-};
+// Token resolution is shared with sweep-lib.php's mc_restore() so seed-time and
+// restore-time rules can never diverge. resolve.php exposes mc_resolve_rule_tokens.
+require_once $mc_base . '/resolve.php';
 
 $mc_rules_out = array();
 foreach ( $mc_manifest['mc_rules'] as $mc_type => $mc_rules ) {
 	foreach ( $mc_rules as $mc_i => $mc_rule ) {
-		$mc_rule = $mc_resolve( $mc_rule );
+		$mc_rule = mc_resolve_rule_tokens( $mc_rule, $mc_term_ids );
 
 		// Isolation invariant (handler-fixture-matrix.md): every seeded rule
 		// must be pinned to mc_*-owned post types. An unpinned propagation
