@@ -22,8 +22,6 @@ Meta Conductor adds rule-driven automation to WordPress taxonomies and meta fiel
 
 Each rule type has its own settings tab. Rules apply automatically on `save_post`, plus a bulk-apply tool for existing posts.
 
-Formerly distributed as BWS Meta Manager / BWS Taxonomy Manager.
-
 == Installation ==
 
 1. Upload the `meta-conductor` folder to `/wp-content/plugins/`.
