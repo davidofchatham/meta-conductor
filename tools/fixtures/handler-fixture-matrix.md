@@ -307,17 +307,22 @@ H7 extended to validate `{TERM:}` tokens in `post_fields`.
   receive it (`get_all_child_posts` includes publish/draft/private, recursive);
   child keeps its independent West via merge. (Only passes once both of the
   child's channels agree — see the fixture fix.)
-- **§5b removal — CONFIRMED BUG.** Removing a term from the parent NEVER
+- **§5b removal — FIXED (0.6.2, #45).** Removing a term from the parent now
   propagates to descendants when the parent carries an `mc_topics` ACF mirror
-  field. `on_parent_terms_set` runs removal-propagation (strips the term from
-  children) AND `propagate_terms_to_children` in the same handler pass; the
-  add-side reads `get_post_terms(parent)` = union(native, ACF), and the parent's
-  ACF mirror still returns the OLD value at that instant, so the just-stripped
-  term is immediately RE-propagated. Traced: `SET 102 new=[18]` (strip) →
-  `SET 102 new=[15,18]` (re-add) within one request. Independent of removal
-  method (`wp_set_object_terms([])`, `update_field([])`; `wp_remove_object_terms`
-  doesn't even fire the removal path). Down-ADD works; down-REMOVE is broken by
-  the union read racing the ACF write. → **GitHub issue #45.**
+  field. Old bug: `on_parent_terms_set` ran removal-propagation (strips the term
+  from children) AND `propagate_terms_to_children` in the same handler pass; the
+  add-side read `get_post_terms(parent)` = union(native, ACF), the parent's ACF
+  mirror still returned the OLD value at that instant, and the just-stripped term
+  was immediately RE-propagated (`SET 102 new=[18]` strip → `SET 102 new=[15,18]`
+  re-add, one request). Fix: `on_parent_terms_set` subtracts the same-pass
+  removed term IDs from `propagate_terms_to_children`'s add source
+  (`$exclude_term_ids`). Verified on the local testbed both ways: child `[15,18]`
+  → `[18]` (Coastal stripped, stays gone; independent West kept) for
+  `wp_set_object_terms([])` AND `update_field([])` (the true mirror-lag path,
+  field key `field_mc_topics_section`). Down-ADD unchanged. `wp_remove_object_terms`
+  still doesn't fire the removal path at all — separate gap, **GitHub issue #47**
+  (handler hooks `set_object_terms`, not `deleted_term_relationships`); needs its
+  own matrix row when fixed.
 - **§5c new-child inherit** ✅ new `mc_section` created under the parent inherits
   the parent's terms on its own save (the `post_parent > 0` branch of
   `on_parent_post_save`, not `wp_insert_post`).
