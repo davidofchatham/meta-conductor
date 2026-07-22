@@ -5,7 +5,29 @@ All notable changes to Meta Conductor (formerly BWS Meta Manager, formerly BWS T
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.6.2] — Unreleased
+## [0.6.3] — Unreleased
+
+### Changed
+
+- **Phase 2b rename sweep (internal identifiers).** Completes the branding pass begun in 2c:
+  - Text domain unified to `meta-conductor` across all `__()`/`_e()` calls (510 args, 29 files). Cosmetic
+    (private plugin, no `.po` files) but removes the mixed `bws-meta-manager`/`bws-taxonomy-manager` domains.
+  - Plugin constants renamed `BWS_META_MANAGER_*` → `META_CONDUCTOR_*` (`VERSION`/`PLUGIN_DIR`/`PLUGIN_URL`).
+    The 3 dead `BWS_TAX_MANAGER_*` defines (zero references) were dropped. No back-compat aliases — no external
+    consumer references them.
+  - Nonce action `bws_taxonomy_manager_nonce` → `bws_meta_conductor_nonce` (21 sites).
+  - Core hooks (rule-engine, condition/action, storage-factory, unified-base) renamed `bws_meta_manager_*` →
+    `bws_meta_conductor_*`, including the dynamic `before/after_process_{type}` and `clear_{type}_cache`
+    actions and paired transient key. No aliases (no external listeners). Conversion-subsystem hooks
+    (cron/AJAX/transients) and the JS localized object deferred to Phase 7.
+  - Fixed a latent stale admin-page slug (`bws-meta-manager` → `meta-conductor`) in the conversion tab-URL
+    builder.
+
+### Migrated
+
+- **Core log table renamed** `{prefix}bws_meta_manager_log` → `{prefix}bws_meta_conductor_log` via an
+  idempotent `RENAME TABLE` in the `admin_init` version-check seam (fires on the 0.6.2→0.6.3 bump; guarded so
+  it runs at most once and preserves existing rows). Uninstall now drops all three historical table names.
 
 ### Fixed
 
