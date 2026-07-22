@@ -289,6 +289,8 @@ Reframes the existing ACF "Data Conversion" page as a general-purpose Migration 
 
 **Storage:** none new. Recipes are registered code, not user-saved config.
 
+**Debug-log cleanup (deferred from the 0.6.3 conversion AJAX fix):** the conversion subsystem carries ~137 unconditional `error_log()` calls across `class-data-processor.php`, `class-preview-system.php`, `class-field-mapper.php`, `class-conversion-ui.php` — dev-tracing leftovers (`=== DEBUG ===`, `print_r` dumps, `(UPDATED)`/`(SIMPLIFIED)` tags) that fire on every op in production logs regardless of `WP_DEBUG`. Redundant: genuine errors already surface via `wp_send_json_error` / `$batch_result['errors']`. Strip them when this code is reworked. **Keep** the one operational log — the cron-cleanup summary at `class-conversion-manager.php` (`Meta Conductor Conversion Cleanup: Deleted…`). Also drop the `debug_info` block + `error_log` spam from `handle_estimate_conversion_size_ajax`.
+
 **Rename remainder (carried from 2b, [issue #13](https://github.com/davidofchatham/meta-conductor/issues/13)):** the conversion subsystem's identifiers were deferred here because renaming them in isolation would churn code this phase rewrites. When the conversion code is reworked, finish:
 - JS global `bwsMetaManager` → `bwsMetaConductor` (26 refs in `assets/js/conversion-admin.js`) + the PHP `wp_localize_script()` object name
 - Conversion cron `*_conversion_cleanup`, AJAX actions `wp_ajax_*_conversion_*`, transient keys `*_conversion_*`
