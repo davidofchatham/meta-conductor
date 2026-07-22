@@ -31,6 +31,27 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Data Conversion tool was completely unusable — every selector stayed empty and no conversion could run.**
+  The eight `wp_ajax_bws_meta_manager_conversion_*` endpoints in `TaxonomyManager` were divergent local copies
+  that shadowed the canonical, correctly-shaped handlers on `ConversionUi`, each emitting a payload the client
+  couldn't consume:
+  - **Fields** (`get_fields`) returned each group's `fields` as a key-preserved PHP array → JSON object `{}`,
+    so `conversion-admin.js`'s `group.fields.forEach` silently no-op'd ("Total fields added: 0"). It also
+    ignored `content_type`/`post_types`/`taxonomies`/`field_type_filter`, returning all groups unfiltered.
+  - **Taxonomies / terms / options** were wrapped (`{taxonomies:…}`, `{terms:…}`, `{options:…}` with the wrong
+    inner key) where the client expected bare arrays → Source/Target Taxonomy dropdowns rendered blank, term
+    and option mapping broke.
+  - **Estimate-size** and **process-chunk** were unimplemented stubs returning hardcoded zeros (size dialog
+    showed `undefined`; chunked runs did nothing yet reported complete).
+  - **Process** and **preview** read a nested `$_POST['config']` array the client never sends — the form posts
+    a flat `FormData` — so conversions ran on empty config.
+
+  All eight endpoints now delegate to `ConversionUi` via a lazily-built instance on `ConversionManager`
+  (`get_conversion_ui()`), which owns the canonical response shapes and reads the flat POST through
+  `sanitize_conversion_config()`. The five `ConversionUi` handlers that lacked auth checks
+  (`handle_get_fields`/`get_options`/`get_taxonomies`/`conversion`/`preview` — chunk/estimate/terms were already
+  guarded) gained the nonce + `manage_options` check the old stubs carried, so rerouting is not a security
+  regression.
 - **Bulk "process existing posts" now works for the hook-driven handlers (was an inert, over-reporting
   button).** `process_existing_posts()` drove bulk re-apply through `process_post()`, which the hook-driven
   handlers (related, propagation, level-restriction) override as a no-op — so bulk did nothing yet reported

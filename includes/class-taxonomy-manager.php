@@ -93,7 +93,14 @@ class TaxonomyManager {
 		add_action('wp_ajax_bws_test_related_posts', array($this, 'ajax_test_related_posts'));
 		add_action('wp_ajax_bws_preview_level_restrictions', array($this, 'ajax_preview_level_restrictions'));
 
-		// Conversion AJAX hooks
+		// Conversion AJAX hooks. All eight endpoints route to ConversionUi's
+		// canonical handlers (via the lazily-built instance on the conversion
+		// manager) so responses carry the exact shapes conversion-admin.js
+		// expects — indexed field arrays, bare taxonomy/term arrays, and the
+		// flat-POST config the estimate/process/preview paths read. Divergent
+		// local copies previously emitted key-preserved (object) field lists +
+		// wrapped payloads and read a nested config the client never sends,
+		// leaving every selector empty and every conversion inert.
 		add_action('wp_ajax_bws_meta_manager_conversion_get_fields', array($this, 'ajax_conversion_get_fields'));
 		add_action('wp_ajax_bws_meta_manager_conversion_get_taxonomies', array($this, 'ajax_conversion_get_taxonomies'));
 		add_action('wp_ajax_bws_meta_manager_conversion_get_taxonomy_terms', array($this, 'ajax_conversion_get_taxonomy_terms'));
@@ -788,214 +795,71 @@ class TaxonomyManager {
 	// Conversion AJAX Handlers
 	// ========================================
 
+	// The conversion handlers below are thin delegators to ConversionUi, which
+	// owns the canonical response shapes expected by conversion-admin.js.
+	// Keeping the wp_ajax_* method names stable avoids touching the hook
+	// registrations; the real logic lives in ConversionUi.
+
 	/**
-	 * AJAX handler: Get ACF fields
+	 * AJAX handler: Get ACF fields (delegates to ConversionUi).
 	 */
 	public function ajax_conversion_get_fields() {
-		check_ajax_referer('bws_meta_conductor_nonce', 'nonce');
-
-		if (!current_user_can('manage_options')) {
-			wp_send_json_error(['message' => __('Insufficient permissions', 'meta-conductor')]);
-		}
-
-		// Get all field groups
-		$field_groups = $this->conversion_manager->get_field_groups();
-
-		// Filter by field_type_filter if provided
-		$field_type_filter = sanitize_text_field($_POST['field_type_filter'] ?? '');
-		if ($field_type_filter === 'option_fields') {
-			// Only include fields that support options
-			$option_types = ['select', 'checkbox', 'radio', 'button_group'];
-
-			// Filter fields within each group
-			foreach ($field_groups as &$group) {
-				if (isset($group['fields']) && is_array($group['fields'])) {
-					$group['fields'] = array_filter($group['fields'], function($field) use ($option_types) {
-						return in_array($field['type'] ?? '', $option_types);
-					});
-					// Re-index array
-					$group['fields'] = array_values($group['fields']);
-				}
-			}
-			unset($group); // Break reference
-		}
-
-		// Convert to numeric array (Field Mapper uses associative array with keys)
-		// JavaScript needs a proper array, not an object
-		wp_send_json_success(array_values($field_groups));
+		$this->conversion_manager->get_conversion_ui()->handle_get_fields_ajax();
 	}
 
 	/**
-	 * AJAX handler: Get taxonomies
+	 * AJAX handler: Get taxonomies (delegates to ConversionUi).
 	 */
 	public function ajax_conversion_get_taxonomies() {
-		check_ajax_referer('bws_meta_conductor_nonce', 'nonce');
-
-		if (!current_user_can('manage_options')) {
-			wp_send_json_error(['message' => __('Insufficient permissions', 'meta-conductor')]);
-		}
-
-		$taxonomies = $this->conversion_manager->get_taxonomies();
-
-		// Convert to numeric array (Field Mapper uses associative array)
-		wp_send_json_success(['taxonomies' => array_values($taxonomies)]);
+		$this->conversion_manager->get_conversion_ui()->handle_get_taxonomies_ajax();
 	}
 
 	/**
-	 * AJAX handler: Get taxonomy terms
+	 * AJAX handler: Get taxonomy terms (delegates to ConversionUi).
 	 */
 	public function ajax_conversion_get_taxonomy_terms() {
-		check_ajax_referer('bws_meta_conductor_nonce', 'nonce');
-
-		if (!current_user_can('manage_options')) {
-			wp_send_json_error(['message' => __('Insufficient permissions', 'meta-conductor')]);
-		}
-
-		$taxonomy = sanitize_text_field($_POST['taxonomy'] ?? '');
-
-		if (empty($taxonomy)) {
-			wp_send_json_error(['message' => __('Taxonomy is required', 'meta-conductor')]);
-		}
-
-		$terms = get_terms([
-			'taxonomy' => $taxonomy,
-			'hide_empty' => false,
-		]);
-
-		if (is_wp_error($terms)) {
-			wp_send_json_error(['message' => $terms->get_error_message()]);
-		}
-
-		wp_send_json_success(['terms' => $terms]);
+		$this->conversion_manager->get_conversion_ui()->handle_get_taxonomy_terms_ajax();
 	}
 
 	/**
-	 * AJAX handler: Get field options
+	 * AJAX handler: Get field options (delegates to ConversionUi).
 	 */
 	public function ajax_conversion_get_options() {
-		check_ajax_referer('bws_meta_conductor_nonce', 'nonce');
-
-		if (!current_user_can('manage_options')) {
-			wp_send_json_error(['message' => __('Insufficient permissions', 'meta-conductor')]);
-		}
-
-		$field_key = sanitize_text_field($_POST['field_key'] ?? '');
-
-		if (empty($field_key)) {
-			wp_send_json_error(['message' => __('Field key is required', 'meta-conductor')]);
-		}
-
-		$field_data = $this->conversion_manager->get_field_by_key($field_key);
-
-		if (!$field_data || empty($field_data['choices'])) {
-			wp_send_json_error(['message' => __('Field has no options', 'meta-conductor')]);
-		}
-
-		wp_send_json_success(['options' => $field_data['choices']]);
+		$this->conversion_manager->get_conversion_ui()->handle_get_options_ajax();
 	}
 
+	// The estimate/chunk/process/preview handlers also delegate to ConversionUi.
+	// The local copies were either unimplemented stubs (estimate_size,
+	// process_chunk returned hardcoded zeros) or read a nested $_POST['config']
+	// array the client never sends — conversion-admin.js posts a FLAT FormData,
+	// which ConversionUi::sanitize_conversion_config() reads directly.
+
 	/**
-	 * AJAX handler: Estimate conversion size
+	 * AJAX handler: Estimate conversion size (delegates to ConversionUi).
 	 */
 	public function ajax_conversion_estimate_size() {
-		check_ajax_referer('bws_meta_conductor_nonce', 'nonce');
-
-		if (!current_user_can('manage_options')) {
-			wp_send_json_error(['message' => __('Insufficient permissions', 'meta-conductor')]);
-		}
-
-		// For now, return a simple estimate
-		// TODO: Implement actual size estimation
-		wp_send_json_success([
-			'estimated_items' => 0,
-			'estimated_batches' => 0
-		]);
+		$this->conversion_manager->get_conversion_ui()->handle_estimate_conversion_size_ajax();
 	}
 
 	/**
-	 * AJAX handler: Process conversion chunk
+	 * AJAX handler: Process conversion chunk (delegates to ConversionUi).
 	 */
 	public function ajax_conversion_process_chunk() {
-		check_ajax_referer('bws_meta_conductor_nonce', 'nonce');
-
-		if (!current_user_can('manage_options')) {
-			wp_send_json_error(['message' => __('Insufficient permissions', 'meta-conductor')]);
-		}
-
-		// For now, return success
-		// TODO: Implement chunk processing
-		wp_send_json_success([
-			'processed' => 0,
-			'total' => 0,
-			'complete' => true
-		]);
+		$this->conversion_manager->get_conversion_ui()->handle_chunked_conversion_ajax();
 	}
 
 	/**
-	 * AJAX handler: Process conversion
+	 * AJAX handler: Process conversion (delegates to ConversionUi).
 	 */
 	public function ajax_conversion_process() {
-		check_ajax_referer('bws_meta_conductor_nonce', 'nonce');
-
-		if (!current_user_can('manage_options')) {
-			wp_send_json_error(['message' => __('Insufficient permissions', 'meta-conductor')]);
-		}
-
-		$conversion_type = sanitize_text_field($_POST['conversion_type'] ?? '');
-		$config = $_POST['config'] ?? [];
-
-		if (empty($conversion_type)) {
-			wp_send_json_error(['message' => __('Conversion type is required', 'meta-conductor')]);
-		}
-
-		try {
-			if ($conversion_type === 'copy_data') {
-				$result = $this->conversion_manager->execute_copy_conversion($config);
-			} elseif ($conversion_type === 'map_data') {
-				$result = $this->conversion_manager->execute_map_conversion($config);
-			} else {
-				wp_send_json_error(['message' => __('Invalid conversion type', 'meta-conductor')]);
-				return;
-			}
-
-			wp_send_json_success($result);
-		} catch (\Exception $e) {
-			wp_send_json_error(['message' => $e->getMessage()]);
-		}
+		$this->conversion_manager->get_conversion_ui()->handle_conversion_ajax();
 	}
 
 	/**
-	 * AJAX handler: Generate preview
+	 * AJAX handler: Generate preview (delegates to ConversionUi).
 	 */
 	public function ajax_conversion_preview() {
-		check_ajax_referer('bws_meta_conductor_nonce', 'nonce');
-
-		if (!current_user_can('manage_options')) {
-			wp_send_json_error(['message' => __('Insufficient permissions', 'meta-conductor')]);
-		}
-
-		$conversion_type = sanitize_text_field($_POST['conversion_type'] ?? '');
-		$config = $_POST['config'] ?? [];
-		$sample_count = intval($_POST['sample_count'] ?? 10);
-
-		if (empty($conversion_type)) {
-			wp_send_json_error(['message' => __('Conversion type is required', 'meta-conductor')]);
-		}
-
-		try {
-			if ($conversion_type === 'copy_data') {
-				$result = $this->conversion_manager->generate_copy_preview($config, $sample_count);
-			} elseif ($conversion_type === 'map_data') {
-				$result = $this->conversion_manager->generate_map_preview($config, $sample_count);
-			} else {
-				wp_send_json_error(['message' => __('Invalid conversion type', 'meta-conductor')]);
-				return;
-			}
-
-			wp_send_json_success($result);
-		} catch (\Exception $e) {
-			wp_send_json_error(['message' => $e->getMessage()]);
-		}
+		$this->conversion_manager->get_conversion_ui()->handle_preview_ajax();
 	}
 
     public function ajax_title_slug_preview() {
