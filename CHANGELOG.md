@@ -5,6 +5,17 @@ All notable changes to Meta Conductor (formerly BWS Meta Manager, formerly BWS T
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] — 2026-07-17
+
+### Fixed
+
+- **Admin settings page now loads on symlinked installs.** When the plugin is symlinked into
+  `wp-content/plugins` (a common local-dev layout), PHP's `realpath()` resolves the Wireframe package to a
+  path outside `WP_PLUGIN_DIR`, so Wireframe's asset-URL derivation failed and emitted a broken script/style
+  base (e.g. `https://site.testindex.js`) — the admin UI never rendered. The Wireframe bootstrap now passes an
+  explicit `assets_url` derived from `plugins_url()` (which honors the symlink), so the React bundle and
+  stylesheet load correctly. Non-symlinked installs are unaffected.
+
 ## [0.6.0] — 2026-07-10
 
 Phase 3 complete: the last three legacy handlers migrate to the unified base, the legacy base class and
