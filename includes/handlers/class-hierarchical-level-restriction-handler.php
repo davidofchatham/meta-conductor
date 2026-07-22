@@ -413,60 +413,6 @@ class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
     }
     
     /**
-     * Validate rule data
-     */
-    public function validate_rule($rule_data) {
-        $errors = array();
-        
-        // Validate taxonomy
-        if (empty($rule_data['taxonomy'])) {
-            $errors[] = __('Taxonomy is required.', 'meta-conductor');
-        } elseif (!taxonomy_exists($rule_data['taxonomy'])) {
-            $errors[] = __('Selected taxonomy does not exist.', 'meta-conductor');
-        } else {
-            $taxonomy = get_taxonomy($rule_data['taxonomy']);
-            if (!$taxonomy->hierarchical) {
-                $errors[] = __('Selected taxonomy must be hierarchical.', 'meta-conductor');
-            }
-        }
-        
-        // Validate restriction mode
-        $valid_modes = array('one_per_level', 'deepest_only', 'shallowest_only');
-        if (!empty($rule_data['restriction_mode']) && 
-            !in_array($rule_data['restriction_mode'], $valid_modes)) {
-            $errors[] = __('Invalid restriction mode selected.', 'meta-conductor');
-        }
-        
-        // Validate post types (if specified)
-        if (!empty($rule_data['post_types'])) {
-            foreach ($rule_data['post_types'] as $post_type) {
-                if (!post_type_exists($post_type)) {
-                    $errors[] = sprintf(__('Post type "%s" does not exist.', 'meta-conductor'), $post_type);
-                }
-            }
-        }
-        
-        return array(
-            'valid' => empty($errors),
-            'errors' => $errors,
-            'sanitized_data' => $this->sanitize_rule_data($rule_data)
-        );
-    }
-    
-    /**
-     * Sanitize rule data
-     */
-    private function sanitize_rule_data($rule_data) {
-        return array(
-            'taxonomy' => sanitize_text_field($rule_data['taxonomy'] ?? ''),
-            'restriction_mode' => sanitize_text_field($rule_data['restriction_mode'] ?? 'one_per_level'),
-            'include_ancestors' => !empty($rule_data['include_ancestors']),
-            'post_types' => array_map('sanitize_text_field', $rule_data['post_types'] ?? array()),
-            'enabled' => !empty($rule_data['enabled'])
-        );
-    }
-
-    /**
      * Get rules summary for admin display
      */
     public function get_rules_summary() {
