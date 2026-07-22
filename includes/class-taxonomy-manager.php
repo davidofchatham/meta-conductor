@@ -222,7 +222,7 @@ class TaxonomyManager {
 
         wp_localize_script('bws-conversion-admin', 'bwsMetaManager', array(
             'ajaxUrl' => admin_url('admin-ajax.php'),
-            'nonce'   => wp_create_nonce('bws_taxonomy_manager_nonce'),
+            'nonce'   => wp_create_nonce('bws_meta_conductor_nonce'),
             'strings' => array(
                 'confirm_conversion' => __('This will convert data. Continue?', 'meta-conductor'),
                 'confirm_preview'    => __('Generate preview?', 'meta-conductor'),
@@ -238,7 +238,7 @@ class TaxonomyManager {
 	 * AJAX handler for validating ACF fields
 	 */
 	public function ajax_validate_acf_field() {
-		check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
+		check_ajax_referer('bws_meta_conductor_nonce', 'nonce');
 		
 		if (!current_user_can('manage_options')) {
 			wp_die(__('You do not have sufficient permissions to access this page.', 'meta-conductor'));
@@ -282,7 +282,7 @@ class TaxonomyManager {
 	 * AJAX handler for getting ACF fields for a post type
 	 */
 	public function ajax_get_acf_fields() {
-		check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
+		check_ajax_referer('bws_meta_conductor_nonce', 'nonce');
 		
 		if (!current_user_can('manage_options')) {
 			wp_die(__('You do not have sufficient permissions to access this page.', 'meta-conductor'));
@@ -328,7 +328,7 @@ class TaxonomyManager {
 	 * AJAX handler for testing related posts functionality
 	 */
 	public function ajax_test_related_posts() {
-		check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
+		check_ajax_referer('bws_meta_conductor_nonce', 'nonce');
 		
 		if (!current_user_can('manage_options')) {
 			wp_die(__('You do not have sufficient permissions to access this page.', 'meta-conductor'));
@@ -401,7 +401,7 @@ class TaxonomyManager {
 	 * AJAX handler for previewing level restrictions
 	 */
 	public function ajax_preview_level_restrictions() {
-		check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
+		check_ajax_referer('bws_meta_conductor_nonce', 'nonce');
 		
 		if (!current_user_can('manage_options')) {
 			wp_die(__('You do not have sufficient permissions to access this page.', 'meta-conductor'));
@@ -575,7 +575,7 @@ class TaxonomyManager {
      * AJAX handler for getting taxonomy terms
      */
     public function ajax_get_taxonomy_terms() {
-        check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
+        check_ajax_referer('bws_meta_conductor_nonce', 'nonce');
         
         if (!current_user_can('manage_options')) {
             wp_die(__('You do not have sufficient permissions to access this page.', 'meta-conductor'));
@@ -613,7 +613,7 @@ class TaxonomyManager {
      * AJAX handler for getting post type taxonomies
      */
     public function ajax_get_post_type_taxonomies() {
-        check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
+        check_ajax_referer('bws_meta_conductor_nonce', 'nonce');
         
         if (!current_user_can('manage_options')) {
             wp_die(__('You do not have sufficient permissions to access this page.', 'meta-conductor'));
@@ -773,7 +773,7 @@ class TaxonomyManager {
 	 * AJAX handler for getting dashboard stats
 	 */
 	public function ajax_get_dashboard_stats() {
-		check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
+		check_ajax_referer('bws_meta_conductor_nonce', 'nonce');
 
 		if (!current_user_can('manage_options')) {
 			wp_die(__('You do not have sufficient permissions to access this page.', 'meta-conductor'));
@@ -792,7 +792,7 @@ class TaxonomyManager {
 	 * AJAX handler: Get ACF fields
 	 */
 	public function ajax_conversion_get_fields() {
-		check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
+		check_ajax_referer('bws_meta_conductor_nonce', 'nonce');
 
 		if (!current_user_can('manage_options')) {
 			wp_send_json_error(['message' => __('Insufficient permissions', 'meta-conductor')]);
@@ -829,7 +829,7 @@ class TaxonomyManager {
 	 * AJAX handler: Get taxonomies
 	 */
 	public function ajax_conversion_get_taxonomies() {
-		check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
+		check_ajax_referer('bws_meta_conductor_nonce', 'nonce');
 
 		if (!current_user_can('manage_options')) {
 			wp_send_json_error(['message' => __('Insufficient permissions', 'meta-conductor')]);
@@ -845,7 +845,7 @@ class TaxonomyManager {
 	 * AJAX handler: Get taxonomy terms
 	 */
 	public function ajax_conversion_get_taxonomy_terms() {
-		check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
+		check_ajax_referer('bws_meta_conductor_nonce', 'nonce');
 
 		if (!current_user_can('manage_options')) {
 			wp_send_json_error(['message' => __('Insufficient permissions', 'meta-conductor')]);
@@ -873,7 +873,7 @@ class TaxonomyManager {
 	 * AJAX handler: Get field options
 	 */
 	public function ajax_conversion_get_options() {
-		check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
+		check_ajax_referer('bws_meta_conductor_nonce', 'nonce');
 
 		if (!current_user_can('manage_options')) {
 			wp_send_json_error(['message' => __('Insufficient permissions', 'meta-conductor')]);
@@ -898,7 +898,7 @@ class TaxonomyManager {
 	 * AJAX handler: Estimate conversion size
 	 */
 	public function ajax_conversion_estimate_size() {
-		check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
+		check_ajax_referer('bws_meta_conductor_nonce', 'nonce');
 
 		if (!current_user_can('manage_options')) {
 			wp_send_json_error(['message' => __('Insufficient permissions', 'meta-conductor')]);
@@ -916,7 +916,7 @@ class TaxonomyManager {
 	 * AJAX handler: Process conversion chunk
 	 */
 	public function ajax_conversion_process_chunk() {
-		check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
+		check_ajax_referer('bws_meta_conductor_nonce', 'nonce');
 
 		if (!current_user_can('manage_options')) {
 			wp_send_json_error(['message' => __('Insufficient permissions', 'meta-conductor')]);
@@ -935,7 +935,7 @@ class TaxonomyManager {
 	 * AJAX handler: Process conversion
 	 */
 	public function ajax_conversion_process() {
-		check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
+		check_ajax_referer('bws_meta_conductor_nonce', 'nonce');
 
 		if (!current_user_can('manage_options')) {
 			wp_send_json_error(['message' => __('Insufficient permissions', 'meta-conductor')]);
@@ -968,7 +968,7 @@ class TaxonomyManager {
 	 * AJAX handler: Generate preview
 	 */
 	public function ajax_conversion_preview() {
-		check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
+		check_ajax_referer('bws_meta_conductor_nonce', 'nonce');
 
 		if (!current_user_can('manage_options')) {
 			wp_send_json_error(['message' => __('Insufficient permissions', 'meta-conductor')]);
@@ -999,7 +999,7 @@ class TaxonomyManager {
 	}
 
     public function ajax_title_slug_preview() {
-        check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
+        check_ajax_referer('bws_meta_conductor_nonce', 'nonce');
         if (!current_user_can('manage_options')) {
             wp_send_json_error(['message' => __('Insufficient permissions', 'meta-conductor')]);
         }
@@ -1015,7 +1015,7 @@ class TaxonomyManager {
     }
 
     public function ajax_title_slug_process_existing() {
-        check_ajax_referer('bws_taxonomy_manager_nonce', 'nonce');
+        check_ajax_referer('bws_meta_conductor_nonce', 'nonce');
         if (!current_user_can('manage_options')) {
             wp_send_json_error(['message' => __('Insufficient permissions', 'meta-conductor')]);
         }

@@ -195,7 +195,7 @@ class ConversionUi {
                 </p>
 
                 <form id="copy-data-form" class="bws-conversion-form">
-                    <?php wp_nonce_field( 'bws_taxonomy_manager_nonce', 'nonce' ); ?>
+                    <?php wp_nonce_field( 'bws_meta_conductor_nonce', 'nonce' ); ?>
                     <input type="hidden" name="conversion_type" value="copy_data">
 
                     <table class="form-table" role="presentation">
@@ -388,7 +388,7 @@ class ConversionUi {
                 </p>
 
                 <form id="map-data-form" class="bws-conversion-form">
-                    <?php wp_nonce_field( 'bws_taxonomy_manager_nonce', 'nonce' ); ?>
+                    <?php wp_nonce_field( 'bws_meta_conductor_nonce', 'nonce' ); ?>
                     <input type="hidden" name="conversion_type" value="map_data">
 
                     <table class="form-table" role="presentation">
@@ -752,7 +752,7 @@ class ConversionUi {
      */
     private function verify_ajax_request(): void {
         // Verify nonce
-        if ( ! check_ajax_referer( 'bws_taxonomy_manager_nonce', 'nonce', false ) ) {
+        if ( ! check_ajax_referer( 'bws_meta_conductor_nonce', 'nonce', false ) ) {
             wp_die( 
                 esc_html__( 'Security check failed.', 'meta-conductor' ),
                 esc_html__( 'Forbidden', 'meta-conductor' ),
