@@ -12,7 +12,7 @@
 
 return array(
 	'blueprint'   => 'mc-rules',
-	'version'     => 4, // 4: section-child independent term moved native→ACF field (both channels agree; propagation ACF-merge no longer clobbers it). 3: item-solo-a/b clobber-free subjects. 2: composes_on two-key shape. 1: initial.
+	'version'     => 5, // 5: related_post_terms reverse-field coverage — explicit reverse (mc_parent_section, tier 1) on the existing rule + a native-bidi pair (mc_bidi_items/mc_bidi_sections on section-bidi/item-bidi, mc_flag, tier 2) for the #43 dependent-end sever. 4: section-child independent term moved native→ACF field (both channels agree; propagation ACF-merge no longer clobbers it). 3: item-solo-a/b clobber-free subjects. 2: composes_on two-key shape. 1: initial.
 	// Family-standard shape — matches layout-states and view-structures.
 	// bin/seed-all.sh --only builds its dependency graph from this.
 	'composes_on' => array(
@@ -92,23 +92,45 @@ return array(
 		// (multi-holder pull-union case).
 		'section-holder'  => array( 'post_type' => 'mc_section', 'post_name' => 'mc-holder', 'post_title' => 'MC Holder' ),
 		'section-holder2' => array( 'post_type' => 'mc_section', 'post_name' => 'mc-holder-two', 'post_title' => 'MC Holder Two' ),
+
+		// related_post_terms tier-2 (ACF native bidirectional) pair. Deliberately
+		// its OWN posts + its OWN taxonomy (mc_flag) so it can't perturb any
+		// existing subject: an explicit reverse_acf_field_name short-circuits
+		// tier 2, so tier 1 and tier 2 cannot share a rule. Known interaction:
+		// related_rules §3's taxonomy trigger (any mc_flag ⇒ Featured) fires on
+		// item-bidi once it inherits Priority — expected, and contained here.
+		'section-bidi' => array( 'post_type' => 'mc_section', 'post_name' => 'mc-bidi-holder', 'post_title' => 'MC Bidi Holder' ),
+		'item-bidi'    => array( 'post_type' => 'mc_item', 'post_name' => 'mc-item-bidi', 'post_title' => 'MC Item Bidi' ),
 	),
 
 	// ── Seeded term assignments (fixture slugs) ─────────────────────────
 	'post_terms' => array(
 		'item-gamma'      => array( 'topic-coastal' ),            // time_based filter match
 		'section-holder'  => array( 'topic-coastal', 'topic-east' ), // push source set
+		'section-bidi'    => array( 'flag-priority' ),              // tier-2 push source set
 		// section-child's independent term is seeded via post_fields (ACF) so BOTH
 		// the native store and the save_terms ACF mirror agree — see below.
 	),
 
 	// ── ACF field values (update_field at seed) ─────────────────────────
 	'post_fields' => array(
-		'item-alpha'     => array( 'mc_event_date' => '20300315' ), // title_slug {meta:} token
+		'item-alpha'     => array(
+			'mc_event_date'     => '20300315',              // title_slug {meta:} token
+			'mc_parent_section' => array( 'section-holder' ), // tier-1 reverse (see below)
+		),
 		'item-slug-a'    => array( 'mc_event_date' => '20300401' ),
 		'item-slug-b'    => array( 'mc_event_date' => '20300401' ), // same date → slug collision
 		// Relationship values: fixture slugs resolved to IDs at seed.
 		'section-holder' => array( 'mc_related_items' => array( 'item-alpha', 'item-beta' ) ),
+		// Explicit REVERSE side of the same link (tier 1). Must mirror
+		// section-holder's forward field: once a rule pins
+		// reverse_acf_field_name, source resolution reads THIS field instead of
+		// scanning, so an unseeded reverse would make every dependent look
+		// source-less. Clearing it on one item is the #43 dependent-end sever.
+		'item-beta'      => array( 'mc_parent_section' => array( 'section-holder' ) ),
+		// Tier-2 native-bidi pair. Only the holder side is seeded — ACF writes
+		// item-bidi's mc_bidi_sections itself, which is the point of the case.
+		'section-bidi'   => array( 'mc_bidi_items' => array( 'item-bidi' ) ),
 		// section-child's independent term (removal-propagation must not strip it).
 		// Seeded via the ACF taxonomy field (save_terms=1 syncs native too) so both
 		// channels agree — a native-only seed would let propagation's ACF-merge
@@ -166,15 +188,30 @@ return array(
 			),
 		),
 
-		// matrix §4 — push+keep_in_sync via relationship field.
+		// matrix §4 — push+keep_in_sync via relationship field, in BOTH reverse-
+		// resolution styles. Two rules, deliberately on different taxonomies and
+		// different post pairs, because an explicit reverse_acf_field_name
+		// short-circuits the native-bidi tier — one rule can only prove one tier.
 		// (Pull/post_object variant deferred to a sweep-time rule edit —
 		// one field family per baseline keeps seeded state predictable.)
 		'related_post_terms_rules' => array(
+			// Tier 1 — explicit reverse field. Deterministic; proves the
+			// dependent-end sever branch itself (#43).
+			array(
+				'enabled'                => true,
+				'acf_field_name'         => 'mc_section:mc_related_items',
+				'reverse_acf_field_name' => 'mc_item:mc_parent_section',
+				'holder_role'            => 'source',
+				'taxonomy'               => 'mc_topic',
+				'keep_in_sync'           => true,
+			),
+			// Tier 2 — ACF native bidirectional, no explicit reverse. The shape
+			// that failed in production.
 			array(
 				'enabled'        => true,
-				'acf_field_name' => 'mc_section:mc_related_items',
+				'acf_field_name' => 'mc_section:mc_bidi_items',
 				'holder_role'    => 'source',
-				'taxonomy'       => 'mc_topic',
+				'taxonomy'       => 'mc_flag',
 				'keep_in_sync'   => true,
 			),
 		),

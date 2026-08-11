@@ -17,6 +17,7 @@ use BWS\MetaConductor\Handlers\TitleSlugHandler;
 use BWS\MetaConductor\Conversion\ConversionManager;
 use BWS\MetaConductor\Conversion\ConversionCli;
 use BWS\MetaConductor\Storage\StorageFactory;
+use BWS\MetaConductor\Core\AcfWriteQueue;
 
 // Prevent direct access
 if (!defined('ABSPATH')) {
@@ -44,6 +45,13 @@ class TaxonomyManager {
      * Conversion manager instance
      */
     private $conversion_manager;
+
+    /**
+     * ACF write queue — AC-agnostic reapply trigger (#42).
+     *
+     * @var AcfWriteQueue|null
+     */
+    private $acf_write_queue = null;
 
     /**
      * Get singleton instance
@@ -130,12 +138,17 @@ class TaxonomyManager {
 			'title_slug' => new TitleSlugHandler($this->settings),
         );
 
-        // Admin Columns v7 reapply fallback (#37). AC v7 writes ACF fields via
-        // update_field(), firing acf/update_value only — never the save_post
-        // family the handlers' apply paths listen on. On any AC inline/bulk edit
-        // of an ACF field column, reapply every handler's term-sync. Gate on the
-        // ACP_VERSION constant (defined iff AC Pro active, any v7.x) — NOT a
-        // class_exists on ACP\Plugin, which does NOT exist in v7 (B3/§V5). The
+        // AC-agnostic ACF write queue (#42). Watches ACF's own write filter, so
+        // EVERY write that bypasses the save_post family — AC v7 inline/bulk,
+        // bare update_field(), REST — reapplies the handlers afterwards. This
+        // generalises the #37 AC-only fallback below, which now just asks the
+        // queue to flush one post immediately.
+        $this->acf_write_queue = new AcfWriteQueue($this->handlers);
+        $this->acf_write_queue->register();
+
+        // Admin Columns v7 immediate flush (#37). Gate on the ACP_VERSION
+        // constant (defined iff AC Pro active, any v7.x) — NOT a class_exists
+        // on ACP\Plugin, which does NOT exist in v7 (B3/§V5). The
         // ac/editing/saved hook is itself v7-only, so const + hook name self-gate.
         // (SPEC §V1/§V3/§V5/§V6, B3)
         if (defined('ACP_VERSION')) {
@@ -152,7 +165,7 @@ class TaxonomyManager {
     }
 
     /**
-     * Admin Columns v7 reapply fallback (#37).
+     * Admin Columns v7 IMMEDIATE flush (#37, generalised by #42).
      *
      * AC v7 inline/bulk edits of an ACF field column write via update_field(),
      * which fires acf/update_value ONLY — never acf/save_post / save_post /
@@ -160,15 +173,17 @@ class TaxonomyManager {
      * family (related-post-terms, related, level-restriction, propagation,
      * title-slug) silently fails to reapply after such an edit. (SPEC §V1/§V6)
      *
+     * The apply itself is now AcfWriteQueue's job — the update_field() call has
+     * ALREADY enqueued this post, and the shutdown flush would apply it anyway.
+     * This hook exists only to make the apply happen EARLIER: AC builds its
+     * inline-edit AJAX response before shutdown, so without it the column would
+     * render pre-sync terms and the editor would see a stale value. flush_post
+     * removes the post from the pending set, so there is no double apply.
+     *
      * The native taxonomy-column path is already covered — AC v7 writes native
      * terms via wp_set_object_terms, which fires set_object_terms → the handlers'
      * own listeners run. So we act ONLY on ACF field columns
      * (\AC\Column\CustomFieldContext). (SPEC §V1/§V3)
-     *
-     * We do NOT match the column's field name/type here: we hand the post ID to
-     * EVERY handler's reapply_for_post, which re-reads the post's own fields +
-     * rules and self-gates (post-type, rule-match, reentrancy). Same self-filter
-     * pattern as acf/save_post firing for every post. (SPEC §V3/§V6/§V7)
      *
      * ac/editing/saved fires AFTER AC's storage write (InlineSave/BulkSave), so
      * reads see the new value — post-persist, no pre-write hazard. (SPEC §V2)
@@ -185,9 +200,7 @@ class TaxonomyManager {
                 return;
             }
 
-            foreach ($this->handlers as $handler) {
-                $handler->reapply_for_post($post_id);
-            }
+            $this->acf_write_queue->flush_post($post_id);
         }, 20, 4);
     }
     

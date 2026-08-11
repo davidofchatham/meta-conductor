@@ -116,6 +116,41 @@ function bws_fixture_mc_rules_register_acf() {
 					'return_format'  => 'Ymd',
 					'display_format' => 'Y-m-d',
 				),
+				// REVERSE field, tier 1 (explicit). The item end of
+				// mc_section:mc_related_items — the rule pins it via
+				// `reverse_acf_field_name`, so reverse resolution never
+				// reaches the tier-3 meta_query scan. This is the field an
+				// editor clears to say "this item is no longer in that
+				// section", i.e. the dependent-end sever case (#43).
+				// NOT ACF-bidirectional: the link is kept consistent by the
+				// fixture/sweep, so the branch under test is the plugin's own
+				// explicit-reverse path, deterministically.
+				array(
+					'key'           => 'field_mc_parent_section',
+					'name'          => 'mc_parent_section',
+					'label'         => 'Parent MC Section',
+					'type'          => 'relationship',
+					'post_type'     => array( 'mc_section' ),
+					'return_format' => 'id',
+				),
+				// REVERSE field, tier 2 (ACF NATIVE bidirectional). Partner of
+				// field_mc_bidi_items on mc_section. ACF itself writes the
+				// other side on save, so this exercises the shape that actually
+				// failed in production — the one whose hook-firing the #43
+				// report questions. Kept on its own field pair + its own rule
+				// (mc_flag, not mc_topic) so tier 1 and tier 2 never interact:
+				// an explicit reverse_acf_field_name SHORT-CIRCUITS tier 2, so
+				// one rule can only prove one tier.
+				array(
+					'key'                  => 'field_mc_bidi_sections',
+					'name'                 => 'mc_bidi_sections',
+					'label'                => 'Bidi MC Sections',
+					'type'                 => 'relationship',
+					'post_type'            => array( 'mc_section' ),
+					'return_format'        => 'id',
+					'bidirectional'        => 1,
+					'bidirectional_target' => array( 'field_mc_bidi_items' ),
+				),
 			),
 		)
 	);
@@ -144,6 +179,18 @@ function bws_fixture_mc_rules_register_acf() {
 					'post_type'     => array( 'mc_item' ),
 					'return_format' => 'id',
 					'allow_null'    => 1,
+				),
+				// Holder side of the tier-2 native-bidi pair. Partner:
+				// field_mc_bidi_sections on mc_item.
+				array(
+					'key'                  => 'field_mc_bidi_items',
+					'name'                 => 'mc_bidi_items',
+					'label'                => 'Bidi MC Items',
+					'type'                 => 'relationship',
+					'post_type'            => array( 'mc_item' ),
+					'return_format'        => 'id',
+					'bidirectional'        => 1,
+					'bidirectional_target' => array( 'field_mc_bidi_sections' ),
 				),
 				array(
 					'key'           => 'field_mc_topics_section',

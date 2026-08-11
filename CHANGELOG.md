@@ -5,9 +5,72 @@ All notable changes to Meta Conductor are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.6.3] — Unreleased
+## [0.7.0] — Unreleased
+
+Minor bump (was slated 0.6.3, never tagged): this cut adds a new core module, two public
+filters, and an import-time behavior change, which is more than a patch carries.
+
+### Added
+
+- **AC-agnostic ACF write queue (#42).** New `Core\AcfWriteQueue` watches ACF's own
+  `acf/update_value` filter — the one signal that fires for *every* ACF write — records the
+  posts touched, and reapplies every handler once those writes have landed. This covers all
+  the paths that fire no `save_post`-family hook and therefore silently skipped term sync:
+  Admin Columns Pro v7 inline/bulk edits, bare programmatic `update_field()` (custom code,
+  WP-CLI, cron), and REST writes to an ACF field. The 0.6.0 AC-only fallback (#37) is
+  retained but reduced to a single `flush_post()` call, so inline-edit responses stay
+  accurate while all apply logic lives in one module. Ordinary editor/REST post saves are
+  unaffected — the queue *claims* those posts above every handler priority, so they run
+  through the existing path exactly as before.
+  - New filter `meta_conductor_acf_reapply_enabled` (bool, post ID) — force the behavior on
+    or off per site.
+  - New filter `meta_conductor_acf_flush_cap` (int, default 100) — pending-set size that
+    triggers a bounded mid-request flush, so a long single-process run writes progressively
+    instead of deferring everything to shutdown.
+  - Regression guard `tests/verify-acf-write-queue.php` (H8) pins the four properties that
+    make the mechanism correct and that a refactor could silently break: claim priority
+    above the latest handler, the import gate, the positive-integer post-ID target gate,
+    and the bounded flush skipping the post currently mid-write.
+
+### Changed
+
+- **⚠️ Imports no longer sync terms (#42).** The write queue stands down entirely while
+  `WP_IMPORTING` is set (WP core importers and WP All Import both set it), so an import of
+  thousands of posts does not trigger thousands of rule recomputes. **Reconcile afterwards
+  with "Apply to Existing Posts".** Override with `meta_conductor_acf_reapply_enabled`.
+- **⚠️ Behavior change for live `related_post_terms` rules with `keep_in_sync`.** With #43
+  fixed, a dependent that loses its **last** source now reaches the existing true-orphan
+  path, which performs an *empty replace* on that taxonomy — clearing manually assigned
+  terms alongside the inherited ones. This is the pre-existing keep-in-sync contract (the
+  same already happened on a holder-end sever), but it is now reachable from the end
+  editors actually touch. **If you run a live rule of this type, audit that taxonomy before
+  upgrading.**
 
 ### Fixed
+
+- **ACF Reference: a dependent dropping its own relationship now severs (#43).** For a push
+  rule with `keep_in_sync`, clearing the reverse relationship field on the *dependent* post
+  — the natural way to say "this item no longer belongs to that group" — left the inherited
+  term in place forever. The sever capture recognised only two shapes (a push rule's forward
+  field edited on the holder, a pull rule's reverse field edited on an eligible source); the
+  third, a push rule's reverse field edited on an eligible dependent, was missing. Both
+  reverse-resolution styles are covered — an explicitly configured `reverse_acf_field_name`
+  and an ACF native bidirectional partner. Clearing the relationship from either end now
+  does the same thing. Rules with neither a configured reverse field nor a native bidi
+  partner still have no reverse field name to match, so their edit-sever remains covered at
+  delete time only — unchanged, and documented at the enforcing code.
+  - Side effect: because the #42 flush routes through the handler's normal ACF-save entry
+    point, it also drains pending severs — closing the previously documented gap where a
+    bare `update_field()` captured a sever that nothing ever processed.
+  - The `$severed` bookkeeping's key contract changed from "the source that severed" to
+    "the post whose save drains the entry"; a dependent-end sever keys under itself, since
+    that is the only post saved in the request.
+- **Fixture blueprint `mc-rules` v5.** Adds the reverse-field surface the matrix already
+  called for: an explicit reverse field (`mc_parent_section`, tier 1) on the existing
+  `related_post_terms` rule, plus a self-contained ACF native-bidirectional pair
+  (`mc_bidi_items` ⇄ `mc_bidi_sections` on new `section-bidi`/`item-bidi`, taxonomy
+  `mc_flag`, tier 2). Two rules are required because an explicit reverse short-circuits the
+  bidi tier — one rule can only prove one tier.
 
 - **Value-independent ACF field discovery in level-restriction + related handlers (#41).** Both handlers
   discovered ACF taxonomy fields via `get_field_objects($post_id)`, which returns `FALSE` for a post with

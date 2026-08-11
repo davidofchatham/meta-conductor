@@ -63,6 +63,7 @@ $classes = [
     'BWS\\MetaConductor\\Core\\ConditionEvaluator',
     'BWS\\MetaConductor\\Core\\ActionExecutor',
     'BWS\\MetaConductor\\Core\\RuleEngine',
+    'BWS\\MetaConductor\\Core\\AcfWriteQueue',
     // Storage\
     'BWS\\MetaConductor\\Storage\\OptionRuleStorage',
     'BWS\\MetaConductor\\Storage\\StorageFactory',
