@@ -61,8 +61,38 @@ the entry never drains. On a dependent-end sever the dependent is both key and v
 | T3 | H2 FQN entry; new H8 `tests/verify-acf-write-queue.php` | ✅ |
 | T4 | Fixture v5: `mc_parent_section` (tier 1) + native-bidi pair (tier 2) | ✅ |
 | T5 | Docker fixture sweeps (both tiers, multi-source, bare `update_field()`, pseudo-target, idempotence, holder-end regression) | ✅ |
-| T6 | Athletics confirmation: original scenario, AC v7 inline, REST | ⏳ |
+| T6 | Athletics confirmation on the `hargrave` clone: original scenario, AC v7, REST, import suppression | ✅ |
 | T7 | CHANGELOG 0.7.0 (orphan-wipe behavior change called out), version bump | ✅ |
+
+## Athletics confirmation (T6) — `hargrave` clone, real data
+
+Subject: schedule #77740 *Varsity Wrestling Schedule 2026-27* → game #77745
+*BRAC Championships* (single source). The three live rules are push +
+keep_in_sync on `athletics_schedule:schedule_games`, explicit reverse
+`athletics_events:game_team_schedule_cpt`, taxonomies `sport` / `teams` /
+`school_year`. **Both fields are also ACF-bidirectional**, so ACF keeps the two
+sides consistent — the stale-explicit-reverse hazard below does NOT bite this
+site's configuration. AC Pro 7.1.1, ACF Pro 6.8.6. Restored to baseline after.
+
+| Step | Result |
+|---|---|
+| A — game clears its reverse field | all three taxonomies withdrawn; ACF also removed the game from the schedule side ✅ |
+| A2 — re-link from the game end | terms reapplied ✅ |
+| B — bare `update_field()`, no post save | terms reapplied by the shutdown flush ✅ |
+| C — AC v7 `ac/editing/saved` | flushed IMMEDIATELY, same request, before shutdown ✅ |
+| D — REST post update with an `acf` payload | applied ✅ (see note) |
+| E — bare write under `WP_IMPORTING` | nothing applied ✅ |
+
+**D does not isolate the queue.** A REST *post* update fires `save_post`, so the
+handlers ran on the ordinary path and the claim correctly stopped the queue
+applying it a second time at shutdown — a useful no-double-apply check, but the
+REST case #42 actually targets is an ACF/meta-only endpoint that fires no post
+save. Not reachable from this site's configuration; unproven either way.
+
+**AC Pro is admin-only** (`if (!is_admin()) return;` before it defines its
+version constant), so step C needs `wp --exec="define('WP_ADMIN', true);"`.
+Under a plain WP-CLI run the constant is absent, the hook never registers, and
+the step fails misleadingly.
 
 ## §B — Bugs
 
