@@ -5,331 +5,133 @@ All notable changes to Meta Conductor are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.7.0] — Unreleased
+## [0.7.0] — 2026-08-12
 
-Minor bump (was slated 0.6.3, never tagged): this cut adds a new core module, a public
-filter, and an import-time behavior change, which is more than a patch carries.
+Term sync now follows ACF itself: a new write queue on `acf/update_value` catches every ACF write, including Admin Columns edits, bare `update_field()`, and REST, not just the ones that fire a save hook. Also repairs the Data Conversion tool, the bulk "process existing posts" button, and three propagation/severance gaps. Two behavior changes are flagged ⚠ below: imports no longer sync terms, and keep-in-sync rules can now clear a taxonomy from the dependent end.
 
 ### Added
 
-- **AC-agnostic ACF write queue (#42).** New `Core\AcfWriteQueue` watches ACF's own
-  `acf/update_value` filter — the one signal that fires for *every* ACF write — records the
-  posts touched, and reapplies every handler once those writes have landed. This covers all
-  the paths that fire no `save_post`-family hook and therefore silently skipped term sync:
-  Admin Columns Pro v7 inline/bulk edits, bare programmatic `update_field()` (custom code,
-  WP-CLI, cron), and REST writes to an ACF field. The 0.6.0 AC-only fallback (#37) is
-  retained but reduced to a single `flush_post()` call, so inline-edit responses stay
-  accurate while all apply logic lives in one module. Ordinary editor/REST post saves are
-  unaffected — the queue *claims* those posts above every handler priority, so they run
-  through the existing path exactly as before.
-  - New filter `meta_conductor_acf_reapply_enabled` (bool, post ID) — force the behavior on
-    or off per site. The gate sits on the apply step every flush path funnels through, so
-    returning `false` disables reapply everywhere including the Admin Columns inline-edit
-    path. The filter is always handed a real post ID, never one of ACF's `options` /
-    `user_N` / `term_N` pseudo-targets.
-  - **The conversion tool suppresses reapply for its own writes.** It writes target fields
-    with `update_field()`, so without this every converted post would be reapplied at
-    shutdown or at the bounded flush — a second wave of rule processing on top of the
-    heaviest run the plugin does. Suppression is scoped to the conversion call, not the
-    request. Reconcile afterwards with "Apply to Existing Posts", as with imports.
-  - A bounded mid-request flush past a fixed cap (100 pending posts) keeps a long
-    single-process run writing progressively instead of deferring everything to shutdown.
-    The cap is deliberately NOT filterable yet: no site has needed to tune it, and adding a
-    filter later is non-breaking whereas removing a published one is not.
-  - Regression guard `tests/verify-acf-write-queue.php` (H8) pins the four properties that
-    make the mechanism correct and that a refactor could silently break: claim priority
-    above the latest handler, the import gate, the positive-integer post-ID target gate,
-    and the bounded flush skipping the post currently mid-write.
+- **AC-agnostic ACF write queue (#42).** New `Core\AcfWriteQueue` watches ACF's own `acf/update_value` filter — the one signal that fires for *every* ACF write — records the posts touched, and reapplies every handler once those writes have landed. This covers all the paths that fire no `save_post`-family hook and therefore silently skipped term sync: Admin Columns Pro v7 inline/bulk edits, bare programmatic `update_field()` (custom code, WP-CLI, cron), and REST writes to an ACF field. The 0.6.0 AC-only fallback (#37) is retained but reduced to a single `flush_post()` call, so inline-edit responses stay accurate while all apply logic lives in one module. Ordinary editor/REST post saves are unaffected — the queue *claims* those posts above every handler priority, so they run through the existing path exactly as before.
+  - New filter `meta_conductor_acf_reapply_enabled` (bool, post ID) — force the behavior on or off per site. The gate sits on the apply step every flush path funnels through, so returning `false` disables reapply everywhere including the Admin Columns inline-edit path. The filter is always handed a real post ID, never one of ACF's `options` / `user_N` / `term_N` pseudo-targets.
+  - **The conversion tool suppresses reapply for its own writes.** It writes target fields with `update_field()`, so without this every converted post would be reapplied at shutdown or at the bounded flush — a second wave of rule processing on top of the heaviest run the plugin does. Suppression is scoped to the conversion call, not the request. Reconcile afterwards with "Apply to Existing Posts", as with imports.
+  - A bounded mid-request flush past a fixed cap (100 pending posts) keeps a long single-process run writing progressively instead of deferring everything to shutdown. The cap is deliberately NOT filterable yet: no site has needed to tune it, and adding a filter later is non-breaking whereas removing a published one is not.
+  - Regression guard `tests/verify-acf-write-queue.php` (H8) pins the four properties that make the mechanism correct and that a refactor could silently break: claim priority above the latest handler, the import gate, the positive-integer post-ID target gate, and the bounded flush skipping the post currently mid-write.
 
 ### Changed
 
-- **⚠️ Imports no longer sync terms (#42).** The write queue stands down entirely while
-  `WP_IMPORTING` is set (WP core importers and WP All Import both set it), so an import of
-  thousands of posts does not trigger thousands of rule recomputes. **Reconcile afterwards
-  with "Apply to Existing Posts".** Override with `meta_conductor_acf_reapply_enabled`.
-- **⚠️ Behavior change for live `related_post_terms` rules with `keep_in_sync`.** With #43
-  fixed, a dependent that loses its **last** source now reaches the existing true-orphan
-  path, which performs an *empty replace* on that taxonomy — clearing manually assigned
-  terms alongside the inherited ones. This is the pre-existing keep-in-sync contract (the
-  same already happened on a holder-end sever), but it is now reachable from the end
-  editors actually touch. **If you run a live rule of this type, audit that taxonomy before
-  upgrading.**
-
-### Fixed
-
-- **ACF Reference: a dependent dropping its own relationship now severs (#43).** For a push
-  rule with `keep_in_sync`, clearing the reverse relationship field on the *dependent* post
-  — the natural way to say "this item no longer belongs to that group" — left the inherited
-  term in place forever. The sever capture recognised only two shapes (a push rule's forward
-  field edited on the holder, a pull rule's reverse field edited on an eligible source); the
-  third, a push rule's reverse field edited on an eligible dependent, was missing. Both
-  reverse-resolution styles are covered — an explicitly configured `reverse_acf_field_name`
-  and an ACF native bidirectional partner. Clearing the relationship from either end now
-  does the same thing. Rules with neither a configured reverse field nor a native bidi
-  partner still have no reverse field name to match, so their edit-sever remains covered at
-  delete time only — unchanged, and documented at the enforcing code.
-  - Side effect: because the #42 flush routes through the handler's normal ACF-save entry
-    point, it also drains pending severs — closing the previously documented gap where a
-    bare `update_field()` captured a sever that nothing ever processed.
-  - The `$severed` bookkeeping's key contract changed from "the source that severed" to
-    "the post whose save drains the entry"; a dependent-end sever keys under itself, since
-    that is the only post saved in the request.
-- **Fixture blueprint `mc-rules` v5.** Adds the reverse-field surface the matrix already
-  called for: an explicit reverse field (`mc_parent_section`, tier 1) on the existing
-  `related_post_terms` rule, plus a self-contained ACF native-bidirectional pair
-  (`mc_bidi_items` ⇄ `mc_bidi_sections` on new `section-bidi`/`item-bidi`, taxonomy
-  `mc_flag`, tier 2). Two rules are required because an explicit reverse short-circuits the
-  bidi tier — one rule can only prove one tier.
-
-- **Value-independent ACF field discovery in level-restriction + related handlers (#41).** Both handlers
-  discovered ACF taxonomy fields via `get_field_objects($post_id)`, which returns `FALSE` for a post with
-  no saved ACF meta — so an attached-but-empty ACF taxonomy field was never found and the ACF path silently
-  no-opped. Rewired to the shared `get_acf_taxonomy_fields()` (resolves fields from field-group *location*
-  rules, value-independent; same fix landed for propagation in `f9f4926`). Level-restriction now writes by
-  field **key** so a first write registers the ACF reference row. Verified on the local testbed: a
-  previously-empty subject's ACF taxonomy field is discovered and pruned to `one_per_level`, native +
-  ACF channels agree.
+- **⚠️ Imports no longer sync terms (#42).** The write queue stands down entirely while `WP_IMPORTING` is set (WP core importers and WP All Import both set it), so an import of thousands of posts does not trigger thousands of rule recomputes. **Reconcile afterwards with "Apply to Existing Posts".** Override with `meta_conductor_acf_reapply_enabled`.
+- **⚠️ Behavior change for live `related_post_terms` rules with `keep_in_sync`.** With #43 fixed, a dependent that loses its **last** source now reaches the existing true-orphan path, which performs an *empty replace* on that taxonomy — clearing manually assigned terms alongside the inherited ones. This is the pre-existing keep-in-sync contract (the same already happened on a holder-end sever), but it is now reachable from the end editors actually touch. **If you run a live rule of this type, audit that taxonomy before upgrading.**
+- **`UnifiedHandlerBase` split into traits (agent-friendliness; no behavior change).** The shared term + ACF primitives moved out of the 1067-line base into two composed traits: `TermOperations` (`apply_terms_to_post`/`remove_terms_from_post`/`post_has_terms`/`terms_fingerprint`) and `AcfBridge` (`get_acf_taxonomy_value`/`set_acf_taxonomy_value`/`get_acf_taxonomy_fields`). Both are `use`d on the base itself, so every handler still resolves them via `$this->…` unchanged — pure structural refactor. Base drops to ~800 lines. H2 autoload harness now `trait_exists`-checks both.
+- **Phase 2b rename sweep (internal identifiers).** Completes the branding pass begun in 2c:
+  - Text domain unified to `meta-conductor` across all `__()`/`_e()` calls (510 args, 29 files). Cosmetic (private plugin, no `.po` files) but removes the mixed `bws-meta-manager`/`bws-taxonomy-manager` domains.
+  - Plugin constants renamed `BWS_META_MANAGER_*` → `META_CONDUCTOR_*` (`VERSION`/`PLUGIN_DIR`/`PLUGIN_URL`). The 3 dead `BWS_TAX_MANAGER_*` defines (zero references) were dropped. No back-compat aliases — no external consumer references them.
+  - Nonce action `bws_taxonomy_manager_nonce` → `bws_meta_conductor_nonce` (21 sites).
+  - Core hooks (rule-engine, condition/action, storage-factory, unified-base) renamed `bws_meta_manager_*` → `bws_meta_conductor_*`, including the dynamic `before/after_process_{type}` and `clear_{type}_cache` actions and paired transient key. No aliases (no external listeners). Conversion-subsystem hooks (cron/AJAX/transients) and the JS localized object deferred to Phase 7.
+  - Fixed a latent stale admin-page slug (`bws-meta-manager` → `meta-conductor`) in the conversion tab-URL builder.
 
 ### Removed
 
-- **Dead `validate_rule()` handler overrides + orphaned helpers (#40).** The public `validate_rule()`
-  overrides on the time-based, propagation, level-restriction, and title-slug handlers had **zero call
-  sites** (whole-tree grep confirmed) — rule saving goes through Wireframe → storage normalization, never
-  a handler `validate_rule`. Removed the 4 overrides plus their sole-caller-orphaned `sanitize_rule_data`
-  (×3) and `is_valid_date` (×1). Live paths (`validate_rule_internal`, the base compat wrapper) untouched.
-  Net −254/+33 lines across the handlers; H1–H6 green.
-
-### Changed
-
-- **`UnifiedHandlerBase` split into traits (agent-friendliness; no behavior change).** The shared term +
-  ACF primitives moved out of the 1067-line base into two composed traits: `TermOperations`
-  (`apply_terms_to_post`/`remove_terms_from_post`/`post_has_terms`/`terms_fingerprint`) and `AcfBridge`
-  (`get_acf_taxonomy_value`/`set_acf_taxonomy_value`/`get_acf_taxonomy_fields`). Both are `use`d on the base
-  itself, so every handler still resolves them via `$this->…` unchanged — pure structural refactor. Base
-  drops to ~800 lines. H2 autoload harness now `trait_exists`-checks both.
-- **Phase 2b rename sweep (internal identifiers).** Completes the branding pass begun in 2c:
-  - Text domain unified to `meta-conductor` across all `__()`/`_e()` calls (510 args, 29 files). Cosmetic
-    (private plugin, no `.po` files) but removes the mixed `bws-meta-manager`/`bws-taxonomy-manager` domains.
-  - Plugin constants renamed `BWS_META_MANAGER_*` → `META_CONDUCTOR_*` (`VERSION`/`PLUGIN_DIR`/`PLUGIN_URL`).
-    The 3 dead `BWS_TAX_MANAGER_*` defines (zero references) were dropped. No back-compat aliases — no external
-    consumer references them.
-  - Nonce action `bws_taxonomy_manager_nonce` → `bws_meta_conductor_nonce` (21 sites).
-  - Core hooks (rule-engine, condition/action, storage-factory, unified-base) renamed `bws_meta_manager_*` →
-    `bws_meta_conductor_*`, including the dynamic `before/after_process_{type}` and `clear_{type}_cache`
-    actions and paired transient key. No aliases (no external listeners). Conversion-subsystem hooks
-    (cron/AJAX/transients) and the JS localized object deferred to Phase 7.
-  - Fixed a latent stale admin-page slug (`bws-meta-manager` → `meta-conductor`) in the conversion tab-URL
-    builder.
+- **Dead `validate_rule()` handler overrides + orphaned helpers (#40).** The public `validate_rule()` overrides on the time-based, propagation, level-restriction, and title-slug handlers had **zero call sites** (whole-tree grep confirmed) — rule saving goes through Wireframe → storage normalization, never a handler `validate_rule`. Removed the 4 overrides plus their sole-caller-orphaned `sanitize_rule_data` (×3) and `is_valid_date` (×1). Live paths (`validate_rule_internal`, the base compat wrapper) untouched. Net −254/+33 lines across the handlers; H1–H6 green.
 
 ### Migrated
 
-- **Core log table renamed** `{prefix}bws_meta_manager_log` → `{prefix}bws_meta_conductor_log` via an
-  idempotent `RENAME TABLE` in the `admin_init` version-check seam (fires on the 0.6.2→0.6.3 bump; guarded so
-  it runs at most once and preserves existing rows). Uninstall now drops all three historical table names.
+- **Core log table renamed** `{prefix}bws_meta_manager_log` → `{prefix}bws_meta_conductor_log` via an idempotent `RENAME TABLE` in the `admin_init` version-check seam (fires on the first admin request after upgrading; guarded so it runs at most once and preserves existing rows). Uninstall now drops all three historical table names.
 
 ### Fixed
 
-- **Data Conversion tool was completely unusable — every selector stayed empty and no conversion could run.**
-  The eight `wp_ajax_bws_meta_manager_conversion_*` endpoints in `TaxonomyManager` were divergent local copies
-  that shadowed the canonical, correctly-shaped handlers on `ConversionUi`, each emitting a payload the client
-  couldn't consume:
-  - **Fields** (`get_fields`) returned each group's `fields` as a key-preserved PHP array → JSON object `{}`,
-    so `conversion-admin.js`'s `group.fields.forEach` silently no-op'd ("Total fields added: 0"). It also
-    ignored `content_type`/`post_types`/`taxonomies`/`field_type_filter`, returning all groups unfiltered.
-  - **Taxonomies / terms / options** were wrapped (`{taxonomies:…}`, `{terms:…}`, `{options:…}` with the wrong
-    inner key) where the client expected bare arrays → Source/Target Taxonomy dropdowns rendered blank, term
-    and option mapping broke.
-  - **Estimate-size** and **process-chunk** were unimplemented stubs returning hardcoded zeros (size dialog
-    showed `undefined`; chunked runs did nothing yet reported complete).
-  - **Process** and **preview** read a nested `$_POST['config']` array the client never sends — the form posts
-    a flat `FormData` — so conversions ran on empty config.
+- **ACF Reference: a dependent dropping its own relationship now severs (#43).** For a push rule with `keep_in_sync`, clearing the reverse relationship field on the *dependent* post — the natural way to say "this item no longer belongs to that group" — left the inherited term in place forever. The sever capture recognised only two shapes (a push rule's forward field edited on the holder, a pull rule's reverse field edited on an eligible source); the third, a push rule's reverse field edited on an eligible dependent, was missing. Both reverse-resolution styles are covered — an explicitly configured `reverse_acf_field_name` and an ACF native bidirectional partner. Clearing the relationship from either end now does the same thing. Rules with neither a configured reverse field nor a native bidi partner still have no reverse field name to match, so their edit-sever remains covered at delete time only — unchanged, and documented at the enforcing code.
+  - Side effect: because the #42 flush routes through the handler's normal ACF-save entry point, it also drains pending severs — closing the previously documented gap where a bare `update_field()` captured a sever that nothing ever processed.
+  - The `$severed` bookkeeping's key contract changed from "the source that severed" to "the post whose save drains the entry"; a dependent-end sever keys under itself, since that is the only post saved in the request.
+- **Fixture blueprint `mc-rules` v5.** Adds the reverse-field surface the matrix already called for: an explicit reverse field (`mc_parent_section`, tier 1) on the existing `related_post_terms` rule, plus a self-contained ACF native-bidirectional pair (`mc_bidi_items` ⇄ `mc_bidi_sections` on new `section-bidi`/`item-bidi`, taxonomy `mc_flag`, tier 2). Two rules are required because an explicit reverse short-circuits the bidi tier — one rule can only prove one tier.
 
-  All eight endpoints now delegate to `ConversionUi` via a lazily-built instance on `ConversionManager`
-  (`get_conversion_ui()`), which owns the canonical response shapes and reads the flat POST through
-  `sanitize_conversion_config()`. The five `ConversionUi` handlers that lacked auth checks
-  (`handle_get_fields`/`get_options`/`get_taxonomies`/`conversion`/`preview` — chunk/estimate/terms were already
-  guarded) gained the nonce + `manage_options` check the old stubs carried, so rerouting is not a security
-  regression.
-- **Bulk "process existing posts" now works for the hook-driven handlers (was an inert, over-reporting
-  button).** `process_existing_posts()` drove bulk re-apply through `process_post()`, which the hook-driven
-  handlers (related, propagation, level-restriction) override as a no-op — so bulk did nothing yet reported
-  every scanned post as processed. The base now routes bulk through a new `apply_to_post(int, array): bool`
-  primitive that each hook-driven handler overrides from its own per-post logic (level-restriction wires the
-  long-kept-ready `apply_level_restrictions()`; related re-uses its add-only `process_related_terms`;
-  propagation runs its down/up walk; time-based its date-range apply). `apply_to_post` returns whether the
-  post's terms *actually changed* (measured by a before/after taxonomy fingerprint — target-term taxonomy for
-  related/time-based, self∪descendants for propagation), and the batch message now reports changed-of-scanned
-  per batch, so the count is honest instead of "Processed N of N" while writing nothing. (#31)
-- **Propagation: removing a term from a parent now sticks on its descendants.** When a parent carried an ACF
-  taxonomy mirror field (the normal case), a down-removal was undone within the same request: the removal
-  pass stripped the term from every descendant, then the add pass re-read the parent as
-  native∪ACF and — because the parent's ACF mirror still held the pre-removal value — re-pushed the
-  just-removed term back onto them. The add pass now excludes the same-request removals from its source, so
-  removals persist. Method-independent (`wp_set_object_terms([])` and `update_field([])` both hit it). (#45)
-- **Propagation: `wp_remove_object_terms()` on a parent now propagates the removal down.** That function fires
-  `deleted_term_relationships`, not `set_object_terms`, so the removal-propagation path was never reached and
-  descendants silently kept the term (sibling gap to #45, which fixed the `set_object_terms` path). A new
-  `deleted_term_relationships` hook runs the removal walk under the same reentrancy guard. On the plain
-  `wp_set_object_terms` path — where WordPress removes dropped terms via an internal `wp_remove_object_terms`
-  and both hooks would see the same removal — the delete hook records the handled term-taxonomy IDs so the
-  set hook does not walk them a second time. (#47)
+- **Value-independent ACF field discovery in level-restriction + related handlers (#41).** Both handlers discovered ACF taxonomy fields via `get_field_objects($post_id)`, which returns `FALSE` for a post with no saved ACF meta — so an attached-but-empty ACF taxonomy field was never found and the ACF path silently no-opped. Rewired to the shared `get_acf_taxonomy_fields()` (resolves fields from field-group *location* rules, value-independent; same fix landed for propagation in `f9f4926`). Level-restriction now writes by field **key** so a first write registers the ACF reference row. Verified on the local testbed: a previously-empty subject's ACF taxonomy field is discovered and pruned to `one_per_level`, native + ACF channels agree.
+
+- **Data Conversion tool was completely unusable — every selector stayed empty and no conversion could run.** The eight `wp_ajax_bws_meta_manager_conversion_*` endpoints in `TaxonomyManager` were divergent local copies that shadowed the canonical, correctly-shaped handlers on `ConversionUi`, each emitting a payload the client couldn't consume:
+  - **Fields** (`get_fields`) returned each group's `fields` as a key-preserved PHP array → JSON object `{}`, so `conversion-admin.js`'s `group.fields.forEach` silently no-op'd ("Total fields added: 0"). It also ignored `content_type`/`post_types`/`taxonomies`/`field_type_filter`, returning all groups unfiltered.
+  - **Taxonomies / terms / options** were wrapped (`{taxonomies:…}`, `{terms:…}`, `{options:…}` with the wrong inner key) where the client expected bare arrays → Source/Target Taxonomy dropdowns rendered blank, term and option mapping broke.
+  - **Estimate-size** and **process-chunk** were unimplemented stubs returning hardcoded zeros (size dialog showed `undefined`; chunked runs did nothing yet reported complete).
+  - **Process** and **preview** read a nested `$_POST['config']` array the client never sends — the form posts a flat `FormData` — so conversions ran on empty config.
+
+  All eight endpoints now delegate to `ConversionUi` via a lazily-built instance on `ConversionManager` (`get_conversion_ui()`), which owns the canonical response shapes and reads the flat POST through `sanitize_conversion_config()`. The five `ConversionUi` handlers that lacked auth checks (`handle_get_fields`/`get_options`/`get_taxonomies`/`conversion`/`preview` — chunk/estimate/terms were already guarded) gained the nonce + `manage_options` check the old stubs carried, so rerouting is not a security regression.
+- **Bulk "process existing posts" now works for the hook-driven handlers (was an inert, over-reporting button).** `process_existing_posts()` drove bulk re-apply through `process_post()`, which the hook-driven handlers (related, propagation, level-restriction) override as a no-op — so bulk did nothing yet reported every scanned post as processed. The base now routes bulk through a new `apply_to_post(int, array): bool` primitive that each hook-driven handler overrides from its own per-post logic (level-restriction wires the long-kept-ready `apply_level_restrictions()`; related re-uses its add-only `process_related_terms`; propagation runs its down/up walk; time-based its date-range apply). `apply_to_post` returns whether the post's terms *actually changed* (measured by a before/after taxonomy fingerprint — target-term taxonomy for related/time-based, self∪descendants for propagation), and the batch message now reports changed-of-scanned per batch, so the count is honest instead of "Processed N of N" while writing nothing. (#31)
+- **Propagation: removing a term from a parent now sticks on its descendants.** When a parent carried an ACF taxonomy mirror field (the normal case), a down-removal was undone within the same request: the removal pass stripped the term from every descendant, then the add pass re-read the parent as native∪ACF and — because the parent's ACF mirror still held the pre-removal value — re-pushed the just-removed term back onto them. The add pass now excludes the same-request removals from its source, so removals persist. Method-independent (`wp_set_object_terms([])` and `update_field([])` both hit it). (#45)
+- **Propagation: `wp_remove_object_terms()` on a parent now propagates the removal down.** That function fires `deleted_term_relationships`, not `set_object_terms`, so the removal-propagation path was never reached and descendants silently kept the term (sibling gap to #45, which fixed the `set_object_terms` path). A new `deleted_term_relationships` hook runs the removal walk under the same reentrancy guard. On the plain `wp_set_object_terms` path — where WordPress removes dropped terms via an internal `wp_remove_object_terms` and both hooks would see the same removal — the delete hook records the handled term-taxonomy IDs so the set hook does not walk them a second time. (#47)
 
 ## [0.6.1] — 2026-07-17
 
 ### Fixed
 
-- **Admin settings page now loads on symlinked installs.** When the plugin is symlinked into
-  `wp-content/plugins` (a common local-dev layout), PHP's `realpath()` resolves the Wireframe package to a
-  path outside `WP_PLUGIN_DIR`, so Wireframe's asset-URL derivation failed and emitted a broken script/style
-  base (e.g. `https://site.testindex.js`) — the admin UI never rendered. The Wireframe bootstrap now passes an
-  explicit `assets_url` derived from `plugins_url()` (which honors the symlink), so the React bundle and
-  stylesheet load correctly. Non-symlinked installs are unaffected.
+- **Admin settings page now loads on symlinked installs.** When the plugin is symlinked into `wp-content/plugins` (a common local-dev layout), PHP's `realpath()` resolves the Wireframe package to a path outside `WP_PLUGIN_DIR`, so Wireframe's asset-URL derivation failed and emitted a broken script/style base (e.g. `https://site.testindex.js`) — the admin UI never rendered. The Wireframe bootstrap now passes an explicit `assets_url` derived from `plugins_url()` (which honors the symlink), so the React bundle and stylesheet load correctly. Non-symlinked installs are unaffected.
 
 ## [0.6.0] — 2026-07-10
 
-Phase 3 complete: the last three legacy handlers migrate to the unified base, the legacy base class and
-the redundant save loop are removed, and each migrated rule type gets a config/label pass. Also fixes the
-Admin Columns integration for Admin Columns Pro v7.
+Phase 3 complete: the last three legacy handlers migrate to the unified base, the legacy base class and the redundant save loop are removed, and each migrated rule type gets a config/label pass. Also fixes the Admin Columns integration for Admin Columns Pro v7.
 
 ### Changed
 
-- **Level Restriction, Propagation, and Date Window (time-based) rules migrated to the unified handler base.**
-  These were the last three rule types still on the old handler base. Behavior is unchanged for existing
-  rules, with the fixes and polish below.
-- **"Limit to post types" is now multi-select on every rule type.** Propagation, Level Restriction, and Date
-  Window rules previously took a single post type; they now use the shared post-type checkboxes (empty =
-  all). Propagation offers only hierarchical post types (it needs a parent/child relationship). *Existing
-  single-post-type rules of these three types need a one-time re-save to pick up the new field.*
+- **Level Restriction, Propagation, and Date Window (time-based) rules migrated to the unified handler base.** These were the last three rule types still on the old handler base. Behavior is unchanged for existing rules, with the fixes and polish below.
+- **"Limit to post types" is now multi-select on every rule type.** Propagation, Level Restriction, and Date Window rules previously took a single post type; they now use the shared post-type checkboxes (empty = all). Propagation offers only hierarchical post types (it needs a parent/child relationship). *Existing single-post-type rules of these three types need a one-time re-save to pick up the new field.*
 - **Clearer collapsed row titles:**
-  - Propagation: e.g. "Pages: Copy Breakers terms to children (replace)" — post-type scope shown only when
-    restricted.
-  - Date Window: e.g. "2026-05-26–2026-05-27: Apply Shakers: Grandchild ii to posts with Breakers: Term A" —
-    date window first, then the target term, scope, and any post filter.
-- **Level Restriction "Keep ancestor terms"** (was "Include ancestors") now has an accurate description of
-  what it does in each mode and only appears in the modes where it has an effect.
+  - Propagation: e.g. "Pages: Copy Breakers terms to children (replace)" — post-type scope shown only when restricted.
+  - Date Window: e.g. "2026-05-26–2026-05-27: Apply Shakers: Grandchild ii to posts with Breakers: Term A" — date window first, then the target term, scope, and any post filter.
+- **Level Restriction "Keep ancestor terms"** (was "Include ancestors") now has an accurate description of what it does in each mode and only appears in the modes where it has an effect.
 
 ### Fixed
 
-- **New child posts now inherit their parent's terms on their own save** (propagation), honoring the rule's
-  conflict handling (merge / replace / skip). Previously a new child did not receive inherited terms until
-  the parent was re-saved.
-- **Propagation no longer writes/logs a redundant term update** when a post already has the terms — both
-  directions (a child inheriting from its parent, and a parent cascading to its children). A no-op parent
-  save no longer re-writes terms to every descendant.
-- **Propagation now populates a child's ACF taxonomy field even when the child had no ACF value yet.** Field
-  discovery used `get_field_objects()`, which returns nothing for a post with no saved ACF meta, so a
-  never-populated child could never receive its first ACF write (native terms applied, ACF field left empty).
-  Fields are now resolved from ACF location rules (value-independent), and the first write uses the field key
-  so ACF registers the field reference correctly. The child-inheriting and parent-cascading paths, the
-  ACF-only source read, and the term-removal path all use the same discovery.
-- **Prevented a latent crash**: propagation and level-restriction rules that act on an ACF taxonomy field
-  would have hit an undefined-method error after the base migration; the ACF read/write helpers are now on
-  the unified base. (Only reachable with an ACF taxonomy field configured; native-taxonomy rules were
-  unaffected.)
-- **Date Window daily cleanup no longer runs twice** — the scheduled expired-term cleanup was registered
-  both directly by the handler and via a redundant relay; the relay is removed.
-- **Date Window "Filter by taxonomies" now works** — the taxonomy filter read the checkbox field in the
-  wrong shape, so a rule with a taxonomy filter set never matched any post. Filtering by specific terms was
-  unaffected.
-- **Post-status gating hardened** — the shared post-status filter didn't normalize its checkbox value, so a
-  status gate could be silently bypassed. (No rule type gates on status via this path yet; fixed proactively.)
-- **Post-type gating normalized consistently** — the shared post-type gate hand-rolled its checkbox
-  extraction while the post-status gate used the canonical helper; both now go through the same extractor,
-  removing a drift risk. No behavior change for correctly-saved rules.
-- **Level Restriction ACF saves no longer re-enter the handler** — saving a post whose ACF taxonomy field is
-  under a level-restriction rule wrote terms without setting the reentrancy guard, so the handler ran a
-  second (redundant) restriction pass in the same request. The guard is now symmetric with the native-terms
-  path. (Idempotent before; the fix removes the wasted work and an edge-case extra write.)
-- **Bulk "process existing posts" reads the correct post-type key** — the bulk tool still read the old scalar
-  `source_filters['post_type']` and so would have scanned only the `post` type for the migrated rule types
-  (which now store the plural `post_types` checkboxes). It now reads `post_types` (empty = all), falling back
-  to the legacy key. (Not yet reachable via UI — see [#31](https://github.com/davidofchatham/meta-conductor/issues/31).)
-- **Admin Columns Pro v7 edits reapply rules again** — the Admin Columns integration used pre-v7 hook names
-  and signatures, so on AC/ACP v7+ its hooks never fired and inline/quick/bulk-edit changes stopped driving
-  rule reapply. AC v7 writes ACF fields via `update_field()`, which fires `acf/update_value` only — never the
-  save hooks the handlers listen on. A new `ac/editing/saved` fallback now reapplies every ACF-listening
-  handler's sync (ACF reference, Related Term Mapping, Level Restriction, Propagation, Title & Slug) after an
-  AC v7 edit; native taxonomy-column edits were already covered. ([#37](https://github.com/davidofchatham/meta-conductor/issues/37))
-- **Admin Columns Pro is detected correctly on v7** — the "Admin Columns Pro" diagnostics status checked for a
-  class that no longer exists in v7, so it reported "Not Active" even when ACP was active. It now checks the
-  `ACP_VERSION` constant.
+- **New child posts now inherit their parent's terms on their own save** (propagation), honoring the rule's conflict handling (merge / replace / skip). Previously a new child did not receive inherited terms until the parent was re-saved.
+- **Propagation no longer writes/logs a redundant term update** when a post already has the terms — both directions (a child inheriting from its parent, and a parent cascading to its children). A no-op parent save no longer re-writes terms to every descendant.
+- **Propagation now populates a child's ACF taxonomy field even when the child had no ACF value yet.** Field discovery used `get_field_objects()`, which returns nothing for a post with no saved ACF meta, so a never-populated child could never receive its first ACF write (native terms applied, ACF field left empty). Fields are now resolved from ACF location rules (value-independent), and the first write uses the field key so ACF registers the field reference correctly. The child-inheriting and parent-cascading paths, the ACF-only source read, and the term-removal path all use the same discovery.
+- **Prevented a latent crash**: propagation and level-restriction rules that act on an ACF taxonomy field would have hit an undefined-method error after the base migration; the ACF read/write helpers are now on the unified base. (Only reachable with an ACF taxonomy field configured; native-taxonomy rules were unaffected.)
+- **Date Window daily cleanup no longer runs twice** — the scheduled expired-term cleanup was registered both directly by the handler and via a redundant relay; the relay is removed.
+- **Date Window "Filter by taxonomies" now works** — the taxonomy filter read the checkbox field in the wrong shape, so a rule with a taxonomy filter set never matched any post. Filtering by specific terms was unaffected.
+- **Post-status gating hardened** — the shared post-status filter didn't normalize its checkbox value, so a status gate could be silently bypassed. (No rule type gates on status via this path yet; fixed proactively.)
+- **Post-type gating normalized consistently** — the shared post-type gate hand-rolled its checkbox extraction while the post-status gate used the canonical helper; both now go through the same extractor, removing a drift risk. No behavior change for correctly-saved rules.
+- **Level Restriction ACF saves no longer re-enter the handler** — saving a post whose ACF taxonomy field is under a level-restriction rule wrote terms without setting the reentrancy guard, so the handler ran a second (redundant) restriction pass in the same request. The guard is now symmetric with the native-terms path. (Idempotent before; the fix removes the wasted work and an edge-case extra write.)
+- **Bulk "process existing posts" reads the correct post-type key** — the bulk tool still read the old scalar `source_filters['post_type']` and so would have scanned only the `post` type for the migrated rule types (which now store the plural `post_types` checkboxes). It now reads `post_types` (empty = all), falling back to the legacy key. (Not yet reachable via UI — see [#31](https://github.com/davidofchatham/meta-conductor/issues/31).)
+- **Admin Columns Pro v7 edits reapply rules again** — the Admin Columns integration used pre-v7 hook names and signatures, so on AC/ACP v7+ its hooks never fired and inline/quick/bulk-edit changes stopped driving rule reapply. AC v7 writes ACF fields via `update_field()`, which fires `acf/update_value` only — never the save hooks the handlers listen on. A new `ac/editing/saved` fallback now reapplies every ACF-listening handler's sync (ACF reference, Related Term Mapping, Level Restriction, Propagation, Title & Slug) after an AC v7 edit; native taxonomy-column edits were already covered. ([#37](https://github.com/davidofchatham/meta-conductor/issues/37))
+- **Admin Columns Pro is detected correctly on v7** — the "Admin Columns Pro" diagnostics status checked for a class that no longer exists in v7, so it reported "Not Active" even when ACP was active. It now checks the `ACP_VERSION` constant.
 
 ### Removed
 
 - **Legacy `BWS_Handler_Base` class deleted** — all seven rule handlers now share `UnifiedHandlerBase`.
-- **Redundant global save loop removed** — each handler registers its own hooks; the Date Window rule no
-  longer runs twice per save.
-- **Dead pre-v7 Admin Columns integration deleted** — the old `class-admin-columns-integration.php` (legacy
-  hook names, an unreachable scheduled reapply event) is replaced by the `ac/editing/saved` fallback above.
+- **Redundant global save loop removed** — each handler registers its own hooks; the Date Window rule no longer runs twice per save.
+- **Dead pre-v7 Admin Columns integration deleted** — the old `class-admin-columns-integration.php` (legacy hook names, an unreachable scheduled reapply event) is replaced by the `ac/editing/saved` fallback above.
 
 ### Known interactions (filed, not blocking)
 
-- Propagation + hierarchical rules on the same taxonomy compose: children can gain one extra expansion level
-  ([#35](https://github.com/davidofchatham/meta-conductor/issues/35)).
-- Propagation has no inherited-vs-manual term tracking; a mode switch can strand a previously inherited term
-  ([#34](https://github.com/davidofchatham/meta-conductor/issues/34)).
-- Bulk "process existing posts" is inert for hook-driven handlers and has no UI trigger yet; systemic fix
-  deferred to the Migration/Preview tool ([#31](https://github.com/davidofchatham/meta-conductor/issues/31)).
-- Propagation treats a post's native terms and its ACF taxonomy field as one merged set and mirrors that set
-  into **both** stores on the children. With the ACF field's Load/Save Terms ON (the default) the two stores
-  are already identical, so this is invisible. With Load/Save Terms OFF — where the native and ACF values are
-  intentionally kept separate — propagation collapses that separation on the children (a parent's native-only
-  term appears in the child's ACF field and vice-versa). Propagation is not channel-preserving by design; if a
-  "keep native and ACF separate" model is needed, file an issue.
-- ACF Reference (Related Post Terms) does not strip a synced term when the **dependent** end drops a
-  bidirectional relationship (e.g. clearing the relationship on the event rather than the schedule). The
-  term-removal sever is missed on both the editor and Admin Columns paths; adding a relationship still syncs
-  correctly ([#43](https://github.com/davidofchatham/meta-conductor/issues/43)).
-- The Admin Columns v7 reapply is Admin-Columns-coupled. An AC-agnostic version driven from `acf/update_value`
-  (covering bare `update_field()` and REST writes) is tracked separately
-  ([#42](https://github.com/davidofchatham/meta-conductor/issues/42)).
+- Propagation + hierarchical rules on the same taxonomy compose: children can gain one extra expansion level ([#35](https://github.com/davidofchatham/meta-conductor/issues/35)).
+- Propagation has no inherited-vs-manual term tracking; a mode switch can strand a previously inherited term ([#34](https://github.com/davidofchatham/meta-conductor/issues/34)).
+- Bulk "process existing posts" is inert for hook-driven handlers and has no UI trigger yet; systemic fix deferred to the Migration/Preview tool ([#31](https://github.com/davidofchatham/meta-conductor/issues/31)).
+- Propagation treats a post's native terms and its ACF taxonomy field as one merged set and mirrors that set into **both** stores on the children. With the ACF field's Load/Save Terms ON (the default) the two stores are already identical, so this is invisible. With Load/Save Terms OFF — where the native and ACF values are intentionally kept separate — propagation collapses that separation on the children (a parent's native-only term appears in the child's ACF field and vice-versa). Propagation is not channel-preserving by design; if a "keep native and ACF separate" model is needed, file an issue.
+- ACF Reference (Related Post Terms) does not strip a synced term when the **dependent** end drops a bidirectional relationship (e.g. clearing the relationship on the event rather than the schedule). The term-removal sever is missed on both the editor and Admin Columns paths; adding a relationship still syncs correctly ([#43](https://github.com/davidofchatham/meta-conductor/issues/43)).
+- The Admin Columns v7 reapply is Admin-Columns-coupled. An AC-agnostic version driven from `acf/update_value` (covering bare `update_field()` and REST writes) is tracked separately ([#42](https://github.com/davidofchatham/meta-conductor/issues/42)).
 
 ## [0.5.0] — 2026-06-30
 
 ### Added
 
-- **Disabled rules are flagged in their collapsed row title** — ACF reference and Related Term Mapping rules
-  now show a `[Disabled]` prefix on the row label when switched off, so a disabled rule is recognizable without
-  expanding it. (The marker updates when you save the rule.)
+- **Disabled rules are flagged in their collapsed row title** — ACF reference and Related Term Mapping rules now show a `[Disabled]` prefix on the row label when switched off, so a disabled rule is recognizable without expanding it. (The marker updates when you save the rule.)
 
 ### Changed
 
 #### ACF reference rules ("From referenced post") reworked
 
-- **Direction is now selectable.** Each rule's ACF field pins the "field holder" post type; a new
-  **Authoritative end** option says which end owns the terms — *Field holder is the source* pushes the holder's
-  terms out to the related posts, *Related posts are the source* pulls their terms onto the holder (the old
-  behavior). Existing rules keep the pull behavior automatically; only newly added rules default to push.
-- **Single taxonomy.** The separate Source/Target taxonomy selectors are collapsed into one **Taxonomy**
-  field. Copying terms across two *different* taxonomies never actually worked (terms are copied by ID, and an
-  ID belongs to one taxonomy), so the second selector was a footgun. Existing rules keep their source taxonomy.
-- **"Bidirectional" → "Keep in sync."** Clearer name for the same idea: when on, copied terms are removed from
-  the target once the source no longer has them; when off, terms are only added, never removed.
-- **Source publication-status filter.** New **Limit to source statuses** option — only copy terms from source
-  posts with the chosen statuses (e.g. published only). Empty = any status. Gates the *source*, not the target.
-- **Optional reverse relationship field** for faster two-way lookups; auto-detects ACF native bidirectional
-  fields, falling back to a query when none is configured.
+- **Direction is now selectable.** Each rule's ACF field pins the "field holder" post type; a new **Authoritative end** option says which end owns the terms — *Field holder is the source* pushes the holder's terms out to the related posts, *Related posts are the source* pulls their terms onto the holder (the old behavior). Existing rules keep the pull behavior automatically; only newly added rules default to push.
+- **Single taxonomy.** The separate Source/Target taxonomy selectors are collapsed into one **Taxonomy** field. Copying terms across two *different* taxonomies never actually worked (terms are copied by ID, and an ID belongs to one taxonomy), so the second selector was a footgun. Existing rules keep their source taxonomy.
+- **"Bidirectional" → "Keep in sync."** Clearer name for the same idea: when on, copied terms are removed from the target once the source no longer has them; when off, terms are only added, never removed.
+- **Source publication-status filter.** New **Limit to source statuses** option — only copy terms from source posts with the chosen statuses (e.g. published only). Empty = any status. Gates the *source*, not the target.
+- **Optional reverse relationship field** for faster two-way lookups; auto-detects ACF native bidirectional fields, falling back to a query when none is configured.
 - **Rule row titles** rebuilt: e.g. "Copy Sport Connectors terms to Team schedule on Published".
-- **Conflict handling option removed** — "Keep in sync" now controls add-only vs replace. Existing rules map
-  automatically (merge → off, replace → on).
+- **Conflict handling option removed** — "Keep in sync" now controls add-only vs replace. Existing rules map automatically (merge → off, replace → on).
 
 ### Heads-up (existing ACF reference rules)
 
-- Migration is automatic and behavior-preserving — existing rules continue to pull onto the field holder, in
-  their source taxonomy, with the same add/remove behavior. **Re-save a rule to refresh its row title** and to
-  adopt the new single-taxonomy/direction wording. A rule that previously used the rare `skip` conflict mode is
-  migrated to add-only; re-check those.
+- Migration is automatic and behavior-preserving — existing rules continue to pull onto the field holder, in their source taxonomy, with the same add/remove behavior. **Re-save a rule to refresh its row title** and to adopt the new single-taxonomy/direction wording. A rule that previously used the rare `skip` conflict mode is migrated to add-only; re-check those.
 
 ### Internal
 
-- ACF reference handler migrated to the unified handler base (Phase 3). Sync is now **declarative and
-  source-authoritative**: a post's terms in the synced taxonomy are recomputed from its current related posts
-  on every relevant save, rather than tracked incrementally — safer under multiple rules and reorders.
-- **Removed** the legacy `AcfIntegration` term-sync engine — a parallel reimplementation of several rule types
-  on the old rule schema. Redundant for taxonomy fields that load/save terms to the post (ACF mirrors native ↔
-  field, so the handlers reading native terms already see everything). The migrated handlers are the sole
-  writers; engine-off parity was verified on real data before removal. The `bws_mc_acf_sync_engine_enabled`
-  filter is gone with it.
+- ACF reference handler migrated to the unified handler base (Phase 3). Sync is now **declarative and source-authoritative**: a post's terms in the synced taxonomy are recomputed from its current related posts on every relevant save, rather than tracked incrementally — safer under multiple rules and reorders.
+- **Removed** the legacy `AcfIntegration` term-sync engine — a parallel reimplementation of several rule types on the old rule schema. Redundant for taxonomy fields that load/save terms to the post (ACF mirrors native ↔ field, so the handlers reading native terms already see everything). The migrated handlers are the sole writers; engine-off parity was verified on real data before removal. The `bws_mc_acf_sync_engine_enabled` filter is gone with it.
 
 ## [0.4.3] — 2026-06-22
 

@@ -395,7 +395,7 @@ if (!function_exists('bws_meta_manager_init')) {
 		$current_version = get_option('bws_meta_conductor_version');
 
 		if ($current_version !== META_CONDUCTOR_VERSION) {
-			// Phase 2b (0.6.3): rename the core log table to the new brand.
+			// Phase 2b (shipped 0.7.0): rename the core log table to the new brand.
 			// Idempotent — only renames when the old table exists and the new
 			// one does not, so re-runs and fresh installs are both safe. Uses
 			// RENAME TABLE to preserve existing log rows.
