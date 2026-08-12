@@ -18,16 +18,24 @@ Phase numbers are **stable IDs, not execution order** — work has landed out of
 | 0.3.1 | PR #17 review pass | ✅ done | — | — |
 | 2a | PSR-4 namespacing (+ `lib/`→`Support\`, abstracts co-located, `tests/` harness) | ✅ done (0.4.0) | — | manual `require_once` chains; `includes/abstracts/` + `includes/lib/` |
 | 3 | Migrate 5 legacy handlers → UnifiedHandlerBase — **✅ done (0.6.0)**. All 7 handlers on `UnifiedHandlerBase`; legacy `BWS_Handler_Base` deleted; redundant `on_post_save` loop removed | ✅ done | 2a ✅ | legacy handler base; dual-base divergence; `on_post_save` loop double-run |
-| 2b | Rename sweep — text domain, constants, nonces, core hooks, log table + migration all done (0.6.3, PR #48; real-Athletics verified). JS object + conversion cron/AJAX/transients deferred to P7; internal fn names deferred | ✅ done (0.6.3) | 2a ✅ | mixed text domains |
+| 2b | Rename sweep — text domain, constants, nonces, core hooks, log table + migration all done (PR #48; real-Athletics verified). JS object + conversion cron/AJAX/transients deferred to P7; internal fn names deferred | ✅ done (shipped 0.7.0) | 2a ✅ | mixed text domains |
 | **4** | Config page split (storage blast-radius) — *was CPT storage; CPT deferred* | **next** | 3 ✅ | one-blob clobber radius; per-page autoload; gives UBT its own option |
-| 7 | Unified migration / preview tool | queued | — (ungated; can run anytime) | `lib/` classes instantiated but never called; tab-aware save bug; Conversion subpage taxonomy selectors; **rename remainder #13** (conversion JS global/cron/AJAX/transients) |
+| 7 | Unified migration / preview tool | queued | — (ungated; can run anytime) | `lib/` classes instantiated but never called; tab-aware save bug; conversion `error_log` spam; **rename remainder** (conversion JS global/cron/AJAX/transients — #13 closed, remainder tracked here) |
 | 6a | Options-compatible integrations | queued | 3 | — |
 | 6b | BWS User Based Terms (→ Options, Personalize page) | queued | 4 | UBT merge; needs Personalize page option from P4 |
 | ~~5~~ | ~~Settings refactor~~ | cancelled | — | absorbed by 2c; lib delegation folded into 7 |
 
 **Recommended run order:** ~~2a~~ ✅ → ~~3~~ ✅ → ~~2b~~ ✅ → **4** → (6a, 7) → 6b. Phase 3 landed before 2b so the rename sweep touches already-migrated handlers once. Phase 7 is unblocked and can slot in whenever Conversion is needed.
 
-**Also in 0.6.0 (not a phase — bugfix):** Admin Columns Pro **v7** integration fixed ([#37](https://github.com/davidofchatham/meta-conductor/issues/37)). The pre-v7 integration was dead on AC v7; replaced by a shared `reapply_for_post` seam + `ac/editing/saved` fallback across all ACF-listening handlers, legacy integration deleted. Follow-ups: [#42](https://github.com/davidofchatham/meta-conductor/issues/42) (AC-agnostic apply-on-`acf/update_value`), [#43](https://github.com/davidofchatham/meta-conductor/issues/43) (dependent-end sever gap).
+**Also in 0.6.0 (not a phase — bugfix):** Admin Columns Pro **v7** integration fixed ([#37](https://github.com/davidofchatham/meta-conductor/issues/37)). The pre-v7 integration was dead on AC v7; replaced by a shared `reapply_for_post` seam + `ac/editing/saved` fallback across all ACF-listening handlers, legacy integration deleted.
+
+**Also in 0.7.0 (not a phase — bugfix wave):** the AC v7 follow-ups both landed, plus four unrelated defects.
+- ✅ [#42](https://github.com/davidofchatham/meta-conductor/issues/42) — AC-agnostic reapply. `Core\AcfWriteQueue` drives term sync from ACF's own `acf/update_value`, covering bare `update_field()`, WP-CLI/cron, and REST writes, not just save-hook paths. New filter `meta_conductor_acf_reapply_enabled`; imports (`WP_IMPORTING`) now stand down. Regression guard `tests/verify-acf-write-queue.php` (H8).
+- ✅ [#43](https://github.com/davidofchatham/meta-conductor/issues/43) — dependent-end sever. Clearing a reverse relationship from the dependent end now strips the inherited term, both reverse-resolution styles (explicit `reverse_acf_field_name` + ACF native bidi).
+- ✅ [#31](https://github.com/davidofchatham/meta-conductor/issues/31) — bulk "process existing posts" no longer inert for hook-driven handlers; new `apply_to_post()` primitive per handler, honest changed-of-scanned reporting. **Still no UI trigger** — that stays with the Phase 7 tool.
+- ✅ [#45](https://github.com/davidofchatham/meta-conductor/issues/45) / [#47](https://github.com/davidofchatham/meta-conductor/issues/47) — propagation removals now stick on descendants (same-request re-push) and `wp_remove_object_terms()` on a parent propagates down.
+- ✅ Data Conversion tool made usable again — eight divergent AJAX endpoints on `TaxonomyManager` were shadowing the canonical `ConversionUi` handlers; all now delegate, with the missing auth checks added.
+- Open from this wave: [#40](https://github.com/davidofchatham/meta-conductor/issues/40) (dead `validate_rule()` overrides) and [#41](https://github.com/davidofchatham/meta-conductor/issues/41) (value-independent ACF field discovery) both shipped in 0.7.0 but are **still open on GitHub** — close them.
 
 Live defects not yet scheduled to a phase are tracked under each phase section's **Known issues**; the "Open items it closes" column above is the at-a-glance index.
 
@@ -40,7 +48,7 @@ Status column: ✅ = actioned · Pn = pending in that phase · standing = ongoin
 | Decision | Choice | Status | Notes |
 |----------|--------|--------|-------|
 | **Plugin name** | **Meta Conductor** | ✅ | Display name and slug both drop "BWS". See "Naming surface" table below. |
-| **Naming surface** | Split by layer | ✅ (P2b, 0.6.3) | Folder/main-file/text-domain/constants/nonces/core-hooks/log-table all done. JS object + conversion cron/AJAX/transients + internal fn names deferred to P7/tidy. |
+| **Naming surface** | Split by layer | ✅ (P2b, shipped 0.7.0) | Folder/main-file/text-domain/constants/nonces/core-hooks/log-table all done. JS object + conversion cron/AJAX/transients + internal fn names deferred to P7/tidy. |
 | **PSR-4 namespacing** | Yes | ✅ (0.4.0) | Custom `spl_autoload_register()` autoloader (root `autoload.php`); namespace `BWS\MetaConductor\` |
 | **Abstracts directory** | Co-locate with implementations | ✅ (0.4.0) | `Storage\RuleStorage`, `Handlers\UnifiedHandlerBase` — `includes/abstracts/` eliminated |
 | **Interface file naming** | Use `class-` prefix for all | ✅ (0.4.0) | Autoloader generates `class-{name}.php`; interfaces follow same convention |
@@ -68,7 +76,7 @@ Split the rename by layer — public-facing identity drops `BWS`, code/storage l
 | Plugin folder | `meta-conductor` | WP convention: folder = slug |
 | Main file | `meta-conductor.php` | Matches folder |
 | Text domain | `meta-conductor` | WP convention: text domain = plugin slug; matters if plugin ever publishes to WP.org |
-| Plugin constants | `META_CONDUCTOR_*` (new) + `BWS_META_MANAGER_*`, `BWS_TAX_MANAGER_*` (back-compat aliases) | Code-internal; drop prefix on canonical names, keep aliases |
+| Plugin constants | `META_CONDUCTOR_*` | Code-internal. The planned `BWS_META_MANAGER_*` / `BWS_TAX_MANAGER_*` back-compat aliases were **not** kept — 2b confirmed no external consumer and dropped them outright. |
 | PHP namespace | `BWS\MetaConductor\` | Collision safety in autoloaded global namespace |
 | Option keys | `bws_meta_conductor_*` | Collision safety in shared `wp_options` table |
 | Nonce action prefix | `bws_meta_conductor_*` | Pairs with option keys |
@@ -124,12 +132,11 @@ Full admin UI replacement. Hand-rolled settings UI (~5,000 lines across `class-b
 - Subfield conditional visibility → **unblocked in Wireframe 1.0.6 (#13)**; conversion of description-text workarounds to real `conditions` queued (see docs/future-features.md)
 
 **Known issues:**
-- Conversion subpage: taxonomy selectors not populating (AJAX endpoints likely broken under new menu structure). Resolve in Phase 7 migration tool rewrite or earlier if Conversion is needed before then.
+- ~~Conversion subpage: taxonomy selectors not populating~~ ✅ **fixed (0.7.0)** — cause was not the menu structure: eight `wp_ajax_bws_meta_manager_conversion_*` endpoints on `TaxonomyManager` were divergent local copies shadowing the canonical `ConversionUi` handlers, each emitting a payload the client couldn't consume (key-preserved arrays serializing as JSON objects, wrapped responses, unimplemented stubs, a nested `config` read the client never sends). All eight now delegate to `ConversionUi`; the five handlers that lacked them gained nonce + `manage_options` checks.
 - ~~`BWS_Option_Rule_Storage::update_settings()` blunt top-level `array_merge` clobbers sibling rule arrays~~ ◐ **dormant, not removed** — the clobber *path* is dead: all migrated handlers now write via `OptionRuleStorage::save_rule()` (per-type merge into `get_all_settings()`, no cross-type clobber). But the offending method still exists — `class-settings.php:81` `update_settings()` still does the blunt top-level `array_merge` (line 83). No live caller reaches it. Fully closed when the dead `class-settings.php` compat shell is deleted (queued — see CLAUDE.md Phase-2c quirks).
 - ~~Hierarchical handler `$this->processed` accumulates indefinitely within a request and silently skips legitimate double-saves~~ ✅ **fixed** — `$processed` map removed entirely. Re-entrant recursion was already blocked by the `$processing` flag; `apply_rule()` reads terms + auto-meta fresh each call (idempotent), so legit double-saves within one request now recompute instead of being skipped.
 
-**Untested on InstaWP:**
-- Propagation, Level Restriction handler runtime. *(Related Post Terms runtime verified on a live AC Pro v7 site during the #37 Admin Columns fix — add-sync path; the dependent-end sever gap is [#43](https://github.com/davidofchatham/meta-conductor/issues/43).)*
+**Runtime verification:** Propagation and Level Restriction were swept on the local docker testbed during 0.6.0/0.7.0 (mc-rules fixture + `sweep-lib.php`). Related Post Terms is verified on a live AC Pro v7 site — add-sync during the #37 fix, dependent-end sever with #43 in 0.7.0. InstaWP is retired as a test target; see CLAUDE.md → Test site.
 
 **Plan file:** deleted post-ship; see commit history on `claude/wireframe-swap-2c` and PR #17.
 
@@ -172,7 +179,7 @@ Visible change — rename the plugin, migrate the option key, update all strings
 
 Follow the **Naming Surface (0.x)** table in the decisions section above for which layers drop `bws-` and which keep `bws_`/`BWS\`.
 
-> **✅ Done (0.6.3, branch `claude/rename-2b`, [PR #48](https://github.com/davidofchatham/meta-conductor/pull/48)).** User-facing rename landed early (2c + release-infra); the code-internal sweep completed in 2b: text domain, `META_CONDUCTOR_*` constants (no aliases), nonces, core hooks, and the log-table rename+migration. Two-axis code review clean; static gates (H1/H2) green; testbed mc-rules sweep + **real Athletics data** (hargrave 0.6.3 dev-swap) both verified — migration no-ops on the real DB and a live cross-taxonomy Baseball connector rule fired correctly under the renamed hooks. Deferred to Phase 7: the JS localized object and all conversion-subsystem identifiers (cron/AJAX/transients), left with the code being reworked there.
+> **✅ Done (branch `claude/rename-2b`, [PR #48](https://github.com/davidofchatham/meta-conductor/pull/48)).** User-facing rename landed early (2c + release-infra); the code-internal sweep completed in 2b: text domain, `META_CONDUCTOR_*` constants (no aliases), nonces, core hooks, and the log-table rename+migration. Two-axis code review clean; static gates (H1/H2) green; testbed mc-rules sweep + **real Athletics data** (hargrave dev-swap) both verified — migration no-ops on the real DB and a live cross-taxonomy Baseball connector rule fired correctly under the renamed hooks. Deferred to Phase 7: the JS localized object and all conversion-subsystem identifiers (cron/AJAX/transients), left with the code being reworked there.
 
 - ~~Rename plugin folder: `bws-meta-manager` → `meta-conductor`~~ ✅ done (repo, GitHub, local dev folder, test-site install all renamed)
 - ~~Rename main file: `bws-taxonomy-manager.php` → `meta-conductor.php`~~ ✅ done
@@ -180,13 +187,13 @@ Follow the **Naming Surface (0.x)** table in the decisions section above for whi
 - ~~Rename option key: `bws_taxonomy_manager_settings` → `bws_meta_conductor_settings`~~ ✅ done in Phase 2c (Wireframe boots against the new key; tested on InstaWP)
 - ~~Update admin menu label and page title~~ ✅ done in Phase 2c (`class-wireframe-bootstrap.php` `page_title`/`menu_title`/`menu_slug`)
 - ~~Update settings page H1~~ ✅ done in Phase 2c (`class-wireframe-config.php` `title`)
-- ~~Update all nonce action strings to `bws_meta_conductor_*` pattern~~ ✅ done in 2b (0.6.3) — `bws_taxonomy_manager_nonce` → `bws_meta_conductor_nonce`, 23 sites
-- ~~Unify text domain to `meta-conductor` throughout~~ ✅ done in 2b (0.6.3) — 509 i18n args / 29 files
-- ~~Update constants to `META_CONDUCTOR_*`~~ ✅ done in 2b (0.6.3) — **no aliases** (confirmed no external consumer); dropped the 3 dead `BWS_TAX_MANAGER_*` defines
-- ~~Update hook/filter prefix to `bws_meta_conductor_*`~~ ✅ done in 2b (0.6.3) for **core** hooks (rule-engine, condition/action, storage-factory, unified-base). No aliases.
-- ~~Log table renamed~~ ✅ done in 2b (0.6.3) — `bws_meta_manager_log` → `bws_meta_conductor_log` + idempotent `RENAME TABLE` migration (testbed-verified, rows preserved)
-- ~~Drop dead legacy log-table create~~ ✅ done in 2b (0.6.3, post-review) — fresh installs no longer create `bws_taxonomy_manager_log`; uninstall drop-list still cleans it on legacy installs
-- ~~Rebrand user-facing runtime strings~~ ✅ done in 2b (0.6.3, post-review) — `BWS Meta Manager`/`BWS Taxonomy Manager` → `Meta Conductor` (requirement/table-error notices, handler log prefix, conversion cleanup log). Text-domain args were already correct.
+- ~~Update all nonce action strings to `bws_meta_conductor_*` pattern~~ ✅ done in 2b (shipped 0.7.0) — `bws_taxonomy_manager_nonce` → `bws_meta_conductor_nonce`, 23 sites
+- ~~Unify text domain to `meta-conductor` throughout~~ ✅ done in 2b (shipped 0.7.0) — 509 i18n args / 29 files
+- ~~Update constants to `META_CONDUCTOR_*`~~ ✅ done in 2b (shipped 0.7.0) — **no aliases** (confirmed no external consumer); dropped the 3 dead `BWS_TAX_MANAGER_*` defines
+- ~~Update hook/filter prefix to `bws_meta_conductor_*`~~ ✅ done in 2b (shipped 0.7.0) for **core** hooks (rule-engine, condition/action, storage-factory, unified-base). No aliases.
+- ~~Log table renamed~~ ✅ done in 2b (shipped 0.7.0) — `bws_meta_manager_log` → `bws_meta_conductor_log` + idempotent `RENAME TABLE` migration (testbed-verified, rows preserved)
+- ~~Drop dead legacy log-table create~~ ✅ done in 2b (shipped 0.7.0, post-review) — fresh installs no longer create `bws_taxonomy_manager_log`; uninstall drop-list still cleans it on legacy installs
+- ~~Rebrand user-facing runtime strings~~ ✅ done in 2b (shipped 0.7.0, post-review) — `BWS Meta Manager`/`BWS Taxonomy Manager` → `Meta Conductor` (requirement/table-error notices, handler log prefix, conversion cleanup log). Text-domain args were already correct.
 - **Deferred to Phase 7 (conversion subsystem):** JS localized object `bwsMetaManager` → `bwsMetaConductor` + PHP enqueue; conversion cron `*_conversion_cleanup`, AJAX `wp_ajax_*_conversion_*`, transient keys `*_conversion_*`. Left with the conversion code that's mid-rework in P7.
 - **Deferred (low value):** internal function names (`bws_meta_manager_init`, `bws_taxonomy_manager_activate/deactivate/uninstall`) — not user-facing, no BC pressure. Rename opportunistically or in a later tidy pass.
 - **Flagged bug (P7):** conversion tab-URL builder targets `admin_url('tools.php')` but the menu registers elsewhere — verify parent when conversion is revisited.
@@ -212,7 +219,7 @@ Migrate each handler from `BWS_Handler_Base` to `UnifiedHandlerBase`. Template: 
 
 **After last handler** ✅ (0.6.0):
 - ~~Delete `class-handler-base.php`~~ ✅ — ACF read/write helpers (`get_acf_taxonomy_value`/`set_acf_taxonomy_value`) ported to `UnifiedHandlerBase` first (they were used by propagation + level-restriction ACF paths; the base flip had silently dropped them — latent fatal, B4). HandlerBase-internal-only helpers died with the file.
-- ~~Remove `on_post_save()` loop~~ ✅ — every handler owns its hooks. Removal closed the time-based double-run. The no-op `process_post()` overrides stay as defensive guards against the base RuleEngine route (only `process_existing_posts` still reaches them; no UI trigger).
+- ~~Remove `on_post_save()` loop~~ ✅ — every handler owns its hooks. Removal closed the time-based double-run. The no-op `process_post()` overrides stay as defensive guards against the base RuleEngine route. **Updated 0.7.0:** `process_existing_posts` no longer routes through those no-ops — bulk re-apply goes through a new `apply_to_post(int, array): bool` primitive each hook-driven handler overrides ([#31](https://github.com/davidofchatham/meta-conductor/issues/31)). Still no UI trigger; that lands with the Phase 7 tool.
 
 **End of phase**: Update CLAUDE.md
 
@@ -289,14 +296,14 @@ Reframes the existing ACF "Data Conversion" page as a general-purpose Migration 
 
 **Storage:** none new. Recipes are registered code, not user-saved config.
 
-**Debug-log cleanup (deferred from the 0.6.3 conversion AJAX fix):** the conversion subsystem carries ~137 unconditional `error_log()` calls across `class-data-processor.php`, `class-preview-system.php`, `class-field-mapper.php`, `class-conversion-ui.php` — dev-tracing leftovers (`=== DEBUG ===`, `print_r` dumps, `(UPDATED)`/`(SIMPLIFIED)` tags) that fire on every op in production logs regardless of `WP_DEBUG`. Redundant: genuine errors already surface via `wp_send_json_error` / `$batch_result['errors']`. Strip them when this code is reworked. **Keep** the one operational log — the cron-cleanup summary at `class-conversion-manager.php` (`Meta Conductor Conversion Cleanup: Deleted…`). Also drop the `debug_info` block + `error_log` spam from `handle_estimate_conversion_size_ajax`.
+**Debug-log cleanup (deferred from the 0.7.0 conversion AJAX fix):** the conversion subsystem carries ~137 unconditional `error_log()` calls across `class-data-processor.php`, `class-preview-system.php`, `class-field-mapper.php`, `class-conversion-ui.php` — dev-tracing leftovers (`=== DEBUG ===`, `print_r` dumps, `(UPDATED)`/`(SIMPLIFIED)` tags) that fire on every op in production logs regardless of `WP_DEBUG`. Redundant: genuine errors already surface via `wp_send_json_error` / `$batch_result['errors']`. Strip them when this code is reworked. **Keep** the one operational log — the cron-cleanup summary at `class-conversion-manager.php` (`Meta Conductor Conversion Cleanup: Deleted…`). Also drop the `debug_info` block + `error_log` spam from `handle_estimate_conversion_size_ajax`.
 
-**Rename remainder (carried from 2b, [issue #13](https://github.com/davidofchatham/meta-conductor/issues/13)):** the conversion subsystem's identifiers were deferred here because renaming them in isolation would churn code this phase rewrites. When the conversion code is reworked, finish:
+**Rename remainder (carried from 2b; [#13](https://github.com/davidofchatham/meta-conductor/issues/13) is closed — this list is now the only tracker):** the conversion subsystem's identifiers were deferred here because renaming them in isolation would churn code this phase rewrites. When the conversion code is reworked, finish:
 - JS global `bwsMetaManager` → `bwsMetaConductor` (26 refs in `assets/js/conversion-admin.js`) + the PHP `wp_localize_script()` object name
 - Conversion cron `*_conversion_cleanup`, AJAX actions `wp_ajax_*_conversion_*`, transient keys `*_conversion_*`
-- Verify conversion AJAX succeeds under the unified JS global + nonce — this closes the last two AC on #13.
+- Verify conversion AJAX succeeds under the unified JS global + nonce. (The endpoint-shadowing bug behind the broken selectors was fixed separately in 0.7.0 — the remaining work here is naming, not correctness.)
 
-**End of phase**: Update CLAUDE.md, drop legacy Data Conversion submenu in favor of the unified one, **close #13**.
+**End of phase**: Update CLAUDE.md, drop legacy Data Conversion submenu in favor of the unified one.
 
 ---
 
