@@ -194,6 +194,78 @@ several).
       Guarded by `tests/verify-acp-gate.php` (H7). (#37; was SPEC §V1/§V5/§V6/§V7,
       B3. AC-agnostic follow-up #42; dependent-end sever gap #43.)
 
+    **Superseded in part by #14.** The per-integration bridge above still exists
+    (AC's `ac/editing/saved` → `AcfWriteQueue::flush_post`) so an inline-edit
+    response is accurate before shutdown, but it is no longer how coverage is
+    achieved — the queue covers every ACF writer, including ones no bridge was
+    written for. Build a new bridge only to make a specific integration's
+    response *timely*, never to make it *work*.
+
+14. **The ACF write signal is `acf/update_value`, not the save hooks — but you
+    RECORD there and APPLY later.** Every handler gates its apply on the
+    `save_post` family, and a large class of ACF writes never fires those hooks
+    at all: `update_field()` fires `acf/update_value` and nothing else. That
+    covers Admin Columns inline/bulk edits, bare programmatic writes (custom
+    code, WP-CLI, cron) and REST writes to an ACF field. Gating on the save
+    hooks silently misses all of them — the field changes, the rule never runs,
+    the post keeps stale terms with no warning (#42). `Core\AcfWriteQueue` is
+    the one mechanism that closes this; five constraints make it correct, and
+    each is load-bearing:
+
+    - *Record pre-write, apply post-write.* `acf/update_value` fires BEFORE the
+      value is persisted, so a listener there must never read the post — it
+      records the ID only. Every apply happens later (`shutdown`, or a bounded
+      mid-request flush). This is what keeps the queue clear of the pre-write
+      hazard the sever capture has to reason about (#12).
+    - *Gate on the ACF TARGET, never the field type.* A post is recorded only
+      when ACF's `$post_id` resolves to a positive integer, which naturally
+      excludes the `options` / `user_N` / `term_N` pseudo-targets. Narrowing by
+      field type reintroduces a smaller version of the same bug: the handlers
+      key off relationship, post-object, taxonomy and plain-text fields
+      respectively, so any type filter is a new hole.
+    - *The ordinary save path claims its own posts.* An editor/REST post save
+      already ran every handler, so the queue drops those posts on
+      `save_post`/`acf/save_post` at a priority ABOVE every handler. Below that,
+      the claim lands before the handlers run and NEITHER path applies the post.
+    - *The disable gate belongs on the apply step, not the listener.* Every
+      flush path funnels through one `apply()`, so that is the only place "turn
+      the whole behaviour off" can be honoured; gating only the listener leaves
+      the one-post flush applying regardless — precisely the path an admin is
+      trying to silence. The listener keeps an early-out, but the decision has
+      ONE site, and the target gate runs BEFORE it so the filter is always
+      handed a real post ID.
+    - *A flush path mutates the pending set INSIDE the reentrancy guard.* The
+      guard returns without running its body when a flush is already in
+      progress, so a mutation outside it happens on a call that then does
+      nothing — the post is dropped from the pending set and never applied,
+      neither applied nor pending, stale terms surviving with no signal.
+
+    All five are pure hook constants and control-flow gates with no
+    runtime-observable signature until they are ALREADY wrong on a live site, so
+    they are guarded by source inspection: `tests/verify-acf-write-queue.php`
+    (H8), the same way and for the same reason as the AC gate guard.
+
+15. **Every END of a relationship that can drop a link needs its own capture
+    shape.** Direction of the RULE and direction of the EDIT are independent, so
+    a push rule edited at the dependent end is a different code path from a push
+    rule edited at the holder end — and from either end of a pull rule. Enumerate
+    the matrix; do not assume the rule's direction tells you where the edit lands.
+    This is recorded because it was the second omission of the same class: B8
+    added the pull-rule source-end case, #43 the push-rule dependent-end case.
+    Related: a sever queue must be keyed by the post whose save DRAINS it, not by
+    the post that caused it — anything else keys under a post that is never saved
+    in that request and silently never drains (see `RelatedPostTermsHandler`).
+
+16. **Anything that writes ACF fields in bulk must stand the queue down.** The
+    queue cannot tell a user edit from a bulk rewrite; both are `update_field()`.
+    So a bulk writer that does not want one full rule recompute per post has to
+    say so, via `meta_conductor_acf_reapply_enabled`, scoped to the call rather
+    than the request. Three known cases: WordPress imports (automatic, via
+    `WP_IMPORTING`), the conversion tool, and the fixture seeder — which learned
+    it the hard way, its "empty the rules → write content → restore the rules"
+    model silently broken by a flush that now runs AFTER the restore. The
+    plugin's own bulk apply action is exempt: it does not write through ACF.
+
 ## Settings UI — WP Wireframe
 
 The settings UI is a React app provided by `tdrayson/wp-wireframe`. Each rule type has a config class under [includes/admin/config/](../includes/admin/config/) exposing a `section()` method. The top-level composer assembles tabs from sections:
@@ -242,13 +314,15 @@ Multi-step wizard for ACF → taxonomy data migration. Lives at the `meta-conduc
 
 Subpage under Meta Conductor menu. Visible when `WP_DEBUG` is on, or via filter `bws_meta_conductor_show_diagnostics`. Dev-only Storage section dumps the raw option contents; future user-level sections (rule counts, handler status) will hang here without dev mode.
 
-## SPEC lifecycle
+## Spec lifecycle
 
-When a substantive feature is in flight, a `SPEC.md` at repo root captures invariants and tasks (see the `spec` skill). After the feature ships, post-ship cleanup is mandatory:
+**Specs live in GitHub Issues.** A substantive feature gets an issue written by the `to-spec` skill — problem statement, user stories, implementation and testing decisions — and that issue is the spec for as long as the work is in flight. Decisions taken mid-build are recorded as comments on it, so the issue stays the single account of what was agreed and why.
 
-1. Load-bearing invariants migrate into PHPDoc on the enforcing function (closest to the code), or into this file when conceptual.
-2. Closed/deferred tasks are deleted.
-3. Bugs migrate to GitHub Issues.
-4. SPEC.md is truncated to a one-line placeholder.
+Post-ship, the durable parts move to where the next person will actually look:
 
-Active SPECs are the source of truth only while in flight. After ship, PHPDoc + this file + CHANGELOG + Issues take over.
+1. Load-bearing invariants migrate into PHPDoc on the enforcing function (closest to the code), or into this file when conceptual — as the ACF write queue's did, above.
+2. Behaviour changes and new filters go to CHANGELOG.
+3. Anything still open becomes its own Issue.
+4. The spec issue closes with the PR.
+
+**A root `SPEC.md` is no longer used** (retired 2026-08-12, at 0.7.0). It duplicated the issue, drifted from it, and its `§Vn` numbering restarted every feature — so a citation like "§V14" means a different invariant depending on which retired spec it came from. Historic `SPEC §Vn` references surviving in code comments are dead links; read them as "there was once a spec section here", and prefer the invariant list above. Replace them opportunistically as each file is touched, rather than in one sweep.

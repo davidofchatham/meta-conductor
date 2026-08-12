@@ -25,7 +25,7 @@
  *      would read its old value and write terms from it.
  *   5. flush_post() mutates the pending set INSIDE the reentrancy guard. Outside
  *      it, a call arriving mid-flush clears the post and then returns without
- *      applying it — neither applied nor pending (§V26).
+ *      applying it — neither applied nor pending (arch.md #14).
  *   6. The conversion tool stands the queue down for its own writes, at
  *      PHP_INT_MAX so an ordinary site filter cannot re-open US17.
  *
@@ -115,7 +115,7 @@ if (!preg_match('/flush_pending_except\(\s*\$id\s*\)/', $src)) {
 // --- 4b. flush_post() mutates pending INSIDE the reentrancy guard ----------
 // Unsetting outside guarded() means a call arriving mid-flush clears the post
 // and then returns without applying it: neither applied nor pending, so the
-// post silently keeps stale terms. (§V26)
+// post silently keeps stale terms. (arch.md handler-invariant #14)
 if (!preg_match(
     '/function\s+flush_post\s*\(\s*int\s+\$(\w+)\s*\)[^{]*\{(.*?)\n    \}/s',
     $src,
@@ -134,7 +134,7 @@ if (!preg_match(
     if ($unset_at === false) {
         $errors[] = 'flush_post() does not drop its post from the pending set — a later flush would apply it twice.';
     } elseif ($guard_at === false || $unset_at < $guard_at) {
-        $errors[] = 'flush_post() unsets $this->pending OUTSIDE guarded() — a re-entrant call would drop the post without applying it (§V26).';
+        $errors[] = 'flush_post() unsets $this->pending OUTSIDE guarded() — a re-entrant call would drop the post without applying it (arch.md #14).';
     }
 }
 

@@ -21,7 +21,6 @@
 /tools              export-ignore
 /plugins-to-integrate export-ignore
 /ROADMAP.md         export-ignore
-/SPEC.md            export-ignore
 /CONTEXT.md         export-ignore
 /composer.json      export-ignore
 /composer.lock      export-ignore

@@ -31,7 +31,7 @@ Planned: user-based rules, date-field comparisons, name/phone formatting, unifie
 | [ROADMAP.md](ROADMAP.md) | Phase plan, decisions, what comes next. |
 | [CHANGELOG.md](CHANGELOG.md) | Release log. |
 | [.claude/plans/](.claude/plans/) | Per-feature implementation plans. |
-| `SPEC.md` (when present at repo root) | Active in-flight spec for the current feature. |
+| [Issues](https://github.com/davidofchatham/meta-conductor/issues) | Bugs, refactors, and the spec for whatever feature is in flight. |
 
 ## Requirements
 

@@ -2,12 +2,12 @@
 
 Canonical list of features that aren't built yet. Each entry:
 
-- **Status** — `idea` (unscoped), `planned` (assigned to a phase in [ROADMAP.md](../ROADMAP.md)), `in-flight` (active SPEC.md or branch).
+- **Status** — `idea` (unscoped), `planned` (assigned to a phase in [ROADMAP.md](../ROADMAP.md)), `in-flight` (spec issue open, or a branch underway).
 - **Motivation** — why it matters.
 - **Sketch** — enough to start scoping; not a spec.
 - **Phase** — where it lands in the [ROADMAP.md](../ROADMAP.md) phase plan, if assigned.
 
-When an idea is promoted to in-flight, add a link to its plan file under `.claude/plans/` or its SPEC.md.
+When an idea is promoted to in-flight, add a link to its spec issue, or to a plan file under `.claude/plans/`.
 
 ---
 
@@ -269,4 +269,4 @@ Tracked from the PR #19 review (Related multi-PT + UnifiedHandlerBase migration)
 - Deleted standalone plugins under `plugins-to-integrate/` (captured here at deletion time so the intent isn't lost)
 - Session discussion notes that didn't fit into a phase
 
-When something here becomes work-in-flight, link its plan file or SPEC.md from the relevant entry. When it ships, move the entry to CHANGELOG (under the release that included it) and remove from this file.
+When something here becomes work-in-flight, link its spec issue or plan file from the relevant entry. When it ships, move the entry to CHANGELOG (under the release that included it) and remove from this file.

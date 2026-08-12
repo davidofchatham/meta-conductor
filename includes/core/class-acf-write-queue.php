@@ -32,7 +32,7 @@ if (!defined('ABSPATH')) {
  * class never reads the post there — it only RECORDS the ID. Every apply
  * happens later, once the write has landed. That separation is what keeps the
  * mechanism clear of the pre-write hazard that RelatedPostTermsHandler's own
- * sever capture has to reason about (§V14).
+ * sever capture has to reason about (arch.md handler-invariant #12).
  *
  * WHY EDITOR SAVES DON'T DOUBLE-APPLY. A normal editor/REST post save fires
  * save_post + acf/save_post, and the handlers already run on those. So this
@@ -63,7 +63,7 @@ if (!defined('ABSPATH')) {
  * reentrancy. Field type is deliberately NOT filtered in the listener — the
  * handlers key off relationship, post-object, taxonomy and plain-text fields
  * respectively, so any narrowing would reintroduce a smaller version of the bug
- * this fixes. (SPEC §V3/§V6/§V7)
+ * this fixes. (arch.md handler-invariant #14)
  *
  * SIDE EFFECT WORTH KNOWING. RelatedPostTermsHandler::reapply_for_post routes
  * through its normal acf/save_post entry point, which also drains its pending
@@ -231,7 +231,8 @@ class AcfWriteQueue {
      * in the same interaction. Drops the post from the pending set so a later
      * flush can't apply it twice.
      *
-     * The unset lives INSIDE the guarded closure (§V26). Outside it, a call
+     * The unset lives INSIDE the guarded closure (arch.md #14, last
+     * bullet). Outside it, a call
      * arriving while a flush is already running would clear the post and then
      * return without applying it — neither applied nor pending, so the post
      * silently keeps stale terms. Inside, a re-entrant call is a no-op and the
@@ -270,7 +271,7 @@ class AcfWriteQueue {
     }
 
     /**
-     * Hand one post to every handler; each self-gates. (§V3/§V6/§V7)
+     * Hand one post to every handler; each self-gates. (arch.md #14)
      *
      * AUTHORITATIVE gate. Every flush path — shutdown, bounded, and the Admin
      * Columns one-post flush — funnels through here, so this is the single
