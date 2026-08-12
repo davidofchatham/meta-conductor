@@ -46,6 +46,14 @@ the conversion tool — all via `meta_conductor_acf_reapply_enabled`, scoped to 
 call rather than the request. The plugin's own bulk apply action is exempt because
 it does not write through ACF.
 
+**§V26 — a flush path must mutate the pending set INSIDE the reentrancy guard.**
+`guarded()` returns without running its body when a flush is already in progress, so
+any mutation performed outside it happens on a call that then does nothing. For
+`flush_post()` that means the post is dropped from the pending set and never applied —
+neither applied nor pending, and the stale terms survive with no signal. Inside the
+guard a re-entrant call is a clean no-op and the post stays queued for the flush already
+running. Guarded by H8.
+
 **§V20 — gate on the ACF TARGET, never on the field type.**
 A post is recorded only when ACF's `$post_id` resolves to a positive integer, which
 naturally excludes the `options` / `user_N` / `term_N` pseudo-targets. Narrowing by field

@@ -149,6 +149,12 @@ class DataProcessor {
 	 * Scoped to the call, not the request — a conversion running inside a
 	 * larger request must not disable reapply for anything else. (#42, US17)
 	 *
+	 * Registered at PHP_INT_MAX because the stand-down is not a preference a
+	 * site should be able to outvote by accident: at an ordinary priority a
+	 * site filter registered later in the chain would silently re-open US17.
+	 * Priority buys ordering, not authority — a site filter at PHP_INT_MAX
+	 * still wins, and deliberately so.
+	 *
 	 * @param callable $fn
 	 * @return array
 	 */
@@ -156,11 +162,11 @@ class DataProcessor {
 		$off = static function () {
 			return false;
 		};
-		add_filter( 'meta_conductor_acf_reapply_enabled', $off, 99 );
+		add_filter( 'meta_conductor_acf_reapply_enabled', $off, PHP_INT_MAX );
 		try {
 			return $fn();
 		} finally {
-			remove_filter( 'meta_conductor_acf_reapply_enabled', $off, 99 );
+			remove_filter( 'meta_conductor_acf_reapply_enabled', $off, PHP_INT_MAX );
 		}
 	}
 

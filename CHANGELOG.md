@@ -7,8 +7,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.7.0] — Unreleased
 
-Minor bump (was slated 0.6.3, never tagged): this cut adds a new core module, two public
-filters, and an import-time behavior change, which is more than a patch carries.
+Minor bump (was slated 0.6.3, never tagged): this cut adds a new core module, a public
+filter, and an import-time behavior change, which is more than a patch carries.
 
 ### Added
 

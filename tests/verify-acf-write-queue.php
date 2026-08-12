@@ -23,6 +23,11 @@
  *   4. The bounded mid-request flush SKIPS the post currently being recorded.
  *      acf/update_value is a PRE-write filter, so flushing the in-flight post
  *      would read its old value and write terms from it.
+ *   5. flush_post() mutates the pending set INSIDE the reentrancy guard. Outside
+ *      it, a call arriving mid-flush clears the post and then returns without
+ *      applying it — neither applied nor pending (§V26).
+ *   6. The conversion tool stands the queue down for its own writes, at
+ *      PHP_INT_MAX so an ordinary site filter cannot re-open US17.
  *
  * Run:  php tests/verify-acf-write-queue.php
  *
@@ -68,7 +73,13 @@ if (!preg_match('/apply_filters\(\s*[\'"]meta_conductor_acf_reapply_enabled[\'"]
 // The gate must sit on apply(), the choke point every flush path funnels
 // through. Gating only the listener leaves flush_post() — the Admin Columns
 // path — applying even when a site has switched the behaviour off.
-if (!preg_match('/function\s+apply\s*\(\s*int\s+\$post_id\s*\)[^{]*\{\s*if\s*\(\s*!\s*\$this->reapply_enabled\(\s*\$post_id\s*\)\s*\)/', $src)) {
+// Pin the GATE, not the parameter's spelling — same reason as group 4 below.
+if (!preg_match('/function\s+apply\s*\(\s*int\s+\$(\w+)\s*\)[^{]*\{/', $src, $am)) {
+    $errors[] = 'apply(int $<param>) not found — the single apply choke point must exist.';
+} elseif (!preg_match(
+    '/function\s+apply\s*\(\s*int\s+\$' . preg_quote($am[1], '/') . '\s*\)[^{]*\{\s*if\s*\(\s*!\s*\$this->reapply_enabled\(\s*\$' . preg_quote($am[1], '/') . '\s*\)\s*\)/',
+    $src
+)) {
     $errors[] = 'apply() does not open with the reapply_enabled() gate — flush_post() would bypass the disable filter.';
 }
 // One decision site only, and it takes an int: that type IS the filter's
@@ -101,6 +112,32 @@ if (!preg_match('/flush_pending_except\(\s*\$id\s*\)/', $src)) {
     $errors[] = 'record() does not pass the post being recorded to flush_pending_except.';
 }
 
+// --- 4b. flush_post() mutates pending INSIDE the reentrancy guard ----------
+// Unsetting outside guarded() means a call arriving mid-flush clears the post
+// and then returns without applying it: neither applied nor pending, so the
+// post silently keeps stale terms. (§V26)
+if (!preg_match(
+    '/function\s+flush_post\s*\(\s*int\s+\$(\w+)\s*\)[^{]*\{(.*?)\n    \}/s',
+    $src,
+    $fpm
+)) {
+    $errors[] = 'flush_post(int $<param>) not found.';
+} else {
+    $body  = $fpm[2];
+    $param = preg_quote($fpm[1], '/');
+    // The unset must appear only after guarded( opens.
+    $guard_at = strpos($body, 'guarded(');
+    $unset_at = false;
+    if (preg_match('/unset\(\s*\$this->pending\[\s*\$' . $param . '\s*\]\s*\)/', $body, $um, PREG_OFFSET_CAPTURE)) {
+        $unset_at = $um[0][1];
+    }
+    if ($unset_at === false) {
+        $errors[] = 'flush_post() does not drop its post from the pending set — a later flush would apply it twice.';
+    } elseif ($guard_at === false || $unset_at < $guard_at) {
+        $errors[] = 'flush_post() unsets $this->pending OUTSIDE guarded() — a re-entrant call would drop the post without applying it (§V26).';
+    }
+}
+
 // --- 5. The conversion tool suppresses reapply for its own writes ----------
 // The conversion tool writes target fields with update_field(), so without an
 // explicit stand-down every converted post is enqueued and reapplied — a
@@ -121,6 +158,18 @@ if (!is_file($dp)) {
     if (!preg_match('/add_filter\(\s*[\'"]meta_conductor_acf_reapply_enabled[\'"]/', $dpsrc)
         || !preg_match('/remove_filter\(\s*[\'"]meta_conductor_acf_reapply_enabled[\'"]/', $dpsrc)) {
         $errors[] = 'Conversion suppression must both add AND remove meta_conductor_acf_reapply_enabled — a one-way add leaks past the conversion.';
+    }
+    // At an ordinary priority a site filter registered later in the chain
+    // would silently re-open US17. Both registrations must match, or the
+    // remove_filter misses and the suppression leaks past the conversion.
+    foreach (['add_filter', 'remove_filter'] as $fn) {
+        $pattern = '/' . $fn . '\(\s*[\'"]meta_conductor_acf_reapply_enabled[\'"]\s*,\s*\$\w+\s*,\s*PHP_INT_MAX\s*\)/';
+        if (!preg_match($pattern, $dpsrc)) {
+            $errors[] = sprintf(
+                'Conversion suppression %s does not use PHP_INT_MAX — an ordinary priority lets a late site filter re-open US17.',
+                $fn
+            );
+        }
     }
     foreach (['process_copy_data_conversion', 'process_map_data_conversion', 'process_conversion_chunk'] as $entry) {
         $pattern = '/public\s+function\s+' . preg_quote($entry, '/') . '\s*\([^)]*\)\s*:\s*array\s*\{\s*return\s+\$this->with_reapply_suppressed\(/';

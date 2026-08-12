@@ -228,15 +228,21 @@ class AcfWriteQueue {
     /**
      * Apply ONE post immediately. Used by the Admin Columns v7 hook so an
      * inline-edit response — built before shutdown — shows the corrected terms
-     * in the same interaction. Drops the post from the pending set first, so a
-     * later flush can't apply it twice.
+     * in the same interaction. Drops the post from the pending set so a later
+     * flush can't apply it twice.
+     *
+     * The unset lives INSIDE the guarded closure (§V26). Outside it, a call
+     * arriving while a flush is already running would clear the post and then
+     * return without applying it — neither applied nor pending, so the post
+     * silently keeps stale terms. Inside, a re-entrant call is a no-op and the
+     * post stays queued for the flush already in progress.
      */
     public function flush_post(int $post_id): void {
         if ($post_id <= 0) {
             return;
         }
-        unset($this->pending[$post_id]);
         $this->guarded(function () use ($post_id) {
+            unset($this->pending[$post_id]);
             $this->apply($post_id);
         });
     }
