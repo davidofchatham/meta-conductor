@@ -23,7 +23,15 @@ filters, and an import-time behavior change, which is more than a patch carries.
   unaffected — the queue *claims* those posts above every handler priority, so they run
   through the existing path exactly as before.
   - New filter `meta_conductor_acf_reapply_enabled` (bool, post ID) — force the behavior on
-    or off per site.
+    or off per site. The gate sits on the apply step every flush path funnels through, so
+    returning `false` disables reapply everywhere including the Admin Columns inline-edit
+    path. The filter is always handed a real post ID, never one of ACF's `options` /
+    `user_N` / `term_N` pseudo-targets.
+  - **The conversion tool suppresses reapply for its own writes.** It writes target fields
+    with `update_field()`, so without this every converted post would be reapplied at
+    shutdown or at the bounded flush — a second wave of rule processing on top of the
+    heaviest run the plugin does. Suppression is scoped to the conversion call, not the
+    request. Reconcile afterwards with "Apply to Existing Posts", as with imports.
   - A bounded mid-request flush past a fixed cap (100 pending posts) keeps a long
     single-process run writing progressively instead of deferring everything to shutdown.
     The cap is deliberately NOT filterable yet: no site has needed to tune it, and adding a

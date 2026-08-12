@@ -28,6 +28,24 @@ what keeps the queue clear of the pre-write hazard §V14 has to reason about —
 the bounded mid-request flush MUST skip the post currently being recorded, which is the one
 post still mid-write.
 
+**§V24 — the reapply gate belongs on the apply step, not the listener.**
+Every flush path — shutdown, bounded, and the Admin Columns one-post flush — funnels
+through `apply()`, so that is the only place "turn the whole behaviour off" can be
+honoured. Gating only the listener leaves `flush_post()` applying regardless, which
+is precisely the path an admin is trying to silence. The listener keeps an early-out
+so a disabled site does not accumulate a pending set it will never apply, but the
+decision has ONE site. Corollary: the target gate runs BEFORE the filter, so
+`meta_conductor_acf_reapply_enabled` is always handed a real post ID — the `int`
+parameter type on `reapply_enabled()` is that contract.
+
+**§V25 — anything that writes ACF fields in bulk must stand the queue down.**
+The queue cannot tell a user edit from a bulk rewrite; both are `update_field()`.
+So a bulk writer that does not want a recompute per post must say so. Three known
+cases: WordPress imports (automatic, via `WP_IMPORTING`), the fixture seeder, and
+the conversion tool — all via `meta_conductor_acf_reapply_enabled`, scoped to the
+call rather than the request. The plugin's own bulk apply action is exempt because
+it does not write through ACF.
+
 **§V20 — gate on the ACF TARGET, never on the field type.**
 A post is recorded only when ACF's `$post_id` resolves to a positive integer, which
 naturally excludes the `options` / `user_N` / `term_N` pseudo-targets. Narrowing by field

@@ -135,6 +135,66 @@ class DataProcessor {
         $this->batch_processor = new BatchProcessor();
     }
 
+
+	/**
+	 * Run a conversion pass with rule reapply suppressed.
+	 *
+	 * The conversion tool writes target fields with update_field(), which the
+	 * ACF write queue records like any other write — so without this every
+	 * converted post would be reapplied at shutdown or at the bounded flush,
+	 * a second wave of rule processing on top of a run that is already the
+	 * heaviest thing this plugin does. Suppressed for the same reason imports
+	 * are: reconcile deliberately afterwards with "Apply to Existing Posts".
+	 *
+	 * Scoped to the call, not the request — a conversion running inside a
+	 * larger request must not disable reapply for anything else. (#42, US17)
+	 *
+	 * @param callable $fn
+	 * @return array
+	 */
+	private function with_reapply_suppressed( callable $fn ): array {
+		$off = static function () {
+			return false;
+		};
+		add_filter( 'meta_conductor_acf_reapply_enabled', $off, 99 );
+		try {
+			return $fn();
+		} finally {
+			remove_filter( 'meta_conductor_acf_reapply_enabled', $off, 99 );
+		}
+	}
+
+	/**
+	 * Process copy data conversion (formerly move data)
+	 *
+	 * @param array $config Conversion configuration
+	 * @param bool $dry_run Whether this is a dry run
+	 * @return array
+	 */
+	public function process_copy_data_conversion( array $config, bool $dry_run = false ): array {
+		return $this->with_reapply_suppressed( function () use ( $config, $dry_run ) {
+			return $this->do_process_copy_data_conversion( $config, $dry_run );
+		} );
+	}
+
+	/**
+	 * Process map data conversion.
+	 */
+	public function process_map_data_conversion( array $config, bool $dry_run = false ): array {
+		return $this->with_reapply_suppressed( function () use ( $config, $dry_run ) {
+			return $this->do_process_map_data_conversion( $config, $dry_run );
+		} );
+	}
+
+	/**
+	 * Process one chunk of a batched conversion run.
+	 */
+	public function process_conversion_chunk( array $config, bool $dry_run = false, int $chunk_start = 0, int $chunk_size = 5 ): array {
+		return $this->with_reapply_suppressed( function () use ( $config, $dry_run, $chunk_start, $chunk_size ) {
+			return $this->do_process_conversion_chunk( $config, $dry_run, $chunk_start, $chunk_size );
+		} );
+	}
+
     /**
      * Process copy data conversion (formerly move data)
      *
@@ -142,7 +202,7 @@ class DataProcessor {
      * @param bool $dry_run Whether this is a dry run
      * @return array
      */
-    public function process_copy_data_conversion( array $config, bool $dry_run = false ): array {
+    private function do_process_copy_data_conversion( array $config, bool $dry_run = false ): array {
         $result = $this->initialize_processing_result();
         
         // Validate configuration
@@ -193,7 +253,7 @@ class DataProcessor {
     /**
      * Process map data conversion - UPDATED VERSION
      */
-    public function process_map_data_conversion( array $config, bool $dry_run = false ): array {
+    private function do_process_map_data_conversion( array $config, bool $dry_run = false ): array {
         $result = $this->initialize_processing_result();
         
         error_log('=== MAP DATA CONVERSION DEBUG (UPDATED) ===');
@@ -286,7 +346,7 @@ class DataProcessor {
 	 * @param int $chunk_size Number of batches to process in this chunk
 	 * @return array
 	 */
-public function process_conversion_chunk( array $config, bool $dry_run = false, int $chunk_start = 0, int $chunk_size = 5 ): array {
+private function do_process_conversion_chunk( array $config, bool $dry_run = false, int $chunk_start = 0, int $chunk_size = 5 ): array {
     $result = $this->initialize_processing_result();
     
     // Get or restore session data

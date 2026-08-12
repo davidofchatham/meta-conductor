@@ -58,10 +58,26 @@ foreach (['save_post', 'acf/save_post'] as $hook) {
 
 // --- 2. Import suppression gate --------------------------------------------
 if (!preg_match('/defined\(\s*[\'"]WP_IMPORTING[\'"]\s*\)/', $src)) {
-    $errors[] = "WP_IMPORTING suppression gate missing from record() — imports would recompute per post.";
+    $errors[] = "WP_IMPORTING suppression gate missing — imports would recompute per post.";
 }
 if (!preg_match('/apply_filters\(\s*[\'"]meta_conductor_acf_reapply_enabled[\'"]/', $src)) {
     $errors[] = "meta_conductor_acf_reapply_enabled filter missing — the import decision must be overridable.";
+}
+
+// --- 2b. The gate is AUTHORITATIVE and its filter contract holds ------------
+// The gate must sit on apply(), the choke point every flush path funnels
+// through. Gating only the listener leaves flush_post() — the Admin Columns
+// path — applying even when a site has switched the behaviour off.
+if (!preg_match('/function\s+apply\s*\(\s*int\s+\$post_id\s*\)[^{]*\{\s*if\s*\(\s*!\s*\$this->reapply_enabled\(\s*\$post_id\s*\)\s*\)/', $src)) {
+    $errors[] = 'apply() does not open with the reapply_enabled() gate — flush_post() would bypass the disable filter.';
+}
+// One decision site only, and it takes an int: that type IS the filter's
+// promise that it never receives ACF's 'options'/'user_N'/'term_N' targets.
+if (!preg_match('/function\s+reapply_enabled\s*\(\s*int\s+\$\w+\s*\)\s*:\s*bool/', $src)) {
+    $errors[] = 'reapply_enabled(int $post_id): bool not found — the filter must be handed a real post ID, not an ACF pseudo-target.';
+}
+if (preg_match_all('/apply_filters\(\s*[\'"]meta_conductor_acf_reapply_enabled[\'"]/', $src) !== 1) {
+    $errors[] = 'meta_conductor_acf_reapply_enabled is applied in more than one place — the gate must have a single decision site.';
 }
 
 // --- 3. Positive-integer post-ID target gate -------------------------------
@@ -85,6 +101,35 @@ if (!preg_match('/flush_pending_except\(\s*\$id\s*\)/', $src)) {
     $errors[] = 'record() does not pass the post being recorded to flush_pending_except.';
 }
 
+// --- 5. The conversion tool suppresses reapply for its own writes ----------
+// The conversion tool writes target fields with update_field(), so without an
+// explicit stand-down every converted post is enqueued and reapplied — a
+// second wave of rule processing on top of the heaviest run this plugin does
+// (US17). A real conversion run is impractical to sweep, so the wiring is
+// pinned here instead: same rationale as the AC Pro gate guard.
+$dp = $root . '/includes/conversion/class-data-processor.php';
+if (!is_file($dp)) {
+    $errors[] = 'includes/conversion/class-data-processor.php missing.';
+} else {
+    $dpsrc = (string) file_get_contents($dp);
+
+    if (!preg_match('/function\s+with_reapply_suppressed\s*\(\s*callable\s+\$\w+\s*\)/', $dpsrc)) {
+        $errors[] = 'DataProcessor::with_reapply_suppressed(callable) not found — conversion writes would trigger a reapply per converted post (US17).';
+    }
+    // Must both add AND remove the filter: leaving it added would silently
+    // disable reapply for the rest of the request.
+    if (!preg_match('/add_filter\(\s*[\'"]meta_conductor_acf_reapply_enabled[\'"]/', $dpsrc)
+        || !preg_match('/remove_filter\(\s*[\'"]meta_conductor_acf_reapply_enabled[\'"]/', $dpsrc)) {
+        $errors[] = 'Conversion suppression must both add AND remove meta_conductor_acf_reapply_enabled — a one-way add leaks past the conversion.';
+    }
+    foreach (['process_copy_data_conversion', 'process_map_data_conversion', 'process_conversion_chunk'] as $entry) {
+        $pattern = '/public\s+function\s+' . preg_quote($entry, '/') . '\s*\([^)]*\)\s*:\s*array\s*\{\s*return\s+\$this->with_reapply_suppressed\(/';
+        if (!preg_match($pattern, $dpsrc)) {
+            $errors[] = sprintf('DataProcessor::%s() does not route through with_reapply_suppressed() (US17).', $entry);
+        }
+    }
+}
+
 if ($errors) {
     fwrite(STDERR, "ACF-QUEUE FAIL — AcfWriteQueue invariants broken (#42):\n");
     foreach ($errors as $e) {
@@ -93,5 +138,5 @@ if ($errors) {
     exit(1);
 }
 
-echo "ACF-QUEUE OK — claim priority, import gate, post-ID gate, bounded-flush skip all intact (#42).\n";
+echo "ACF-QUEUE OK — claim priority, import/disable gate on apply(), single-site filter contract, post-ID gate, bounded-flush skip all intact (#42).\n";
 exit(0);

@@ -137,17 +137,10 @@ class AcfWriteQueue {
      * @return mixed
      */
     public function record($value, $post_id = 0, $field = []) {
-        // Imports stand down by default; filter can force either way.
-        if (defined('WP_IMPORTING') && WP_IMPORTING) {
-            if (!apply_filters('meta_conductor_acf_reapply_enabled', false, $post_id)) {
-                return $value;
-            }
-        } elseif (!apply_filters('meta_conductor_acf_reapply_enabled', true, $post_id)) {
-            return $value;
-        }
-
         // Gate on the TARGET, not the field. A positive integer post ID
         // naturally excludes ACF's 'options' / 'user_N' / 'term_N' targets.
+        // This runs BEFORE reapply_enabled so the filter is only ever handed a
+        // real post ID, as its contract promises — never a pseudo-target.
         if (!is_numeric($post_id)) {
             return $value;
         }
@@ -156,6 +149,12 @@ class AcfWriteQueue {
             return $value;
         }
         if (\wp_is_post_autosave($id) || \wp_is_post_revision($id)) {
+            return $value;
+        }
+
+        // Early-out so a disabled site doesn't accumulate a pending set it will
+        // never apply. apply() re-checks — that is the authoritative gate.
+        if (!$this->reapply_enabled($id)) {
             return $value;
         }
 
@@ -264,10 +263,39 @@ class AcfWriteQueue {
         });
     }
 
-    /** Hand one post to every handler; each self-gates. (§V3/§V6/§V7) */
+    /**
+     * Hand one post to every handler; each self-gates. (§V3/§V6/§V7)
+     *
+     * AUTHORITATIVE gate. Every flush path — shutdown, bounded, and the Admin
+     * Columns one-post flush — funnels through here, so this is the single
+     * place that can honour "turn the whole behaviour off". Gating only the
+     * listener would leave flush_post() applying regardless, which is exactly
+     * what an admin reaches for while diagnosing an unrelated problem.
+     */
     private function apply(int $post_id): void {
+        if (!$this->reapply_enabled($post_id)) {
+            return;
+        }
         foreach ($this->handlers as $handler) {
             $handler->reapply_for_post($post_id);
         }
+    }
+
+    /**
+     * Whether rule reapply should run for this post.
+     *
+     * Imports stand down by default — a bulk import of thousands of posts must
+     * not silently trigger thousands of recomputes; reconcile afterwards with
+     * "Apply to Existing Posts". The `meta_conductor_acf_reapply_enabled`
+     * filter overrides that either way.
+     *
+     * The `int` parameter type IS the filter's contract: callers guarantee a
+     * real post ID before this runs, so a filter never has to defend against
+     * ACF's 'options' / 'user_N' / 'term_N' pseudo-targets.
+     */
+    private function reapply_enabled(int $post_id): bool {
+        $default = !(defined('WP_IMPORTING') && WP_IMPORTING);
+
+        return (bool) apply_filters('meta_conductor_acf_reapply_enabled', $default, $post_id);
     }
 }

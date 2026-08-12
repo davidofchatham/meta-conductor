@@ -71,6 +71,20 @@ class TaxonomyManager {
     }
 
     /**
+     * Get the ACF write queue (#42).
+     *
+     * Exposed so a behavior sweep can drive flush_post() directly — the Admin
+     * Columns entry point is otherwise only reachable from an admin request
+     * with AC Pro loaded, which WP-CLI cannot produce (AC returns early on
+     * !is_admin()). Mirrors get_conversion_manager().
+     *
+     * @return AcfWriteQueue|null
+     */
+    public function get_acf_write_queue() {
+        return $this->acf_write_queue;
+    }
+
+    /**
      * Constructor
      */
     private function __construct() {

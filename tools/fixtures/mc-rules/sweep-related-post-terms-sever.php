@@ -36,6 +36,14 @@
  * bidirectional keeping both sides in step — the strip happens as before.
  *
  * Expects the mc-rules fixture (v5+) seeded. Mutates term state; reseed after.
+ *
+ * CLEANUP TRAP: several steps save item-alpha, which carries mc_event_date and
+ * a live title_slug rule, so its slug is rewritten to mc-item-alpha-<date>. The
+ * next seed then can't find it by name and inserts a DUPLICATE (README, "Never
+ * look up a fixture post with get_posts"). After a sweep cycle, delete the
+ * extra alpha and reset #94's post_name to mc-item-alpha before reseeding, or
+ * verify.php will fail on the copy count.
+ *
  * See handler-fixture-matrix.md §4.
  */
 
@@ -274,6 +282,43 @@ switch ( $step ) {
 
 		wp_delete_post( $i, true );
 		WP_CLI::log( '  temp posts removed' );
+		break;
+
+	// ---- S10: the disable filter must stop the AC one-post flush too -------
+	// US14: "disable the whole reapply behaviour with a filter". Gating only
+	// the listener left flush_post() — the Admin Columns path — applying
+	// regardless, which is exactly what an admin reaches for while diagnosing.
+	case 's10':
+		WP_CLI::log( 'S10 — meta_conductor_acf_reapply_enabled=false must stop flush_post()' );
+		$queue = \BWS\MetaConductor\TaxonomyManager::get_instance()->get_acf_write_queue();
+		$assert( $queue !== null, 'write queue reachable' );
+
+		// Establish the precondition rather than inheriting it: earlier steps
+		// (s1b, s7b) legitimately leave beta source-less, and a source-less
+		// dependent applies nothing for reasons that have nothing to do with
+		// the filter under test — which would make the re-enable assertion
+		// fail for the wrong reason.
+		$editor_save( 'mc_related_items', array( $ALPHA, $BETA ), $HOLDER );
+		$editor_save( 'mc_parent_section', array( $HOLDER ), $BETA );
+
+		// Strip beta's terms where a handler cascade can't put them back.
+		remove_all_actions( 'set_object_terms' );
+		wp_set_object_terms( $BETA, array(), 'mc_topic' );
+		clean_object_term_cache( $BETA, 'mc_item' );
+		$assert( empty( $slugs( $BETA, 'mc_topic' ) ), 'beta starts with no terms' );
+
+		// Disabled: flush_post must be a no-op.
+		add_filter( 'meta_conductor_acf_reapply_enabled', '__return_false', 99 );
+		$queue->flush_post( $BETA );
+		$assert( empty( $slugs( $BETA, 'mc_topic' ) ), 'flush_post applied NOTHING while disabled (US14)' );
+		remove_filter( 'meta_conductor_acf_reapply_enabled', '__return_false', 99 );
+
+		// Enabled again: the same call must apply, proving the no-op above was
+		// the filter and not a broken subject.
+		$queue->flush_post( $BETA );
+		$after = $slugs( $BETA, 'mc_topic' );
+		WP_CLI::log( '  beta after re-enabling: [' . implode( ',', $after ) . ']' );
+		$assert( ! empty( $after ), 'flush_post applies once re-enabled' );
 		break;
 
 	default:
