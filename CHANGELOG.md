@@ -5,10 +5,108 @@ All notable changes to Meta Conductor are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.6.3] — Unreleased
+## [0.7.0] — Unreleased
+
+Minor bump (was slated 0.6.3, never tagged): this cut adds a new core module, a public
+filter, and an import-time behavior change, which is more than a patch carries.
+
+### Added
+
+- **AC-agnostic ACF write queue (#42).** New `Core\AcfWriteQueue` watches ACF's own
+  `acf/update_value` filter — the one signal that fires for *every* ACF write — records the
+  posts touched, and reapplies every handler once those writes have landed. This covers all
+  the paths that fire no `save_post`-family hook and therefore silently skipped term sync:
+  Admin Columns Pro v7 inline/bulk edits, bare programmatic `update_field()` (custom code,
+  WP-CLI, cron), and REST writes to an ACF field. The 0.6.0 AC-only fallback (#37) is
+  retained but reduced to a single `flush_post()` call, so inline-edit responses stay
+  accurate while all apply logic lives in one module. Ordinary editor/REST post saves are
+  unaffected — the queue *claims* those posts above every handler priority, so they run
+  through the existing path exactly as before.
+  - New filter `meta_conductor_acf_reapply_enabled` (bool, post ID) — force the behavior on
+    or off per site. The gate sits on the apply step every flush path funnels through, so
+    returning `false` disables reapply everywhere including the Admin Columns inline-edit
+    path. The filter is always handed a real post ID, never one of ACF's `options` /
+    `user_N` / `term_N` pseudo-targets.
+  - **The conversion tool suppresses reapply for its own writes.** It writes target fields
+    with `update_field()`, so without this every converted post would be reapplied at
+    shutdown or at the bounded flush — a second wave of rule processing on top of the
+    heaviest run the plugin does. Suppression is scoped to the conversion call, not the
+    request. Reconcile afterwards with "Apply to Existing Posts", as with imports.
+  - A bounded mid-request flush past a fixed cap (100 pending posts) keeps a long
+    single-process run writing progressively instead of deferring everything to shutdown.
+    The cap is deliberately NOT filterable yet: no site has needed to tune it, and adding a
+    filter later is non-breaking whereas removing a published one is not.
+  - Regression guard `tests/verify-acf-write-queue.php` (H8) pins the four properties that
+    make the mechanism correct and that a refactor could silently break: claim priority
+    above the latest handler, the import gate, the positive-integer post-ID target gate,
+    and the bounded flush skipping the post currently mid-write.
 
 ### Changed
 
+- **⚠️ Imports no longer sync terms (#42).** The write queue stands down entirely while
+  `WP_IMPORTING` is set (WP core importers and WP All Import both set it), so an import of
+  thousands of posts does not trigger thousands of rule recomputes. **Reconcile afterwards
+  with "Apply to Existing Posts".** Override with `meta_conductor_acf_reapply_enabled`.
+- **⚠️ Behavior change for live `related_post_terms` rules with `keep_in_sync`.** With #43
+  fixed, a dependent that loses its **last** source now reaches the existing true-orphan
+  path, which performs an *empty replace* on that taxonomy — clearing manually assigned
+  terms alongside the inherited ones. This is the pre-existing keep-in-sync contract (the
+  same already happened on a holder-end sever), but it is now reachable from the end
+  editors actually touch. **If you run a live rule of this type, audit that taxonomy before
+  upgrading.**
+
+### Fixed
+
+- **ACF Reference: a dependent dropping its own relationship now severs (#43).** For a push
+  rule with `keep_in_sync`, clearing the reverse relationship field on the *dependent* post
+  — the natural way to say "this item no longer belongs to that group" — left the inherited
+  term in place forever. The sever capture recognised only two shapes (a push rule's forward
+  field edited on the holder, a pull rule's reverse field edited on an eligible source); the
+  third, a push rule's reverse field edited on an eligible dependent, was missing. Both
+  reverse-resolution styles are covered — an explicitly configured `reverse_acf_field_name`
+  and an ACF native bidirectional partner. Clearing the relationship from either end now
+  does the same thing. Rules with neither a configured reverse field nor a native bidi
+  partner still have no reverse field name to match, so their edit-sever remains covered at
+  delete time only — unchanged, and documented at the enforcing code.
+  - Side effect: because the #42 flush routes through the handler's normal ACF-save entry
+    point, it also drains pending severs — closing the previously documented gap where a
+    bare `update_field()` captured a sever that nothing ever processed.
+  - The `$severed` bookkeeping's key contract changed from "the source that severed" to
+    "the post whose save drains the entry"; a dependent-end sever keys under itself, since
+    that is the only post saved in the request.
+- **Fixture blueprint `mc-rules` v5.** Adds the reverse-field surface the matrix already
+  called for: an explicit reverse field (`mc_parent_section`, tier 1) on the existing
+  `related_post_terms` rule, plus a self-contained ACF native-bidirectional pair
+  (`mc_bidi_items` ⇄ `mc_bidi_sections` on new `section-bidi`/`item-bidi`, taxonomy
+  `mc_flag`, tier 2). Two rules are required because an explicit reverse short-circuits the
+  bidi tier — one rule can only prove one tier.
+
+- **Value-independent ACF field discovery in level-restriction + related handlers (#41).** Both handlers
+  discovered ACF taxonomy fields via `get_field_objects($post_id)`, which returns `FALSE` for a post with
+  no saved ACF meta — so an attached-but-empty ACF taxonomy field was never found and the ACF path silently
+  no-opped. Rewired to the shared `get_acf_taxonomy_fields()` (resolves fields from field-group *location*
+  rules, value-independent; same fix landed for propagation in `f9f4926`). Level-restriction now writes by
+  field **key** so a first write registers the ACF reference row. Verified on the local testbed: a
+  previously-empty subject's ACF taxonomy field is discovered and pruned to `one_per_level`, native +
+  ACF channels agree.
+
+### Removed
+
+- **Dead `validate_rule()` handler overrides + orphaned helpers (#40).** The public `validate_rule()`
+  overrides on the time-based, propagation, level-restriction, and title-slug handlers had **zero call
+  sites** (whole-tree grep confirmed) — rule saving goes through Wireframe → storage normalization, never
+  a handler `validate_rule`. Removed the 4 overrides plus their sole-caller-orphaned `sanitize_rule_data`
+  (×3) and `is_valid_date` (×1). Live paths (`validate_rule_internal`, the base compat wrapper) untouched.
+  Net −254/+33 lines across the handlers; H1–H6 green.
+
+### Changed
+
+- **`UnifiedHandlerBase` split into traits (agent-friendliness; no behavior change).** The shared term +
+  ACF primitives moved out of the 1067-line base into two composed traits: `TermOperations`
+  (`apply_terms_to_post`/`remove_terms_from_post`/`post_has_terms`/`terms_fingerprint`) and `AcfBridge`
+  (`get_acf_taxonomy_value`/`set_acf_taxonomy_value`/`get_acf_taxonomy_fields`). Both are `use`d on the base
+  itself, so every handler still resolves them via `$this->…` unchanged — pure structural refactor. Base
+  drops to ~800 lines. H2 autoload harness now `trait_exists`-checks both.
 - **Phase 2b rename sweep (internal identifiers).** Completes the branding pass begun in 2c:
   - Text domain unified to `meta-conductor` across all `__()`/`_e()` calls (510 args, 29 files). Cosmetic
     (private plugin, no `.po` files) but removes the mixed `bws-meta-manager`/`bws-taxonomy-manager` domains.
@@ -31,6 +129,27 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Data Conversion tool was completely unusable — every selector stayed empty and no conversion could run.**
+  The eight `wp_ajax_bws_meta_manager_conversion_*` endpoints in `TaxonomyManager` were divergent local copies
+  that shadowed the canonical, correctly-shaped handlers on `ConversionUi`, each emitting a payload the client
+  couldn't consume:
+  - **Fields** (`get_fields`) returned each group's `fields` as a key-preserved PHP array → JSON object `{}`,
+    so `conversion-admin.js`'s `group.fields.forEach` silently no-op'd ("Total fields added: 0"). It also
+    ignored `content_type`/`post_types`/`taxonomies`/`field_type_filter`, returning all groups unfiltered.
+  - **Taxonomies / terms / options** were wrapped (`{taxonomies:…}`, `{terms:…}`, `{options:…}` with the wrong
+    inner key) where the client expected bare arrays → Source/Target Taxonomy dropdowns rendered blank, term
+    and option mapping broke.
+  - **Estimate-size** and **process-chunk** were unimplemented stubs returning hardcoded zeros (size dialog
+    showed `undefined`; chunked runs did nothing yet reported complete).
+  - **Process** and **preview** read a nested `$_POST['config']` array the client never sends — the form posts
+    a flat `FormData` — so conversions ran on empty config.
+
+  All eight endpoints now delegate to `ConversionUi` via a lazily-built instance on `ConversionManager`
+  (`get_conversion_ui()`), which owns the canonical response shapes and reads the flat POST through
+  `sanitize_conversion_config()`. The five `ConversionUi` handlers that lacked auth checks
+  (`handle_get_fields`/`get_options`/`get_taxonomies`/`conversion`/`preview` — chunk/estimate/terms were already
+  guarded) gained the nonce + `manage_options` check the old stubs carried, so rerouting is not a security
+  regression.
 - **Bulk "process existing posts" now works for the hook-driven handlers (was an inert, over-reporting
   button).** `process_existing_posts()` drove bulk re-apply through `process_post()`, which the hook-driven
   handlers (related, propagation, level-restriction) override as a no-op — so bulk did nothing yet reported

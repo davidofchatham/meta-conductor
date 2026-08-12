@@ -34,6 +34,17 @@ if ( ! defined( 'WP_CLI' ) || ! WP_CLI ) {
 
 define( 'BWS_FIXTURE_SEEDING', true );
 
+// The seeder's whole safety model is "empty the rule arrays, write the content,
+// restore the rules LAST" — see "Seed order is load-bearing" in README.md. That
+// model assumes rules can only fire DURING a content write. As of 0.7.0 it can
+// also fire after one: AcfWriteQueue records every update_field() and applies
+// the handlers on shutdown, which lands after the rules are restored. Seeding
+// item-alpha's mc_event_date would then trip the title_slug rule and rename the
+// post out from under the next seed run's lookup (duplicate posts, drifting
+// slugs). Stand the queue down for the whole seed — this is exactly the escape
+// hatch the filter exists for. (#42)
+add_filter( 'meta_conductor_acf_reapply_enabled', '__return_false', 99 );
+
 $mc_base     = __DIR__;
 $mc_manifest = require $mc_base . '/manifest.php';
 require_once $mc_base . '/schema.php';
@@ -232,16 +243,20 @@ $log( 'post→term assignments applied' );
 // ---------------------------------------------------------------------------
 $mc_field_keys = array(
 	'mc_item'    => array(
-		'mc_topics'     => 'field_mc_topics_item',
-		'mc_event_date' => 'field_mc_event_date',
+		'mc_topics'         => 'field_mc_topics_item',
+		'mc_event_date'     => 'field_mc_event_date',
+		'mc_parent_section' => 'field_mc_parent_section',
+		'mc_bidi_sections'  => 'field_mc_bidi_sections',
 	),
 	'mc_section' => array(
 		'mc_related_items' => 'field_mc_related_items',
 		'mc_primary_item'  => 'field_mc_primary_item',
 		'mc_topics'        => 'field_mc_topics_section',
+		'mc_bidi_items'    => 'field_mc_bidi_items',
 	),
 );
-$mc_ref_fields = array( 'mc_related_items', 'mc_primary_item' );
+// Relationship/post_object fields: manifest values are arrays of fixture slugs.
+$mc_ref_fields = array( 'mc_related_items', 'mc_primary_item', 'mc_parent_section', 'mc_bidi_items', 'mc_bidi_sections' );
 // Taxonomy ACF fields: values are {TERM:slug} tokens resolved to term IDs.
 // These fields have save_terms=1, so update_field() ALSO writes native terms —
 // seeding an independent term here (not via post_terms) keeps the ACF mirror and

@@ -320,15 +320,6 @@ class RelatedHandler extends UnifiedHandlerBase {
      * taxonomy-type: unchanged.
      */
     private function process_acf_related_terms($post_id, $rule) {
-        if (!function_exists('get_field_objects')) {
-            return;
-        }
-
-        $field_objects = get_field_objects($post_id);
-        if (!$field_objects) {
-            return;
-        }
-
         $trigger_taxonomies = [];
 
         if ($rule['trigger_type'] === 'taxonomy') {
@@ -350,12 +341,13 @@ class RelatedHandler extends UnifiedHandlerBase {
             return;
         }
 
-        foreach ($field_objects as $field) {
-            if ($field['type'] === 'taxonomy'
-                && isset($field['taxonomy'])
-                && in_array($field['taxonomy'], $trigger_taxonomies, true)) {
+        // Value-independent discovery (0.6.x ACF B-sweep, #41): resolve fields
+        // from field-group LOCATION rules, not stored meta — so an attached-but-
+        // empty ACF taxonomy field on the trigger post still fires the rule.
+        foreach ($trigger_taxonomies as $taxonomy) {
+            if (!empty($this->get_acf_taxonomy_fields($post_id, $taxonomy))) {
                 $this->process_related_terms($post_id, $rule);
-                break;
+                return;
             }
         }
     }

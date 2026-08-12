@@ -665,13 +665,15 @@ class ConversionUi {
      * Handle conversion AJAX request
      */
     public function handle_conversion_ajax(): void {
+        $this->verify_ajax_request();
+
         $conversion_type = sanitize_text_field( $_POST['conversion_type'] ?? '' );
-        
+
         // Map old type names to new ones
         if ( $conversion_type === 'move_data' ) {
             $conversion_type = 'copy_data';
         }
-        
+
         $config = $this->sanitize_conversion_config( $_POST );
 
         switch ( $conversion_type ) {
@@ -697,13 +699,15 @@ class ConversionUi {
      * Handle preview AJAX request
      */
     public function handle_preview_ajax(): void {
+        $this->verify_ajax_request();
+
         $conversion_type = sanitize_text_field( $_POST['conversion_type'] ?? '' );
-        
+
         // Map old type names to new ones
         if ( $conversion_type === 'move_data' ) {
             $conversion_type = 'copy_data';
         }
-        
+
         $config = $this->sanitize_conversion_config( $_POST );
         $sample_count = intval( $_POST['sample_count'] ?? 10 );
 
@@ -776,6 +780,8 @@ class ConversionUi {
      * Handle get fields AJAX request
      */
     public function handle_get_fields_ajax(): void {
+        $this->verify_ajax_request();
+
         $context = sanitize_text_field( $_POST['context'] ?? '' );
         $content_type = sanitize_text_field( $_POST['content_type'] ?? '' );
         $post_types = array_map( 'sanitize_text_field', $_POST['post_types'] ?? [] );
@@ -796,6 +802,8 @@ class ConversionUi {
      * Handle get options AJAX request
      */
     public function handle_get_options_ajax(): void {
+        $this->verify_ajax_request();
+
         $field_key = sanitize_text_field( $_POST['field_key'] ?? '' );
 
         if ( $field_key ) {
@@ -811,6 +819,8 @@ class ConversionUi {
      * Handle get taxonomies AJAX request
      */
     public function handle_get_taxonomies_ajax(): void {
+        $this->verify_ajax_request();
+
         $taxonomies = $this->components['field_mapper']->get_taxonomies( true );
         wp_send_json_success( $taxonomies );
     }

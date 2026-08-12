@@ -47,23 +47,48 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
     }
 
     /**
-     * Per-request capture of DEPENDENTS removed from a PUSH source's
-     * relationship field this save, keyed by source post ID THEN taxonomy:
-     * `severed[source_id][taxonomy] = [removed_dependent_ids]`. Filled by
-     * capture_removed_dependents on acf/update_value (which sees old vs new),
-     * drained in on_acf_save_post. Enables source-side sever strip without
-     * per-term tracking. (SPEC §V14)
+     * Per-request queue of posts needing a FORCED recompute because a
+     * relationship they depend on was just broken:
+     * `pending_recomputes[draining_post_id][taxonomy] = [post_ids_to_recompute]`.
+     * Filled via queue_recompute from the two capture branches and the delete
+     * path; drained by process_severed. Enables sever strip without per-term
+     * tracking. (SPEC §V14)
      *
-     * PUSH-ONLY by construction: for a pull rule the field lists the holder's
-     * SOURCES, not dependents — removing one is already handled by the holder's
-     * own sync_for_post (it recomputes from remaining sources), and treating a
-     * removed source as a dependent would wipe that source's terms (PR#24 Bug 1).
-     * Keyed by taxonomy so a severed source only strips the taxonomy IT feeds,
-     * not every keep_in_sync taxonomy site-wide (PR#24 Bug 2).
+     * The outer key is THE POST WHOSE SAVE DRAINS THE ENTRY — always the post
+     * being written when the capture fired, and the only post guaranteed to
+     * reach process_severed this request. On a dependent-end sever that post is
+     * also the one to recompute, so it appears in its own list (#43); recording
+     * the removed source instead would key under a post that is never saved
+     * here, and would never drain.
+     *
+     * A removed source is never treated as a dependent of the post that dropped
+     * it — that would wipe the source's own terms (PR#24 Bug 1). Keyed by
+     * taxonomy so a sever only strips the taxonomy the broken link actually
+     * feeds, not every keep_in_sync taxonomy site-wide (PR#24 Bug 2).
      *
      * @var array<int,array<string,int[]>>
      */
-    private array $severed = [];
+    private array $pending_recomputes = [];
+
+    /**
+     * Queue post IDs for a forced recompute under the post that will drain
+     * them. Single merge point for all three fill sites (delete path,
+     * holder-end capture, dependent-end capture) so the empty-taxonomy guard
+     * and the dedupe semantics live in one place.
+     *
+     * @param int    $draining_id Post whose save drains the entry.
+     * @param string $taxonomy    Taxonomy the broken link feeds ('' ⇒ skip).
+     * @param int[]  $post_ids    Posts to force-recompute.
+     */
+    private function queue_recompute(int $draining_id, string $taxonomy, array $post_ids): void {
+        if ($taxonomy === '' || empty($post_ids)) {
+            return;
+        }
+        $existing = $this->pending_recomputes[$draining_id][$taxonomy] ?? [];
+        $this->pending_recomputes[$draining_id][$taxonomy] = array_values(
+            array_unique(array_merge($existing, $post_ids))
+        );
+    }
 
     /**
      * Per-request memo of tier-3 reverse-lookup results, keyed
@@ -223,13 +248,7 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
                 $dependents = $this->dependents_of_source($post_id, $rule);
             }
 
-            if (empty($dependents)) {
-                continue;
-            }
-            $existing = $this->severed[$post_id][$taxonomy] ?? [];
-            $this->severed[$post_id][$taxonomy] = array_values(
-                array_unique(array_merge($existing, $dependents))
-            );
+            $this->queue_recompute($post_id, $taxonomy, $dependents);
         }
     }
 
@@ -271,6 +290,18 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
      *     INVARIANT: pull-direction relationship-edit sever needs this old-vs-new
      *     capture, symmetric to push — the edit path can't be left to the
      *     post-save recompute, which only sees the post-edit graph. (B8)
+     *   PUSH, DEPENDENT END (holder=source, but the REVERSE field is the one
+     *     edited, on the dependent): the dependent is dropping its own source.
+     *     A removed entry is a SOURCE, so the post to recompute is the edited
+     *     post ITSELF — queued under its own key (see $pending_recomputes). Without this
+     *     the dependent keeps the pushed term forever: the holder isn't saved,
+     *     so nothing drains, and the dependent's own recompute hits V13's
+     *     zero-source skip. This is the end an editor actually touches. (#43)
+     *
+     * GENERAL PRINCIPLE (recorded because this is the second omission of the
+     * same class — B8 was the first): every END of a relationship that can drop
+     * a link needs its own capture shape here. Direction of the RULE and
+     * direction of the EDIT are independent.
      *
      * Add-only rules (keep_in_sync off) never remove, so a sever can't strip
      * them — skipped in both directions (PR#24 Bug 3). The post-type gate
@@ -306,6 +337,7 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
         // (reverse field, holder=target). A removed entry is a dependent to
         // recompute in either case. (§V14 push; pull symmetry per B8)
         $sever_rules = [];
+        $self_rules  = [];
         foreach ($this->enabled_rules() as $rule) {
             if (empty($rule['keep_in_sync'])) {
                 continue; // add-only never removes
@@ -315,6 +347,11 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
                 if ((string) ($rule['acf_field_name'] ?? '') === $field_name
                     && $this->post_type_matches($post, $this->holder_post_type($rule))) {
                     $sever_rules[] = $rule;
+                } elseif ($this->field_is_reverse_of($field_name, $rule)
+                    && $this->is_eligible_dependent_type($post, $rule)) {
+                    // PUSH, DEPENDENT END: the dependent dropped its own source.
+                    // The post to recompute is this post itself. (#43)
+                    $self_rules[] = $rule;
                 }
             } else {
                 // PULL: saved field must be a reverse field (explicit or native
@@ -326,7 +363,7 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
                 }
             }
         }
-        if (empty($sever_rules)) {
+        if (empty($sever_rules) && empty($self_rules)) {
             return $value;
         }
 
@@ -362,31 +399,36 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
         // Record removed dependents per taxonomy the rule feeds (Bug 2: a
         // severed source only strips the taxonomy it actually feeds).
         foreach ($sever_rules as $rule) {
-            $taxonomy = (string) ($rule['taxonomy'] ?? '');
-            if ($taxonomy === '') {
-                continue;
-            }
-            $existing = $this->severed[$post_id][$taxonomy] ?? [];
-            $this->severed[$post_id][$taxonomy] = array_values(
-                array_unique(array_merge($existing, $removed))
-            );
+            $this->queue_recompute($post_id, (string) ($rule['taxonomy'] ?? ''), $removed);
+        }
+
+        // Dependent-end sever: the removed entries are SOURCES, so the post to
+        // recompute is this post — queued under its own key so its own save
+        // drains it. (#43)
+        foreach ($self_rules as $rule) {
+            $this->queue_recompute($post_id, (string) ($rule['taxonomy'] ?? ''), [$post_id]);
         }
 
         return $value;
     }
 
     /**
-     * Recompute each dependent the given source just dropped. The dependent
-     * now resolves zero sources under this source's rule, so a normal
-     * recompute would skip it (V13). Force the keep-in-sync replace so the
-     * severed source's terms are withdrawn. (SPEC §V14)
+     * Drain the severs keyed under the post being saved and force a recompute
+     * of each recorded post. The recorded post may now resolve zero sources
+     * under the broken rule, so a normal recompute would skip it (V13). Force
+     * the keep-in-sync replace so the lost source's terms are withdrawn.
+     * (SPEC §V14)
+     *
+     * $saved_id is the DRAINING key, not necessarily the severing source — on a
+     * dependent-end sever the dependent keys and drains its own entry (#43).
+     * See $pending_recomputes for the key contract.
      */
-    private function process_severed(int $source_id): void {
-        if (empty($this->severed[$source_id])) {
+    private function process_severed(int $saved_id): void {
+        if (empty($this->pending_recomputes[$saved_id])) {
             return;
         }
-        $by_taxonomy = $this->severed[$source_id];
-        unset($this->severed[$source_id]);
+        $by_taxonomy = $this->pending_recomputes[$saved_id];
+        unset($this->pending_recomputes[$saved_id]);
 
         $rules = $this->enabled_rules();
 

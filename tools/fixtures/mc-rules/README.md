@@ -29,6 +29,7 @@ Requirements source: [`../handler-fixture-matrix.md`](../handler-fixture-matrix.
 | `schema.php` | CPT/taxonomy registration + ACF groups. Loaded by mu-plugin stub seed.php installs. |
 | `seed.php` | Idempotent applier. Order matters: schema → terms → posts → post fields → **rules last** (rules fire on save hooks; posts must land before rules exist). |
 | `verify.php` | Post-seed smoke + negative-control assertions. Not a behavior-sweep replacement. |
+| `sweep-related-post-terms-sever.php` | §4 sever + write-queue sweep (#42/#43). Stepped, one step per eval — the #42 flush runs on `shutdown`, so a bare `update_field()` can only be asserted in a later request. Read its header before running: step `s7` fails by design. |
 
 ## Seeding
 
@@ -80,6 +81,17 @@ would rewrite terms mid-seed and the result wouldn't match the manifest. The
 storage request-cache is cleared on both sides of that window (the handlers
 hold a `StorageFactory` instance from plugin boot, so a raw `update_option`
 alone leaves them serving stale rules).
+
+### …and the ACF write queue must stand down for it
+
+As of 0.7.0 rules can also fire *after* a content write, not only during one:
+`AcfWriteQueue` records every `update_field()` and applies the handlers on
+`shutdown` — which lands after the seeder has restored the rules. Seeding
+`item-alpha`'s `mc_event_date` would then trip the title_slug rule and rename the
+post out from under the next run's lookup, growing duplicates. `seed.php`
+therefore filters `meta_conductor_acf_reapply_enabled` to false for the whole
+seed. Any other script that writes ACF fields with rules deliberately disabled
+must do the same. (#42)
 
 ## Sweep discipline
 

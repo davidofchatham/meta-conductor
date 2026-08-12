@@ -49,6 +49,18 @@ class ConversionManager {
 	private $preview_system;
 
 	/**
+	 * Conversion UI instance (lazily built).
+	 *
+	 * Holds the canonical AJAX handlers for the Data Conversion tool. The
+	 * TaxonomyManager wp_ajax_* hooks route here so the conversion endpoints
+	 * emit the exact response shapes conversion-admin.js expects (indexed field
+	 * arrays, bare taxonomy/term arrays, flat-POST config).
+	 *
+	 * @var ConversionUi|null
+	 */
+	private $conversion_ui = null;
+
+	/**
 	 * Session table name
 	 *
 	 * @var string
@@ -139,6 +151,27 @@ class ConversionManager {
 	 */
 	public function get_preview_system(): PreviewSystem {
 		return $this->preview_system;
+	}
+
+	/**
+	 * Get the shared ConversionUi instance (built on first access).
+	 *
+	 * Used by the TaxonomyManager AJAX hooks so data-population endpoints
+	 * dispatch to ConversionUi's canonical, correctly-shaped handlers rather
+	 * than divergent copies.
+	 *
+	 * @return ConversionUi
+	 */
+	public function get_conversion_ui(): ConversionUi {
+		if ( null === $this->conversion_ui ) {
+			$this->conversion_ui = new ConversionUi(
+				$this->field_mapper,
+				$this->data_processor,
+				$this->preview_system
+			);
+		}
+
+		return $this->conversion_ui;
 	}
 
 	/**

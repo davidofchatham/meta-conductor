@@ -682,14 +682,6 @@ class TitleSlugHandler extends UnifiedHandlerBase {
     // Public API (stubs)
     // -------------------------------------------------------------------------
 
-    public function validate_rule($rule_data): array {
-        $errors = [];
-        if (empty($rule_data['post_type'])) $errors[] = 'Post type is required';
-        if (empty($rule_data['title_pattern']) && empty($rule_data['slug_pattern']))
-            $errors[] = 'At least one of title pattern or slug pattern is required';
-        return ['valid' => empty($errors), 'errors' => $errors];
-    }
-
     public function preview_rule(array $rule): array {
         $args = ['post_type' => $rule['post_type'], 'posts_per_page' => 1,
                  'post_status' => 'publish', 'orderby' => 'date', 'order' => 'DESC'];

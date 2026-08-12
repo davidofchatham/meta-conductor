@@ -22,6 +22,14 @@ use BWS\MetaConductor\Settings;
 
 abstract class UnifiedHandlerBase {
 
+    // Shared handler primitives. TermOperations = native WP term apply/remove/
+    // membership/fingerprint; AcfBridge = ACF taxonomy-field read/write/discover.
+    // Both compose in here (never per-handler) so every handler always has them —
+    // that is what keeps the "a base helper a handler calls MUST exist on the
+    // base" invariant true (B4/§V14). Grepping this file's body alone won't show
+    // these methods; see class-term-operations.php / class-acf-bridge.php.
+    use TermOperations, AcfBridge;
+
     /**
      * Rule engine instance
      *
@@ -371,135 +379,6 @@ abstract class UnifiedHandlerBase {
     }
 
     /**
-     * Apply terms to a post honoring conflict handling.
-     *
-     * Ported from legacy HandlerBase (V10) so handlers migrated onto this
-     * base inherit it. Behavior identical: merge/replace/skip.
-     *
-     * @param int    $post_id           Post ID
-     * @param string $taxonomy          Taxonomy
-     * @param array  $terms             Term IDs, objects, or arrays
-     * @param string $conflict_handling 'merge' | 'replace' | 'skip'
-     * @return array|false|\WP_Error wp_set_object_terms result, or false
-     */
-    protected function apply_terms_to_post(int $post_id, string $taxonomy, array $terms, string $conflict_handling = 'merge'): array|false|\WP_Error {
-        if (empty($terms)) {
-            return false;
-        }
-
-        // Ensure terms are term IDs
-        $term_ids = array();
-        foreach ($terms as $term) {
-            if (is_object($term)) {
-                $term_ids[] = $term->term_id;
-            } elseif (is_array($term)) {
-                $term_ids[] = $term['term_id'];
-            } else {
-                $term_ids[] = absint($term);
-            }
-        }
-
-        $term_ids = array_unique(array_filter($term_ids));
-
-        if (empty($term_ids)) {
-            return false;
-        }
-
-        switch ($conflict_handling) {
-            case 'replace':
-                return \wp_set_object_terms($post_id, $term_ids, $taxonomy);
-
-            case 'merge':
-                $existing_terms = \wp_get_object_terms($post_id, $taxonomy, array('fields' => 'ids'));
-                if (\is_wp_error($existing_terms)) {
-                    $existing_terms = array();
-                }
-                $merged_terms = array_unique(array_merge($existing_terms, $term_ids));
-                return \wp_set_object_terms($post_id, $merged_terms, $taxonomy);
-
-            case 'skip':
-                $existing_terms = \wp_get_object_terms($post_id, $taxonomy, array('fields' => 'ids'));
-                if (\is_wp_error($existing_terms)) {
-                    $existing_terms = array();
-                }
-
-                // Only apply if no existing terms
-                if (empty($existing_terms)) {
-                    return \wp_set_object_terms($post_id, $term_ids, $taxonomy);
-                }
-                return false;
-
-            default:
-                return false;
-        }
-    }
-
-    /**
-     * Remove terms from a post.
-     *
-     * Ported from legacy HandlerBase (V10).
-     *
-     * @param int    $post_id  Post ID
-     * @param string $taxonomy Taxonomy
-     * @param array  $terms    Term IDs, objects, or arrays to remove
-     * @return array|false|\WP_Error wp_set_object_terms result, or false
-     */
-    protected function remove_terms_from_post(int $post_id, string $taxonomy, array $terms): array|false|\WP_Error {
-        if (empty($terms)) {
-            return false;
-        }
-
-        $existing_terms = \wp_get_object_terms($post_id, $taxonomy, array('fields' => 'ids'));
-        if (\is_wp_error($existing_terms)) {
-            return false;
-        }
-
-        // Ensure terms are term IDs
-        $term_ids_to_remove = array();
-        foreach ($terms as $term) {
-            if (is_object($term)) {
-                $term_ids_to_remove[] = $term->term_id;
-            } elseif (is_array($term)) {
-                $term_ids_to_remove[] = $term['term_id'];
-            } else {
-                $term_ids_to_remove[] = absint($term);
-            }
-        }
-
-        $remaining_terms = array_diff($existing_terms, $term_ids_to_remove);
-
-        return \wp_set_object_terms($post_id, $remaining_terms, $taxonomy);
-    }
-
-    /**
-     * Check if a post has specific terms in a taxonomy.
-     *
-     * Ported from legacy HandlerBase (V10). Null $term_ids ⇒ "has any term".
-     *
-     * @param int        $post_id  Post ID
-     * @param string     $taxonomy Taxonomy
-     * @param array|int|null $term_ids Term IDs to check, or null for any
-     * @return bool
-     */
-    protected function post_has_terms(int $post_id, string $taxonomy, array|int|null $term_ids = null): bool {
-        $post_terms = \wp_get_object_terms($post_id, $taxonomy, array('fields' => 'ids'));
-
-        if (\is_wp_error($post_terms)) {
-            return false;
-        }
-
-        if ($term_ids === null) {
-            return !empty($post_terms);
-        }
-
-        if (!is_array($term_ids)) {
-            $term_ids = array($term_ids);
-        }
-
-        return !empty(array_intersect($post_terms, $term_ids));
-    }
-
-    /**
      * Log a debug message when WP_DEBUG is on.
      *
      * Ported from legacy HandlerBase (V10).
@@ -515,128 +394,6 @@ abstract class UnifiedHandlerBase {
             }
             error_log($log_message);
         }
-    }
-
-    /**
-     * Read an ACF taxonomy field's value as a flat array of term IDs.
-     *
-     * Ported from legacy HandlerBase (B4/V14) — used by the propagation and
-     * level-restriction ACF code paths, which now extend this base. Standalone
-     * get_field() wrapper; unrelated to the removed AcfIntegration engine.
-     * Returns [] when ACF is absent or the field is empty.
-     *
-     * @param int    $post_id
-     * @param string $field_name
-     * @param string $taxonomy   Accepted for signature parity; ACF returns the value directly.
-     * @return int[]
-     */
-    protected function get_acf_taxonomy_value($post_id, $field_name, $taxonomy) {
-        if (!function_exists('get_field')) {
-            return array();
-        }
-
-        $value = get_field($field_name, $post_id);
-
-        if (empty($value)) {
-            return array();
-        }
-
-        // Handle different ACF taxonomy field return formats
-        if (is_array($value)) {
-            $term_ids = array();
-            foreach ($value as $item) {
-                if (is_object($item) && isset($item->term_id)) {
-                    $term_ids[] = $item->term_id;
-                } elseif (is_numeric($item)) {
-                    $term_ids[] = absint($item);
-                }
-            }
-            return $term_ids;
-        } elseif (is_object($value) && isset($value->term_id)) {
-            return array($value->term_id);
-        } elseif (is_numeric($value)) {
-            return array(absint($value));
-        }
-
-        return array();
-    }
-
-    /**
-     * Write term IDs to an ACF taxonomy field.
-     *
-     * Ported from legacy HandlerBase (B4/V14). Standalone update_field()
-     * wrapper; unrelated to the removed AcfIntegration engine.
-     *
-     * @param int       $post_id
-     * @param string    $field_name
-     * @param int[]|int $term_ids
-     * @return mixed update_field() result, or false when ACF is absent.
-     */
-    protected function set_acf_taxonomy_value($post_id, $field_selector, $term_ids) {
-        if (!function_exists('update_field')) {
-            return false;
-        }
-
-        if (!is_array($term_ids)) {
-            $term_ids = array($term_ids);
-        }
-
-        // $field_selector should be the ACF field KEY (field_xxxx), not the name,
-        // when writing a field that may have NO prior value on this post. On a
-        // first write ACF needs the key to register the hidden _{name} reference
-        // row; passing the name falls back to a bare update_post_meta with no
-        // reference, so get_field() can't later resolve/format the value.
-        // (0.6.0 ACF B-sweep — get_acf_taxonomy_fields yields keys.)
-        return update_field($field_selector, $term_ids, $post_id);
-    }
-
-    /**
-     * Discover a post's ACF taxonomy fields for a taxonomy, INDEPENDENT of
-     * whether the post has any saved field values.
-     *
-     * get_field_objects($post_id) enumerates from stored meta and returns FALSE
-     * for a post with no ACF values yet — so a never-populated child could never
-     * receive its first propagated/restricted ACF write (chicken-and-egg). This
-     * resolves fields from field-group LOCATION rules instead (the same engine
-     * the ACF admin uses), so attached-but-empty fields are found.
-     *
-     * Recurses sub_fields so a taxonomy field nested in a Group/Repeater is seen.
-     *
-     * @param int    $post_id
-     * @param string $taxonomy
-     * @return array[] List of ['name' => string, 'key' => string] for each
-     *                 matching taxonomy field. Empty when ACF is absent or none match.
-     */
-    protected function get_acf_taxonomy_fields($post_id, $taxonomy) {
-        if (!function_exists('acf_get_field_groups') || !function_exists('acf_get_fields')) {
-            return array();
-        }
-
-        $matches = array();
-
-        $walk = function ($fields) use (&$walk, $taxonomy, &$matches) {
-            foreach ((array) $fields as $field) {
-                if (!is_array($field)) {
-                    continue;
-                }
-                if (($field['type'] ?? '') === 'taxonomy'
-                    && ($field['taxonomy'] ?? null) === $taxonomy) {
-                    $matches[] = array(
-                        'name' => $field['name'] ?? '',
-                        'key'  => $field['key'] ?? '',
-                    );
-                }
-                if (!empty($field['sub_fields'])) {
-                    $walk($field['sub_fields']);
-                }
-            }
-        };
-
-        foreach (acf_get_field_groups(array('post_id' => $post_id)) as $group) {
-            $walk(acf_get_fields($group['key']));
-        }
-
-        return $matches;
     }
 
     /**
@@ -856,28 +613,6 @@ abstract class UnifiedHandlerBase {
         $this->process_entity($entity, $rule);
 
         return $this->terms_fingerprint($post_id, $taxonomy) !== $before;
-    }
-
-    /**
-     * Stable fingerprint of a post's native term IDs in one taxonomy, for
-     * before/after change detection in apply_to_post (#31). Empty taxonomy or a
-     * WP_Error reads as the empty set — a subsequent real write then differs.
-     *
-     * @param int    $post_id
-     * @param string $taxonomy
-     * @return string Sorted comma-joined term IDs (e.g. "13,14,15").
-     */
-    protected function terms_fingerprint(int $post_id, string $taxonomy): string {
-        if ($taxonomy === '') {
-            return '';
-        }
-        $ids = wp_get_object_terms($post_id, $taxonomy, ['fields' => 'ids']);
-        if (is_wp_error($ids)) {
-            return '';
-        }
-        $ids = array_map('intval', $ids);
-        sort($ids);
-        return implode(',', $ids);
     }
 
     /**
