@@ -94,6 +94,16 @@ version constant), so step C needs `wp --exec="define('WP_ADMIN', true);"`.
 Under a plain WP-CLI run the constant is absent, the hook never registers, and
 the step fails misleadingly.
 
+## Deliberate deviations from #49
+
+**The flush cap is a constant, not a filter.** #49's Implementation Decisions say
+"a bounded flush past a filterable cap, defaulting to about one hundred". Shipped
+as `FLUSH_CAP = 100` with no filter. The filter had no proven consumer — nothing
+in any sweep tuned it — and adding one later is trivial and non-breaking, whereas
+removing a published filter is not. Contrast `meta_conductor_acf_reapply_enabled`,
+which earned its place: the fixture seeder needs it, and the failure that proves
+it happened during this branch's work. Recorded on #49.
+
 ## §B — Bugs
 
 None open on this branch.

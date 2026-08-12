@@ -24,9 +24,10 @@ filters, and an import-time behavior change, which is more than a patch carries.
   through the existing path exactly as before.
   - New filter `meta_conductor_acf_reapply_enabled` (bool, post ID) — force the behavior on
     or off per site.
-  - New filter `meta_conductor_acf_flush_cap` (int, default 100) — pending-set size that
-    triggers a bounded mid-request flush, so a long single-process run writes progressively
-    instead of deferring everything to shutdown.
+  - A bounded mid-request flush past a fixed cap (100 pending posts) keeps a long
+    single-process run writing progressively instead of deferring everything to shutdown.
+    The cap is deliberately NOT filterable yet: no site has needed to tune it, and adding a
+    filter later is non-breaking whereas removing a published one is not.
   - Regression guard `tests/verify-acf-write-queue.php` (H8) pins the four properties that
     make the mechanism correct and that a refactor could silently break: claim priority
     above the latest handler, the import gate, the positive-integer post-ID target gate,

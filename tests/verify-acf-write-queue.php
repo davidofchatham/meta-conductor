@@ -73,10 +73,13 @@ if (!preg_match('/\$id\s*<=\s*0/', $src)) {
 }
 
 // --- 4. Bounded flush skips the in-flight post -----------------------------
-if (!preg_match('/function\s+flush_pending_except\s*\(\s*int\s+\$current\s*\)/', $src)) {
-    $errors[] = 'flush_pending_except(int $current) not found — the bounded flush must be able to skip a post.';
-} elseif (!preg_match('/if\s*\(\s*\$id\s*===\s*\$current\s*\)\s*\{\s*continue;/', $src)) {
-    $errors[] = 'The bounded flush does not skip $current — acf/update_value is a PRE-write filter, so the in-flight post would be read stale.';
+// Pin the SKIP, not the parameter's spelling — a clarifying rename should not
+// fail this test. Capture whatever the parameter is called, then require the
+// loop to skip that same variable.
+if (!preg_match('/function\s+flush_pending_except\s*\(\s*int\s+\$(\w+)\s*\)/', $src, $pm)) {
+    $errors[] = 'flush_pending_except(int $<param>) not found — the bounded flush must be able to skip a post.';
+} elseif (!preg_match('/if\s*\(\s*\$id\s*===\s*\$' . preg_quote($pm[1], '/') . '\s*\)\s*\{\s*continue;/', $src)) {
+    $errors[] = 'The bounded flush does not skip $' . $pm[1] . ' — acf/update_value is a PRE-write filter, so the in-flight post would be read stale.';
 }
 if (!preg_match('/flush_pending_except\(\s*\$id\s*\)/', $src)) {
     $errors[] = 'record() does not pass the post being recorded to flush_pending_except.';

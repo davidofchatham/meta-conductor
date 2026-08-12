@@ -23,6 +23,9 @@
  *   s7   holder-end sever with a STALE explicit reverse — see below
  *   s7b  holder-end sever, tier 1, reverse side kept consistent
  *   s8a/b holder-end sever on the tier-2 (native bidi) rule
+ *   s9   delete-path sever — holder deleted, dependent cleaned. Uses throwaway
+ *        posts and removes them again, so it needs no reseed. Covers the third
+ *        fill site of the pending-recompute queue, which no other step touches.
  *
  * S7 IS EXPECTED TO FAIL and is kept as documentation. With an explicit
  * `reverse_acf_field_name` the dependent's reverse field IS the source of truth
@@ -225,6 +228,52 @@ switch ( $step ) {
 		$show( 'beta', $BETA, 'mc_topic' );
 		$assert( ! empty( $before ), 'beta had terms before' );
 		$assert( empty( $after ), 'tier-1 holder-end sever strips when the reverse side is kept consistent' );
+		break;
+
+	// ---- S9: delete-path sever (holder deleted, dependents cleaned) -------
+	// The matrix names this scenario but nothing implemented it. It matters
+	// here because before_delete_post fills the SAME pending-recompute
+	// structure the two capture branches do, so a refactor of that structure
+	// touches this path without any other step exercising it.
+	//
+	// Uses throwaway posts: deleting a fixture post would force a reseed.
+	case 's9':
+		WP_CLI::log( 'S9 — delete a holder, its dependent must lose the pushed terms' );
+		$coastal = get_term_by( 'slug', 'coastal', 'mc_topic' );
+		if ( ! $coastal ) {
+			WP_CLI::error( 'topic-coastal missing — seed the fixture first' );
+		}
+
+		$h = wp_insert_post( array(
+			'post_type'   => 'mc_section',
+			'post_title'  => 'MC Temp Holder (s9)',
+			'post_status' => 'publish',
+		) );
+		$i = wp_insert_post( array(
+			'post_type'   => 'mc_item',
+			'post_title'  => 'MC Temp Item (s9)',
+			'post_status' => 'publish',
+		) );
+		WP_CLI::log( "  temp holder #{$h}, temp item #{$i}" );
+
+		wp_set_object_terms( $h, array( (int) $coastal->term_id ), 'mc_topic' );
+		$editor_save( 'mc_related_items', array( $i ), $h );
+		$editor_save( 'mc_parent_section', array( $h ), $i );
+		wp_update_post( array( 'ID' => $h ) );
+
+		$before = $slugs( $i, 'mc_topic' );
+		WP_CLI::log( '  temp item before delete: [' . implode( ',', $before ) . ']' );
+		$assert( ! empty( $before ), 'temp item inherited the holder terms' );
+
+		wp_delete_post( $h, true );
+
+		clean_object_term_cache( $i, 'mc_item' );
+		$after = $slugs( $i, 'mc_topic' );
+		WP_CLI::log( '  temp item after delete:  [' . implode( ',', $after ) . ']' );
+		$assert( empty( $after ), 'delete-path sever withdrew the deleted holder terms' );
+
+		wp_delete_post( $i, true );
+		WP_CLI::log( '  temp posts removed' );
 		break;
 
 	default:

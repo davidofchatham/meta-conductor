@@ -47,7 +47,9 @@ if (!defined('ABSPATH')) {
  * run writes progressively instead of deferring everything to the very end. That
  * bounded flush MUST skip the post currently being recorded — that post is
  * mid-write — while every other pending post in a sequential loop is already
- * fully persisted and safe to read.
+ * fully persisted and safe to read. FLUSH_CAP is a plain constant: no site has
+ * yet needed to tune it, and a filter is trivial to add (and non-breaking) the
+ * first time one does, whereas removing a published one is not.
  *
  * IMPORTS ARE SUPPRESSED. A bulk import of thousands of posts must not silently
  * trigger thousands of recomputes, so the listener stands down entirely while
@@ -160,8 +162,9 @@ class AcfWriteQueue {
         $this->pending[$id] = true;
 
         // Bounded mid-request flush so a long single-process run writes
-        // progressively. Skips $id — that post is mid-write.
-        if (!$this->flushing && count($this->pending) > $this->flush_cap()) {
+        // progressively. Skips $id — that post is mid-write. Reentrancy is
+        // handled by guarded(), so no flushing check is needed here.
+        if (count($this->pending) > self::FLUSH_CAP) {
             $this->flush_pending_except($id);
         }
 
@@ -181,13 +184,31 @@ class AcfWriteQueue {
         unset($this->pending[(int) $post_id]);
     }
 
-    /** Apply every pending post. Primary trigger: shutdown. */
-    public function flush(): void {
+    /**
+     * Run a flush body under the reentrancy guard. Sole owner of the guard:
+     * a handler's own ACF writes re-enter record(), which can call back here,
+     * and a nested flush would read half-written state and double-apply.
+     *
+     * Every mutation a flush performs must happen INSIDE $fn. In particular
+     * flush_pending_except's reassignment of $this->pending belongs in the
+     * closure — clearing the pending set outside it would drop posts on a
+     * re-entrant call that then returns without applying them.
+     */
+    private function guarded(callable $fn): void {
         if ($this->flushing) {
             return;
         }
         $this->flushing = true;
         try {
+            $fn();
+        } finally {
+            $this->flushing = false;
+        }
+    }
+
+    /** Apply every pending post. Primary trigger: shutdown. */
+    public function flush(): void {
+        $this->guarded(function () {
             // A handler's own writes can enqueue more posts; drain until empty.
             // $seen bounds the loop — a post is applied at most once per flush.
             $seen = [];
@@ -202,9 +223,7 @@ class AcfWriteQueue {
                     $this->apply($id);
                 }
             }
-        } finally {
-            $this->flushing = false;
-        }
+        });
     }
 
     /**
@@ -218,15 +237,9 @@ class AcfWriteQueue {
             return;
         }
         unset($this->pending[$post_id]);
-        if ($this->flushing) {
-            return;
-        }
-        $this->flushing = true;
-        try {
+        $this->guarded(function () use ($post_id) {
             $this->apply($post_id);
-        } finally {
-            $this->flushing = false;
-        }
+        });
     }
 
     /**
@@ -234,22 +247,21 @@ class AcfWriteQueue {
      * recorded, which is mid-write and must not be read yet. It stays pending
      * for the shutdown flush (or for its own claim, if a save follows).
      */
-    private function flush_pending_except(int $current): void {
-        $ids = array_keys($this->pending);
-        // Keep only the in-flight post pending.
-        $this->pending = isset($this->pending[$current]) ? [$current => true] : [];
+    private function flush_pending_except(int $in_flight_post_id): void {
+        $this->guarded(function () use ($in_flight_post_id) {
+            $ids = array_keys($this->pending);
+            // Keep only the in-flight post pending.
+            $this->pending = isset($this->pending[$in_flight_post_id])
+                ? [$in_flight_post_id => true]
+                : [];
 
-        $this->flushing = true;
-        try {
             foreach ($ids as $id) {
-                if ($id === $current) {
+                if ($id === $in_flight_post_id) {
                     continue;
                 }
                 $this->apply($id);
             }
-        } finally {
-            $this->flushing = false;
-        }
+        });
     }
 
     /** Hand one post to every handler; each self-gates. (§V3/§V6/§V7) */
@@ -257,11 +269,5 @@ class AcfWriteQueue {
         foreach ($this->handlers as $handler) {
             $handler->reapply_for_post($post_id);
         }
-    }
-
-    /** Pending-set size that triggers the bounded flush. Filterable. */
-    private function flush_cap(): int {
-        $cap = (int) apply_filters('meta_conductor_acf_flush_cap', self::FLUSH_CAP);
-        return $cap > 0 ? $cap : self::FLUSH_CAP;
     }
 }
