@@ -108,6 +108,20 @@ Deferred refinements from the 0.5.0 rework (design history in
   still O(N). The UI warns the admin to set a reverse/bidi field; a code fix (index/registry) would remove the
   warning. → GitHub issue [#22](https://github.com/davidofchatham/meta-conductor/issues/22).
 
+### Sub-scope field for restricting rules
+
+A rule whose **ownership** is *restricting* (today only level-restriction) declares no sub-scope, so its **reach** is its entire taxonomy — it necessarily collides with any rule touching that taxonomy on overlapping post types. The archetype: term-hierarchy `child_to_parent` *adds* ancestors while level-restriction `include_ancestors=false` *strips* them, an unresolvable contradiction that can only be warned about.
+
+A sub-scope field ("governs levels 3–4 only", or "only under branch X") would let such pairs be made genuinely **disjoint** instead of merely warned — the collision dissolves rather than being reported. Needs config + storage + UI on a shipped rule type, so the CLAUDE.md live-rule-type schema check applies first.
+
+Deferred from the cross-rule composition work — see [ADR 0002](adr/0002-cross-rule-composition.md).
+
+### Rule-type renaming on the domain axes
+
+Current rule-type names conflate **basis**, **effect target** and **ownership** into one string, which is why `hierarchical` (term graph) and `propagation` (post graph) read as near-synonyms — as do `related` (term↔term) and `related_post_terms` (post↔post). Names should be composed from the axes once they have settled, i.e. once the Effect axis carries non-term values (field, title, body class, field editability). Renaming before then means minting names twice.
+
+Storage keys (`related_rules`, `time_based_rules`, …) are unaffected — this is domain + UI vocabulary only. Deferred from the cross-rule composition work — see [ADR 0002](adr/0002-cross-rule-composition.md).
+
 ## Tools and infrastructure
 
 ### Post type converter

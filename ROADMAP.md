@@ -248,6 +248,16 @@ Migrate each handler from `BWS_Handler_Base` to `UnifiedHandlerBase`. Template: 
 - **Migration:** one-time fan-out of the single `bws_meta_conductor_settings` blob → 4 page options, dry-run first, old key readable during transition, delete after verify.
 - Re-run H1 (lint) + H2 (autoload harness) after class moves.
 
+**Cross-rule composition (folded in — see [ADR 0002](docs/adr/0002-cross-rule-composition.md), [CONTEXT.md](CONTEXT.md)):**
+
+The Auto-Set & Restrict page is the group where rules actually interact, so the composition model lands with the page that hosts it. Closes #35, re-scopes #39 and #34.
+
+- **Cascade suppression.** A **write-scoped** lock keyed `(entity, effect target)` makes a handler-initiated write invisible to peer handlers on that same target, while staying visible across targets. Replaces the seven per-instance `private $processing` flags, which only ever guarded same-handler re-entry. Must NOT be request-scoped — that would silence the author's own chain after its first rule wrote. **Fixes #35**: a propagated child mirrors the parent's already-expanded set, so `inheritance_depth: immediate` yields one level.
+- **Author-ordered rule list.** With cascade suppressed, sequence within one chain is the only composition mechanism, so it must be author-visible. Rules on the page form one ordered list; per-rule position replaces hook priorities and boot order. Rule *type* is not the ordering unit — a fixed type order cannot express expand-then-restrict vs restrict-then-expand, nor two same-type rules that chain.
+- **Interaction graph + collision detector.** Compute each rule's **reach** (post types × taxonomies it reads and writes, at post-type granularity) and build the graph with the conjunctive predicate — an edge needs post-type *and* taxonomy overlap. Connected components drive both features: singleton components get no ordering control and no warning; larger ones get both. **Re-scopes #39** (level-restriction pruning propagated terms is correct for a *restricting* rule — the rule set is a collision, so warn) and covers the unfiled hierarchical-vs-level-restriction ancestors case.
+- **Ownership wording.** `replace` = *owning*, `merge`/`skip` = *contributing*. **Closes #34** — contributing rules decline to remove by definition; UI wording only, no handler change.
+- ⚠️ **Ordering dependency until the list ships.** #35's fix needs hierarchical to run before propagation *on the parent*; today that falls out of instantiation order at `class-taxonomy-manager.php:146-147`. Swapping those lines silently reintroduces the bug. Ship the ordered list in the same pass, or add a source-inspection harness (cf. `tests/verify-acf-write-queue.php`).
+
 **Deferred (not this phase):** CPT storage (`class-cpt-rule-storage.php`, `bws_mc_rule` CPT). Revisit only if a type needs a draft/test lifecycle — see storage-model.md. Lost-update clobber, if concurrent authoring ever appears, is handled by a version-token guard on the page blob (cheaper than CPT), not by this phase.
 
 **End of phase**: Update CLAUDE.md
