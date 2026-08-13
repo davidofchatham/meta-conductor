@@ -97,7 +97,14 @@ class ConfigHelpers {
      *
      * Empty/all-unchecked ⇒ rule applies to every post type using the
      * taxonomy. Handlers read the resulting `post_types` value via
-     * UnifiedHandlerBase::should_process_post (Wireframe {slug:bool} map).
+     * UnifiedHandlerBase::should_process_post.
+     *
+     * Wireframe stores a checkboxes value as a FLAT LIST of selected slugs,
+     * and its REST validator accepts only that shape — handed a {slug:bool}
+     * map it validates the map's values, so `true` arrives as "1" and the
+     * save 400s with `"1" is not a valid option`. Handlers additionally
+     * tolerate the map on read (see selected_post_type_slugs) because legacy
+     * and hand-seeded data carries it, but nothing should WRITE it.
      *
      * @param array $overrides Per-call field-definition overrides (e.g. columns).
      */
@@ -142,8 +149,8 @@ class ConfigHelpers {
      * so listing one would be a footgun (SPEC §V5).
      *
      * Empty/all-unchecked ⇒ every hierarchical post type using the taxonomy.
-     * Same canonical `post_types` id + {slug:bool} read path as the all-types
-     * field (UnifiedHandlerBase::should_process_post).
+     * Same canonical `post_types` id and same stored shape as the all-types
+     * field — a flat list of slugs; see post_types_field().
      *
      * @param array $overrides Per-call field-definition overrides (e.g. columns).
      */

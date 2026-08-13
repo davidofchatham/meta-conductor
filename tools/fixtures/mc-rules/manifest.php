@@ -142,6 +142,14 @@ return array(
 	// Canonical UI-written shape; positional arrays; `id` never persisted.
 	// Term/field refs use fixture slugs ({TERM:slug} resolved to term_id at
 	// seed). EVERY rule pins post_types to mc_* (isolation invariant).
+	//
+	// `checkboxes` fields (post_types, filter_taxonomies) MUST be a flat list
+	// of slugs — array('mc_item') — never the {slug:bool} map. Handlers read
+	// both (ConfigHelpers::selected_post_type_slugs, should_process_post), but
+	// Wireframe's REST validator only accepts the list: given a map it
+	// validates the VALUES, so `true` arrives as "1" and the save 400s with
+	// `"1" is not a valid option`. The map shape seeded here previously made
+	// every fixture tab unsaveable from the settings page.
 	'mc_rules' => array(
 
 		// matrix §1 — expand child→parent, all ancestors, smart.
@@ -149,7 +157,7 @@ return array(
 			array(
 				'enabled'            => true,
 				'taxonomy'           => 'mc_topic',
-				'post_types'         => array( 'mc_item' => true ),
+				'post_types'         => array( 'mc_item' ),
 				'hierarchy_direction' => 'child_to_parent',
 				'inheritance_depth'  => 'all',
 				'expansion_behavior' => 'smart',
@@ -161,7 +169,7 @@ return array(
 			array(
 				'enabled'           => true,
 				'taxonomy'          => 'mc_topic',
-				'post_types'        => array( 'mc_item' => true ),
+				'post_types'        => array( 'mc_item' ),
 				'restriction_mode'  => 'one_per_level',
 				'include_ancestors' => false,
 			),
@@ -172,7 +180,7 @@ return array(
 		'related_rules' => array(
 			array(
 				'enabled'         => true,
-				'post_types'      => array( 'mc_item' => true ),
+				'post_types'      => array( 'mc_item' ),
 				'trigger_type'    => 'term',
 				'trigger_term_id' => array( '{TERM:topic-coastal}' ),
 				'target_term_id'  => '{TERM:topic-featured}',
@@ -180,7 +188,7 @@ return array(
 			),
 			array(
 				'enabled'          => true,
-				'post_types'       => array( 'mc_item' => true ),
+				'post_types'       => array( 'mc_item' ),
 				'trigger_type'     => 'taxonomy',
 				'trigger_taxonomy' => 'mc_flag',
 				'target_term_id'   => '{TERM:topic-featured}',
@@ -222,7 +230,7 @@ return array(
 			array(
 				'enabled'           => true,
 				'taxonomy'          => 'mc_topic',
-				'post_types'        => array( 'mc_section' => true ),
+				'post_types'        => array( 'mc_section' ),
 				'conflict_handling' => 'merge',
 			),
 		),
@@ -231,22 +239,22 @@ return array(
 		'time_based_rules' => array(
 			array(
 				'enabled'           => true,
-				'post_types'        => array( 'mc_item' => true ),
+				'post_types'        => array( 'mc_item' ),
 				'start_date'        => '{TODAY-1}',
 				'end_date'          => '{TODAY+7}',
 				'target_term_id'    => '{TERM:topic-featured}',
-				'filter_taxonomies' => array( 'mc_topic' => true ),
+				'filter_taxonomies' => array( 'mc_topic' ),
 			),
 			array(
 				'enabled'        => true,
-				'post_types'     => array( 'mc_item' => true ),
+				'post_types'     => array( 'mc_item' ),
 				'start_date'     => '{TODAY-30}',
 				'end_date'       => '{TODAY-2}',
 				'target_term_id' => '{TERM:topic-archived}',
 			),
 			array(
 				'enabled'        => true,
-				'post_types'     => array( 'mc_item' => true ),
+				'post_types'     => array( 'mc_item' ),
 				'start_date'     => '{TODAY+10}',
 				'end_date'       => '{TODAY+20}',
 				'target_term_id' => '{TERM:topic-archived}',
