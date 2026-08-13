@@ -1,5 +1,5 @@
 ---
-status: accepted, partially superseded by ADR 0003
+status: accepted, partially superseded by ADR 0003, decision 3 amended by ADR 0004
 ---
 
 # Cross-rule composition: suppress cascade, order explicitly, detect rather than resolve
@@ -10,6 +10,8 @@ status: accepted, partially superseded by ADR 0003
 > - "the collision detector and the ordering UI share one analysis" → no longer true; the repeater *is* the ordering UI, so components are advisory only.
 > - "effect *kind* partitions cleanly — title/slug is a terminal sink" → **false in both directions**: title/slug reads `{term:TAX}` and `{meta:field}`, and `user_based` writes terms.
 > - "the Phase 4 page split is a real interaction boundary" → **retired**; the boundary is the effect kind, not the page.
+>
+> **Decision 3 is amended by [ADR 0004](0004-claim-axis-and-jurisdiction.md).** The axis is **Claim**, not *ownership*; it has **four** values, not three — `skip` is *deferring*, not *contributing*, because it writes only into an empty target. ADR 0004 also names **jurisdiction** (the values within one effect target a rule governs) and establishes that *owning* requires a statically enumerable one.
 >
 > The rejected options recorded here — provenance, fixed type order, runtime resolution, partitioning — remain rejected for the reasons given.
 

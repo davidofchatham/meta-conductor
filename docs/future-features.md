@@ -7,7 +7,7 @@ Canonical list of features that aren't built yet. Each entry:
 - **Sketch** — enough to start scoping; not a spec.
 - **Phase** — where it lands in the [ROADMAP.md](../ROADMAP.md) phase plan, if assigned.
 
-New **rule type** entries should also state their **axes** — basis (relation / intrinsic / ambient), effect target, and ownership. The axes are defined in [CONTEXT.md](../CONTEXT.md); [ADR 0002](adr/0002-cross-rule-composition.md) explains what they constrain. They are worth stating early because two of them predict real build cost before any code is written: an **ambient** basis whose value moves on its own needs a cron sweep, and a **scalar** effect target (a field, a title) can never compose — two rules sharing one always collide.
+New **rule type** entries should also state their **axes** — basis (relation / intrinsic / ambient), effect target, jurisdiction, and claim. The axes are defined in [CONTEXT.md](../CONTEXT.md); [ADR 0002](adr/0002-cross-rule-composition.md) and [ADR 0004](adr/0004-claim-axis-and-jurisdiction.md) explain what they constrain. They are worth stating early because two of them predict real build cost before any code is written: an **ambient** basis whose value moves on its own needs a cron sweep, and a **scalar** effect target (a field, a title) can never compose — two rules sharing one always collide.
 
 When an idea is promoted to in-flight, add a link to its spec issue, or to a plan file under `.claude/plans/`.
 
@@ -66,7 +66,7 @@ Entries are removed once shipped; [ROADMAP.md](../ROADMAP.md) and [CHANGELOG.md]
 ### `field_transformation_rules` — Computed Field Output
 
 - **Status**: planned (Phase 6a)
-- **Axes**: basis **intrinsic** (reads the post's own fields), effect target **field** (scalar), ownership *owning*.
+- **Axes**: basis **intrinsic** (reads the post's own fields), effect target **field** (scalar), claim *owning*.
 - **⚠️ Scalar effect target** — per [ADR 0002](adr/0002-cross-rule-composition.md), two rules writing one field can only be last-writer-wins, so they **always** collide; there is no contributing mode for a scalar. Sibling `relationship_field_rules` shares the same target space and the same write path.
 - **Motivation**: combine multiple source fields into a formatted output field. Examples: merge first/middle/last name into a display name, combine date + time into a sortable datetime, format a phone number, derive a bio string from athlete stats.
 - **Sketch**: rule declares output meta key + a template/transformer. **Reuse the TitleSlugHandler token engine** (`resolve_token()`, pattern→segments→resolve-or-drop→reassemble, with empty-token + dangling-separator dropping) — ~60–70% of a computed-field engine already exists there; the net-new work is a **target-field write path** (write to an arbitrary meta/ACF key, not just `post_title`/`post_slug`), a **raw-vs-sanitize output policy** flag (so literal HTML survives), and a few new token classes (value-filter `{term:TAX|exclude:…}`, conditional `{if_term:…}`, optional format-transform). Reference snippet: `plugins-to-integrate/format-game-date-time-fields.php` (site-specific athletics_events example showing batching pattern; not directly reusable).
@@ -79,10 +79,10 @@ Entries are removed once shipped; [ROADMAP.md](../ROADMAP.md) and [CHANGELOG.md]
 ### `relationship_field_rules` — Set a field across a relationship
 
 - **Status**: idea (raised 2026-08-12, cross-rule composition session)
-- **Axes**: basis **relation** (authored — an ACF relationship / post-object field), effect target **field** (scalar), ownership TBD.
+- **Axes**: basis **relation** (authored — an ACF relationship / post-object field), effect target **field** (scalar), claim TBD.
 - **Motivation**: `related_post_terms_rules` already copies *terms* across an ACF relationship. The same edge should be able to carry a *field value* — e.g. an event's venue post supplies its address into each session's address field, or a roster's team post pushes a season label onto every player.
-- **Sketch**: same holder/direction model as `related_post_terms_rules` (the ACF field pins the holder post type; `holder_role` says which end is authoritative), with the effect swapped from taxonomy terms to a target meta/ACF key. Most of the traversal, direction and reverse-lookup machinery is already built there — the net-new work is the field write path (shared with `field_transformation_rules`) and deciding ownership.
-- **⚠️ Scalar effect target** — per [ADR 0002](adr/0002-cross-rule-composition.md), a field is scalar: two rules writing one field can only be last-writer-wins, so any two rules sharing a target field **always** collide. Unlike terms, there is no contributing mode; ownership is *owning* or nothing.
+- **Sketch**: same holder/direction model as `related_post_terms_rules` (the ACF field pins the holder post type; `holder_role` says which end is authoritative), with the effect swapped from taxonomy terms to a target meta/ACF key. Most of the traversal, direction and reverse-lookup machinery is already built there — the net-new work is the field write path (shared with `field_transformation_rules`) and deciding its claim.
+- **⚠️ Scalar effect target** — per [ADR 0002](adr/0002-cross-rule-composition.md), a field is scalar: two rules writing one field can only be last-writer-wins, so any two rules sharing a target field **always** collide. Unlike terms, there is no contributing option — a scalar's **jurisdiction** is its single slot, so any two rules writing it share the whole of it. The claim is *owning* or nothing.
 - **Storage**: TBD — run [storage-model.md](storage-model.md). Likely a `type` within the `format_rules` list alongside `field_transformation_rules`, since both write fields.
 
 ### `body_class_rules` — Document classes from terms/fields
@@ -91,7 +91,7 @@ Entries are removed once shipped; [ROADMAP.md](../ROADMAP.md) and [CHANGELOG.md]
 - **Axes**: basis **intrinsic** (reads the post's own terms/fields), effect target **body class** — **rendered, not stored**.
 - **Motivation**: theme CSS/JS routinely needs to branch on taxonomy state (`is-event`, `season-2026`, `status-cancelled`). Today that means bespoke `body_class` filters in each theme; a rule would let an editor declare it.
 - **Sketch**: rule declares a source (taxonomy, term, or field value) and a class template; handler hooks `body_class` (and probably `post_class`). Reuse the TitleSlug token engine for the template, with slug sanitization on output.
-- **A rendered effect behaves differently from every rule type built so far.** It is computed per request and never persisted, which means: (a) **no ownership question** — nothing is stored, so nothing can strand or need reconciling; (b) **no sweep** — it recomputes on every render, so even an ambient basis (e.g. current user) needs no cron; (c) **no collision in the stored sense** — two rules emitting classes simply both emit, since the target is a list the theme concatenates.
+- **A rendered effect behaves differently from every rule type built so far.** It is computed per request and never persisted, which means: (a) **no claim question** — nothing is stored, so nothing can strand or need reconciling; (b) **no sweep** — it recomputes on every render, so even an ambient basis (e.g. current user) needs no cron; (c) **no collision in the stored sense** — two rules emitting classes simply both emit, since the target is a list the theme concatenates.
 - **Partly settled by [ADR 0003](adr/0003-ordered-rule-list-and-dispatcher.md)**: *rendered* is now a value on the **effect kind** axis (CONTEXT.md → *Effect kind*), and it sits last in the derived cross-kind order — it reads terms and fields and is written by nothing, so it is a pure sink. What remains open is whether it needs its own ordered list at all, given (c): with no collisions possible, there is nothing for an author to sequence.
 - **Storage**: Options. List TBD — its own `display_rules` list, or a `type` within `format_rules`, though it neither formats nor transforms stored data.
 
@@ -103,7 +103,7 @@ Entries are removed once shipped; [ROADMAP.md](../ROADMAP.md) and [CHANGELOG.md]
 - **Sketch**: for each post passing the filter gate, ensure a term exists in the target taxonomy (name/slug derived from the post, likely via the token engine); then apply that term to related posts over a configured relation.
 - **⚠️ A genuinely new effect shape.** Every rule type so far writes a *value on an entity*. This one mutates the **term vocabulary** — it creates rows other rules then reference. Open questions that have no precedent in the current model:
   - **Lifecycle**: post deleted → delete the term, orphan it, or leave it? Post renamed → rename the term, or leave the slug stable because permalinks/queries depend on it?
-  - **Ownership over a term's existence**: is "this term should exist" an *owning* claim (so removing the rule deletes terms) or *contributing* (create-only, never destroy)? Contributing is almost certainly right — destroying terms destroys other posts' assignments — but it is a real decision, not a default.
+  - **Claim over a term's existence**: is "this term should exist" an *owning* claim (so removing the rule deletes terms) or *contributing* (create-only, never destroy)? Contributing is almost certainly right — destroying terms destroys other posts' assignments — but it is a real decision, not a default.
   - **Collision**: two provisioning rules targeting one taxonomy contend over term *existence*, which the current reach/effect-target predicate does not model.
 - **Relation to existing work**: the "apply it via a relationship" half is `related_post_terms_rules` or `relationship_field_rules`; only the provisioning half is new. Worth scoping as two rules composed rather than one monolith — which is exactly the composition the ordered rule list ([ADR 0002](adr/0002-cross-rule-composition.md)) is meant to support.
 - **Storage**: Options.
@@ -111,8 +111,8 @@ Entries are removed once shipped; [ROADMAP.md](../ROADMAP.md) and [CHANGELOG.md]
 ### `user_based_rules` — User-Based Term Setting / Restriction
 
 - **Status**: planned (Phase 6b, requires the Phase 4 unified `term_rules` list)
-- **Axes**: basis **ambient** (the acting user and their role — attached to the request, not to the post), effect target **terms** for *both* variants, ownership *owning* for auto-set and *restricting* for the lock variant.
-- **Disambiguation resolved (2026-08-13):** the restrict variant was previously described here as a *rendered* effect on "field editability". It is not. Its effect target is **terms** and its ownership is **restricting** — it applies nothing and requires the target to satisfy a constraint, exactly like level-restriction. Filtering what the admin UI offers is the *surface*, not the effect. So "restricting the editor" and ADR 0002's "restricting ownership" turn out to be the same sense after all. See [ADR 0003](adr/0003-ordered-rule-list-and-dispatcher.md), [CONTEXT.md](../CONTEXT.md) → *restricting-the-editor is still restricting ownership*. Consequence: both variants are ordered among the other term rules in the same **pass**, and participate in the collision warning.
+- **Axes**: basis **ambient** (the acting user and their role — attached to the request, not to the post), effect target **terms** for *both* variants, claim *owning* for auto-set and *restricting* for the lock variant.
+- **Disambiguation resolved (2026-08-13):** the restrict variant was previously described here as a *rendered* effect on "field editability". It is not. Its effect target is **terms** and its claim is **restricting** — it applies nothing and requires the target to satisfy a constraint, exactly like level-restriction. Filtering what the admin UI offers is the *surface*, not the effect. So "restricting the editor" and ADR 0002's restricting claim turn out to be the same sense after all. See [ADR 0003](adr/0003-ordered-rule-list-and-dispatcher.md), [CONTEXT.md](../CONTEXT.md) → *restricting-the-editor is still a restricting claim*. Consequence: both variants are ordered among the other term rules in the same **pass**, and participate in the collision warning.
 - **Ambient basis normally implies a sweep** (see CONTEXT.md → *Basis*), but not here: the acting user only matters at the instant of a write, so `save_post` is sufficient. Contrast Temporal, whose ambient "now" moves on its own and therefore needs cron.
 - **Motivation**: pre-set terms in a taxonomy based on the current user (role or ID), or lock a taxonomy so only specific roles can edit it. Spans both auto-set and restrict actions.
 - **Sketch**: absorb the existing standalone plugin `bws-user-based-terms` (separate repo). Each rule maps user role or ID → taxonomy → term(s). Auto-set variant applies on save; restrict variant filters term lists in admin. The handler registers **no hooks of its own** — the Phase 4 dispatcher owns them; it exposes `apply_to_post()` like every other handler.
@@ -135,7 +135,7 @@ Deferred refinements from the 0.5.0 rework (design history in
   synced taxonomy is wholly rule-owned (source-authoritative). **Blocked on a rejected primitive**: this needs
   provenance (rule-domain-vs-manual tracking), which [ADR 0002](adr/0002-cross-rule-composition.md) rejected for
   the third time (after ADR 0001 and §V3). If it is ever wanted, it reopens that decision plugin-wide rather
-  than being a local feature. A cheaper alternative within the current model: expose the rule's **ownership**
+  than being a local feature. A cheaper alternative within the current model: expose the rule's **claim**
   as *contributing* instead of *owning*, which never removes anything — manual terms survive because nothing
   reconciles, at the cost of losing source-authoritative cleanup.
 - **True cross-taxonomy copy** — map terms by slug/name so source and target can differ (current copy is by
@@ -163,7 +163,7 @@ Deferred refinements from the 0.5.0 rework (design history in
 
 ### Sub-scope field for restricting rules
 
-A rule whose **ownership** is *restricting* (today only level-restriction) declares no sub-scope, so its **reach** is its entire taxonomy — it necessarily collides with any rule touching that taxonomy on overlapping post types. The archetype: term-hierarchy `child_to_parent` *adds* ancestors while level-restriction `include_ancestors=false` *strips* them, an unresolvable contradiction that can only be warned about.
+A rule whose **claim** is *restricting* (today only level-restriction) declares no narrower **jurisdiction**, so it governs its entire taxonomy — it necessarily collides with any rule touching that taxonomy on overlapping post types. The archetype: term-hierarchy `child_to_parent` *adds* ancestors while level-restriction `include_ancestors=false` *strips* them, an unresolvable contradiction that can only be warned about.
 
 A sub-scope field ("governs levels 3–4 only", or "only under branch X") would let such pairs be made genuinely **disjoint** instead of merely warned — the collision dissolves rather than being reported. Needs config + storage + UI on a shipped rule type, so the CLAUDE.md live-rule-type schema check applies first.
 
@@ -171,7 +171,7 @@ Deferred from the cross-rule composition work — see [ADR 0002](adr/0002-cross-
 
 ### Rule-type renaming on the domain axes
 
-Current rule-type names conflate **basis**, **effect target** and **ownership** into one string, which is why `hierarchical` (term graph) and `propagation` (post graph) read as near-synonyms — as do `related` (term↔term) and `related_post_terms` (post↔post). Names should be composed from the axes once they have settled, i.e. once the Effect axis carries non-term values (field, title, body class, field editability). Renaming before then means minting names twice.
+Current rule-type names conflate **basis**, **effect target** and **claim** into one string, which is why `hierarchical` (term graph) and `propagation` (post graph) read as near-synonyms — as do `related` (term↔term) and `related_post_terms` (post↔post). Names should be composed from the axes once they have settled, i.e. once the Effect axis carries non-term values (field, title, body class, field editability). Renaming before then means minting names twice.
 
 Storage keys (`related_rules`, `time_based_rules`, …) are unaffected — this is domain + UI vocabulary only. Deferred from the cross-rule composition work — see [ADR 0002](adr/0002-cross-rule-composition.md).
 

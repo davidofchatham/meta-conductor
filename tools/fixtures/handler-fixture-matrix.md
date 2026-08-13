@@ -57,7 +57,7 @@ Status (L1)          — second root: related/time-based targets live here so
 | Trigger | `set_object_terms` p10 only. No autosave guard needed in fixtures. |
 | Schema | Hierarchical taxonomy (validated — rejects flat). `mc_topic` ✓. |
 | Data | Posts on `mc_item` with 0 terms (clean slate per scenario). Tree ≥3 deep for `inheritance_depth: immediate` vs `all` distinction; sibling children under one parent for `expansion_behavior: smart` (skip-if-child-selected). |
-| Rule config | `taxonomy: mc_topic`, `post_types: {mc_item: true}`, `hierarchy_direction` (child_to_parent / parent_to_child / both), `inheritance_depth` (immediate / all), `expansion_behavior` (smart / always / never). |
+| Rule config | `taxonomy: mc_topic`, `post_types: ['mc_item']`, `hierarchy_direction` (child_to_parent / parent_to_child / both), `inheritance_depth` (immediate / all), `expansion_behavior` (smart / always / never). |
 | Rules to seed | 1 baseline (child_to_parent + all + smart). Direction/depth variants toggled per-scenario in UI or via option rewrite. |
 | Mutates | Same post's `mc_topic` terms; post meta `_bws_auto_terms`. |
 | Scenarios | Assign Harbor (L4) → expect Coastal+East+Region auto-added; remove; promotion case (auto term kept manually). `_bws_auto_terms` asserted directly. |
@@ -70,7 +70,7 @@ Status (L1)          — second root: related/time-based targets live here so
 | Trigger | `set_object_terms` **p5** (pre-hierarchical) + `acf/save_post` p15. |
 | Schema | Hierarchical taxonomy + **ACF taxonomy-type field** on `mc_topic` (the ACF branch discovers fields by `type==taxonomy && taxonomy==mc_topic`). |
 | Data | Posts holding multiple same-level terms (one_per_level prune → keeps *last*), and mixed-depth sets (deepest_only / shallowest_only). Needs ≥2 depth levels on a post to observe pruning; tree gives 4. |
-| Rule config | `taxonomy: mc_topic`, `restriction_mode` (one_per_level / deepest_only / shallowest_only), `include_ancestors` (only meaningful for deepest_only/one_per_level), `post_types: {mc_item: true}`. |
+| Rule config | `taxonomy: mc_topic`, `restriction_mode` (one_per_level / deepest_only / shallowest_only), `include_ancestors` (only meaningful for deepest_only/one_per_level), `post_types: ['mc_item']`. |
 | Rules to seed | 1 (one_per_level, include_ancestors off). Mode variants per-scenario. |
 | Mutates | Post's `mc_topic` terms (native) AND the ACF field value (write by field key). |
 | Scenarios | Native path: assign East+West (both L2) → one survives. ACF path: set via `mc_topics` field → same prune lands in both channels. Interaction: p5 runs before hierarchical p10 — combined-rule scenario (restriction then expansion) is its own row. |
@@ -83,7 +83,7 @@ Status (L1)          — second root: related/time-based targets live here so
 | Trigger | `set_object_terms` p10 + `acf/save_post` p20. |
 | Schema | Any taxonomy. Trigger terms + target term in `mc_topic` (Status root: target `Featured`). Cross-taxonomy removal check ⇒ also a trigger term in a *second* taxonomy on the same post (reuse `department` as trigger-read-only: rule still writes only `mc_topic` on `mc_item` — `department` needs registering on `mc_item`, additive schema, or use a second mc taxonomy `mc_flag` to stay fully owned — **decide at skeleton time; default `mc_flag` flat taxonomy, zero shared surface**). |
 | Data | Posts with/without trigger terms; ACF taxonomy field carrying a trigger term (ACF branch matches fields whose taxonomy ∈ trigger taxonomies). |
-| Rule config | `trigger_type` (term / taxonomy), `trigger_term_id: int[]` (OR), `trigger_taxonomy`, `target_term_id` (single int), `bidirectional`, `post_types: {mc_item: true}`. |
+| Rule config | `trigger_type` (term / taxonomy), `trigger_term_id: int[]` (OR), `trigger_taxonomy`, `target_term_id` (single int), `bidirectional`, `post_types: ['mc_item']`. |
 | Rules to seed | 2: term-trigger (Coastal ⇒ Featured, bidirectional on), taxonomy-trigger (`mc_flag` ⇒ Featured). |
 | Mutates | Merge-adds target; bidirectional removal only when NO trigger remains anywhere on post (cross-tax check). |
 | Scenarios | Add trigger → target appears; remove last trigger → target removed (bidirectional); remove one of two triggers → target stays; trigger via ACF field. |
@@ -108,9 +108,9 @@ Status (L1)          — second root: related/time-based targets live here so
 | Aspect | Need |
 |---|---|
 | Trigger | `save_post` p15, `set_object_terms` p10, `acf/save_post` p25. |
-| Schema | **Hierarchical post type**: `mc_section` (public + hierarchical; empty `post_types` resolves to all hierarchical public types — which would include `page`! ⇒ rule MUST pin `post_types: {mc_section: true}`). Taxonomy `mc_topic`; ACF taxonomy field participates (native+ACF union read, ACF write by key). |
+| Schema | **Hierarchical post type**: `mc_section` (public + hierarchical; empty `post_types` resolves to all hierarchical public types — which would include `page`! ⇒ rule MUST pin `post_types: ['mc_section']`). Taxonomy `mc_topic`; ACF taxonomy field participates (native+ACF union read, ACF write by key). |
 | Data | 3-level `mc_section` chain (grandparent → parent → child), statuses publish + one draft child (descendant statuses publish/draft/private included). Child holding an independent term (removal propagation must NOT strip it). |
-| Rule config | `taxonomy: mc_topic`, `post_types: {mc_section: true}`, `conflict_handling` (merge / replace / skip). |
+| Rule config | `taxonomy: mc_topic`, `post_types: ['mc_section']`, `conflict_handling` (merge / replace / skip). |
 | Rules to seed | 1 (merge). |
 | Mutates | Descendants' terms (down), new-child inherit on child save (up), ACF field on descendants. |
 | Scenarios | Term on grandparent → appears on all descendants incl. draft; remove from parent → removed from child except independently-held; create/save new child under parent → inherits; replace vs merge conflict modes. |
@@ -123,9 +123,9 @@ Status (L1)          — second root: related/time-based targets live here so
 | Trigger | `save_post` p20, `publish_post` p10, cron `bws_taxonomy_manager_cleanup` (daily). |
 | Schema | Any taxonomy — target `mc_topic:Archived` / `Featured`. Filter needs posts with/without terms in `filter_taxonomies` / `filter_terms`. |
 | Data | `mc_item` posts: one matching filter, one not. Dates seeded relative to run day: in-range rule (`{TODAY-1}`..`{TODAY+7}`), expired (`{TODAY-30}`..`{TODAY-2}`), future (`{TODAY+10}`..`{TODAY+20}`). String Y-m-d comparison. |
-| Rule config | `start_date`/`end_date` (Y-m-d, required), `target_term_id` (single), `filter_taxonomies`, `filter_terms`, `post_types: {mc_item: true}`. |
+| Rule config | `start_date`/`end_date` (Y-m-d, required), `target_term_id` (single), `filter_taxonomies`, `filter_terms`, `post_types: ['mc_item']`. |
 | Rules to seed | 3 (in-range / expired / future). |
-| Mutates | Merge-adds target in-range on save; removes when outside range; cron cleanup strips expired target from ALL matching posts (no ownership tracking — over-removal is current known behavior, assert it as-is). |
+| Mutates | Merge-adds target in-range on save; removes when outside range; cron cleanup strips expired target from ALL matching posts (no provenance tracking — over-removal is current known behavior, assert it as-is). |
 | Scenarios | Save in-range → term added; save post against expired rule holding the term → removed; future rule → no-op; cron fire (`wp cron event run bws_taxonomy_manager_cleanup` or `do_action` eval) → bulk strip. |
 | Shared reuse | None. |
 
@@ -390,7 +390,7 @@ this is date-independent.)
   composition, not a defect.)
 - **§6e cron cleanup** ✅ `do_action('bws_taxonomy_manager_cleanup')` strips the
   expired rule's Archived target from ALL matching `mc_item` posts in one pass.
-  This is the documented **over-removal**: no per-post ownership tracking, so it
+  This is the documented **over-removal**: no per-post provenance tracking, so it
   removes Archived from every matching post regardless of how it got there.
 - Negative controls unchanged.
 
