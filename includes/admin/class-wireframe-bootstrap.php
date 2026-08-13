@@ -44,6 +44,11 @@ class WireframeBootstrap {
 
         // Snapshot the time-based row title (SPEC §V11). Term + scope + window.
         add_filter('wp-wireframe/save/payload', [self::class, 'snapshot_time_based_labels'], 10, 1);
+
+        // Snapshot the General-tab claim-override row title. Without it the
+        // repeater interpolates the raw stored value ("category: replace"),
+        // the one surface the claim vocabulary would miss (ADR 0004).
+        add_filter('wp-wireframe/save/payload', [self::class, 'snapshot_claim_override_labels'], 10, 1);
     }
 
     /**
@@ -179,12 +184,12 @@ class WireframeBootstrap {
      * Assemble each propagation rule's row title (SPEC §V11).
      *
      * Hooked on `wp-wireframe/save/payload`. Schema:
-     *   {Scope: }Copy {Taxonomy} terms to children{ (conflict)}
+     *   {Scope: }Copy {Taxonomy} terms to children{ (claim)}
      *   - Scope prefix ("Pages: ") only when the rule is restricted to specific
      *     post types; omitted when it applies to all (empty post_types).
-     *   - conflict suffix always shown.
-     *   e.g. "Pages: Copy Breakers terms to children (replace)"
-     *        "Copy Categories terms to children (merge)"
+     *   - claim suffix always shown.
+     *   e.g. "Pages: Copy Breakers terms to children (owning)"
+     *        "Copy Categories terms to children (contributing)"
      * No arrow — direction is stated in words ("to children").
      *
      * @param array $clean_values
@@ -202,13 +207,13 @@ class WireframeBootstrap {
 
             $scope    = self::propagation_scope_prefix($rule['post_types'] ?? []);
             $tax      = self::taxonomy_label($rule['taxonomy'] ?? '');
-            $conflict = self::conflict_label($rule['conflict_handling'] ?? 'merge');
+            $claim = self::claim_label($rule['conflict_handling'] ?? 'merge');
 
             $title = sprintf(
-                /* translators: 1: taxonomy label 2: conflict mode */
+                /* translators: 1: taxonomy label 2: claim */
                 __('Copy %1$s terms to children (%2$s)', 'meta-conductor'),
                 $tax,
-                $conflict
+                $claim
             );
 
             $rule['row_title'] = self::disabled_prefix($rule) . $scope . \esc_html($title);
@@ -232,21 +237,64 @@ class WireframeBootstrap {
     }
 
     /**
-     * Human label for a propagation conflict_handling value.
+     * Assemble each General-tab claim-override row title.
+     *
+     * Hooked on `wp-wireframe/save/payload`. Schema:
+     *   {Taxonomy}: {claim}
+     *   e.g. "Categories: owning"
+     *
+     * Without this the repeater's `title_template` interpolates the raw
+     * stored value (`category: replace`), which is the one place the claim
+     * vocabulary would not reach — see CONTEXT.md → Claim, ADR 0004.
+     * An unresolvable taxonomy falls back to its slug rather than an empty
+     * title, since the row is still selectable and must stay identifiable.
+     *
+     * @param array $clean_values
+     * @return array
+     */
+    public static function snapshot_claim_override_labels(array $clean_values): array {
+        if (empty($clean_values['conflict_handling_overrides'])
+            || !is_array($clean_values['conflict_handling_overrides'])) {
+            return $clean_values;
+        }
+
+        foreach ($clean_values['conflict_handling_overrides'] as &$row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $slug  = (string) ($row['taxonomy'] ?? '');
+            $tax   = self::taxonomy_label($slug);
+            $claim = self::claim_label($row['mode'] ?? 'merge');
+
+            // ': ' as a literal, matching snapshot_time_based_labels — a
+            // placeholders-and-punctuation-only string is not worth translating.
+            $row['row_title'] = \esc_html(($tax !== '' ? $tax : $slug) . ': ' . $claim);
+        }
+        unset($row);
+
+        return $clean_values;
+    }
+
+    /**
+     * Claim label for a stored conflict_handling value.
+     *
+     * Shared by both surfaces that print a claim: the propagation row title
+     * and the General-tab override row title.
+     *
+     * The mapping itself lives on ConfigHelpers::CLAIM_NAMES, which is also
+     * what builds the two config dropdowns — so a claim rename touches one
+     * line and cannot leave a surface stale. This method exists only to keep
+     * the snapshot helpers reading a local name (replace = owning-claim,
+     * merge = contributing-claim, skip = deferring-claim; the `-claim`
+     * qualifier disambiguates `deferring` from defer-as-postpone).
+     * See CONTEXT.md → Claim and ADR 0004.
      *
      * @param string $value merge|replace|skip.
      * @return string Unescaped label.
      */
-    private static function conflict_label($value): string {
-        switch ($value) {
-            case 'replace':
-                return __('replace', 'meta-conductor');
-            case 'skip':
-                return __('skip if set', 'meta-conductor');
-            case 'merge':
-            default:
-                return __('merge', 'meta-conductor');
-        }
+    private static function claim_label($value): string {
+        return Config\ConfigHelpers::claim_name(is_string($value) ? $value : 'merge');
     }
 
     /**

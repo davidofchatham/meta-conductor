@@ -103,7 +103,7 @@ class ConfigHelpers {
      * and its REST validator accepts only that shape — handed a {slug:bool}
      * map it validates the map's values, so `true` arrives as "1" and the
      * save 400s with `"1" is not a valid option`. Handlers additionally
-     * tolerate the map on read (see selected_post_type_slugs) because legacy
+     * tolerate the map on read (see selected_checkbox_slugs) because legacy
      * and hand-seeded data carries it, but nothing should WRITE it.
      *
      * @param array $overrides Per-call field-definition overrides (e.g. columns).
@@ -188,6 +188,79 @@ class ConfigHelpers {
         return array_is_list($value)
             ? array_values($value)
             : array_keys(array_filter($value));
+    }
+
+    /**
+     * The claim vocabulary: stored value => domain term.
+     *
+     * SINGLE SOURCE OF TRUTH for the claim axis on every author-visible
+     * surface — the two config dropdowns and both row-title snapshots
+     * (WireframeBootstrap::claim_label() delegates here). Renaming a claim
+     * is a one-line change; before this existed the vocabulary was restated
+     * in three places and a rename could leave two of them stale.
+     *
+     * The stored values are unchanged legacy: `replace`/`merge`/`skip`
+     * predate the vocabulary, and nothing migrates. See CONTEXT.md → Claim
+     * and ADR 0004 for why the axis has four values (the fourth,
+     * `restricting`, is fixed by rule type and reaches no dropdown).
+     */
+    public const CLAIM_NAMES = [
+        'replace' => 'owning',
+        'merge'   => 'contributing',
+        'skip'    => 'deferring',
+    ];
+
+    /**
+     * Domain term for a stored claim value. Unknown/absent ⇒ contributing,
+     * matching every config's `merge` default.
+     */
+    public static function claim_name(string $value): string {
+        return self::CLAIM_NAMES[$value] ?? self::CLAIM_NAMES['merge'];
+    }
+
+    /**
+     * Canonical "Claim on terms" select subfield.
+     *
+     * Shared by PropagationConfig (per-rule) and GeneralConfig (per-taxonomy
+     * default). Unlike post_types_field() the `id` is NOT forced — the two
+     * surfaces genuinely store under different keys (`conflict_handling` vs
+     * `mode`) — so it is required in $overrides.
+     *
+     * `$subject` picks which of the two option wordings to use. Both are
+     * written out in full rather than sprintf'd from a noun: a translator
+     * given "add only if the %s has no terms" cannot get word order or
+     * agreement right, and there are only ever two variants.
+     *
+     * Option labels lead with the domain word, then a colon, then a plain
+     * gloss — so the author reads the same term the docs and row titles use
+     * (ADR 0004). Owning's gloss must keep the "anything else is removed"
+     * clause: the "allowed" framing is correct about the outcome but would
+     * otherwise read as an edit-time refusal, when enforcement is a later
+     * removal.
+     *
+     * @param string $subject 'child' (a propagation target) or 'post'.
+     * @param array  $overrides Field-definition overrides; MUST carry `id`.
+     */
+    public static function claim_field(string $subject = 'post', array $overrides = []): array {
+        $options = $subject === 'child'
+            ? [
+                'replace' => __('Owning: only this rule\'s terms are allowed here; anything else is removed', 'meta-conductor'),
+                'merge'   => __('Contributing: add this rule\'s terms, leave everything else alone', 'meta-conductor'),
+                'skip'    => __('Deferring: add only if the child has no terms in this taxonomy yet', 'meta-conductor'),
+            ]
+            : [
+                'replace' => __('Owning: only the rule\'s terms are allowed here; anything else is removed', 'meta-conductor'),
+                'merge'   => __('Contributing: add the rule\'s terms, leave everything else alone', 'meta-conductor'),
+                'skip'    => __('Deferring: add only if the post has no terms in this taxonomy yet', 'meta-conductor'),
+            ];
+
+        return array_merge([
+            'type'    => 'select',
+            'label'   => __('Claim on terms', 'meta-conductor'),
+            'default' => 'merge',
+            'columns' => 12,
+            'args'    => ['options' => $options],
+        ], $overrides);
     }
 
     /**

@@ -53,21 +53,10 @@ class PropagationConfig {
                                     'options' => ConfigHelpers::taxonomy_options(),
                                 ],
                             ],
-                            [
+                            ConfigHelpers::claim_field('child', [
                                 'id'          => 'conflict_handling',
-                                'type'        => 'select',
-                                'label'       => __('Conflict handling', 'meta-conductor'),
-                                'description' => __('How to resolve when a child already has terms in this taxonomy.', 'meta-conductor'),
-                                'default'     => 'merge',
-                                'columns'     => 12,
-                                'args'        => [
-                                    'options' => [
-                                        'merge'   => __('Merge with existing terms', 'meta-conductor'),
-                                        'replace' => __('Replace existing terms', 'meta-conductor'),
-                                        'skip'    => __('Skip if terms exist', 'meta-conductor'),
-                                    ],
-                                ],
-                            ],
+                                'description' => __('What this rule does about terms a child post already has. Owning removes them on the next save or re-apply, not at edit time.', 'meta-conductor'),
+                            ]),
                             // Snapshot row title (V11/§I.label). Not user-editable;
                             // assembled at save by snapshot_propagation_labels in
                             // WireframeBootstrap. Declared so {row_title} resolves.

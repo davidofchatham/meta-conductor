@@ -9,7 +9,7 @@
  *   - Format & Transform — title/slug + future field transformations
  *   - Restrict           — depth restrictions, future user-locked taxonomies
  *   - Personalize        — user-based term setting (future)
- *   - General            — global conflict handling, manual processing
+ *   - General            — default claim per taxonomy, manual processing
  *
  * @package BWS_Meta_Manager
  * @since 0.2.0

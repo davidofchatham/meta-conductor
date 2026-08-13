@@ -12,6 +12,12 @@
  * canonical `post_types` id even under override — should_process_post reads it
  * by name, so a renamed id would silently gate every post type).
  *
+ * Also locks the claim vocabulary (ADR 0004): CLAIM_NAMES is the one mapping
+ * behind both config dropdowns and both row-title snapshots, so this harness
+ * asserts the option strings, the `<claim>: ` lead-in, and claim_name()'s
+ * fallback. Note claim_field() INVERTS the id-lock — its id must stay
+ * overridable, since the two surfaces store under different keys.
+ *
  * Run:  php tests/verify-config-helpers.php   (local PHP CLI, no WP needed)
  *
  * @package Meta_Conductor
@@ -88,9 +94,34 @@ $check('hierarchical field options hierarchical-only', !isset($h_field['args']['
 $a_field = ConfigHelpers::post_types_field(['id' => 'evil']);
 $check('all-types field id forced to post_types', $a_field['id'] === 'post_types');
 
+// --- Claim field (ADR 0004). ------------------------------------------------
+// Unlike post_types_field the id is deliberately NOT forced — the two surfaces
+// store under different keys — so the id-lock assertion is inverted here.
+
+$c_rule = ConfigHelpers::claim_field('child', ['id' => 'conflict_handling']);
+$c_glob = ConfigHelpers::claim_field('post',  ['id' => 'mode', 'label' => 'Default claim on terms']);
+
+$check('claim field id NOT forced',        $c_rule['id'] === 'conflict_handling' && $c_glob['id'] === 'mode');
+$check('claim field label overridable',    $c_glob['label'] === 'Default claim on terms');
+$check('claim field defaults to merge',    $c_rule['default'] === 'merge');
+$check('claim options are the stored keys', array_keys($c_rule['args']['options']) === ['replace', 'merge', 'skip']);
+$check('child subject wording',            str_contains($c_rule['args']['options']['skip'], 'the child has no terms'));
+$check('post subject wording',             str_contains($c_glob['args']['options']['skip'], 'the post has no terms'));
+
+// Every option leads with its domain term, then a colon (ADR 0004) — this is
+// what keeps the dropdown correlated with the docs and the row titles.
+foreach (ConfigHelpers::CLAIM_NAMES as $stored => $claim) {
+    $check("option '$stored' leads with '$claim:'",
+        str_starts_with($c_rule['args']['options'][$stored], ucfirst($claim) . ': '));
+}
+
+// claim_name() is the one mapping both dropdowns and both row titles read.
+$check('claim_name maps replace ⇒ owning',   ConfigHelpers::claim_name('replace') === 'owning');
+$check('claim_name unknown ⇒ contributing',  ConfigHelpers::claim_name('bogus') === 'contributing');
+
 // --- Report. ----------------------------------------------------------------
 
-$total = 11;
+$total = 21;
 if ($fail) {
     fwrite(STDERR, "\nCONFIG-HELPERS FAIL — " . count($fail) . "/$total assertions failed:\n");
     foreach ($fail as $f) {
