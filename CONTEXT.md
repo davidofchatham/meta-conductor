@@ -42,6 +42,14 @@ _Avoid_: condition, relationship (as an umbrella — *relation* is one basis kin
 **Effect target**:
 What a rule writes, as *(entity, target)* — today "terms in taxonomy T on post P"; later a field, a title, a body class, a field's editability. A target is **set-valued** (terms) or **scalar** (a field, a title). Set-valued targets can compose — several rules contributing to one set is meaningful. Scalar targets cannot: two rules writing one scalar can only be last-writer-wins, so they are always a **collision**.
 
+**Effect kind**:
+The class an **effect target** belongs to, ignoring which particular taxonomy, field or key is written: *terms*, *title/slug*, *field*, *post parent*, *post status*, *term vocabulary*, *rendered*. Coarser than effect target — "terms in taxonomy A" and "terms in taxonomy B" are two targets of one kind. The kind is the unit that matters for composition: a **collision** requires the same target and therefore the same kind, while a **dependency** runs *between* kinds. Rules are grouped, ordered and evaluated per kind.
+_Avoid_: effect type (reads as the rule type), target class.
+
+**Dependency**:
+A directed edge from a rule that *writes* something to a rule that *reads* it — a term rule feeding a title rule's `{term:…}` token; a rule setting post parent that a hierarchy rule then walks; a rule setting post status that another rule's **filter gate** tests. Asymmetric, and unlike a **collision** it has a right answer: the producer runs first. Dependencies run **between effect kinds**, so they are derived rather than authored — the kinds are evaluated in a fixed order (terms → title/field → rendered) and the author is never asked. This holds only while the kind graph is **acyclic**; a rule that derived terms *from* a title would close a cycle that no ordering resolves, and must be refused rather than silently ordered.
+_Avoid_: collision (that is the symmetric case), cascade (that is a write re-triggering rules, which is suppressed).
+
 **Ownership**:
 The claim a rule makes on its **effect target**:
 
@@ -56,11 +64,18 @@ _Avoid_: provenance (explicitly not tracked), mode (that is **overlap**).
 The statically-known post types × taxonomies a rule reads and writes. Distinct from **filter gate**: the gate says which entities a rule *looks at*, reach says what it can *touch* — a relation-basis rule writes entities its gate never selected (post ancestry writes descendants; post relationship writes related posts). Reach is computed at post-*type* granularity, not post ID: which descendants or related posts exist is data-dependent and not statically decidable, so reach is deliberately conservative — it over-reports interaction and never under-reports it.
 _Avoid_: scope (ambiguous with filter gate).
 
+**Pass**:
+One evaluation of a rule list against one entity: every rule of that **effect kind**, in **order**, each recomputing from live state and doing nothing if nothing changed. A pass is what any trigger starts — a save, an ACF write, a bulk re-apply, a cron sweep — and it is the same pass in every case, so a rule list produces the same result however it was provoked. Rules earlier in a pass are visible to later ones because each reads live state, which is what makes **order** the composition mechanism.
+_Avoid_: run, cycle (a cycle is a defect in the kind graph — see **Dependency**).
+
 **Cascade**:
-Whether a write a rule performs triggers rules on the entity it wrote. A rule-initiated write is suppressed for peers on the **same effect target**, and visible to rules on *other* effect targets — so a term write can still drive a field or body-class rule, but cannot re-trigger term rules. Suppression is **write-scoped**: held only for the duration of the handler's own write, never for the request, or the author's own chain would fall silent after its first rule wrote. Consequence: rules compose *only* by running in sequence within one chain, each reading live state — which makes rule **order** the composition semantics rather than an implementation detail.
+Whether a write a rule performs triggers rules on the entity it wrote. A rule-initiated write is suppressed for peers on the **same effect kind**, and visible to rules of *other* kinds — so a term write can still drive a field or body-class rule, but cannot re-trigger term rules. Suppression is **pass-scoped**, keyed by *(entity, effect kind)*: it is held for the duration of the whole **pass**, never for the request. Request-scope would silence the author's own chain after its first rule wrote; pass-scope does not, because the chain runs *inside* the pass. Keying on the entity means a rule writing a *different* entity — a child, a related post — still starts that entity's own pass, and a genuine cycle terminates because the first entity's guard is still held. Consequence: rules compose *only* by running in sequence within one pass, each reading live state — which makes rule **order** the composition semantics rather than an implementation detail.
+
+**Order**:
+The sequence in which rules of one **effect kind** are evaluated in a **pass**. Order is **authored** within a kind — the author sequences the list, because two rules on one kind can legitimately want either sequence and nothing in the configuration says which. Order is **derived** between kinds, because those are **dependencies**, which have a right answer. So the author is asked exactly where the answer is genuinely theirs, and nowhere else.
 
 **Collision**:
-Two rules whose **reach** intersects on one **effect target**. The test is mechanical, not by fiat: an edge exists only where post types *and* taxonomies both overlap — either one being disjoint makes the rules independent. Collisions are **detected and warned at settings save, never resolved at runtime**: the plugin tells the author their rules contend, rather than silently picking a winner. Two rules that collide are not necessarily wrong — a collision means their combined result depends on **order**.
+Two rules whose **reach** intersects on one **effect target**. The test is mechanical, not by fiat: an edge exists only where post types *and* taxonomies both overlap — either one being disjoint makes the rules independent. Collisions are **detected and warned at settings save, never resolved at runtime**: the plugin tells the author their rules contend, rather than silently picking a winner. Two rules that collide are not necessarily wrong — a collision means their combined result depends on **order**, which the author controls.
 
 ### Temporal Rule
 
@@ -148,6 +163,9 @@ The residual real collision is a post carrying *both* keys — or two typed-boun
 - **natural vs authored applies only to relations**: a post hierarchy is natural, an ACF relationship is authored. The distinction is meaningless for intrinsic and ambient bases.
 - **filter gate vs reach**: the gate is what a rule *looks at*; reach is what it can *touch*. They differ exactly when the basis includes a relation — post ancestry's gate selects parents, its reach covers descendants.
 - **a collision is not an error**: it means two rules contend on one effect target, so the result depends on **order**. The plugin warns and lets the author order them; it never picks a winner at runtime.
+- **collision vs dependency**: both are edges between rules, and they are opposites. A **collision** is symmetric, within one **effect kind**, and has no right answer — so the author orders it and the plugin warns. A **dependency** is asymmetric, *between* kinds, and has a right answer — so it is derived and the author is never asked. Conflating them either burdens the author with sequencing that is already determined, or asks the engine to guess at something only the author knows.
+- **effect target vs effect kind**: the *target* is what a rule writes down to the specific taxonomy or key; the *kind* is its class. Two rules collide only on one target, but they are grouped, ordered and evaluated by kind. "Terms in taxonomy A" and "terms in taxonomy B" are two targets, one kind — which is why a cross-taxonomy chain composes by **order** within one **pass** rather than by re-triggering.
+- **restricting-the-editor is still restricting ownership**: the user-based *lock* variant reads as a UI permission ("only these roles may edit this taxonomy"), but its **effect target** is terms and its **ownership** is *restricting* — it applies nothing and requires the target to satisfy a constraint, exactly like level-restriction. Filtering what the admin UI offers is the surface, not the effect. It therefore belongs with the other term rules and is ordered among them.
 - **site time, not server time**: all boundary dates, the compared "now", and all-day day-edges are in **site time** (`wp_timezone()`). The PHP server timezone is never the reasoning clock — a server/site mismatch otherwise misplaces a post by the offset at boundary hours. Wall-clock string inputs are read as site time; Unix-timestamp inputs are converted to site time first. (The `{pub_*}` token fix in 0.3.1 set this precedent for the title/slug path; Temporal must hold it everywhere date parts are taken.)
 
 ## Example dialogue

@@ -1,8 +1,17 @@
 ---
-status: accepted
+status: accepted, partially superseded by ADR 0003
 ---
 
 # Cross-rule composition: suppress cascade, order explicitly, detect rather than resolve
+
+> **Partially superseded by [ADR 0003](0003-ordered-rule-list-and-dispatcher.md).** The four decisions below stand. Five statements about *how* they land do not, once the vendored Wireframe's constraints and the sketched future rule types were checked:
+> - "write-scoped" lock → **pass-scoped**, keyed `(entity, effect-target kind)` — a central dispatcher changed the unit.
+> - "seven per-instance `private $processing` flags" → there are **four**, plus one taxonomy-scoped guard on `related_post_terms`.
+> - "the collision detector and the ordering UI share one analysis" → no longer true; the repeater *is* the ordering UI, so components are advisory only.
+> - "effect *kind* partitions cleanly — title/slug is a terminal sink" → **false in both directions**: title/slug reads `{term:TAX}` and `{meta:field}`, and `user_based` writes terms.
+> - "the Phase 4 page split is a real interaction boundary" → **retired**; the boundary is the effect kind, not the page.
+>
+> The rejected options recorded here — provenance, fixed type order, runtime resolution, partitioning — remain rejected for the reasons given.
 
 Rules of different types write the same taxonomy on the same post, and until now nothing said what that means. Each handler hooks `set_object_terms` independently with a private re-entry guard, so a handler-initiated write re-enters the whole listener chain on whatever entity it wrote — producing results that depend on hook priority and class-instantiation order, neither of which is stated anywhere or visible to an author.
 

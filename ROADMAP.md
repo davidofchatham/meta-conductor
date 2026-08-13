@@ -19,10 +19,10 @@ Phase numbers are **stable IDs, not execution order** — work has landed out of
 | 2a | PSR-4 namespacing (+ `lib/`→`Support\`, abstracts co-located, `tests/` harness) | ✅ done (0.4.0) | — | manual `require_once` chains; `includes/abstracts/` + `includes/lib/` |
 | 3 | Migrate 5 legacy handlers → UnifiedHandlerBase — **✅ done (0.6.0)**. All 7 handlers on `UnifiedHandlerBase`; legacy `BWS_Handler_Base` deleted; redundant `on_post_save` loop removed | ✅ done | 2a ✅ | legacy handler base; dual-base divergence; `on_post_save` loop double-run |
 | 2b | Rename sweep — text domain, constants, nonces, core hooks, log table + migration all done (PR #48; real-Athletics verified). JS object + conversion cron/AJAX/transients deferred to P7; internal fn names deferred | ✅ done (shipped 0.7.0) | 2a ✅ | mixed text domains |
-| **4** | Config page split (storage blast-radius) — *was CPT storage; CPT deferred* | **next** | 3 ✅ | one-blob clobber radius; per-page autoload; gives UBT its own option |
+| **4** | Ordered rule list + central dispatcher — *was config page split; was CPT storage before that* | **next** | 3 ✅ | #35; both instantiation-order dependencies; 7-array storage shape; dead `class-settings.php` + AJAX bodies |
 | 7 | Unified migration / preview tool | queued | — (ungated; can run anytime) | `lib/` classes instantiated but never called; tab-aware save bug; conversion `error_log` spam; **rename remainder** (conversion JS global/cron/AJAX/transients — #13 closed, remainder tracked here) |
 | 6a | Options-compatible integrations | queued | 3 | — |
-| 6b | BWS User Based Terms (→ Options, Personalize page) | queued | 4 | UBT merge; needs Personalize page option from P4 |
+| 6b | BWS User Based Terms (→ a `type` in `term_rules`) | queued | 4 | UBT merge; needs the unified rule list from P4 |
 | ~~5~~ | ~~Settings refactor~~ | cancelled | — | absorbed by 2c; lib delegation folded into 7 |
 
 **Recommended run order:** ~~2a~~ ✅ → ~~3~~ ✅ → ~~2b~~ ✅ → **4** → (6a, 7) → 6b. Phase 3 landed before 2b so the rename sweep touches already-migrated handlers once. Phase 7 is unblocked and can slot in whenever Conversion is needed.
@@ -57,7 +57,7 @@ Status column: ✅ = actioned · Pn = pending in that phase · standing = ongoin
 | **Conversion tool** | Keep in this plugin | ✅ decided | Operates on same entities/fields |
 | **CPT vs options** | Options + page split; CPT deferred | ✅ reassessed (2026-06-23) | Storage choice is **per Wireframe page**, not per rule type. Page split (P4) splits the blob; CPT only if a type needs a draft/test lifecycle. See [storage-model.md](docs/storage-model.md). |
 | **CPT structure** | Deferred | — | `bws_mc_rule` shared-CPT design preserved in storage-model.md if/when a type needs it. Not scheduled. |
-| **Config storage boundary** | Wireframe page = `option_key` | P4 | Split 5 tabs → 4 pages → 4 options. Rule-type → option_key router. See [config-pages-split plan](.claude/plans/config-pages-split.md). |
+| **Config storage boundary** | Effect kind, not page | ✅ reassessed (2026-08-13) | Page split abandoned as the mechanism — it doesn't shrink the hot blob. One page, three tabs; storage is one ordered list per **effect kind**; clobber is a version-token guard. See [ADR 0003](docs/adr/0003-ordered-rule-list-and-dispatcher.md). |
 | **Plugin file rename** | Yes | ✅ | All installs are controlled |
 | **Option key rename** | Yes — with data migration, tested on InstaWP | ✅ (2c) | New key: `bws_meta_conductor_settings` |
 | **Handler migration order** | Simplest first | P3 | Related → Level Restriction → Propagation → Related Post Terms → Time Based |
@@ -225,42 +225,40 @@ Migrate each handler from `BWS_Handler_Base` to `UnifiedHandlerBase`. Template: 
 
 ---
 
-### Phase 4: Config Page Split (storage blast-radius)
+### Phase 4: Ordered Rule List + Central Dispatcher
 
-**Replaces the former "Implement CPT Storage" phase** (2026-06-23 reassessment). CPT storage is **not** a scheduled deliverable — it stays a deferred option only for a rule type that genuinely needs a draft/test lifecycle. The real priority is splitting the single Wireframe settings page into multiple pages so the options blob splits with it. Rationale + tradeoffs: [docs/storage-model.md](docs/storage-model.md). Full plan: [config-pages-split plan](.claude/plans/config-pages-split.md).
+**Second re-scope.** Was "Implement CPT Storage" (CPT deferred, 2026-06-23), then "Config Page Split" (2026-06-23 → 2026-08-13). The page split is now a *by-product*, not the deliverable. Full rationale: **[ADR 0003](docs/adr/0003-ordered-rule-list-and-dispatcher.md)**, which partially supersedes [ADR 0002](docs/adr/0002-cross-rule-composition.md). Domain vocabulary: [CONTEXT.md](CONTEXT.md) → *Effect kind*, *Dependency*, *Pass*, *Order*.
 
-**Why this instead of CPT:** Wireframe binds one `option_key` per page → all rule types currently share one blob, one save rewrites everything, cross-type clobber is possible. Splitting tabs → pages shrinks the save blast radius, gives per-page autoload control, and lets each page choose its storage independently later — delivering most of CPT's write-isolation benefit at near-zero cost, no new storage engine. UBT no longer needs CPT (role/user = target, not owner → single author; per-user data → profile field + one indirection rule).
+**Why the page split stopped being the point.** Splitting 5 tabs → 4 pages doesn't shrink the blast radius: Auto-Set & Restrict would host 6 of 7 rule types today and 10 of 12 eventually, so the hot blob stays one blob. Cutting further would have to cut *inside* the term group — exactly where rules interact, and the one place a storage boundary hurts. Cross-type clobber is already dead (every handler writes via `OptionRuleStorage::save_rule()`, per-type merge); lost-update clobber is a **version-token guard**, which works at any page count. Page count is therefore a pure UX choice: **one page, three tabs.**
 
-**Pages (4 — Restrict merges into Auto-Set; they interact):**
+**What replaced it.** Checking the vendored Wireframe 1.0.6 turned two assumptions into hard constraints — no cross-repeater ordering primitive, and no flexible content — and a pass over `docs/future-features.md` falsified ADR 0002's "effect kind partitions cleanly" claim in both directions (`title_slug` *reads* `{term:TAX}` and `{meta:field}`; `user_based` *writes* terms). The model that survives:
 
-| Page | `option_key` | Hosts |
-|------|-------------|-------|
-| Auto-Set & Restrict | `bws_mc_auto_set` | propagation, related_post_terms, time_based, related, hierarchical, level_restriction |
-| Format & Transform | `bws_mc_format` | title_slug, (future field_transformation) |
-| Personalize by User | `bws_mc_personalize` | user_based (UBT lands here) |
-| General | `bws_mc_general` | conflict_handling, manual_processing globals |
+| | |
+|---|---|
+| **Grouping** | One ordered rule list per **effect kind** — `term_rules`, `format_rules`. Each row carries its own `type`; subfields are `conditions`-gated on it. |
+| **Order** | **Authored within a kind** (repeater move up/down). **Derived between kinds** (terms → title/field → rendered) — those are *dependencies*, which have a right answer. |
+| **Execution** | A **central dispatcher per kind**, the *sole* entry point. Any trigger runs a **full ordered pass** over the entity; every rule recomputes from live state. |
+| **Re-entrancy** | A **pass-scoped** lock keyed *(entity, effect kind)*. |
+| **UI** | One page, three tabs: Auto-Set & Restrict / Format & Transform / General. |
 
 **Work:**
 
-- Split `WireframeConfig::build()` into 4 page-config composers; `WireframeBootstrap::boot` `pages[]` gains 4 entries (reuse existing `*Config::section()` classes — just regroup which page hosts them; in-page **tabs** separate rule types).
-- Add a **rule_type → option_key router** (the job `Storage\StorageFactory` was meant to own). `OptionRuleStorage::get_all_settings()` resolves the right page option per type; cross-type reads (`search_rules`, diagnostics, export/import) iterate the N page options.
-- Rescope save-payload hooks (`snapshot_related_labels` → Auto-Set page save).
-- **Migration:** one-time fan-out of the single `bws_meta_conductor_settings` blob → 4 page options, dry-run first, old key readable during transition, delete after verify.
-- Re-run H1 (lint) + H2 (autoload harness) after class moves.
+- **Storage.** 7 type-keyed arrays → 2 kind-keyed ordered lists. Flag-gated one-time migration on admin load (`maybe_migrate_acf_ref_storage()` pattern) **plus a read-time adapter** — `WireframeBootstrap::boot` is admin/REST-only while handlers read on front-end and cron. No stable `_id`: order is array position, and ADR 0002 rejected provenance. `related_post_terms` and `related` are **live**, so this is a breaking change under the CLAUDE.md live-rule-type rule.
+- **Config.** Collapse the per-type repeaters into `term_rules` + `format_rules`, each with a `type` select driving `conditions`. Unify shared subfields (`enabled`, `taxonomy`, `post_types`, `post_status`). Rescope the `snapshot_*_labels` payload hooks onto the two repeaters. ⚠️ A condition-hidden subfield is **dropped server-side at sanitize** — verify every show/hide on the testbed; changing a row's `type` discards its type-specific values (correct, but say so in the UI).
+- **Dispatcher.** Handlers stop registering hooks and become pure appliers on the existing `apply_to_post(int, array): bool` seam (#31, 0.7.0). This inverts handler-authoring invariant (a). All four other entry points route through it too — `AcfWriteQueue` (#42), the AC v7 `reapply_for_post` seam (#37), bulk apply, and time_based's cron — so ordering is honoured on *every* path, not just saves.
+- **Lock.** Pass-scoped, keyed *(entity, effect kind)*. Deletes the **four** `private $processing` booleans (related, level_restriction, propagation, hierarchical) and `related_post_terms`' taxonomy-scoped cascade guard at `class-related-post-terms-handler.php:476-478`. Also closes PR #19 review #1 (`RelatedHandler::on_terms_set` resetting `$processing` per rule inside the loop) — that window stops existing by design.
+- **Minimal collision warning.** At settings save, warn when two rules in a tab share a taxonomy *and* overlap on post types. Advisory only. **Re-scopes #39**; covers the unfiled hierarchical-vs-level-restriction ancestors case.
+- **Ownership wording.** `replace` = *owning*, `merge`/`skip` = *contributing*. **Closes #34** — contributing rules decline to remove by definition; UI wording only, no handler change. *Exact labels pending a dedicated wording pass.*
+- **Ride-alongs.** Delete `class-settings.php` (dead shell; takes the dormant blunt `array_merge` clobber with it), delete the 5 unreachable AJAX bodies on `TaxonomyManager`, close [#40](https://github.com/davidofchatham/meta-conductor/issues/40) / [#41](https://github.com/davidofchatham/meta-conductor/issues/41) (shipped in 0.7.0, still open).
+- **Unit-test harness for the snapshot helpers** (PR #19 review #6, deferred to "Phase 4+ when schema stability increases" — that is now). `WireframeBootstrap::term_label()` / `scope_label()` / `taxonomy_label()` / `snapshot_related_labels()` are near-pure functions of WP data (two term-ID shapes, taxonomy-trigger path, empty-vs-populated post_types map, unresolvable → `''`) covered only by manual sweeps — no `tests/` harness touches them and `composer.json` has no `require-dev`. Standing up PHPUnit here also gives the reach/collision work somewhere to land unit tests.
 
-**Cross-rule composition (folded in — see [ADR 0002](docs/adr/0002-cross-rule-composition.md), [CONTEXT.md](CONTEXT.md)):**
+**Closes #35** and kills **both** latent instantiation-order dependencies: propagation-before-hierarchical (`class-taxonomy-manager.php:145-153`) and `TitleSlugHandler` being constructed last, which is currently the only thing ordering term writes before title reads.
 
-The Auto-Set & Restrict page is the group where rules actually interact, so the composition model lands with the page that hosts it. Closes #35, re-scopes #39 and #34.
+**Gates (all four required before merge):** migration harness (idempotent, lossless, every legacy shape round-trips); dispatch-order source-inspection harness (no handler registers hooks; dispatcher is the only `apply_to_post` caller); full testbed sweep of all 7 types incl. explicit cross-type ordering cases; **Athletics copy gate** — mandatory, since the two live types only exist in real data.
 
-- **Cascade suppression.** A **write-scoped** lock keyed `(entity, effect target)` makes a handler-initiated write invisible to peer handlers on that same target, while staying visible across targets. Replaces the seven per-instance `private $processing` flags, which only ever guarded same-handler re-entry. Must NOT be request-scoped — that would silence the author's own chain after its first rule wrote. **Fixes #35**: a propagated child mirrors the parent's already-expanded set, so `inheritance_depth: immediate` yields one level.
-- **Author-ordered rule list.** With cascade suppressed, sequence within one chain is the only composition mechanism, so it must be author-visible. Rules on the page form one ordered list; per-rule position replaces hook priorities and boot order. Rule *type* is not the ordering unit — a fixed type order cannot express expand-then-restrict vs restrict-then-expand, nor two same-type rules that chain.
-- **Interaction graph + collision detector.** Compute each rule's **reach** (post types × taxonomies it reads and writes, at post-type granularity) and build the graph with the conjunctive predicate — an edge needs post-type *and* taxonomy overlap. Connected components drive both features: singleton components get no ordering control and no warning; larger ones get both. **Re-scopes #39** (level-restriction pruning propagated terms is correct for a *restricting* rule — the rule set is a collision, so warn) and covers the unfiled hierarchical-vs-level-restriction ancestors case.
-- **Ownership wording.** `replace` = *owning*, `merge`/`skip` = *contributing*. **Closes #34** — contributing rules decline to remove by definition; UI wording only, no handler change.
-- **Retire the per-instance `$processing` flags.** The shared lock replaces all seven. This also closes PR #19 review #1 (`RelatedHandler::on_terms_set` sets/resets `$processing` *per rule* inside the loop, leaving it false between rules): under the new model that window stops being a hazard by design — only author-initiated writes start a chain, and rule-initiated writes are suppressed per effect target. Verify no handler is left reading its own flag.
-- **Unit-test harness for the snapshot helpers** (PR #19 review #6, deferred to "Phase 4+ when schema stability increases" — that is now). `WireframeBootstrap::term_label()` / `scope_label()` / `taxonomy_label()` / `snapshot_related_labels()` are near-pure functions of WP data (two term-ID shapes, taxonomy-trigger path, empty-vs-populated post_types map, unresolvable → `''`) covered only by manual sweeps — no `tests/` harness touches them and `composer.json` has no `require-dev`. Standing up PHPUnit here also gives the collision-detector and reach-predicate work somewhere to land unit tests, which matters more than the snapshot helpers themselves.
-- ⚠️ **Ordering dependency until the list ships.** #35's fix needs hierarchical to run before propagation *on the parent*; today that falls out of instantiation order at `class-taxonomy-manager.php:146-147`. Swapping those lines silently reintroduces the bug. Ship the ordered list in the same pass, or add a source-inspection harness (cf. `tests/verify-acf-write-queue.php`).
+**Delivery:** one release, many dev passes, one branch. Further features may join the same release; this lands first.
 
-**Deferred (not this phase):** CPT storage (`class-cpt-rule-storage.php`, `bws_mc_rule` CPT). Revisit only if a type needs a draft/test lifecycle — see storage-model.md. Lost-update clobber, if concurrent authoring ever appears, is handled by a version-token guard on the page blob (cheaper than CPT), not by this phase.
+**Deferred (not this phase):** full reach/component collision detector (define reach once the non-term effect kinds are real); stable rule `_id`; CPT storage; rule-type renaming; sub-scope for restricting rules. The format dispatcher goes two-phase when `field_transformation` lands (`wp_insert_post_data` vs `acf/save_post` pri 20).
 
 **End of phase**: Update CLAUDE.md
 
@@ -338,12 +336,17 @@ These do not require CPT storage.
 
 ---
 
-### Phase 6b: BWS User Based Terms (Requires Phase 4 page split)
+### Phase 6b: BWS User Based Terms (Requires the Phase 4 rule list)
 
-- User-based term setting as a new rule type, landing on the **Personalize page** (its own `bws_mc_personalize` option — created in Phase 4).
+**Re-scoped 2026-08-13** by [ADR 0003](docs/adr/0003-ordered-rule-list-and-dispatcher.md). There is no Personalize *page* and no `bws_mc_personalize` option — the page split was abandoned. UBT lands as **`type` values inside the unified `term_rules` list**, ordered among the other term rules.
+
+- **Both variants are term rules.** The auto-set variant writes terms (`wp_set_object_terms($post_id, $term_ids, $taxonomy, false)` in the source plugin — replace, i.e. *owning*). The lock/restrict variant is **not** a separate effect: its effect target is terms and its **ownership** is *restricting*, exactly like level-restriction. Filtering what the admin UI offers is the surface, not the effect. See CONTEXT.md → *restricting-the-editor is still restricting ownership*.
+- **Consequence: UBT is ordered against the other term rules.** It sits in the same ordered list and the same **pass**, so "does the user default win over the propagated parent term?" becomes an author-visible position rather than an emergent accident. It also participates in the collision warning.
+- **Basis is ambient but needs no sweep** — the acting user only matters at the instant of a write, so the dispatcher's `save_post` trigger is sufficient. Contrast Temporal, whose ambient "now" moves on its own. (CONTEXT.md → *Basis*.)
 - Stored in **options** (not CPT): role/user = *target*, not owner → single author. Per-user customization → **profile ACF field + one indirection rule**, not N per-user rules. See [ubt-merger plan](.claude/plans/ubt-merger.md), [storage-model.md](docs/storage-model.md).
-- Migration: UBT CPT posts (`bws_user_term_rule`) → MC Personalize-page option array (dry-run).
-- Port UBT rule-engine / applicator / cache / ACF-integration into an MC handler extending `UnifiedHandlerBase`; drop the UBT CPT editor in favor of the Wireframe panel.
+- **Migration:** UBT CPT posts (`bws_user_term_rule`) → rows appended to `term_rules` with the appropriate `type` (dry-run). Note UBT carries its own `priority` field — map it onto **list position**, since position is now the ordering mechanism.
+- Port UBT rule-engine / applicator / cache / ACF-integration into an MC handler extending `UnifiedHandlerBase`, exposing `apply_to_post()` like every other handler — it registers **no hooks of its own** (the dispatcher owns them, per ADR 0003). Drop the UBT CPT editor in favor of the Wireframe panel.
+- ⚠️ **Type-key name unsettled**: `.claude/plans/ubt-merger.md` proposes `user_based_terms_rules`; `docs/future-features.md` and `docs/storage-model.md` say `user_based_rules`. Under the unified list this is a `type` value, not an option key — settle it when building.
 - Largest integration; tackle last.
 
 **End of phase**: Update CLAUDE.md
@@ -391,6 +394,6 @@ Key reassessments since the original inline framework (2026-06-23):
 - ~~Don't start Phase 2b until Phase 2a is stable on InstaWP~~ (2a done in 0.4.0; static-verified H1+H2, InstaWP sweep done)
 - Don't start Phase 6a integrations until Phase 3 handler migration is done
 - Don't start `field_transformation_rules` until its storage is decided via [storage-model.md](docs/storage-model.md) (likely Options + indirection; CPT only if a per-recipe lifecycle is needed)
-- Don't start Phase 6b (UBT) until Phase 4 page split is done (UBT needs the Personalize page option)
+- Don't start Phase 6b (UBT) until Phase 4 is done — but the reason changed: UBT no longer needs a Personalize *option*, it needs the unified `term_rules` list to land in as a `type`. Both its variants are term rules (the lock variant is *restricting* ownership over terms, not a separate effect). See [ADR 0003](docs/adr/0003-ordered-rule-list-and-dispatcher.md), CONTEXT.md → *restricting-the-editor is still restricting ownership*.
 - Don't refactor BWS_Settings until handler migration is done (cleaner split once handlers own their logic)
 - Update CLAUDE.md at the end of every phase

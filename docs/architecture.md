@@ -23,15 +23,14 @@ Key boundaries (the rules that matter, regardless of class names):
 - **Handlers never touch `get_post()` / `get_term()` / `get_user_meta()` directly** — they go through `Core\Entity`, the polymorphic wrapper over WP entities. Rule logic stays agnostic about the underlying WP storage.
 - **Handlers never call `get_option()` directly** — they read/write through the storage layer (`Storage\StorageFactory`), which is also the canonical-shape adapter (see below).
 - **One `wp_options` key** (`bws_meta_conductor_settings`) holds every rule type, each an array of rule rows, plus a few global keys (per-taxonomy conflict overrides, manual-processing toggle).
-- **Two handler bases coexist** during the Phase-3 migration: `UnifiedHandlerBase` (typed PHP 8.1 helpers, storage-backed) and the legacy `HandlerBase`. Handlers migrate one at a time; the legacy base disappears when the last moves.
+- **One handler base**: `UnifiedHandlerBase` (typed PHP 8.1 helpers, storage-backed), composing the `TermOperations` and `AcfBridge` traits. All 7 handlers extend it; the legacy `HandlerBase` was deleted in 0.6.0 when the last handler migrated.
 
 ## Writing a rule handler — hard-won invariants
 
 Distilled from the 0.5.0 ACF-reference rework and its eight review rounds. These
 are cross-handler traps, not ACF-specific. Read before building or migrating a
-handler (temporal-rule, status-mirroring, the remaining legacy migrations, and
-the Phase-4 config page split — one blob → per-page option_keys — all hit
-several).
+handler (temporal-rule, status-mirroring, and the Phase-4 rule-list rework —
+seven type-keyed arrays → two ordered per-effect-kind lists — all hit several).
 
 1. **Wireframe reads the option RAW** (`get_option`, no filter seam), bypassing
    `normalize_rule_shape`. A read-time migration that RENAMES or REMOVES a key is
@@ -40,10 +39,13 @@ several).
    (corruption). Any key-renaming migration needs a one-time, flag-gated option
    REWRITE, not just read-time normalization. (B6) Directional adapters that
    reshape the SAME key (array↔scalar) are safe — the admin round-trips them.
-   **Phase-4 page split is exactly this trap at the option-key level:** moving a
-   rule type from the single `bws_meta_conductor_settings` blob to its own
-   per-page option_key must REWRITE the rules into the new key before Wireframe
-   reads that page raw, or the page renders empty and a resave wipes the type.
+   **The Phase-4 rule-list rework is exactly this trap, at the top-level-key
+   level:** folding the seven per-type arrays into `term_rules` / `format_rules`
+   must REWRITE storage before Wireframe reads the option raw, or the repeaters
+   render empty and a resave wipes every rule. It also needs a **read-time
+   adapter**, not only the rewrite — `WireframeBootstrap::boot` runs on admin and
+   REST requests only, while handlers read storage on front-end and cron saves.
+   (ADR 0003)
 
 2. **Never gate a destructive write on post-type match alone.** A rule whose
    target type is `''`=any matches every post; combined with a replace/remove
@@ -96,9 +98,7 @@ several).
    `update_option` returns false for BOTH a no-op-equal write AND a real failure
    — never ignore the bool, and don't let the request cache adopt data that
    didn't persist (it ghost-persists on the next save). Distinguish equal-vs-fail
-   by re-reading. (R5#5/R6#4/R8#1/R8#3; tracked as issue #27) — the Phase-4 page
-   split multiplies this: a rule_type→option_key router writes to several
-   options, each with its own cache, every one bound by the same contract.
+   by re-reading. (R5#5/R6#4/R8#1/R8#3; tracked as issue #27)
 
 8. **Pre-filter site-wide hooks in BOTH directions.** Global `save_post` /
    `set_object_terms` / `acf/update_value` hooks fire for every post on the site;
@@ -279,6 +279,10 @@ The settings UI is a React app provided by `tdrayson/wp-wireframe`. Each rule ty
 | General | Per-taxonomy conflict handling overrides, manual processing toggle |
 
 Boot path: [class-wireframe-bootstrap.php](../includes/admin/class-wireframe-bootstrap.php) calls `\Wireframe\App::boot()` on `init` priority 10 with the assembled config.
+
+> **Phase 4 restructures this** ([ADR 0003](adr/0003-ordered-rule-list-and-dispatcher.md)): five tabs → three (Auto-Set & Restrict / Format & Transform / General), still one page and one `option_key`. The per-type repeaters collapse into **one ordered list per effect kind** — `term_rules` and `format_rules` — each row carrying its own `type`, with subfields `conditions`-gated on it. Restrict merges into Auto-Set because both write terms; Personalize disappears as a tab because UBT's rules are term rules too (the lock variant is *restricting* ownership, not a separate effect). Order within a list is authored; order between lists is derived.
+>
+> Two Wireframe constraints drive the shape, both verified against the vendored 1.0.6: there is **no cross-repeater ordering primitive** (so an ordered list spanning rule types must be one repeater), and there is **no flexible content** (so that repeater has one fixed subfield superset). A corollary worth remembering when editing config classes: `RepeaterField::sanitize` rebuilds each row from *declared subfields only*, and runs **before** the `wp-wireframe/save/payload` filter — so an undeclared key cannot be injected post-hoc, and a condition-hidden subfield is dropped from storage entirely.
 
 ### Why Wireframe
 
