@@ -464,6 +464,14 @@ class WireframeBootstrap {
      * applies to all post types. The " (" / ")" decoration lives here, not in
      * the template.
      *
+     * The delimiters are deliberately BAKED INTO the stored snapshot value, not
+     * applied at render: Wireframe's `title_template` can only interpolate, so
+     * there is nowhere else to format. Consequence — if the row-title format
+     * ever changes, already-persisted `scope_label` values keep the old shape
+     * until each rule is re-saved. Same snapshot-staleness class as the term
+     * labels (V11); accepted rather than fixed, since storing raw slugs would
+     * require render-time formatting the template cannot do. (PR #19 review #4.)
+     *
      * @param mixed $post_types
      * @return string
      */

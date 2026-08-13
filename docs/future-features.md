@@ -7,7 +7,11 @@ Canonical list of features that aren't built yet. Each entry:
 - **Sketch** — enough to start scoping; not a spec.
 - **Phase** — where it lands in the [ROADMAP.md](../ROADMAP.md) phase plan, if assigned.
 
+New **rule type** entries should also state their **axes** — basis (relation / intrinsic / ambient), effect target, and ownership. The axes are defined in [CONTEXT.md](../CONTEXT.md); [ADR 0002](adr/0002-cross-rule-composition.md) explains what they constrain. They are worth stating early because two of them predict real build cost before any code is written: an **ambient** basis whose value moves on its own needs a cron sweep, and a **scalar** effect target (a field, a title) can never compose — two rules sharing one always collide.
+
 When an idea is promoted to in-flight, add a link to its spec issue, or to a plan file under `.claude/plans/`.
+
+Entries are removed once shipped; [ROADMAP.md](../ROADMAP.md) and [CHANGELOG.md](../CHANGELOG.md) carry the history.
 
 ---
 
@@ -50,18 +54,20 @@ When an idea is promoted to in-flight, add a link to its spec issue, or to a pla
 
 ### `time_based_rules` — Temporal State Rule (evolution of Date Window)
 
-- **Status**: in-flight (targeting the 0.x line, before 1.0.0), scoping.
+- **Status**: planned (targeting the 0.x line, before 1.0.0), scoping.
 - **Motivation**: today's Date Window rule is binary (in-window → apply term, out → remove) with a fixed date-only window typed on the rule. Evolve it so one rule expresses before/during/after auto-tagging across a datetime window, with boundaries that may be read from per-post ACF/meta fields (including a single combined `datetime` value as Pie Calendar stores), and "trigger X time before/after a date" support. Ships a **Pie Calendar source preset** (start/end/all-day meta keys pre-filled) and honours an **all-day boolean field** as a boundary-time override. Also absorbs the "post expires N after its date field" pattern and the previously-planned `date_based_taxonomy_rules` (Phase 6a), folded in rather than built as a separate type.
 - **Detail lives elsewhere** (this entry stays a pointer to avoid drift):
   - Scoping plan + open questions: [.claude/plans/temporal-rule.md](../.claude/plans/temporal-rule.md)
   - Domain vocab + invariants: [CONTEXT.md](../CONTEXT.md)
   - Model decision (general model / constrained UI, no provenance): [docs/adr/0001](adr/0001-temporal-rule-general-model-constrained-ui.md)
 - **Source**: `plugins-to-integrate/date-based-taxonomy-term-updater/` (deleted; reference prior commit).
-- **Storage**: Options. Migrates to CPT in Phase 4 alongside the existing plan; no longer gated *on* CPT.
+- **Storage**: Options (extended `time_based_rules` shape, normalised through the canonical-shape adapter, no dot-notation). **Not** gated on CPT, and **not** migrating to CPT in Phase 4 — Phase 4 is the config-page split, and CPT is deferred/unscheduled (see [ADR 0001](adr/0001-temporal-rule-general-model-constrained-ui.md) → Consequences, and ROADMAP Phase 4).
 
 ### `field_transformation_rules` — Computed Field Output
 
 - **Status**: planned (Phase 6a)
+- **Axes**: basis **intrinsic** (reads the post's own fields), effect target **field** (scalar), ownership *owning*.
+- **⚠️ Scalar effect target** — per [ADR 0002](adr/0002-cross-rule-composition.md), two rules writing one field can only be last-writer-wins, so they **always** collide; there is no contributing mode for a scalar. Sibling `relationship_field_rules` shares the same target space and the same write path.
 - **Motivation**: combine multiple source fields into a formatted output field. Examples: merge first/middle/last name into a display name, combine date + time into a sortable datetime, format a phone number, derive a bio string from athlete stats.
 - **Sketch**: rule declares output meta key + a template/transformer. **Reuse the TitleSlugHandler token engine** (`resolve_token()`, pattern→segments→resolve-or-drop→reassemble, with empty-token + dangling-separator dropping) — ~60–70% of a computed-field engine already exists there; the net-new work is a **target-field write path** (write to an arbitrary meta/ACF key, not just `post_title`/`post_slug`), a **raw-vs-sanitize output policy** flag (so literal HTML survives), and a few new token classes (value-filter `{term:TAX|exclude:…}`, conditional `{if_term:…}`, optional format-transform). Reference snippet: `plugins-to-integrate/format-game-date-time-fields.php` (site-specific athletics_events example showing batching pattern; not directly reusable).
 - **Must work inside ACF repeater rows, not just post-level.** Each row composes its own output from that row's sibling subfields, written back to a per-row output subfield. The build cost is **row-scoped token reads** (the flat/post-level resolver `get_post_meta($post_id, KEY)` must instead read `get_sub_field()` in row context) plus a `have_rows()` iteration loop. The *write* is cheap and verified (2026-06-26): `update_sub_field(['rep', $row, 'sub'], $val, $post_id)` on `acf/save_post` pri 20 — maintains ACF's field-key reference meta, **no re-entrancy guard needed** (it doesn't re-fire `acf/save_post`/`save_post`; only `wp_update_post` would). Details + citations in the plan stub. (The roster height/weight case is the repeater-native one.)
@@ -69,9 +75,42 @@ When an idea is promoted to in-flight, add a link to its spec issue, or to a pla
 - **Storage**: TBD — run [storage-model.md](storage-model.md) when designed. Likely **Options + indirection** unless a per-recipe draft/test lifecycle is wanted; CPT is a deferred option, not a prerequisite. Not gated on Phase 4 (which is the config-page split, not CPT).
 - **Gating / build order**: gates on **Phase 3** (handler migration), like the other Phase 6a integrations — **not** Phase 4. Build order vs Phase 4 is free: built *before* the page split → lands in the shared `bws_meta_conductor_settings` blob and migrates with everyone when the split runs; built *after* → drops onto its own Format & Transform page-option (`bws_mc_format`). Either works; no hard dependency.
 
+### `relationship_field_rules` — Set a field across a relationship
+
+- **Status**: idea (raised 2026-08-12, cross-rule composition session)
+- **Axes**: basis **relation** (authored — an ACF relationship / post-object field), effect target **field** (scalar), ownership TBD.
+- **Motivation**: `related_post_terms_rules` already copies *terms* across an ACF relationship. The same edge should be able to carry a *field value* — e.g. an event's venue post supplies its address into each session's address field, or a roster's team post pushes a season label onto every player.
+- **Sketch**: same holder/direction model as `related_post_terms_rules` (the ACF field pins the holder post type; `holder_role` says which end is authoritative), with the effect swapped from taxonomy terms to a target meta/ACF key. Most of the traversal, direction and reverse-lookup machinery is already built there — the net-new work is the field write path (shared with `field_transformation_rules`) and deciding ownership.
+- **⚠️ Scalar effect target** — per [ADR 0002](adr/0002-cross-rule-composition.md), a field is scalar: two rules writing one field can only be last-writer-wins, so any two rules sharing a target field **always** collide. Unlike terms, there is no contributing mode; ownership is *owning* or nothing.
+- **Storage**: TBD — run [storage-model.md](storage-model.md). Likely the Format & Transform page (`bws_mc_format`) alongside `field_transformation_rules`, since both write fields.
+
+### `body_class_rules` — Document classes from terms/fields
+
+- **Status**: idea (raised 2026-08-12, cross-rule composition session)
+- **Axes**: basis **intrinsic** (reads the post's own terms/fields), effect target **body class** — **rendered, not stored**.
+- **Motivation**: theme CSS/JS routinely needs to branch on taxonomy state (`is-event`, `season-2026`, `status-cancelled`). Today that means bespoke `body_class` filters in each theme; a rule would let an editor declare it.
+- **Sketch**: rule declares a source (taxonomy, term, or field value) and a class template; handler hooks `body_class` (and probably `post_class`). Reuse the TitleSlug token engine for the template, with slug sanitization on output.
+- **A rendered effect behaves differently from every rule type built so far.** It is computed per request and never persisted, which means: (a) **no ownership question** — nothing is stored, so nothing can strand or need reconciling; (b) **no sweep** — it recomputes on every render, so even an ambient basis (e.g. current user) needs no cron; (c) **no collision in the stored sense** — two rules emitting classes simply both emit, since the target is a list the theme concatenates. Worth confirming whether the domain model wants a **stored vs rendered** distinction on the effect-target axis, or whether "rendered" is just a set-valued target with a trivial ownership.
+- **Storage**: Options. Page TBD — arguably Format & Transform, though it neither formats nor transforms stored data.
+
+### `term_provisioning_rules` — Create a term per post, then apply it
+
+- **Status**: idea (raised 2026-08-12, cross-rule composition session)
+- **Axes**: basis **relation**, effect target **the taxonomy itself** (term existence) *plus* terms on entities.
+- **Motivation**: a CPT whose posts each need a matching term so *other* content can be tagged against them — e.g. every `team` post gets a `team` term, and player posts are tagged with it via the team relationship. Today this is hand-maintained and drifts the moment a post is renamed or added.
+- **Sketch**: for each post passing the filter gate, ensure a term exists in the target taxonomy (name/slug derived from the post, likely via the token engine); then apply that term to related posts over a configured relation.
+- **⚠️ A genuinely new effect shape.** Every rule type so far writes a *value on an entity*. This one mutates the **term vocabulary** — it creates rows other rules then reference. Open questions that have no precedent in the current model:
+  - **Lifecycle**: post deleted → delete the term, orphan it, or leave it? Post renamed → rename the term, or leave the slug stable because permalinks/queries depend on it?
+  - **Ownership over a term's existence**: is "this term should exist" an *owning* claim (so removing the rule deletes terms) or *contributing* (create-only, never destroy)? Contributing is almost certainly right — destroying terms destroys other posts' assignments — but it is a real decision, not a default.
+  - **Collision**: two provisioning rules targeting one taxonomy contend over term *existence*, which the current reach/effect-target predicate does not model.
+- **Relation to existing work**: the "apply it via a relationship" half is `related_post_terms_rules` or `relationship_field_rules`; only the provisioning half is new. Worth scoping as two rules composed rather than one monolith — which is exactly the composition the ordered rule list ([ADR 0002](adr/0002-cross-rule-composition.md)) is meant to support.
+- **Storage**: Options.
+
 ### `user_based_rules` — User-Based Term Setting / Restriction
 
 - **Status**: planned (Phase 6b, requires Phase 4 page split — for its own `bws_mc_personalize` option)
+- **Axes**: basis **ambient** (the acting user and their role — attached to the request, not to the post), effect target **terms** for the auto-set variant and **field editability** for the restrict variant. Note the restrict variant is the first *rendered* effect (it filters what the admin UI offers) rather than a stored one, and that "restrict" here means **restricting the editor**, not the **restricting ownership** of [ADR 0002](adr/0002-cross-rule-composition.md) — different senses, worth disambiguating before this is built.
+- **Ambient basis normally implies a sweep** (see CONTEXT.md → *Basis*), but not here: the acting user only matters at the instant of a write, so `save_post` is sufficient. Contrast Temporal, whose ambient "now" moves on its own and therefore needs cron.
 - **Motivation**: pre-set terms in a taxonomy based on the current user (role or ID), or lock a taxonomy so only specific roles can edit it. Spans both auto-set and restrict actions, which is why both flavors live under the **Personalize by User** tab in the settings UI.
 - **Sketch**: absorb the existing standalone plugin `bws-user-based-terms` (separate repo). Each rule maps user role or ID → taxonomy → term(s). Auto-set variant applies on `save_post`; restrict variant filters term lists in admin.
 - **Source**: external — `../bws-user-based-terms/`. Currently uses its own CPT (`bws_user_term_rule`); migrate that CPT's posts into the MC Personalize-page **option** array (role/user = target, not owner → single author → Options, not CPT). Per-user customization is solved by indirection (profile field + one rule), not N per-user rules. See [.claude/plans/ubt-merger.md](../.claude/plans/ubt-merger.md), [storage-model.md](storage-model.md).
@@ -89,13 +128,23 @@ Deferred refinements from the 0.5.0 rework (design history in
   [.claude/plans/status-mirroring.md](../.claude/plans/status-mirroring.md). **Status**: planned (own plan).
 - **Tier filter** — sync only a particular hierarchy level of a taxonomy (e.g. only 2nd-level terms).
 - **Manual-survives mode** — let hand-added, non-source-derivable terms persist under Keep-in-sync. Today the
-  synced taxonomy is wholly rule-owned (source-authoritative). Would require rule-domain-vs-manual tracking.
+  synced taxonomy is wholly rule-owned (source-authoritative). **Blocked on a rejected primitive**: this needs
+  provenance (rule-domain-vs-manual tracking), which [ADR 0002](adr/0002-cross-rule-composition.md) rejected for
+  the third time (after ADR 0001 and §V3). If it is ever wanted, it reopens that decision plugin-wide rather
+  than being a local feature. A cheaper alternative within the current model: expose the rule's **ownership**
+  as *contributing* instead of *owning*, which never removes anything — manual terms survive because nothing
+  reconciles, at the cost of losing source-authoritative cleanup.
 - **True cross-taxonomy copy** — map terms by slug/name so source and target can differ (current copy is by
   ID, single taxonomy only).
 - **Multi-level chain propagation** — a post that is BOTH a dependent (of A) and a source (for C) doesn't
   propagate to C in the same save: its term-change is suppressed by the re-entrancy guard while it's being
   written. Chains deeper than 2 levels need a depth-bounded re-dispatch after each write. Today's data
   (athletics) is 2-level so unaffected. Build only if a 3+ level chain appears. (Code-review #4, 0.5.0.)
+  **Confirmed as the only path by [ADR 0002](adr/0002-cross-rule-composition.md)**: cascade is suppressed
+  within one effect target, so a rule's own write will *never* re-trigger peer term rules — waiting for the
+  cascade to carry the chain is not an option that was taken away, it is one that never worked. An explicit
+  depth-bounded re-dispatch inside the handler is the design, mirroring how propagation already walks its
+  whole subtree itself (`get_all_child_posts` recurses) rather than relying on cascade.
 - **Single-owner optimization** — skip the multi-source rule-union when a dependent provably has one owner
   (ACF `max=1` / native bidi). Negligible gain when a reverse field is configured; only matters for the
   meta_query fallback with large fan-out.
@@ -154,25 +203,13 @@ Storage keys (`related_rules`, `time_based_rules`, …) are unaffected — this 
 
 - **Status**: deferred (unscheduled) — **was Phase 4; reassessed 2026-06-23.** Phase 4 is now the config-page split, not CPT. CPT stays a deferred option only for a rule type that genuinely needs a draft/test lifecycle. Page-split + a version-token guard cover the blast-radius/clobber concern CPT was originally reached for. See [storage-model.md](storage-model.md), ROADMAP Phase 4.
 - **Motivation**: a rule type that accumulates *and* wants a list table / draft-active lifecycle / standard WP query power could outgrow a single wp_options row. (Accumulation alone no longer triggers CPT — per-entity explosion is solved by indirection, not N rows.)
-- **Sketch**: implement `BWS_CPT_Rule_Storage` against the existing `BWS_Rule_Storage` interface. Single shared CPT `bws_mc_rule`, differentiated by `rule_type` meta. Per-type routing in `BWS_Storage_Factory`. Migration tool: options → CPT for the two existing rule types that benefit.
+- **Sketch**: implement `Storage\CptRuleStorage` against the existing `Storage\RuleStorage` interface. Single shared CPT `bws_mc_rule`, differentiated by `rule_type` meta. Per-type routing in `Storage\StorageFactory`. Migration tool: options → CPT for the two existing rule types that benefit.
 
-### PSR-4 namespacing
+### Text-domain string sweep
 
-- **Status**: planned (Phase 2a)
-- **Motivation**: simplify file loading, modernize class layout, eliminate `includes/abstracts/` as a separate directory.
-- **Sketch**: see ROADMAP.md Phase 2a. Custom autoloader, namespace `BWS\MetaConductor\`, file renames, namespace declarations.
-
-### Plugin rename + text-domain sweep
-
-- **Status**: planned (Phase 2b)
-- **Motivation**: align public identity (plugin folder, main file, text domain, admin slug, menu label) on "Meta Conductor". Collision-safe layers (PHP namespace, option keys, hook prefix) keep `bws_`/`BWS\` per Naming Surface decision.
-- **Sketch**: see ROADMAP.md Phase 2b. ~600 `__()` / `_e()` / `_x()` / `_n()` calls; one-shot option-key data migration on activation; back-compat constant aliases.
-
-### Handler migration to unified base
-
-- **Status**: planned (Phase 3)
-- **Motivation**: 5 of 7 handlers still extend the legacy `BWS_Handler_Base` and access settings via the passed-in `$settings` object. Migrating them to `BWS_Unified_Handler_Base` removes the compat shell, lets storage-layer canonical-shape normalization apply uniformly, and prepares for CPT storage.
-- **Sketch**: see ROADMAP.md Phase 3. Migration order: Related → Level Restriction → Propagation → Related Post Terms → Time Based.
+- **Status**: planned (remainder of Phase 2b) — the *rename* half shipped in 2c; this is what is left.
+- **Motivation**: the main file is `meta-conductor.php` and the header `Text Domain:` is `meta-conductor`, but internal `__()` / `_e()` / `_x()` / `_n()` string args still read `'bws-meta-manager'` / `'bws-taxonomy-manager'`. Private plugin with no `.po` files, so the mismatch is cosmetic today — it becomes real the moment translation is wanted.
+- **Sketch**: ~600 call sites. Mechanical find/replace plus a lint pass to catch stragglers. Collision-safe layers (PHP namespace, option keys, hook prefix) keep `bws_`/`BWS\` per the Naming Surface decision — this sweep touches text-domain args only.
 
 ### Grouped / nested relationship fields for Related Post Terms (#37)
 
@@ -212,9 +249,11 @@ Storage keys (`related_rules`, `time_based_rules`, …) are unaffected — this 
 
 ### Subfield conditional visibility
 
-- **Status**: unblocked — ready to build
+- **Status**: in progress — converting opportunistically as each config class is touched
 - **Motivation**: Wireframe 1.0.6 (#13) added the conditions DSL to repeater subfields client-side. The current workaround (always-render both conditional subfields, explain via description text) can now be replaced with real show/hide `conditions`.
-- **Sketch**: convert description-text workarounds to `conditions` for: `related_rules.trigger_term_id` / `.trigger_taxonomy` (operator on `trigger` select), `level_restriction.include_ancestors`, `hierarchical_rules.expansion_behavior` + help text, `propagation`/`time_based`/`title_slug` "Only used when…" subfields. Verify each show/hide rule on the test site (subfield conditions evaluate against sibling subfields in the same row).
+- **Done**: `level_restriction.include_ancestors` (0.6.0).
+- **Sketch**: convert the remaining description-text workarounds to `conditions` for: `related_rules.trigger_term_id` / `.trigger_taxonomy` (operator on `trigger` select), `hierarchical_rules.expansion_behavior` + help text, `propagation`/`time_based`/`title_slug` "Only used when…" subfields.
+- **⚠️ A condition-hidden subfield DROPS from the save payload** — verify each show/hide on the test site, and check that the storage adapter tolerates the absent key. Verify each show/hide rule on the test site (subfield conditions evaluate against sibling subfields in the same row).
 - **Tracking**: upstream #13 closed; this is now plain implementation work.
 
 ### Client-side custom field types
@@ -236,34 +275,6 @@ Storage keys (`related_rules`, `time_based_rules`, …) are unaffected — this 
 - **Motivation**: per-rule `conflict_handling` overrides currently default to `merge` regardless of the General-tab per-taxonomy default. User expectation: rule-level should inherit from taxonomy-level unless explicitly set.
 - **Sketch**: handler reads General-tab `conflict_handling[$taxonomy]` if rule's own `conflict_handling` is empty/unset.
 - **Phase**: small enough to tackle ad-hoc during Phase 3 handler migration.
-
-### Phase 3a code-review follow-ups (PR #19)
-
-Tracked from the PR #19 review (Related multi-PT + UnifiedHandlerBase migration). None were merge-blockers; all are pre-existing patterns carried forward or deferred test work.
-
-- **Re-entrancy window in `RelatedHandler::on_terms_set`** (review #1)
-  - **Status**: idea
-  - **Motivation**: the `$this->processing` guard is set/reset *per rule* inside the loop (correctly, via try/finally). Between two rules the flag is `false`, so a `set_object_terms` call from *outside* the handler in that window isn't guarded. Real only when multiple related rules fire in one request. Pre-existing (old `process_post` had it too) — not a regression.
-  - **Sketch**: set `processing` once around the whole rule loop, or use a re-entrancy depth counter. Verify it doesn't suppress legitimate cascades.
-  - **Phase**: revisit during Phase 3 handler migration when the loop is touched.
-
-- **`validate_rule_internal` term check ignores taxonomy** (review #2)
-  - **Status**: idea
-  - **Motivation**: `\get_term($id)` with no taxonomy returns a term from any taxonomy. A stale `trigger_term_id`/`target_term_id` could match a live term in the *wrong* taxonomy and silently pass validation, firing against it. The handler reads `trigger_taxonomy` separately, so the data to check against exists. Pre-existing.
-  - **Sketch**: validate the resolved term's `->taxonomy` matches the rule's expected taxonomy (trigger_taxonomy for trigger; target term's stored taxonomy for target).
-  - **Phase**: ad-hoc, low effort.
-
-- **`scope_label` bakes display delimiters into stored value** (review #4)
-  - **Status**: idea (or accept-as-is pre-1.0)
-  - **Motivation**: the stored `scope_label` is ` (Posts, Pages)` — a display string with `(`, `)`, `, ` baked in, not a raw slug list. If the row-title format ever changes, the persisted value won't match the new format until each rule is re-saved (same snapshot-staleness class as the term labels, V11).
-  - **Sketch**: if a structured value is ever needed, store raw slugs and format at render — but render-time formatting is exactly what Wireframe's `title_template` can't do (the reason the snapshot exists). Likely stays as-is; add a one-line comment noting the baked-in format.
-  - **Phase**: comment now if touched; structural change unlikely.
-
-- **Unit tests for `WireframeBootstrap` snapshot helpers** (review #6)
-  - **Status**: idea
-  - **Motivation**: `term_label()`, `scope_label()`, `taxonomy_label()`, `snapshot_related_labels()` are the highest-risk new code (two term-ID shapes, taxonomy-trigger path, empty-vs-populated post_types map, unresolvable → ''), covered only by manual InstaWP sweep. They're near-pure functions of WP data — testable with mock term/post-type objects.
-  - **Sketch**: add a unit harness (the project has no PHPUnit yet — only the static `tests/lint.php` + `tests/verify-autoload.php`). Worth standing up alongside CPT-storage work when schema stabilizes.
-  - **Phase**: Phase 4+ (per reviewer — when schema stability increases).
 
 ### Phase 3b follow-ups
 
