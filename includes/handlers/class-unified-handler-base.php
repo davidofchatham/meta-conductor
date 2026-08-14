@@ -156,14 +156,30 @@ abstract class UnifiedHandlerBase {
      *
      * Uses the storage abstraction layer to retrieve rules.
      *
+     * Reads the handler's rules out of its EFFECT-KIND list (ADR 0003 —
+     * `term_rules` / `format_rules`), filtering on each row's own `type`,
+     * rather than out of the type-keyed array. The two are element-for-element
+     * equal by construction (storage derives the kind list from the type-keyed
+     * arrays and keeps `id` per-type), so no handler changed for this — the
+     * point is that every handler now consumes rules through the ordered
+     * model the dispatcher will iterate.
+     *
+     * Every rule type maps to a kind — H10 asserts the kind map and the storage
+     * layer's valid-type list are the same set, so a type added to one and not
+     * the other is a harness failure rather than a runtime read of zero rules.
+     * That is why there is no type-keyed fallback here: a fallback would turn
+     * that harness failure back into a silent one.
+     *
      * @since 0.2.0 Updated to use storage abstraction
+     * @since 0.8.0 Reads the kind list, filtered on row `type`.
      * @return array Enabled rules
      */
     public function get_enabled_rules() {
         $storage = StorageFactory::get_instance();
         $rule_type = $this->get_rule_type();
+        $kind = $storage->get_kind_for_type($rule_type);
 
-        return $storage->get_rules($rule_type, ['enabled' => true]);
+        return $storage->get_kind_rules($kind, ['enabled' => true, 'type' => $rule_type]);
     }
 
     /**

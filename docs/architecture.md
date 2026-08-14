@@ -306,6 +306,30 @@ Wireframe writes some fields differently than handlers expect (e.g. a `multiple+
 
 Storage is the adapter boundary between writers (current: Wireframe REST) and handlers — future writers (CLI, import) plug in at the same boundary. **Caveat:** a key-RENAMING migration here is read-time-only and the Wireframe admin reads the option RAW, so a renamed/removed key must ALSO be persisted (one-time rewrite) or the admin renders defaults and corrupts on resave. (See the ACF-reference migration; SPEC §V16 while active.)
 
+## Effect-kind rule lists
+
+Rules also exist as **two ordered lists keyed by effect kind** — `term_rules` (six types) and `format_rules` (`title_slug`) — each row carrying its own `type`, with order being array position. This is the model [ADR 0003](adr/0003-ordered-rule-list-and-dispatcher.md) settles on and the shape the Phase 4 dispatcher iterates.
+
+It ships **expand-first**, so both shapes are live at once and the split of duties matters:
+
+| | Type-keyed arrays (7) | Kind lists (2) |
+|---|---|---|
+| Written by | the Wireframe admin (raw `update_option`) | `sync_kind_lists()`, plus every storage-layer save |
+| Read by | `get_rules()`, everything pre-existing | `get_kind_rules()` → `get_enabled_rules()` |
+| Authority today | **yes** | no — derived on read |
+
+`get_kind_rules()` **derives the list at read time** via `fan_in()` rather than reading the persisted copy. The type-keyed arrays are still the write path, so deriving is the only way a front-end or cron request — which never reaches the admin-gated `WireframeBootstrap::boot` — is guaranteed to see what the admin last saved. It also means no admin save can desync behaviour, and an emptied rule set cannot resurrect from a stale persisted copy. The lists are persisted anyway because the Wireframe admin reads the option raw, so the config collapse can only bind repeaters to keys that exist. Authority flips to the persisted copy in the contract ticket (#66), when the type-keyed path is deleted.
+
+`sync_kind_lists()` runs on admin load and writes **only when the recomputed lists differ from the stored ones** — it is not gated on its schema flag, which is a marker rather than a gate. A one-shot gate would be wrong: the admin saves via `array_merge($saved, $clean)` ([`Rest/SettingsController.php`](../vendor/tdrayson/wp-wireframe/src/Rest/SettingsController.php)), so an edit updates a type-keyed array while carrying the previous kind lists through untouched. Gated, the first admin save would strand the persisted lists on pre-edit rows permanently — exactly the stale copy the config collapse would then bind to. Handlers never see that (they derive), so this is about the stored shape staying honest.
+
+Three invariants hold the expand phase together, all asserted by H10 (`tests/verify-kind-lists.php`):
+
+- **`fan_in()` is a pure regroup** — rows cross over verbatim plus a `type` key, with no shape coercion, so `fan_out(fan_in($s))` reproduces the type-keyed arrays byte-for-byte. Coercion stays at read time where it already was.
+- **`id` stays the per-type index**, not the kind-list position. `TitleSlugHandler::write_rule_status()` persists per-rule state against it, so re-basing it would silently repoint every stored status. Both projections derive it from *position*, so they agree even on a sparse stored array — the kind list has no keys to preserve, so a key-based id would diverge silently.
+- **The kind map and the storage layer's valid-type list are the same set.** A rule type added to one and not the other fails the harness instead of silently reading zero rules, which is what lets `get_enabled_rules()` carry no type-keyed fallback.
+
+Together these make `get_kind_rules($kind, ['type' => X])` element-for-element equal to `get_rules(X)` — which is why every handler moved onto the kind list with no handler file changes.
+
 ## Data conversion tool
 
 [includes/conversion/](../includes/conversion/)

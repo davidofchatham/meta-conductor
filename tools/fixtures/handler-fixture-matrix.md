@@ -443,6 +443,12 @@ their manifest values. Then re-seed. Verified afterward: `mc_item` count = 8
 
 ## Harnesses
 
+- **H10 — `tests/verify-kind-lists.php`** (static, no WP): the 7-type-arrays →
+  2-kind-lists fan-in (#56) — idempotent, lossless, every legacy rule shape
+  round-trips, and the kind read path reproduces the type read path element for
+  element (`id` included). This is Phase 4 Gate 1; it is what stands in for a
+  behaviour sweep on the transform itself, since a sweep can only show that the
+  rules it happens to exercise still fire.
 - **H7 — `tests/verify-fixture-manifest.php`** (static, no WP): manifest
   coherence — dangling fixture slugs, parent-before-child ordering, unknown
   rule types/value tokens, and the isolation invariant (every rule's post-type

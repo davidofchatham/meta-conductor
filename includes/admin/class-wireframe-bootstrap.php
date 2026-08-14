@@ -633,6 +633,20 @@ class WireframeBootstrap {
             $storage->maybe_migrate_acf_ref_storage();
         }
 
+        // Fan-in of the 7 type-keyed rule arrays into the two effect-kind
+        // ordered lists (ADR 0003, #56). Runs AFTER the acf-ref rewrite above
+        // so the persisted lists carry already-key-renamed related_post_terms
+        // rows. Additive — the type-keyed arrays are left untouched — and it
+        // writes only when the recomputed lists differ from the stored ones,
+        // which also repairs the staleness an admin save leaves behind (it
+        // merges over the saved option, carrying the old lists through).
+        // Handlers read a list DERIVED at read time, so front-end and cron
+        // requests — which never reach this boot — see the same rules whether
+        // or not this write has happened.
+        if (method_exists($storage, 'sync_kind_lists')) {
+            $storage->sync_kind_lists();
+        }
+
         // WireframeConfig autoloads via PSR-4 (autoload.php) — no manual require (Phase 2a).
 
         // Multi-page mode with one page. The single-page menu_slug bug

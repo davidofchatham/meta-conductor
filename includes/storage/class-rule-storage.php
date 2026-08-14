@@ -59,6 +59,32 @@ interface RuleStorage {
     public function get_raw_settings(): array;
 
     /**
+     * Get all rules in one effect-kind list, in authored order.
+     *
+     * The kind lists (`term_rules`, `format_rules`) are the ordered rule model
+     * of ADR 0003: every row carries its own `type`, and order is array
+     * position. Filtering on `['type' => X]` yields a result element-for-element
+     * equal to `get_rules(X, ...)`, which is what lets handlers move onto the
+     * kind list without behaviour change.
+     *
+     * @since 0.8.0
+     * @param string $kind    Kind list key (see get_kind_for_type()).
+     * @param array  $filters Same filters as get_rules(), plus:
+     *                        - 'type' (string): keep only rows of this rule type
+     * @return array Array of rules; empty if the kind is unknown.
+     */
+    public function get_kind_rules(string $kind, array $filters = []): array;
+
+    /**
+     * Resolve which kind list a rule type lives in.
+     *
+     * @since 0.8.0
+     * @param string $type Rule type key.
+     * @return string Kind key, or '' if the type is unknown.
+     */
+    public function get_kind_for_type(string $type): string;
+
+    /**
      * Get a single rule by type and ID
      *
      * @since 0.2.0
