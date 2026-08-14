@@ -13,6 +13,9 @@ namespace BWS\MetaConductor\Admin;
 
 use BWS\MetaConductor\TaxonomyManager;
 use BWS\MetaConductor\Conversion\ConversionUi;
+use BWS\MetaConductor\Handlers\HierarchicalHandler;
+use BWS\MetaConductor\Storage\OptionRuleStorage;
+use BWS\MetaConductor\Storage\RuleStorage;
 
 if (!defined('ABSPATH')) {
     exit;
@@ -37,18 +40,71 @@ class WireframeBootstrap {
         // from the related path — generalize later if shapes converge.
         add_filter('wp-wireframe/save/payload', [self::class, 'snapshot_acf_reference_labels'], 10, 1);
 
-        // Snapshot the propagation row title (SPEC §V11). post_type → plural
-        // post_types (Phase 3) broke the old {post_type} token; resolve human
-        // labels at save like the others.
-        add_filter('wp-wireframe/save/payload', [self::class, 'snapshot_propagation_labels'], 10, 1);
-
-        // Snapshot the time-based row title (SPEC §V11). Term + scope + window.
-        add_filter('wp-wireframe/save/payload', [self::class, 'snapshot_time_based_labels'], 10, 1);
+        // Snapshot every row title in the ordered term-rule list (SPEC §V11).
+        // One hook for the whole repeater, dispatching on each row's `type` —
+        // the per-type propagation and time-based hooks rescoped onto it when
+        // the config collapsed (#57), and hierarchical + level-restriction
+        // gained titles for the first time, which is what finally makes the
+        // "[Disabled] " prefix uniform across the list (#30).
+        add_filter('wp-wireframe/save/payload', [self::class, 'snapshot_term_rule_labels'], 10, 1);
 
         // Snapshot the General-tab claim-override row title. Without it the
         // repeater interpolates the raw stored value ("category: replace"),
-        // the one surface the claim vocabulary would miss (ADR 0004).
+        // the one surface the claim vocabulary would miss (ADR 0004). This is
+        // the one snapshot that did NOT rescope onto a repeater — it belongs
+        // to the per-taxonomy default, not to a rule (#53 §2).
         add_filter('wp-wireframe/save/payload', [self::class, 'snapshot_claim_override_labels'], 10, 1);
+
+        // Project the ordered lists back onto the type-keyed arrays handlers
+        // still read. Priority 20: strictly AFTER the snapshots above, so the
+        // row titles they bake are part of what gets projected.
+        add_filter('wp-wireframe/save/payload', [self::class, 'fan_out_rule_lists'], 20, 1);
+    }
+
+    /**
+     * Project each ordered kind list onto the type-keyed arrays.
+     *
+     * Since #57 the repeater is the WRITER of `term_rules`, but every handler
+     * still reads rules derived from the type-keyed arrays
+     * (`OptionRuleStorage::get_kind_rules()` fans them in at read time — #66
+     * flips that). Without this hook a rule authored in the repeater would
+     * save, render back correctly, and never fire.
+     *
+     * Injected keys survive because this runs on `wp-wireframe/save/payload`,
+     * after the Sanitizer and before the merge into saved state — the same
+     * seam the row-title snapshots use. That merge is
+     * `array_merge($saved, $clean)`, so writing a type's array here REPLACES
+     * it wholesale, which is what makes a deletion in the repeater actually
+     * delete rather than leave an orphan behind.
+     *
+     * Only types the repeater authors are written. A kind list is not touched
+     * at all unless the payload carries it, so saving an unrelated tab cannot
+     * blank a rule array.
+     *
+     * @since 0.8.0
+     * @param array $clean_values Sanitized top-level field map.
+     * @return array
+     */
+    public static function fan_out_rule_lists(array $clean_values): array {
+        foreach ([OptionRuleStorage::KIND_TERM, OptionRuleStorage::KIND_FORMAT] as $kind) {
+            // array_key_exists, not isset/empty: an emptied repeater posts an
+            // empty array, and that has to clear the type arrays rather than
+            // be mistaken for "this tab wasn't submitted".
+            if (!array_key_exists($kind, $clean_values) || !is_array($clean_values[$kind])) {
+                continue;
+            }
+
+            $types = OptionRuleStorage::migrated_types_for_kind($kind);
+            if (empty($types)) {
+                continue;
+            }
+
+            foreach (OptionRuleStorage::fan_out_types($clean_values[$kind], $types) as $type => $rows) {
+                $clean_values[$type] = $rows;
+            }
+        }
+
+        return $clean_values;
     }
 
     /**
@@ -181,42 +237,37 @@ class WireframeBootstrap {
     }
 
     /**
-     * Assemble each propagation rule's row title (SPEC §V11).
+     * Assemble the row title for every rule in the ordered term-rule list
+     * (SPEC §V11).
      *
-     * Hooked on `wp-wireframe/save/payload`. Schema:
-     *   {Scope: }Copy {Taxonomy} terms to children{ (claim)}
-     *   - Scope prefix ("Pages: ") only when the rule is restricted to specific
-     *     post types; omitted when it applies to all (empty post_types).
-     *   - claim suffix always shown.
-     *   e.g. "Pages: Copy Breakers terms to children (owning)"
-     *        "Copy Categories terms to children (contributing)"
-     * No arrow — direction is stated in words ("to children").
+     * Hooked on `wp-wireframe/save/payload`, which fires AFTER the Sanitizer
+     * (so `row_title` survives despite not being editable) and before the
+     * merge into saved state. One hook for the whole repeater: it dispatches
+     * on each row's `type`, so a rule type's title schema stays one function
+     * while the disabled marker, the escaping and the "which key holds the
+     * rules" question are answered once for all of them.
      *
-     * @param array $clean_values
+     * Each per-type builder returns UNESCAPED text and is escaped here, once
+     * — the same discipline the term/taxonomy label helpers already follow.
+     *
+     * @since 0.8.0 Replaces snapshot_propagation_labels + snapshot_time_based_labels.
+     * @param array $clean_values Sanitized top-level field map.
      * @return array
      */
-    public static function snapshot_propagation_labels(array $clean_values): array {
-        if (empty($clean_values['propagation_rules']) || !is_array($clean_values['propagation_rules'])) {
+    public static function snapshot_term_rule_labels(array $clean_values): array {
+        $key = OptionRuleStorage::KIND_TERM;
+
+        if (empty($clean_values[$key]) || !is_array($clean_values[$key])) {
             return $clean_values;
         }
 
-        foreach ($clean_values['propagation_rules'] as &$rule) {
+        foreach ($clean_values[$key] as &$rule) {
             if (!is_array($rule)) {
                 continue;
             }
 
-            $scope    = self::propagation_scope_prefix($rule['post_types'] ?? []);
-            $tax      = self::taxonomy_label($rule['taxonomy'] ?? '');
-            $claim = self::claim_label($rule['conflict_handling'] ?? 'merge');
-
-            $title = sprintf(
-                /* translators: 1: taxonomy label 2: claim */
-                __('Copy %1$s terms to children (%2$s)', 'meta-conductor'),
-                $tax,
-                $claim
-            );
-
-            $rule['row_title'] = self::disabled_prefix($rule) . $scope . \esc_html($title);
+            $rule['row_title'] = self::disabled_prefix($rule)
+                . \esc_html(self::term_rule_title($rule));
         }
         unset($rule);
 
@@ -224,16 +275,260 @@ class WireframeBootstrap {
     }
 
     /**
-     * Leading "Post type: " prefix for the propagation row title, shown ONLY
-     * when the rule is restricted to specific post types. Empty (= applies to
-     * all hierarchical types) ⇒ '' so the title reads "Copy … terms to children".
+     * Bring stored rules up to what the ordered repeater expects, before
+     * Wireframe reads the settings option raw.
+     *
+     * Two repairs, one write. Both exist because **Wireframe reads the option
+     * directly** — it does not go through the storage layer's read-time
+     * adapters — so anything a handler tolerates on read but the config does
+     * not declare gets rewritten by the first save of the settings page
+     * (`RepeaterField::sanitize` rebuilds each row from declared subfields
+     * only, filling defaults). That makes a read-time-only adaptation unsafe
+     * for the admin path, which is exactly what architecture invariant #1
+     * warns about.
+     *
+     * 1. **`inheritance_behavior` (#16).** A hierarchical row saved before the
+     *    outcome selector carries only `hierarchy_direction` +
+     *    `expansion_behavior`. Left alone, the form would bind the absent new
+     *    key, show its `ancestors` default, and the next save would persist
+     *    that — silently turning a `parent_to_child` rule into an ancestors
+     *    one. `HierarchicalHandler::resolve_behavior()` still reads the legacy
+     *    pair, which covers front-end and cron requests that never reach this
+     *    boot; this is the admin half.
+     * 2. **`row_title`.** A save-time snapshot, so a rule that reached storage
+     *    some other way — a seeded fixture, `save_rule()` from WP-CLI, an
+     *    import — has none, and `title_template` renders its collapsed row
+     *    blank. The per-type repeaters mostly hid this by interpolating a live
+     *    token (`{taxonomy}`) instead; one shared template means one shared
+     *    fix.
+     *
+     * The result is written to BOTH the ordered list and the type-keyed
+     * arrays, through the same fan-out the save path uses. That is not
+     * optional: `authored_kind_list()` decides whether the stored list is
+     * still trustworthy by comparing it against those arrays, so repairing one
+     * side only would make them disagree and get the authored order thrown
+     * away on the next load.
+     *
+     * Self-limiting — once every row is migrated and titled there is nothing
+     * to do, so this is at most one write per rule set, not one per admin load.
+     *
+     * @since 0.8.0
+     * @param RuleStorage $storage The instance handlers hold this request.
+     * @return void
+     */
+    private static function repair_stored_rules(RuleStorage $storage): void {
+        $key      = OptionRuleStorage::KIND_TERM;
+        $settings = $storage->get_raw_settings();
+        $rows     = $settings[$key] ?? [];
+
+        if (!is_array($rows) || empty($rows)) {
+            return;
+        }
+
+        $repaired = [];
+        foreach ($rows as $row) {
+            $repaired[] = is_array($row) ? self::migrate_inheritance_behavior($row) : $row;
+        }
+
+        $repaired = self::snapshot_term_rule_labels([$key => $repaired])[$key];
+
+        if ($repaired === $rows) {
+            return;
+        }
+
+        $settings = array_merge($settings, self::fan_out_rule_lists([$key => $repaired]));
+
+        // update_option returns false for a genuine failure AND for a no-op on
+        // equality; here the values provably differ, so false can only mean the
+        // write failed. Leaving the request cache pointing at the repaired rows
+        // in that case would have handlers act on rules that are not in the
+        // database. (architecture.md invariant #7)
+        if (!update_option(OptionRuleStorage::OPTION_NAME, $settings)) {
+            return;
+        }
+
+        // Drop the cache so nothing in this request keeps serving the
+        // pre-repair rows.
+        $storage->clear_cache();
+    }
+
+    /**
+     * Rewrite a hierarchical row's legacy direction/expansion pair into the
+     * `inheritance_behavior` outcome the config now authors (#16).
+     *
+     * Only ever fills in a MISSING key — a row that already names an outcome
+     * is returned untouched, and so is a row of any other type. The legacy
+     * keys are dropped once translated: `RepeaterField::sanitize` would drop
+     * them on the next save anyway (they are no longer declared subfields), so
+     * carrying them would only make the stored shape lie about what is read.
+     *
+     * @since 0.8.0
+     * @param array $row One term-rule row.
+     * @return array
+     */
+    private static function migrate_inheritance_behavior(array $row): array {
+        if (($row['type'] ?? '') !== 'hierarchical_rules'
+            || (string) ($row['inheritance_behavior'] ?? '') !== '') {
+            return $row;
+        }
+
+        if (!isset($row['hierarchy_direction']) && !isset($row['expansion_behavior'])) {
+            return $row;
+        }
+
+        // behavior_key() resolves the pair through the same map the handler
+        // runs on, so the migrated row behaves as the legacy one did.
+        $outcome = HierarchicalHandler::behavior_key($row);
+
+        // The one pair that names no outcome is parent_to_child + never, which
+        // applies nothing at all. Preserve that as a disabled rule rather than
+        // inventing a behaviour it never had.
+        if ($outcome === '') {
+            $row['enabled'] = false;
+            $outcome        = 'descendants_smart';
+        }
+
+        $row['inheritance_behavior'] = $outcome;
+        unset($row['hierarchy_direction'], $row['expansion_behavior']);
+
+        return $row;
+    }
+
+    /**
+     * The unescaped row title for one term rule, by type.
+     *
+     * An unrecognised or absent `type` is named rather than left blank: the
+     * `type` select is `required`, so this should be unreachable through the
+     * admin, but a row that somehow lacks one still has to stay findable in a
+     * collapsed list.
+     *
+     * @param array $rule Clean rule values.
+     * @return string Unescaped.
+     */
+    private static function term_rule_title(array $rule): string {
+        switch ((string) ($rule['type'] ?? '')) {
+            case 'propagation_rules':
+                return self::propagation_title($rule);
+            case 'time_based_rules':
+                return self::time_based_title($rule);
+            case 'hierarchical_rules':
+                return self::hierarchical_title($rule);
+            case 'hierarchical_level_restriction_rules':
+                return self::level_restriction_title($rule);
+        }
+
+        return __('(no rule type chosen)', 'meta-conductor');
+    }
+
+    /**
+     * Propagation title. Schema:
+     *   {Scope: }Copy {Taxonomy} terms to children ({claim})
+     *   e.g. "Pages: Copy Breakers terms to children (owning)"
+     *        "Copy Categories terms to children (contributing)"
+     * No arrow — direction is stated in words ("to children").
+     *
+     * @param array $rule
+     * @return string Unescaped.
+     */
+    private static function propagation_title(array $rule): string {
+        return self::scope_prefix($rule['post_types'] ?? []) . sprintf(
+            /* translators: 1: taxonomy label 2: claim */
+            __('Copy %1$s terms to children (%2$s)', 'meta-conductor'),
+            self::taxonomy_label($rule['taxonomy'] ?? ''),
+            self::claim_label($rule['conflict_handling'] ?? 'merge')
+        );
+    }
+
+    /**
+     * Hierarchical inheritance title. Schema:
+     *   {Scope: }Inherit {Taxonomy}: {outcome} ({depth})
+     *   e.g. "Inherit Categories: ancestors (all levels)"
+     *        "Pages: Inherit Shakers: ancestors and descendants (one level)"
+     *
+     * The outcome phrase is derived through HierarchicalHandler::behavior_key()
+     * rather than read off the row, so a legacy row storing only the old
+     * direction/expansion pair still gets the title its behaviour deserves
+     * (#16).
+     *
+     * @since 0.8.0
+     * @param array $rule
+     * @return string Unescaped.
+     */
+    private static function hierarchical_title(array $rule): string {
+        $outcomes = [
+            'ancestors'          => __('ancestors', 'meta-conductor'),
+            'descendants_smart'  => __('descendants when none picked', 'meta-conductor'),
+            'descendants_always' => __('descendants', 'meta-conductor'),
+            'both_smart'         => __('ancestors, and descendants when none picked', 'meta-conductor'),
+            'both_always'        => __('ancestors and descendants', 'meta-conductor'),
+        ];
+
+        $key     = HierarchicalHandler::behavior_key($rule);
+        $outcome = $outcomes[$key] ?? __('nothing', 'meta-conductor');
+
+        $depth = (($rule['inheritance_depth'] ?? 'all') === 'immediate')
+            ? __('one level', 'meta-conductor')
+            : __('all levels', 'meta-conductor');
+
+        return self::scope_prefix($rule['post_types'] ?? []) . sprintf(
+            /* translators: 1: taxonomy label 2: what is applied 3: how far up/down the tree */
+            __('Inherit %1$s: %2$s (%3$s)', 'meta-conductor'),
+            self::taxonomy_label($rule['taxonomy'] ?? ''),
+            $outcome,
+            $depth
+        );
+    }
+
+    /**
+     * Level-restriction title. Schema:
+     *   {Scope: }Restrict {Taxonomy} to {mode}{, keeping ancestors}
+     *   e.g. "Restrict Shakers to one term per level"
+     *        "Pages: Restrict Shakers to the deepest level, keeping ancestors"
+     *
+     * @since 0.8.0
+     * @param array $rule
+     * @return string Unescaped.
+     */
+    private static function level_restriction_title(array $rule): string {
+        $modes = [
+            'one_per_level'   => __('one term per level', 'meta-conductor'),
+            'deepest_only'    => __('the deepest level', 'meta-conductor'),
+            'shallowest_only' => __('the shallowest level', 'meta-conductor'),
+        ];
+
+        $mode = $modes[(string) ($rule['restriction_mode'] ?? 'one_per_level')]
+            ?? $modes['one_per_level'];
+
+        $title = self::scope_prefix($rule['post_types'] ?? []) . sprintf(
+            /* translators: 1: taxonomy label 2: which depths may keep terms */
+            __('Restrict %1$s to %2$s', 'meta-conductor'),
+            self::taxonomy_label($rule['taxonomy'] ?? ''),
+            $mode
+        );
+
+        // One meaning in every mode as of 0.8.0 (#32), so the clause is shown
+        // whenever the flag is set rather than only in some modes.
+        if (!empty($rule['include_ancestors'])) {
+            $title .= __(', keeping ancestors', 'meta-conductor');
+        }
+
+        return $title;
+    }
+
+    /**
+     * Leading "Post type: " prefix for a row title, shown ONLY when the rule
+     * is restricted to specific post types. Empty (= applies to all) ⇒ '' so
+     * the title reads as a plain sentence.
+     *
+     * Unescaped — every caller feeds its result through the single esc_html()
+     * in snapshot_term_rule_labels().
      *
      * @param mixed $post_types Checkbox {slug:bool} map or list of slugs.
-     * @return string Unescaped, trailing ": " when present.
+     * @return string Trailing ": " when present.
      */
-    private static function propagation_scope_prefix($post_types): string {
+    private static function scope_prefix($post_types): string {
         $labels = self::post_type_labels($post_types);
-        return empty($labels) ? '' : \esc_html(implode(', ', $labels)) . ': ';
+        return empty($labels) ? '' : implode(', ', $labels) . ': ';
     }
 
     /**
@@ -267,7 +562,7 @@ class WireframeBootstrap {
             $tax   = self::taxonomy_label($slug);
             $claim = self::claim_label($row['mode'] ?? 'merge');
 
-            // ': ' as a literal, matching snapshot_time_based_labels — a
+            // ': ' as a literal, matching the time-based title — a
             // placeholders-and-punctuation-only string is not worth translating.
             $row['row_title'] = \esc_html(($tax !== '' ? $tax : $slug) . ': ' . $claim);
         }
@@ -298,10 +593,8 @@ class WireframeBootstrap {
     }
 
     /**
-     * Assemble each time-based rule's row title (SPEC §V11).
-     *
-     * Hooked on `wp-wireframe/save/payload`. Date-first (the window is the most
-     * salient part of a manually configured date rule), then a sentence:
+     * Time-based (date window) title. Date-first — the window is the most
+     * salient part of a manually configured date rule — then a sentence:
      *   {start}–{end}: Apply {target} to {scope}{ with {filter}}
      *   - dates joined by an en dash, no surrounding spaces.
      *   - scope = "posts" (all types) or the post-type labels (when restricted).
@@ -310,42 +603,25 @@ class WireframeBootstrap {
      *   e.g. "2026-05-26–2026-05-27: Apply Shakers: Grandchild ii to posts"
      *        "2026-05-26–2026-05-27: Apply … to Pages with Breakers: Term A"
      *
-     * @param array $clean_values
-     * @return array
+     * @param array $rule
+     * @return string Unescaped.
      */
-    public static function snapshot_time_based_labels(array $clean_values): array {
-        if (empty($clean_values['time_based_rules']) || !is_array($clean_values['time_based_rules'])) {
-            return $clean_values;
-        }
+    private static function time_based_title(array $rule): string {
+        $start  = (string) ($rule['start_date'] ?? '');
+        $end    = (string) ($rule['end_date'] ?? '');
+        $target = self::term_label($rule['target_term_id'] ?? null);
 
-        foreach ($clean_values['time_based_rules'] as &$rule) {
-            if (!is_array($rule)) {
-                continue;
-            }
+        // en dash, no surrounding spaces.
+        $window = ($start !== '' || $end !== '') ? $start . "\xE2\x80\x93" . $end . ': ' : '';
 
-            $start  = (string) ($rule['start_date'] ?? '');
-            $end    = (string) ($rule['end_date'] ?? '');
-            $target = self::term_label($rule['target_term_id'] ?? null);
-            $scope  = self::time_based_scope_phrase($rule['post_types'] ?? []);
-            $filter = self::time_based_filter_clause($rule);
+        $sentence = sprintf(
+            /* translators: 1: target term 2: post-type scope phrase */
+            __('Apply %1$s to %2$s', 'meta-conductor'),
+            $target !== '' ? $target : __('(no term)', 'meta-conductor'),
+            self::time_based_scope_phrase($rule['post_types'] ?? [])
+        );
 
-            // en dash, no surrounding spaces.
-            $window = ($start !== '' || $end !== '') ? $start . "\xE2\x80\x93" . $end . ': ' : '';
-
-            $sentence = sprintf(
-                /* translators: 1: target term 2: post-type scope phrase */
-                __('Apply %1$s to %2$s', 'meta-conductor'),
-                $target !== '' ? $target : __('(no term)', 'meta-conductor'),
-                $scope
-            );
-
-            $title = $window . $sentence . $filter;
-
-            $rule['row_title'] = self::disabled_prefix($rule) . \esc_html($title);
-        }
-        unset($rule);
-
-        return $clean_values;
+        return $window . $sentence . self::time_based_filter_clause($rule);
     }
 
     /**
@@ -646,6 +922,11 @@ class WireframeBootstrap {
         if (method_exists($storage, 'sync_kind_lists')) {
             $storage->sync_kind_lists();
         }
+
+        // Bring the persisted list up to what the repeater expects to render,
+        // BEFORE Wireframe reads the option raw. Runs after the sync so it
+        // works on the list the admin is about to see. (#57)
+        self::repair_stored_rules($storage);
 
         // WireframeConfig autoloads via PSR-4 (autoload.php) — no manual require (Phase 2a).
 

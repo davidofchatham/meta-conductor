@@ -149,15 +149,16 @@ class TitleSlugConfig {
      * Public post types minus attachment (title/slug rules don't apply to media).
      */
     private static function post_type_options_no_attachment(): array {
-        $options    = ['' => __('— Select post type —', 'meta-conductor')];
         $post_types = get_post_types(['public' => true], 'objects');
         unset($post_types['attachment']);
 
-        foreach ($post_types as $post_type) {
-            $options[$post_type->name] = $post_type->label;
-        }
-
-        return $options;
+        // Shares ConfigHelpers' single slug ⇒ label loop (#38 cluster 1); the
+        // attachment filter is this caller's business, which is exactly why
+        // that helper takes objects rather than a registry query.
+        return ConfigHelpers::label_options(
+            $post_types,
+            __('— Select post type —', 'meta-conductor')
+        );
     }
 
     /**

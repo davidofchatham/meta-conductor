@@ -87,9 +87,8 @@ class HierarchicalHandler extends UnifiedHandlerBase {
             return;
         }
 
-        $direction = $rule['hierarchy_direction'] ?? 'child_to_parent';
-        $depth     = $rule['inheritance_depth'] ?? 'all';
-        $expansion = $rule['expansion_behavior'] ?? 'smart';
+        [$direction, $expansion] = self::resolve_behavior($rule);
+        $depth                   = $rule['inheritance_depth'] ?? 'all';
 
         // Tentative user terms: what's on the post minus what we auto-added before.
         $user_terms = array_values(array_diff($current_terms, $prev_auto));
@@ -122,6 +121,100 @@ class HierarchicalHandler extends UnifiedHandlerBase {
         $this->processing = true;
         wp_set_object_terms($post_id, $final, $taxonomy);
         $this->processing = false;
+    }
+
+    /**
+     * The five author-facing outcomes, mapped to the mechanism pair.
+     *
+     * @since 0.8.0
+     * @var array<string,array{0:string,1:string}> outcome => [direction, expansion]
+     */
+    private const BEHAVIOR_MAP = [
+        'ancestors'          => ['child_to_parent', 'never'],
+        'descendants_smart'  => ['parent_to_child', 'smart'],
+        'descendants_always' => ['parent_to_child', 'merge'],
+        'both_smart'         => ['both',            'smart'],
+        'both_always'        => ['both',            'merge'],
+    ];
+
+    /**
+     * Resolve a rule to the (direction, expansion) pair compute_expansion()
+     * takes.
+     *
+     * ### #16, settled in 0.8.0
+     *
+     * The config used to expose the mechanism directly: `hierarchy_direction`
+     * × `expansion_behavior`, nine combinations for six distinct outcomes.
+     * Two combinations spelled "ancestors only" (`child_to_parent` + any
+     * expansion, and `both` + `never`), and one — `parent_to_child` +
+     * `never` — did nothing whatsoever while looking like a configured rule.
+     * Authors picked mechanisms and got outcomes they had not predicted.
+     *
+     * One `inheritance_behavior` selector replaces both, with five options
+     * that ARE the five useful outcomes. Nothing downstream changed: this
+     * maps straight back onto the pair the expansion code already implements,
+     * which is why the collapse is a config change rather than a rewrite.
+     *
+     * A row saved before the collapse carries only the old pair, so that is
+     * the fallback — reading it exactly as before, defaults included. This is
+     * the RUNTIME half only, and it covers front-end and cron requests, which
+     * never reach the admin boot. The admin half is a real rewrite,
+     * `WireframeBootstrap::migrate_inheritance_behavior()`: Wireframe reads
+     * the settings option raw, so a row left un-migrated would render with the
+     * new select's default and be persisted as such on the next save. A
+     * read-time fallback alone would have silently converted rules.
+     *
+     * @since 0.8.0
+     * @param array $rule Rule configuration.
+     * @return array{0:string,1:string} [direction, expansion]
+     */
+    private static function resolve_behavior(array $rule): array {
+        $behavior = $rule['inheritance_behavior'] ?? '';
+
+        if (isset(self::BEHAVIOR_MAP[$behavior])) {
+            return self::BEHAVIOR_MAP[$behavior];
+        }
+
+        // Legacy row (or an unrecognised value): the mechanism pair as stored.
+        return [
+            $rule['hierarchy_direction'] ?? 'child_to_parent',
+            $rule['expansion_behavior'] ?? 'smart',
+        ];
+    }
+
+    /**
+     * The author-facing outcome a rule resolves to, for the row-title
+     * snapshot. Legacy rows are named by the outcome their stored mechanism
+     * pair produces, so a title never reads "(none)" for a working rule.
+     *
+     * @since 0.8.0
+     * @param array $rule Rule configuration.
+     * @return string One of BEHAVIOR_MAP's keys, or '' when the pair is the
+     *                degenerate parent_to_child + never (applies nothing).
+     */
+    public static function behavior_key(array $rule): string {
+        [$direction, $expansion] = self::resolve_behavior($rule);
+
+        foreach (self::BEHAVIOR_MAP as $key => $pair) {
+            if ($pair === [$direction, $expansion]) {
+                return $key;
+            }
+        }
+
+        // Combinations the five outcomes don't spell exactly: 'always' is a
+        // synonym of 'merge' downstream, and child_to_parent ignores its
+        // expansion entirely.
+        if ($direction === 'child_to_parent') {
+            return 'ancestors';
+        }
+        if ($expansion === 'always') {
+            return $direction === 'both' ? 'both_always' : 'descendants_always';
+        }
+        if ($direction === 'both') {
+            return 'ancestors';
+        }
+
+        return '';
     }
 
     /**
@@ -256,6 +349,15 @@ class HierarchicalHandler extends UnifiedHandlerBase {
             return false;
         }
 
+        // `inheritance_behavior` (0.8.0, #16) supersedes the direction/expansion
+        // pair; validate whichever the row carries. resolve_behavior() falls
+        // back to the pair when the outcome key is absent OR unrecognised, so
+        // an unknown outcome must be rejected here rather than quietly running
+        // as child_to_parent.
+        if (isset($rule['inheritance_behavior']) && $rule['inheritance_behavior'] !== '') {
+            return isset(self::BEHAVIOR_MAP[$rule['inheritance_behavior']]);
+        }
+
         $valid_directions = ['child_to_parent', 'parent_to_child', 'both'];
         if (isset($rule['hierarchy_direction']) && !in_array($rule['hierarchy_direction'], $valid_directions)) {
             return false;
@@ -282,9 +384,8 @@ class HierarchicalHandler extends UnifiedHandlerBase {
 
         $prev_auto  = $this->get_auto_terms($post_id, $taxonomy);
         $user_terms = array_values(array_diff($current_ids, $prev_auto));
-        $direction  = $rule['hierarchy_direction'] ?? 'child_to_parent';
-        $depth      = $rule['inheritance_depth'] ?? 'all';
-        $expansion  = $rule['expansion_behavior'] ?? 'smart';
+        [$direction, $expansion] = self::resolve_behavior($rule);
+        $depth                   = $rule['inheritance_depth'] ?? 'all';
 
         $auto = $this->compute_expansion($user_terms, $taxonomy, $direction, $depth, $expansion);
 

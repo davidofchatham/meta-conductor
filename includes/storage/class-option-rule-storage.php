@@ -109,6 +109,55 @@ class OptionRuleStorage implements RuleStorage {
     ];
 
     /**
+     * Rule types whose AUTHORING SURFACE has collapsed into the ordered
+     * kind-list repeater (#57, §2 batch 1).
+     *
+     * This is the one fact that tells storage which persisted kind list is
+     * *authored* rather than *derived*, and it exists here — not on the
+     * config class — because `authored_kind_list()` runs on every write this
+     * class owns, including CLI and front-end paths that must never resolve
+     * `Admin\Config` (CLAUDE.md don't #4).
+     *
+     * The four here are the ones NOT live on a real site, so collapsing them
+     * first was free. `related_rules` and `related_post_terms_rules` keep
+     * their own per-type repeaters until #58, and `title_slug_rules` until
+     * #59; a row of theirs must NOT appear in a persisted kind list while
+     * that is true, because the repeater renders every row in the key it is
+     * bound to and Wireframe DROPS any subfield the config does not declare
+     * (`RepeaterField::sanitize`) — rendering a live rule the repeater has no
+     * subfields for would silently gut it on the next save.
+     *
+     * Add a type here in the same change that gives it repeater subfields,
+     * never before. #66 empties the exception list by moving the last one in.
+     *
+     * @since 0.8.0
+     * @var string[]
+     */
+    private const CONFIG_MIGRATED_TYPES = [
+        'propagation_rules',
+        'time_based_rules',
+        'hierarchical_rules',
+        'hierarchical_level_restriction_rules',
+    ];
+
+    /**
+     * The migrated types belonging to one kind, in KIND_TYPES order.
+     *
+     * Empty ⇒ no repeater is bound to that kind's list yet, so the list stays
+     * a pure derived duplicate of the type-keyed arrays.
+     *
+     * @since 0.8.0
+     * @param string $kind KIND_TERM or KIND_FORMAT.
+     * @return string[]
+     */
+    public static function migrated_types_for_kind(string $kind): array {
+        return array_values(array_intersect(
+            self::KIND_TYPES[$kind] ?? [],
+            self::CONFIG_MIGRATED_TYPES
+        ));
+    }
+
+    /**
      * Get all settings from options
      *
      * @return array Complete settings array
@@ -267,28 +316,54 @@ class OptionRuleStorage implements RuleStorage {
      */
     public static function fan_out(array $lists): array {
         $out = [];
-        foreach (self::KIND_TYPES as $kind => $types) {
-            foreach ($types as $type) {
-                $out[$type] = [];
-            }
-        }
 
         foreach (self::KIND_TYPES as $kind => $types) {
-            $rows = $lists[$kind] ?? [];
-            if (!is_array($rows)) {
+            $out = array_merge($out, self::fan_out_types($lists[$kind] ?? [], $types));
+        }
+
+        return $out;
+    }
+
+    /**
+     * Split ONE kind list into just the type-keyed arrays named in $types.
+     *
+     * The half of fan_out() the save path needs: the ordered repeater writes
+     * a kind list, and the types it authors have to land back in their legacy
+     * arrays because handlers still derive their rules from those (#66 flips
+     * that). Restricting to an explicit type list is what keeps a repeater
+     * that authors four of a kind's six types from blanking the other two.
+     *
+     * Rows of any other type are dropped, as is a row with no `type` at all —
+     * the config's `type` select is `required`, so an untyped row cannot reach
+     * here through the admin, and one that arrives some other way names no
+     * array to be written into.
+     *
+     * Every requested type is always present, empty where the list holds no
+     * rows of it — a rule deleted in the repeater must clear its legacy array,
+     * not be left behind by an absent key.
+     *
+     * @since 0.8.0
+     * @param mixed    $rows  One kind list (rows carrying `type`).
+     * @param string[] $types Type keys to extract, in output order.
+     * @return array<string,array[]>
+     */
+    public static function fan_out_types($rows, array $types): array {
+        $out = array_fill_keys($types, []);
+
+        if (!is_array($rows)) {
+            return $out;
+        }
+
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
                 continue;
             }
-            foreach ($rows as $row) {
-                if (!is_array($row)) {
-                    continue;
-                }
-                $type = (string) ($row['type'] ?? '');
-                if (!in_array($type, $types, true)) {
-                    continue;
-                }
-                unset($row['type']);
-                $out[$type][] = $row;
+            $type = (string) ($row['type'] ?? '');
+            if (!in_array($type, $types, true)) {
+                continue;
             }
+            unset($row['type']);
+            $out[$type][] = $row;
         }
 
         return $out;
@@ -319,16 +394,22 @@ class OptionRuleStorage implements RuleStorage {
      * Read a kind list, coerced to the canonical shape handlers consume.
      *
      * **The list is derived at read time**, not read from the persisted
-     * `term_rules` / `format_rules` keys. That is deliberate for the whole
-     * expand phase: the type-keyed arrays are still the WRITE path (the
-     * Wireframe admin writes them directly, bypassing this class), so deriving
-     * is the only way a front-end or cron request is guaranteed to see what the
-     * admin last saved. It also means no admin save can desync behaviour, and
-     * that an emptied rule set cannot resurrect from a stale persisted copy.
-     * `sync_kind_lists()` still PERSISTS the lists, because the
-     * Wireframe admin reads the option raw and the config collapse (#57)
-     * needs the shape to exist in storage; authority flips to the persisted
-     * copy in the contract ticket (#66), when the type-keyed path is deleted.
+     * `term_rules` / `format_rules` keys, and that stays true through the
+     * config collapse. The type-keyed arrays remain the shape every handler
+     * reads, so deriving is the only way a front-end or cron request is
+     * guaranteed to see what the admin last saved. It also means no admin save
+     * can desync behaviour, and that an emptied rule set cannot resurrect from
+     * a stale persisted copy.
+     *
+     * Since #57 the ordered repeater writes the persisted `term_rules` key
+     * directly, and `WireframeBootstrap::fan_out_rule_lists()` projects those
+     * rows back into the type-keyed arrays on the same save — which is what
+     * keeps this derived read seeing repeater edits. The one thing the derived
+     * list therefore CANNOT reproduce is cross-type authored order, because it
+     * groups by type; nothing consumes that order yet (each handler filters to
+     * its own type), and the dispatcher tickets (#60-#64) are where it starts
+     * to matter. Authority flips to the persisted copy in the contract ticket
+     * (#66), when the type-keyed path is deleted.
      *
      * `id` is assigned PER TYPE, not per kind-list position — it stays the
      * index the rule has inside its own type array, exactly as `get_rules()`
@@ -439,11 +520,104 @@ class OptionRuleStorage implements RuleStorage {
      * @return array Settings with both kind lists materialized.
      */
     private static function materialize_kind_lists(array $settings): array {
-        foreach (self::fan_in($settings) as $kind => $rows) {
-            $settings[$kind] = $rows;
+        foreach (array_keys(self::KIND_TYPES) as $kind) {
+            $settings[$kind] = self::authored_kind_list($kind, $settings);
         }
 
         return $settings;
+    }
+
+    /**
+     * What the persisted `term_rules` / `format_rules` key SHOULD hold.
+     *
+     * Two regimes, picked by whether a repeater authors any of the kind's
+     * types (see CONFIG_MIGRATED_TYPES):
+     *
+     * **No migrated types** ⇒ the list is a pure derived duplicate, so it is
+     * simply the fan-in. That is #56's regime, unchanged, and it is still
+     * `format_rules`' regime until #59 moves `title_slug_rules` in.
+     *
+     * **Some migrated types** ⇒ the stored list is AUTHORED — the repeater
+     * wrote the row order, and cross-type order is exactly what the fan-in
+     * cannot reproduce (it groups by type). So the stored list is KEPT as-is
+     * whenever it still agrees with the legacy arrays *as sets per type*,
+     * which is what `fan_out_types()` decides. Only when they disagree — a
+     * CLI `save_rule()`, a seeded fixture, an imported rule set, anything that
+     * wrote a legacy array behind the repeater's back — is authored order
+     * discarded and the list rebuilt, so the repeater shows the new rules
+     * rather than hiding them.
+     *
+     * Rows of NON-migrated types are excluded from the list either way. They
+     * are still authored in their own per-type repeaters, and a row the bound
+     * repeater has no subfields for is gutted on the next save
+     * (`RepeaterField::sanitize` drops undeclared subfields). Handlers are
+     * unaffected: `get_kind_rules()` derives from the legacy arrays and so
+     * still sees all six term types (see its docblock).
+     *
+     * @since 0.8.0
+     * @param string $kind     KIND_TERM or KIND_FORMAT.
+     * @param array  $settings Settings to derive from, and to read the stored list out of.
+     * @return array[] Rows for that kind's persisted key.
+     */
+    public static function authored_kind_list(string $kind, array $settings): array {
+        $migrated = self::migrated_types_for_kind($kind);
+        $derived  = self::fan_in($settings);
+
+        if (empty($migrated)) {
+            return $derived[$kind] ?? [];
+        }
+
+        $stored = $settings[$kind] ?? null;
+
+        if (is_array($stored)) {
+            // Partition the stored list three ways, because the three cases
+            // mean different things:
+            //
+            //   migrated type      → the repeater's to author; keep.
+            //   non-migrated type  → a leftover from the derived regime. Drop
+            //                        it: the rule itself is safe in its own
+            //                        type-keyed array, and leaving it here
+            //                        would hand the repeater a row it has no
+            //                        subfields for.
+            //   no/unknown type    → CORRUPTION, not data. It names no array
+            //                        to live in, so there is nothing to
+            //                        preserve and no honest way to keep it.
+            //                        The `type` select is `required`, so the
+            //                        admin cannot produce one.
+            //
+            // The last case forces the rebuild below rather than being quietly
+            // filtered out of a list we then declare trustworthy — recomputing
+            // from the type-keyed arrays is the only answer that leaves the
+            // stored shape and the authoritative one agreeing.
+            $authored = [];
+            $sound    = true;
+            foreach ($stored as $row) {
+                $type = is_array($row) ? (string) ($row['type'] ?? '') : '';
+                if (in_array($type, $migrated, true)) {
+                    $authored[] = $row;
+                } elseif (!in_array($type, self::KIND_TYPES[$kind], true)) {
+                    $sound = false;
+                    break;
+                }
+            }
+
+            if ($sound
+                && self::fan_out_types($authored, $migrated)
+                    === self::fan_out_types($derived[$kind] ?? [], $migrated)) {
+                return $authored;
+            }
+        }
+
+        // Rebuild: same rows the fan-in produces, minus the types no repeater
+        // authors yet. Order falls back to KIND_TYPES order.
+        $rebuilt = [];
+        foreach ($derived[$kind] ?? [] as $row) {
+            if (is_array($row) && in_array((string) ($row['type'] ?? ''), $migrated, true)) {
+                $rebuilt[] = $row;
+            }
+        }
+
+        return $rebuilt;
     }
 
     /**
@@ -828,27 +1002,28 @@ class OptionRuleStorage implements RuleStorage {
      * legacy shape into the new one.
      *
      * Persisting matters even though reads derive (see get_kind_rules()): the
-     * Wireframe admin reads the settings option RAW, so the config collapse
-     * (#57) can only bind its repeaters to `term_rules`/`format_rules` if
-     * those keys exist in storage. The write is additive — the type-keyed
-     * arrays it derives from are left exactly as they were.
+     * Wireframe admin reads the settings option RAW, so the ordered repeater
+     * (#57) can only bind to `term_rules`/`format_rules` if those keys exist
+     * in storage. The write is additive — the type-keyed arrays it derives
+     * from are left exactly as they were.
      *
      * **Deliberately NOT flag-gated, though #56 asked for "flag-gated".** The
      * flag was asked for to avoid a write on every admin load; writing only
      * when the recomputed lists differ from the stored ones achieves that and
-     * is strictly better, because a one-shot gate would be *wrong* here. The
-     * admin is still the write path for the type-keyed arrays and it saves via
-     * `array_merge($saved, $clean)` (`Rest/SettingsController.php:222`), which
-     * carries the previous `term_rules` through untouched — so the first admin
-     * save after a gated migration would leave the persisted lists holding
-     * pre-edit rows, permanently, with the gate refusing to repair them. That
-     * is precisely the stale copy the config collapse would then bind to.
-     * Handlers never see it (they derive), so this is about the stored shape
-     * being honest, not about runtime behaviour.
+     * is strictly better, because a one-shot gate would be *wrong* here. Any
+     * writer that bypasses the repeater — a CLI `save_rule()`, a seeded
+     * fixture, an import — updates a type-keyed array only, and a one-shot
+     * gate would refuse to ever show those rules in the repeater again.
      *
-     * Idempotent across repeat loads by construction: the lists are a pure
-     * function of the type-keyed arrays, so an unchanged option recomputes to
-     * an identical result and no write happens.
+     * **What "recompute" means changed in #57.** For a kind whose types the
+     * repeater now authors, a plain fan-in would be a *clobber*, not a
+     * refresh: the fan-in groups by type and so cannot reproduce the
+     * cross-type order the author just dragged into place. `authored_kind_list()`
+     * carries that distinction — it keeps the stored list whenever it still
+     * agrees with the type-keyed arrays, and rebuilds only when something
+     * wrote behind the repeater's back. Idempotent across repeat loads either
+     * way: an unchanged option recomputes to an identical result and no write
+     * happens.
      *
      * @since 0.8.0
      * @return bool True if a rewrite was performed AND persisted.
@@ -859,12 +1034,14 @@ class OptionRuleStorage implements RuleStorage {
         // doesn't serve a differently-shaped array than this method wrote.
         $settings = $this->get_all_settings();
 
-        $lists   = self::fan_in($settings);
+        $lists   = [];
         $changed = false;
 
-        foreach ($lists as $kind => $rows) {
-            if (($settings[$kind] ?? null) !== $rows) {
-                $settings[$kind] = $rows;
+        foreach (array_keys(self::KIND_TYPES) as $kind) {
+            $lists[$kind] = self::authored_kind_list($kind, $settings);
+
+            if (($settings[$kind] ?? null) !== $lists[$kind]) {
+                $settings[$kind] = $lists[$kind];
                 $changed         = true;
             }
         }

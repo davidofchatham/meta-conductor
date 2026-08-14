@@ -2,10 +2,16 @@
 /**
  * H6 — Time-based row-title snapshot harness (Phase 3, T4).
  *
- * Exercises WireframeBootstrap::snapshot_time_based_labels() no-WP. Locks the
+ * Exercises the date-window branch of
+ * WireframeBootstrap::snapshot_term_rule_labels() no-WP. Locks the
  * date-first sentence schema: "{start}–{end}: Apply {target} to {scope}{ with
  * {filter}}" — en dash no spaces, "posts" vs post-type scope, filter clause
  * (specific terms > any-taxonomy > none), disabled prefix. (SPEC §V11)
+ *
+ * Rescoped in 0.8.0 (#57): the rules now ride in the ordered `term_rules`
+ * repeater and each row carries `type`, so the fixtures below set it — a row
+ * that lost its type would fall through to the "(no rule type chosen)" title
+ * rather than this schema, and that is worth failing on.
  *
  * Run:  php tests/verify-time-based-labels.php
  *
@@ -15,6 +21,7 @@
 if (!defined('ABSPATH')) {
     define('ABSPATH', __DIR__ . '/');
 }
+define('BWS_META_CONDUCTOR_PATH', dirname(__DIR__) . '/');
 
 if (!function_exists('__'))         { function __($t, $d = 'default') { return $t; } }
 if (!function_exists('esc_html'))   { function esc_html($t) { return $t; } }
@@ -45,16 +52,20 @@ if (!function_exists('get_taxonomy')) {
     }
 }
 
-require dirname(__DIR__) . '/includes/admin/config/class-config-helpers.php';
-require dirname(__DIR__) . '/includes/admin/class-wireframe-bootstrap.php';
+require dirname(__DIR__) . '/vendor/autoload.php';
+require dirname(__DIR__) . '/autoload.php';
 
 use BWS\MetaConductor\Admin\WireframeBootstrap;
+use BWS\MetaConductor\Storage\OptionRuleStorage;
+
+$KIND = OptionRuleStorage::KIND_TERM;
 
 $fail = [];
 $check = function (string $name, bool $cond) use (&$fail) { if (!$cond) { $fail[] = $name; } };
-$title = function (array $rule) {
-    $out = WireframeBootstrap::snapshot_time_based_labels(['time_based_rules' => [$rule]]);
-    return $out['time_based_rules'][0]['row_title'];
+$title = function (array $rule) use ($KIND) {
+    $rule['type'] = 'time_based_rules';
+    $out = WireframeBootstrap::snapshot_term_rule_labels([$KIND => [$rule]]);
+    return $out[$KIND][0]['row_title'];
 };
 
 // Case 1: all types, no filter.
@@ -99,9 +110,9 @@ $t = $title([
 ]);
 $check('disabled prefix first', str_starts_with($t, '[Disabled] '));
 
-// Case 6: non-time-based payload untouched.
-$u = WireframeBootstrap::snapshot_time_based_labels(['other' => 1]);
-$check('non-time-based untouched', $u === ['other' => 1]);
+// Case 6: payload with no rule list untouched.
+$u = WireframeBootstrap::snapshot_term_rule_labels(['other' => 1]);
+$check('non-rule payload untouched', $u === ['other' => 1]);
 
 $total = 11;
 if ($fail) {

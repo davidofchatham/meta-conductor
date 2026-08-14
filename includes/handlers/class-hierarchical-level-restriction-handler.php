@@ -224,21 +224,51 @@ class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
     }
     
     /**
-     * Calculate restricted terms based on hierarchical levels
+     * Calculate restricted terms based on hierarchical levels.
+     *
+     * Two steps, in this order: the mode decides which terms survive, then
+     * `include_ancestors` — if set — adds back the parent chain of whatever
+     * survived.
+     *
+     * ### `include_ancestors` has ONE meaning as of 0.8.0 (#32)
+     *
+     * It used to branch on the mode and mean two different things:
+     * additive in `deepest_only`, and in `one_per_level` a suppression of the
+     * `remove_conflicting_ancestors()` pass. That second meaning was a no-op
+     * in every case — `one_per_level` has already reduced the set to at most
+     * one term per level by the time the pass runs, and the pass only dropped
+     * a term whose ancestor sat on a level holding MORE than one term, which
+     * by then can never be true. So the flag did nothing at all in that mode
+     * while the UI claimed otherwise.
+     *
+     * Redefined to the additive meaning uniformly, which is the one that was
+     * real, and applied in all three modes. `shallowest_only` therefore gains
+     * behaviour it did not have: asking to keep ancestors of terms selected
+     * for being shallowest does pull in still-shallower terms, and that is
+     * what the author asked for.
+     *
+     * The change was free rather than breaking: level restriction runs on the
+     * test site only (CLAUDE.md live-rule-type rule), so no stored rule
+     * needed migrating. Config side: TermRulesConfig::level_restriction_subfields().
+     *
+     * @param int[]  $term_ids Term IDs currently on the post.
+     * @param string $taxonomy Taxonomy slug.
+     * @param array  $rule     Rule configuration.
+     * @return int[] Terms that survive the restriction.
      */
     private function calculate_restricted_terms($term_ids, $taxonomy, $rule) {
         if (empty($term_ids)) {
             return $term_ids;
         }
-        
+
         $restriction_mode = $rule['restriction_mode'] ?? 'one_per_level';
         $include_ancestors = !empty($rule['include_ancestors']);
-        
+
         // Group terms by their hierarchical level
         $terms_by_level = $this->group_terms_by_level($term_ids, $taxonomy);
-        
+
         $final_terms = array();
-        
+
         if ($restriction_mode === 'one_per_level') {
             // Keep only one term per level (prefer the last one added/most specific)
             foreach ($terms_by_level as $level => $level_terms) {
@@ -249,26 +279,22 @@ class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
             // Keep only terms from the deepest level
             $max_level = max(array_keys($terms_by_level));
             $final_terms = $terms_by_level[$max_level];
-            
-            // If including ancestors, add ancestors of the deepest terms
-            if ($include_ancestors) {
-                foreach ($final_terms as $term_id) {
-                    $ancestors = get_ancestors($term_id, $taxonomy);
-                    $final_terms = array_merge($final_terms, $ancestors);
-                }
-            }
         } elseif ($restriction_mode === 'shallowest_only') {
             // Keep only terms from the shallowest level
             $min_level = min(array_keys($terms_by_level));
             $final_terms = $terms_by_level[$min_level];
         }
-        
-        // Remove ancestors that conflict with the restriction rules
-        if (!$include_ancestors && $restriction_mode === 'one_per_level') {
-            $final_terms = $this->remove_conflicting_ancestors($final_terms, $taxonomy);
+
+        // One meaning, every mode: keep the lineage of whatever survived.
+        // Iterate a snapshot — the ancestors being added are not themselves
+        // walked again (get_ancestors already returns the full chain).
+        if ($include_ancestors) {
+            foreach (array_values($final_terms) as $term_id) {
+                $final_terms = array_merge($final_terms, get_ancestors($term_id, $taxonomy));
+            }
         }
-        
-        return array_unique($final_terms);
+
+        return array_values(array_unique($final_terms));
     }
     
     /**
@@ -318,37 +344,13 @@ class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
         return $level;
     }
     
-    /**
-     * Remove ancestors that conflict with level restrictions
-     */
-    private function remove_conflicting_ancestors($term_ids, $taxonomy) {
-        $terms_to_keep = array();
-        $terms_by_level = $this->group_terms_by_level($term_ids, $taxonomy);
-        
-        foreach ($terms_by_level as $level => $level_terms) {
-            foreach ($level_terms as $term_id) {
-                $ancestors = get_ancestors($term_id, $taxonomy);
-                
-                // Check if any ancestors are in the same level restriction
-                $has_conflicting_ancestor = false;
-                foreach ($ancestors as $ancestor_id) {
-                    $ancestor_level = $this->get_term_level($ancestor_id, $taxonomy);
-                    if (isset($terms_by_level[$ancestor_level]) && 
-                        count($terms_by_level[$ancestor_level]) > 1) {
-                        $has_conflicting_ancestor = true;
-                        break;
-                    }
-                }
-                
-                if (!$has_conflicting_ancestor) {
-                    $terms_to_keep[] = $term_id;
-                }
-            }
-        }
-        
-        return $terms_to_keep;
-    }
-    
+    // remove_conflicting_ancestors() lived here until 0.8.0. It ran only on
+    // the `one_per_level` + !include_ancestors path and could not remove
+    // anything on it: the mode had already reduced the set to one term per
+    // level, and the method only dropped a term whose ancestor sat on a level
+    // holding more than one. Deleted with the flag's second meaning (#32) —
+    // see calculate_restricted_terms().
+
     /**
      * Convert term_taxonomy IDs to term IDs
      */

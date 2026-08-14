@@ -56,9 +56,9 @@ Status (L1)          — second root: related/time-based targets live here so
 |---|---|
 | Trigger | `set_object_terms` p10 only. No autosave guard needed in fixtures. |
 | Schema | Hierarchical taxonomy (validated — rejects flat). `mc_topic` ✓. |
-| Data | Posts on `mc_item` with 0 terms (clean slate per scenario). Tree ≥3 deep for `inheritance_depth: immediate` vs `all` distinction; sibling children under one parent for `expansion_behavior: smart` (skip-if-child-selected). |
-| Rule config | `taxonomy: mc_topic`, `post_types: ['mc_item']`, `hierarchy_direction` (child_to_parent / parent_to_child / both), `inheritance_depth` (immediate / all), `expansion_behavior` (smart / always / never). |
-| Rules to seed | 1 baseline (child_to_parent + all + smart). Direction/depth variants toggled per-scenario in UI or via option rewrite. |
+| Data | Posts on `mc_item` with 0 terms (clean slate per scenario). Tree ≥3 deep for `inheritance_depth: immediate` vs `all` distinction; sibling children under one parent for the "only when none picked by hand" outcomes (skip-if-child-selected). |
+| Rule config | `taxonomy: mc_topic`, `post_types: ['mc_item']`, `inheritance_behavior` (ancestors / descendants_smart / descendants_always / both_smart / both_always), `inheritance_depth` (immediate / all). The direction × expansion pair it replaced in 0.8.0 (#16) is still READ when a row carries no `inheritance_behavior`. |
+| Rules to seed | 1 baseline (`ancestors` + all levels). Behavior/depth variants toggled per-scenario in UI or via option rewrite. |
 | Mutates | Same post's `mc_topic` terms; post meta `_bws_auto_terms`. |
 | Scenarios | Assign Harbor (L4) → expect Coastal+East+Region auto-added; remove; promotion case (auto term kept manually). `_bws_auto_terms` asserted directly. |
 | Shared reuse | None (needs hierarchical tax it may freely rewrite). |
@@ -70,8 +70,8 @@ Status (L1)          — second root: related/time-based targets live here so
 | Trigger | `set_object_terms` **p5** (pre-hierarchical) + `acf/save_post` p15. |
 | Schema | Hierarchical taxonomy + **ACF taxonomy-type field** on `mc_topic` (the ACF branch discovers fields by `type==taxonomy && taxonomy==mc_topic`). |
 | Data | Posts holding multiple same-level terms (one_per_level prune → keeps *last*), and mixed-depth sets (deepest_only / shallowest_only). Needs ≥2 depth levels on a post to observe pruning; tree gives 4. |
-| Rule config | `taxonomy: mc_topic`, `restriction_mode` (one_per_level / deepest_only / shallowest_only), `include_ancestors` (only meaningful for deepest_only/one_per_level), `post_types: ['mc_item']`. |
-| Rules to seed | 1 (one_per_level, include_ancestors off). Mode variants per-scenario. |
+| Rule config | `taxonomy: mc_topic`, `restriction_mode` (one_per_level / deepest_only / shallowest_only), `include_ancestors` (0.8.0/#32: one meaning — keep the lineage of whatever the mode kept — and it applies in ALL three modes), `post_types: ['mc_item']`. |
+| Rules to seed | 1 (one_per_level, include_ancestors off). Mode variants per-scenario; sweep include_ancestors=true in each mode, not just deepest_only. |
 | Mutates | Post's `mc_topic` terms (native) AND the ACF field value (write by field key). |
 | Scenarios | Native path: assign East+West (both L2) → one survives. ACF path: set via `mc_topics` field → same prune lands in both channels. Interaction: p5 runs before hierarchical p10 — combined-rule scenario (restriction then expansion) is its own row. |
 | Shared reuse | None. |
@@ -419,6 +419,70 @@ title_slug sweep you MUST first (a) empty the `title_slug_rules` array (so the
 rename doesn't re-fire) and (b) `wp_update_post` the subjects' `post_name` back to
 their manifest values. Then re-seed. Verified afterward: `mc_item` count = 8
 (6 fixtures + 2 solo), all unique names, rule live, no duplicates.
+
+### §8 ordered term repeater (#57, 0.8.0) — results
+
+Run 2026-08-14 on the docker testbed, seeded mc-rules fixture. This is the
+config-collapse sweep the ticket demanded ("every show/hide combination
+verified — no subfield silently dropped at save for any type"). It drives the
+REAL `Validator` + `Sanitizer` + `Conditions` over `TermRulesConfig::section()`
+rather than clicking, because that is the exact code path that decides which
+subfields persist; the UI adds nothing the sanitizer does not.
+
+**§8a per-type round-trip** ✅ One row of each of the four types, populated as
+the UI would. Validation clean; **no submitted value dropped for any type**.
+Surviving keys per row:
+
+| type | keys that persisted |
+|---|---|
+| `propagation_rules` | type, enabled, taxonomy, post_types, hierarchical_post_type_note, post_status, conflict_handling, row_title |
+| `time_based_rules` | type, enabled, post_types, post_status, filter_taxonomies, filter_terms, start_date, end_date, target_term_id, row_title |
+| `hierarchical_rules` | type, enabled, taxonomy, hierarchical_taxonomy_note, post_types, post_status, inheritance_behavior, inheritance_depth, row_title |
+| `hierarchical_level_restriction_rules` | type, enabled, taxonomy, hierarchical_taxonomy_note, post_types, post_status, restriction_mode, include_ancestors, row_title |
+
+(The two `*_note` keys are `html` subfields; Wireframe stores them as `null`.
+Harmless, and the same thing the old `expansion_behavior_help` did.)
+
+**§8b type change discards the old type's values** ✅ A level-restriction row
+flipped to `propagation_rules` keeps `enabled`/`taxonomy`/`post_types` and
+drops exactly `restriction_mode` + `include_ancestors`. Silent by design —
+which is why the `type` select's description says so.
+
+**§8c required-only-where-visible** ✅ A date-window row saves with no
+taxonomy (the field is gated away); a propagation row without one is rejected;
+a hierarchical row needs no start/end date. An **untyped** row is *rejected*
+(`"The Type is required"`) rather than silently dropped at fan-out.
+
+**§8d defaults + vocabulary** ✅ Untouched subfields land their declared
+defaults (`one_per_level`, `false`, `enabled=true`). A row naming a
+not-yet-migrated type (`related_rules`) is refused by the select's validator —
+the live types cannot be reached from this repeater.
+
+**§8e persistence + handler visibility** ✅ `sync_kind_lists()` writes
+`term_rules` with only the four migrated types (live types excluded), is a
+no-op on the second load, and does **not** clobber a hand-authored reorder
+(level-restriction dragged to the front survived the next load). A repeater
+edit disabling the hierarchical rule took its handler from 1 enabled rule to 0;
+emptying the repeater took all four migrated types to 0 while `related` (2),
+`related_post_terms` (2) and `title_slug` (1) were untouched. A CLI
+`save_rule()` behind the repeater's back was picked up on the next sync.
+
+**§8f row-title backfill** ✅ Fixture-seeded rules start untitled; one admin
+load titles all six and writes the same titles into the type-keyed arrays, so
+the authored list stays trusted. Second load is a no-op.
+
+**§8g the un-migrated sections still save** ✅ `related_rules`,
+`related_post_terms_rules` and `title_slug_rules` each validate clean and
+round-trip 2/2/1 rows through their own sections, and the fan-out touches no
+migrated array when they save. `snapshot_claim_override_labels` unchanged.
+
+**§8h #32 / #16 behaviour** ✅ See the §1 and §2 rule-config rows above for the
+new schema. `include_ancestors` verified additive in all three modes (deepest:
+`Region,East,Coastal,Harbor`; shallowest with a deep-only input: same chain;
+one_per_level: kept term + lineage). All five `inheritance_behavior` outcomes
+round-trip through `resolve_behavior()`/`behavior_key()`, every legacy pair
+still resolves to its old mechanism, and an unknown outcome is rejected by
+`validate_rule_internal()`.
 
 ## Cross-handler interaction scenarios (later phase, own snapshot each)
 

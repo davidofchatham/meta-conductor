@@ -322,6 +322,134 @@ $check('every rule type maps to its kind', array_map(
 $check('an unknown type maps to no kind', $storage->get_kind_for_type('nope_rules') === '');
 $check('an unknown kind reads as empty, not a fatal', $storage->get_kind_rules('nope') === []);
 
+// --- The AUTHORED list (0.8.0, #57). ----------------------------------------
+//
+// Once a repeater writes `term_rules` directly, a plain fan-in is no longer a
+// refresh of that key — it is a CLOBBER, because the fan-in groups by type and
+// so cannot reproduce the cross-type order the author just dragged into place.
+// authored_kind_list() draws that line: keep the stored list while it still
+// agrees with the type-keyed arrays, rebuild only when something wrote behind
+// the repeater's back. These assertions are what stop a well-meaning
+// "simplify this back to fan_in()" from silently discarding rule order on the
+// next admin load.
+
+$migrated = OptionRuleStorage::migrated_types_for_kind(OptionRuleStorage::KIND_TERM);
+$check('the term kind reports its migrated types',
+    $migrated === [
+        'propagation_rules',
+        'time_based_rules',
+        'hierarchical_rules',
+        'hierarchical_level_restriction_rules',
+    ]);
+$check('the format kind has no migrated types yet (#59)',
+    OptionRuleStorage::migrated_types_for_kind(OptionRuleStorage::KIND_FORMAT) === []);
+
+// fan_out_types: the save path's projection back onto the legacy arrays.
+$rows = [
+    ['type' => 'hierarchical_rules', 'taxonomy' => 'a'],
+    ['type' => 'propagation_rules',  'taxonomy' => 'b'],
+    ['type' => 'related_rules',      'taxonomy' => 'c'],   // not migrated
+    ['type' => 'hierarchical_rules', 'taxonomy' => 'd'],
+    'not-an-array',
+    ['taxonomy' => 'e'],                                    // no type at all
+];
+$out = OptionRuleStorage::fan_out_types($rows, $migrated);
+$check('fan_out_types keeps per-type order',
+    $out['hierarchical_rules'] === [['taxonomy' => 'a'], ['taxonomy' => 'd']]);
+$check('fan_out_types strips the grouping key',
+    !array_key_exists('type', $out['propagation_rules'][0]));
+$check('fan_out_types drops rows of unrequested types',
+    !array_key_exists('related_rules', $out));
+$check('fan_out_types drops untyped and non-array rows',
+    array_sum(array_map('count', $out)) === 3);
+$check('fan_out_types always names every requested type',
+    array_keys($out) === $migrated);
+// An emptied repeater must CLEAR the legacy arrays, not leave orphans behind.
+$check('fan_out_types on an empty list clears every requested type',
+    OptionRuleStorage::fan_out_types([], $migrated)
+        === array_fill_keys($migrated, []));
+
+// authored_kind_list: keep authored order when the two shapes still agree.
+$authored = [
+    ['type' => 'hierarchical_rules', 'taxonomy' => 'h1'],
+    ['type' => 'propagation_rules',  'taxonomy' => 'p1'],   // interleaved:
+    ['type' => 'hierarchical_rules', 'taxonomy' => 'h2'],   // fan_in can't
+];                                                          // reproduce this
+$settings = [
+    'propagation_rules'  => [['taxonomy' => 'p1']],
+    'hierarchical_rules' => [['taxonomy' => 'h1'], ['taxonomy' => 'h2']],
+    'related_rules'      => [['taxonomy' => 'r1']],
+    OptionRuleStorage::KIND_TERM => $authored,
+];
+$check('authored order survives when the legacy arrays agree',
+    OptionRuleStorage::authored_kind_list(OptionRuleStorage::KIND_TERM, $settings) === $authored);
+
+// A live-type row must never be carried into the list the repeater renders —
+// the repeater declares no subfields for it, so sanitize would gut it. The
+// rule itself is safe in `related_rules`, so dropping it here loses nothing
+// and the authored order still stands.
+$with_live = $settings;
+$with_live[OptionRuleStorage::KIND_TERM][] = ['type' => 'related_rules', 'taxonomy' => 'r1'];
+$check('a non-migrated row is dropped from the authored list',
+    OptionRuleStorage::authored_kind_list(OptionRuleStorage::KIND_TERM, $with_live) === $authored);
+
+// A row naming NO type is different in kind: nothing else holds it, so it
+// cannot be quietly filtered out of a list we then declare trustworthy. It
+// must force the rebuild, so the stored shape is recomputed from the arrays
+// that ARE authoritative rather than silently shedding a row.
+// What a rebuild produces: the fan-in restricted to migrated types, which is
+// also what an absent stored list seeds (asserted below).
+$no_stored = $settings;
+unset($no_stored[OptionRuleStorage::KIND_TERM]);
+$rebuild_result = OptionRuleStorage::authored_kind_list(OptionRuleStorage::KIND_TERM, $no_stored);
+
+foreach ([
+    'untyped row'       => ['taxonomy' => 'x'],
+    'unknown-type row'  => ['type' => 'not_a_rule_type', 'taxonomy' => 'x'],
+    'non-array row'     => 'garbage',
+] as $label => $bad) {
+    $corrupt = $settings;
+    $corrupt[OptionRuleStorage::KIND_TERM][] = $bad;
+    $check("an $label forces a rebuild rather than a silent drop",
+        OptionRuleStorage::authored_kind_list(OptionRuleStorage::KIND_TERM, $corrupt) === $rebuild_result);
+}
+
+// Something wrote a legacy array behind the repeater's back (CLI save_rule, a
+// seeded fixture, an import): rebuild, so the new rule is visible rather than
+// hidden behind a stale authored copy.
+$behind_back = $settings;
+$behind_back['propagation_rules'][] = ['taxonomy' => 'p2'];
+$rebuilt = OptionRuleStorage::authored_kind_list(OptionRuleStorage::KIND_TERM, $behind_back);
+$check('a write behind the repeater\'s back rebuilds the list',
+    count($rebuilt) === 4);
+// fan_in() APPENDS `type` to each row, so the key order differs from the
+// authored rows above — compare on content, not on array identity.
+$check('the rebuild carries the new rule',
+    in_array(['taxonomy' => 'p2', 'type' => 'propagation_rules'], $rebuilt, true));
+$check('the rebuild still excludes non-migrated types',
+    empty(array_filter($rebuilt, static fn($r) => $r['type'] === 'related_rules')));
+
+// Idempotent: feeding the result back in must not change it again.
+$behind_back[OptionRuleStorage::KIND_TERM] = $rebuilt;
+$check('authored_kind_list is idempotent',
+    OptionRuleStorage::authored_kind_list(OptionRuleStorage::KIND_TERM, $behind_back) === $rebuilt);
+
+// A kind no repeater authors yet stays a pure derived duplicate (#56's regime).
+$fmt = ['title_slug_rules' => [['pattern' => 'x']]];
+$check('a kind with no migrated types is still the plain fan-in',
+    OptionRuleStorage::authored_kind_list(OptionRuleStorage::KIND_FORMAT, $fmt)
+        === OptionRuleStorage::fan_in($fmt)[OptionRuleStorage::KIND_FORMAT]);
+
+// A first upgrade has no stored list at all — seed from the legacy arrays.
+$unseeded = $settings;
+unset($unseeded[OptionRuleStorage::KIND_TERM]);
+$check('an absent stored list seeds from the legacy arrays',
+    OptionRuleStorage::authored_kind_list(OptionRuleStorage::KIND_TERM, $unseeded) === [
+        ['taxonomy' => 'p1', 'type' => 'propagation_rules'],
+        ['taxonomy' => 'h1', 'type' => 'hierarchical_rules'],
+        ['taxonomy' => 'h2', 'type' => 'hierarchical_rules'],
+    ]);
+
 // --- Report. ----------------------------------------------------------------
 
 if ($fail) {

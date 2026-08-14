@@ -255,8 +255,8 @@ Storage keys (`related_rules`, `time_based_rules`, …) are unaffected — this 
 
 - **Status**: in progress — converting opportunistically as each config class is touched
 - **Motivation**: Wireframe 1.0.6 (#13) added the conditions DSL to repeater subfields client-side. The current workaround (always-render both conditional subfields, explain via description text) can now be replaced with real show/hide `conditions`.
-- **Done**: `level_restriction.include_ancestors` (0.6.0).
-- **Sketch**: convert the remaining description-text workarounds to `conditions` for: `related_rules.trigger_term_id` / `.trigger_taxonomy` (operator on `trigger` select), `hierarchical_rules.expansion_behavior` + help text, `propagation`/`time_based`/`title_slug` "Only used when…" subfields.
+- **Done**: `level_restriction.include_ancestors` (0.6.0 — the gate itself was retired in 0.8.0/#32 once the flag gained one meaning in every mode); the whole ordered term-rule repeater (0.8.0/#57), where the `type` select gates every type-specific subfield.
+- **Sketch**: convert the remaining description-text workarounds to `conditions` for: `related_rules.trigger_term_id` / `.trigger_taxonomy` (operator on `trigger` select) and `title_slug`'s "Only used when…" subfields. The hierarchical `expansion_behavior` + help-text pair is gone — #16 collapsed it into one outcome selector.
 - **⚠️ A condition-hidden subfield DROPS from the save payload** — verify each show/hide on the test site, and check that the storage adapter tolerates the absent key. Verify each show/hide rule on the test site (subfield conditions evaluate against sibling subfields in the same row).
 - **Tracking**: upstream #13 closed; this is now plain implementation work.
 

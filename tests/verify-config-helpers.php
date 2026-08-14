@@ -7,10 +7,22 @@
  * call the builders, assert their shape. Pure-declarative builders (no method
  * executes WP at class load), so requiring the single file is safe.
  *
- * Covers SPEC §V5 (propagation hierarchical-only field) + the shared id-lock
- * contract (post_types_field / hierarchical_post_types_field force the
- * canonical `post_types` id even under override — should_process_post reads it
- * by name, so a renamed id would silently gate every post type).
+ * Covers the shared id-lock contract: post_types_field / post_status_field
+ * force their canonical id even under override — handlers read `post_types`
+ * and `post_status` BY NAME, so a renamed id would not error, it would
+ * silently widen the rule to every post type / status.
+ *
+ * Also covers the 0.8.0 builder collapse (#38 cluster 1): six copies of the
+ * same slug=>label loop became one `label_options()` behind three public
+ * accessors, and the two near-identical checkbox field builders became one
+ * `gate_field()` base. The assertions below are on the OBSERVABLE contract of
+ * each accessor — placeholder present or absent, options complete — because
+ * that is what the collapse had to preserve.
+ *
+ * SPEC §V5's hierarchical-only post-type field is GONE as of 0.8.0: the
+ * ordered term repeater has one shared post-type gate across rule types, so
+ * propagation's parent/child requirement is stated as a type-conditioned note
+ * on the repeater (locked in H11) instead of by withholding options.
  *
  * Also locks the claim vocabulary (ADR 0004): CLAIM_NAMES is the one mapping
  * behind both config dropdowns and both row-title snapshots, so this harness
@@ -57,6 +69,39 @@ if (!function_exists('get_post_types')) {
     }
 }
 
+// Fake taxonomy registry — the placeholder/no-placeholder split is shared with
+// the post-type accessors, so both sides of label_options() are exercised.
+if (!function_exists('get_taxonomies')) {
+    function get_taxonomies($args = [], $output = 'names') {
+        $registry = [
+            'category' => (object) ['name' => 'category', 'label' => 'Categories', 'public' => true, 'hierarchical' => true],
+            'post_tag' => (object) ['name' => 'post_tag', 'label' => 'Tags',       'public' => true, 'hierarchical' => false],
+        ];
+        $out = [];
+        foreach ($registry as $slug => $obj) {
+            foreach ($args as $k => $v) {
+                if ($obj->$k !== $v) {
+                    continue 2;
+                }
+            }
+            $out[$slug] = ($output === 'objects') ? $obj : $slug;
+        }
+        return $out;
+    }
+}
+
+// Post statuses — only what post_status_checkbox_options() touches.
+if (!function_exists('get_post_status_object')) {
+    function get_post_status_object($slug) {
+        $labels = ['publish' => 'Published', 'future' => 'Scheduled', 'draft' => 'Draft',
+                   'pending' => 'Pending Review', 'private' => 'Private'];
+        return isset($labels[$slug]) ? (object) ['name' => $slug, 'label' => $labels[$slug]] : null;
+    }
+}
+if (!function_exists('get_post_stati')) {
+    function get_post_stati($args = [], $output = 'names') { return []; }
+}
+
 // --- Load the class under test (declare-only, no WP at load). ----------------
 
 require dirname(__DIR__) . '/includes/admin/config/class-config-helpers.php';
@@ -72,27 +117,38 @@ $check = function (string $name, bool $cond) use (&$fail) {
     }
 };
 
-// V5: hierarchical field offers ONLY hierarchical types.
-$h_opts = ConfigHelpers::hierarchical_post_types_checkbox_options();
-$check('hierarchical opts include page',  isset($h_opts['page']));
-$check('hierarchical opts include dept',  isset($h_opts['dept']));
-$check('hierarchical opts EXCLUDE post',  !isset($h_opts['post']));
-$check('hierarchical opts have no placeholder', !array_key_exists('', $h_opts));
-
-// All-types field still offers the flat type (regression guard on the split).
+// The one shared post-type gate offers EVERY public type, flat included —
+// the ordered repeater has a single post_types subfield across rule types.
 $a_opts = ConfigHelpers::post_types_checkbox_options();
-$check('all-types opts include post', isset($a_opts['post']));
-$check('all-types opts include page', isset($a_opts['page']));
+$check('post-type opts include flat post', isset($a_opts['post']));
+$check('post-type opts include page',      isset($a_opts['page']));
+$check('post-type opts include dept',      isset($a_opts['dept']));
+$check('checkbox opts have no placeholder', !array_key_exists('', $a_opts));
 
-// id-lock: both fields force `post_types`, even when an override tries to rename.
-$h_field = ConfigHelpers::hierarchical_post_types_field(['id' => 'evil', 'columns' => 6]);
-$check('hierarchical field id forced to post_types', $h_field['id'] === 'post_types');
-$check('hierarchical field honors non-id override',  ($h_field['columns'] ?? null) === 6);
-$check('hierarchical field is checkboxes',           $h_field['type'] === 'checkboxes');
-$check('hierarchical field options hierarchical-only', !isset($h_field['args']['options']['post']));
+// The placeholder half of the collapsed loop: a SELECT gets a leading empty
+// row, and it must come first (it is the field's default rendering).
+$t_opts = ConfigHelpers::taxonomy_options();
+$check('taxonomy select leads with placeholder', array_key_first($t_opts) === '');
+$check('taxonomy select placeholder overridable',
+    array_values(ConfigHelpers::taxonomy_options('— Pick one —'))[0] === '— Pick one —');
+$check('taxonomy checkbox opts have no placeholder',
+    !array_key_exists('', ConfigHelpers::taxonomy_checkbox_options()));
+$check('taxonomy checkbox opts carry the same taxonomies',
+    array_keys(ConfigHelpers::taxonomy_checkbox_options())
+        === array_values(array_filter(array_keys($t_opts), fn($k) => $k !== '')));
 
-$a_field = ConfigHelpers::post_types_field(['id' => 'evil']);
-$check('all-types field id forced to post_types', $a_field['id'] === 'post_types');
+// id-lock: both checkbox gates force their canonical id, even when an
+// override tries to rename, and still honour every other override.
+$a_field = ConfigHelpers::post_types_field(['id' => 'evil', 'columns' => 6]);
+$check('post_types field id forced',        $a_field['id'] === 'post_types');
+$check('post_types field honors override',  ($a_field['columns'] ?? null) === 6);
+$check('post_types field is checkboxes',    $a_field['type'] === 'checkboxes');
+$check('post_types field offers flat type', isset($a_field['args']['options']['post']));
+
+$s_field = ConfigHelpers::post_status_field(['id' => 'evil', 'label' => 'Only when']);
+$check('post_status field id forced',       $s_field['id'] === 'post_status');
+$check('post_status field honors override', $s_field['label'] === 'Only when');
+$check('post_status field is checkboxes',   $s_field['type'] === 'checkboxes');
 
 // --- Claim field (ADR 0004). ------------------------------------------------
 // Unlike post_types_field the id is deliberately NOT forced — the two surfaces
@@ -125,7 +181,7 @@ $check('claim_name unknown ⇒ contributing',  ConfigHelpers::claim_name('bogus'
 
 // --- Report. ----------------------------------------------------------------
 
-$total = 21;
+$total = 26;
 if ($fail) {
     fwrite(STDERR, "\nCONFIG-HELPERS FAIL — " . count($fail) . "/$total assertions failed:\n");
     foreach ($fail as $f) {
@@ -134,5 +190,5 @@ if ($fail) {
     exit(1);
 }
 
-fwrite(STDOUT, "CONFIG-HELPERS OK — all $total assertions passed (V5 + id-lock).\n");
+fwrite(STDOUT, "CONFIG-HELPERS OK — all $total assertions passed (builder collapse + id-lock + claim).\n");
 exit(0);

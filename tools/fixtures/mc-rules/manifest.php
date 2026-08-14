@@ -152,15 +152,18 @@ return array(
 	// every fixture tab unsaveable from the settings page.
 	'mc_rules' => array(
 
-		// matrix §1 — expand child→parent, all ancestors, smart.
+		// matrix §1 — apply ancestors of hand-picked terms, all levels.
+		// `inheritance_behavior` replaced the hierarchy_direction +
+		// expansion_behavior pair in 0.8.0 (#16). The handler still reads the
+		// legacy pair when the outcome key is absent, but a fixture is a
+		// statement about the CURRENT schema, so it seeds the new key.
 		'hierarchical_rules' => array(
 			array(
-				'enabled'            => true,
-				'taxonomy'           => 'mc_topic',
-				'post_types'         => array( 'mc_item' ),
-				'hierarchy_direction' => 'child_to_parent',
-				'inheritance_depth'  => 'all',
-				'expansion_behavior' => 'smart',
+				'enabled'              => true,
+				'taxonomy'             => 'mc_topic',
+				'post_types'           => array( 'mc_item' ),
+				'inheritance_behavior' => 'ancestors',
+				'inheritance_depth'    => 'all',
 			),
 		),
 

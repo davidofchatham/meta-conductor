@@ -18,59 +18,49 @@ if (!defined('ABSPATH')) {
 class ConfigHelpers {
 
     /**
+     * slug => label for a list of registered WP objects (taxonomies, post
+     * types, post statuses) — the ONE loop behind every option builder here.
+     *
+     * Before 0.8.0 this body was copy-pasted seven times (four post-type
+     * variants and two taxonomy variants here, plus one on TitleSlugConfig)
+     * differing only in the registry query and whether a leading placeholder
+     * row was prepended (#38 cluster 1). The variation is now entirely in the
+     * caller's `get_*()` args, which is why this takes ALREADY-FETCHED objects
+     * rather than a query: a caller that has to filter the registry first
+     * (TitleSlugConfig drops `attachment`) can still share the loop.
+     *
+     * @param object[]    $objects     Registered objects with ->name / ->label.
+     * @param string|null $placeholder Leading `'' => …` row, or null for none
+     *                                 (checkboxes render one row per option
+     *                                 and must not carry an empty row).
+     * @return array<string,string>
+     */
+    public static function label_options(array $objects, ?string $placeholder = null): array {
+        $options = $placeholder === null ? [] : ['' => $placeholder];
+
+        foreach ($objects as $object) {
+            $options[$object->name] = $object->label;
+        }
+
+        return $options;
+    }
+
+    /**
      * All public taxonomies, with placeholder.
      */
     public static function taxonomy_options(string $placeholder = ''): array {
-        $options    = ['' => $placeholder ?: __('— Select taxonomy —', 'meta-conductor')];
-        $taxonomies = get_taxonomies(['public' => true], 'objects');
-
-        foreach ($taxonomies as $taxonomy) {
-            $options[$taxonomy->name] = $taxonomy->label;
-        }
-
-        return $options;
+        return self::label_options(
+            get_taxonomies(['public' => true], 'objects'),
+            $placeholder ?: __('— Select taxonomy —', 'meta-conductor')
+        );
     }
 
     /**
-     * Hierarchical public taxonomies, with placeholder.
+     * All public taxonomies as slug => label, with NO empty placeholder —
+     * the checkboxes variant of taxonomy_options().
      */
-    public static function hierarchical_taxonomy_options(string $placeholder = ''): array {
-        $options    = ['' => $placeholder ?: __('— Select taxonomy —', 'meta-conductor')];
-        $taxonomies = get_taxonomies(['public' => true, 'hierarchical' => true], 'objects');
-
-        foreach ($taxonomies as $taxonomy) {
-            $options[$taxonomy->name] = $taxonomy->label;
-        }
-
-        return $options;
-    }
-
-    /**
-     * All public post types, with placeholder.
-     */
-    public static function post_type_options(string $placeholder = ''): array {
-        $options    = ['' => $placeholder ?: __('— Select post type —', 'meta-conductor')];
-        $post_types = get_post_types(['public' => true], 'objects');
-
-        foreach ($post_types as $post_type) {
-            $options[$post_type->name] = $post_type->label;
-        }
-
-        return $options;
-    }
-
-    /**
-     * Hierarchical public post types (for parent → child propagation).
-     */
-    public static function hierarchical_post_type_options(string $placeholder = ''): array {
-        $options    = ['' => $placeholder ?: __('— Select post type —', 'meta-conductor')];
-        $post_types = get_post_types(['public' => true, 'hierarchical' => true], 'objects');
-
-        foreach ($post_types as $post_type) {
-            $options[$post_type->name] = $post_type->label;
-        }
-
-        return $options;
+    public static function taxonomy_checkbox_options(): array {
+        return self::label_options(get_taxonomies(['public' => true], 'objects'));
     }
 
     /**
@@ -80,14 +70,30 @@ class ConfigHelpers {
      * row (unlike a select). Use for the shared post_types_field().
      */
     public static function post_types_checkbox_options(): array {
-        $options    = [];
-        $post_types = get_post_types(['public' => true], 'objects');
+        return self::label_options(get_post_types(['public' => true], 'objects'));
+    }
 
-        foreach ($post_types as $post_type) {
-            $options[$post_type->name] = $post_type->label;
-        }
-
-        return $options;
+    /**
+     * The shared body of every "limit this rule to …" checkboxes subfield.
+     *
+     * All of them are the same field: checkboxes, full width, empty means
+     * all, and — critically — an id the handlers read BY NAME, which is why
+     * `$id` is forced last and cannot be overridden. Renaming `post_types`
+     * or `post_status` would not error; it would silently widen the rule to
+     * everything. That id-lock is the reason this base exists rather than
+     * each builder writing its own array_merge (#38 cluster 1).
+     *
+     * @param string $id        Canonical, non-overridable field id.
+     * @param array  $defaults  label / description / args for this gate.
+     * @param array  $overrides Per-call field-definition overrides.
+     */
+    private static function gate_field(string $id, array $defaults, array $overrides): array {
+        return array_merge(
+            ['type' => 'checkboxes', 'columns' => 12],
+            $defaults,
+            $overrides,
+            ['id' => $id]
+        );
     }
 
     /**
@@ -106,67 +112,24 @@ class ConfigHelpers {
      * tolerate the map on read (see selected_checkbox_slugs) because legacy
      * and hand-seeded data carries it, but nothing should WRITE it.
      *
+     * Every public post type is offered, including flat ones. A
+     * hierarchical-only variant existed until 0.8.0 for propagation (SPEC
+     * §V5); the ordered term repeater has ONE post-type gate shared across
+     * rule types, so the parent/child requirement is now stated as a
+     * type-conditioned note on the repeater instead of by withholding
+     * options. Enforcement never lived here — a flat post type has no
+     * children, so a propagation rule scoped to one simply matches nothing.
+     *
      * @param array $overrides Per-call field-definition overrides (e.g. columns).
      */
     public static function post_types_field(array $overrides = []): array {
-        // `id` is intentionally NOT overridable: UnifiedHandlerBase::should_process_post
-        // reads the `post_types` key by name, so renaming it would silently
-        // make the rule apply to all post types. Merge overrides first, then
-        // force the canonical id.
-        return array_merge([
-            'type'        => 'checkboxes',
+        return self::gate_field('post_types', [
             'label'       => __('Limit to post types', 'meta-conductor'),
             'description' => __('Leave all unchecked to apply to every post type using this taxonomy.', 'meta-conductor'),
-            'columns'     => 12,
             'args'        => [
                 'options' => self::post_types_checkbox_options(),
             ],
-        ], $overrides, ['id' => 'post_types']);
-    }
-
-    /**
-     * Hierarchical public post types as slug => label, NO empty placeholder.
-     *
-     * Checkbox variant of hierarchical_post_type_options() — for the shared
-     * hierarchical_post_types_field(). Propagation needs a parent/child
-     * relationship, so its post-type set is restricted to hierarchical types.
-     */
-    public static function hierarchical_post_types_checkbox_options(): array {
-        $options    = [];
-        $post_types = get_post_types(['public' => true, 'hierarchical' => true], 'objects');
-
-        foreach ($post_types as $post_type) {
-            $options[$post_type->name] = $post_type->label;
-        }
-
-        return $options;
-    }
-
-    /**
-     * Canonical "Limit to post types" checkboxes subfield restricted to
-     * HIERARCHICAL post types. Mirrors post_types_field() but offers only
-     * parent/child-capable types — propagation can never act on a flat type,
-     * so listing one would be a footgun (SPEC §V5).
-     *
-     * Empty/all-unchecked ⇒ every hierarchical post type using the taxonomy.
-     * Same canonical `post_types` id and same stored shape as the all-types
-     * field — a flat list of slugs; see post_types_field().
-     *
-     * @param array $overrides Per-call field-definition overrides (e.g. columns).
-     */
-    public static function hierarchical_post_types_field(array $overrides = []): array {
-        // `id` is intentionally NOT overridable — should_process_post reads the
-        // `post_types` key by name (same contract as post_types_field()). Merge
-        // overrides first, then force the canonical id.
-        return array_merge([
-            'type'        => 'checkboxes',
-            'label'       => __('Limit to post types', 'meta-conductor'),
-            'description' => __('Only hierarchical post types appear — propagation requires a parent/child relationship. Leave all unchecked to apply to every hierarchical post type.', 'meta-conductor'),
-            'columns'     => 12,
-            'args'        => [
-                'options' => self::hierarchical_post_types_checkbox_options(),
-            ],
-        ], $overrides, ['id' => 'post_types']);
+        ], $overrides);
     }
 
     /**
@@ -221,10 +184,10 @@ class ConfigHelpers {
     /**
      * Canonical "Claim on terms" select subfield.
      *
-     * Shared by PropagationConfig (per-rule) and GeneralConfig (per-taxonomy
-     * default). Unlike post_types_field() the `id` is NOT forced — the two
-     * surfaces genuinely store under different keys (`conflict_handling` vs
-     * `mode`) — so it is required in $overrides.
+     * Shared by TermRulesConfig (per-rule, on propagation rows) and
+     * GeneralConfig (per-taxonomy default). Unlike post_types_field() the
+     * `id` is NOT forced — the two surfaces genuinely store under different
+     * keys (`conflict_handling` vs `mode`) — so it is required in $overrides.
      *
      * `$subject` picks which of the two option wordings to use. Both are
      * written out in full rather than sprintf'd from a noun: a translator
@@ -308,17 +271,13 @@ class ConfigHelpers {
      * @param array $overrides Per-call field-definition overrides (e.g. label, columns).
      */
     public static function post_status_field(array $overrides = []): array {
-        // `id` is intentionally NOT overridable: handlers read the `post_status`
-        // key by name. Merge overrides first, then force the canonical id.
-        return array_merge([
-            'type'        => 'checkboxes',
+        return self::gate_field('post_status', [
             'label'       => __('Limit to post statuses', 'meta-conductor'),
             'description' => __('Leave all unchecked to apply to every status.', 'meta-conductor'),
-            'columns'     => 12,
             'args'        => [
                 'options' => self::post_status_checkbox_options(),
             ],
-        ], $overrides, ['id' => 'post_status']);
+        ], $overrides);
     }
 
     /**
