@@ -119,6 +119,10 @@ foreach (ConfigHelpers::CLAIM_NAMES as $stored => $claim) {
 $check('claim_name maps replace ⇒ owning',   ConfigHelpers::claim_name('replace') === 'owning');
 $check('claim_name unknown ⇒ contributing',  ConfigHelpers::claim_name('bogus') === 'contributing');
 
+// The other half of the claim surface — coercing the General tab's override
+// ROWS back to the canonical {slug: mode} dict — is a storage-adapter concern,
+// not a field builder. It lives on OptionRuleStorage; see H9.
+
 // --- Report. ----------------------------------------------------------------
 
 $total = 21;

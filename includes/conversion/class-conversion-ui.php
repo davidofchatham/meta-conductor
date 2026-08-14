@@ -70,8 +70,11 @@ class ConversionUi {
     /**
      * Render tab content for BWS Meta Manager settings page
      *
-     * Legacy entry point — called by Settings::render_conversion_tab()
-     * when conversion is a tab inside the old settings page.
+     * Renders the tab body without the wp-admin `.wrap` chrome. Named for
+     * its original caller, `Settings::render_conversion_tab()`, from when
+     * conversion was a tab inside the pre-Wireframe settings page — that
+     * class is gone (#55). Still live: `render_page()` below wraps this,
+     * and WireframeBootstrap calls that.
      */
     public function render_tab_content(): void {
         ?>

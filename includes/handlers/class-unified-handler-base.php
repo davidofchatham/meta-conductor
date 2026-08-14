@@ -18,7 +18,6 @@ if (!defined('ABSPATH')) {
 use BWS\MetaConductor\Core\RuleEngine;
 use BWS\MetaConductor\Core\Entity;
 use BWS\MetaConductor\Storage\StorageFactory;
-use BWS\MetaConductor\Settings;
 
 abstract class UnifiedHandlerBase {
 
@@ -45,13 +44,6 @@ abstract class UnifiedHandlerBase {
     protected $handler_type;
 
     /**
-     * Settings instance (for backward compatibility)
-     *
-     * @var Settings|null
-     */
-    protected $settings;
-
-    /**
      * Memoized plugin settings option, loaded once per request.
      *
      * @var array|null
@@ -61,10 +53,13 @@ abstract class UnifiedHandlerBase {
     /**
      * Constructor
      *
-     * @param Settings|null $settings Settings instance (optional, for backward compatibility)
+     * Takes no arguments. The old `Settings|null $settings` parameter existed
+     * only for the legacy handlers, which read rules through an injected
+     * settings object; every handler now goes through StorageFactory and the
+     * shell it pointed at is deleted (#55). Nothing ever read `$this->settings`
+     * after the Phase 3 migration.
      */
-    public function __construct($settings = null) {
-        $this->settings = $settings;
+    public function __construct() {
         $this->rule_engine = new RuleEngine();
         $this->handler_type = $this->get_handler_type();
         $this->init_hooks();

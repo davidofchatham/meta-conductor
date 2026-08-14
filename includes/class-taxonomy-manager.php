@@ -32,11 +32,6 @@ class TaxonomyManager {
     private static $instance = null;
     
     /**
-     * Settings instance
-     */
-    private $settings;
-    
-    /**
      * Handler instances
      */
     private $handlers = array();
@@ -140,16 +135,18 @@ class TaxonomyManager {
      * Initialize handlers
      */
     private function init_handlers() {
-        $this->settings = new Settings();
-
+        // Handlers take no constructor argument: they read rules through
+        // StorageFactory, not through an injected settings object. The
+        // `Settings` compat shell that used to be passed here died with the
+        // last legacy handler (#55).
         $this->handlers = array(
-			'hierarchical' => new HierarchicalHandler($this->settings),
-			'propagation' => new PropagationHandler($this->settings),
-			'related' => new RelatedHandler($this->settings),
-			'time_based' => new TimeBasedHandler($this->settings),
-			'related_post_terms' => new RelatedPostTermsHandler($this->settings),
-			'hierarchical_level_restriction' => new HierarchicalLevelRestrictionHandler($this->settings),
-			'title_slug' => new TitleSlugHandler($this->settings),
+			'hierarchical' => new HierarchicalHandler(),
+			'propagation' => new PropagationHandler(),
+			'related' => new RelatedHandler(),
+			'time_based' => new TimeBasedHandler(),
+			'related_post_terms' => new RelatedPostTermsHandler(),
+			'hierarchical_level_restriction' => new HierarchicalLevelRestrictionHandler(),
+			'title_slug' => new TitleSlugHandler(),
         );
 
         // AC-agnostic ACF write queue (#42). Watches ACF's own write filter, so
@@ -460,7 +457,7 @@ class TaxonomyManager {
 		}
 		
 		// Create a temporary handler instance for preview
-		$handler = new HierarchicalLevelRestrictionHandler($this->settings);
+		$handler = new HierarchicalLevelRestrictionHandler();
 		
 		// Simulate the restriction logic
 		$restricted_terms = $this->simulate_level_restrictions($term_ids, $taxonomy, $restriction_mode, $include_ancestors);
@@ -711,13 +708,6 @@ class TaxonomyManager {
 		return $summary;
 	}
     
-    /**
-     * Get settings instance
-     */
-    public function get_settings() {
-        return $this->settings;
-    }
-
 	/**
 	 * Check system requirements and compatibility
 	 */
@@ -771,51 +761,6 @@ class TaxonomyManager {
 			'handlers_summary' => $handlers_summary,
 			'requirements' => $requirements
 		);
-	}
-
-	/**
-	 * Get statistics for dashboard widget
-	 */
-	public function get_dashboard_stats() {
-		$stats = array(
-			'total_rules' => 0,
-			'active_rules' => 0,
-			'handlers' => array()
-		);
-		
-		foreach ($this->handlers as $handler_type => $handler) {
-			$rules = $handler->get_enabled_rules();
-			$handler_stats = array(
-				'total_rules' => count($rules),
-				'active_rules' => count($rules)
-			);
-			
-			// Special handling for time-based rules
-			if ($handler_type === 'time_based' && method_exists($handler, 'get_active_rules')) {
-				$handler_stats['active_rules'] = count($handler->get_active_rules());
-			}
-			
-			$stats['handlers'][$handler_type] = $handler_stats;
-			$stats['total_rules'] += $handler_stats['total_rules'];
-			$stats['active_rules'] += $handler_stats['active_rules'];
-		}
-		
-		return $stats;
-	}
-	
-	/**
-	 * AJAX handler for getting dashboard stats
-	 */
-	public function ajax_get_dashboard_stats() {
-		check_ajax_referer('bws_meta_conductor_nonce', 'nonce');
-
-		if (!current_user_can('manage_options')) {
-			wp_die(__('You do not have sufficient permissions to access this page.', 'meta-conductor'));
-		}
-
-		$stats = $this->get_dashboard_stats();
-
-		wp_send_json_success($stats);
 	}
 
 	// ========================================

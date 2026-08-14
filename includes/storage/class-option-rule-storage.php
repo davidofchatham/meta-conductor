@@ -86,6 +86,43 @@ class OptionRuleStorage implements RuleStorage {
     }
 
     /**
+     * Coerce the General tab's claim-override rows `[{taxonomy, mode}, ...]`
+     * into the canonical `{taxonomy_slug: mode}` dict (ADR 0004).
+     *
+     * Same adapter boundary as normalize_rule_shape() below, for the same
+     * reason: the rows are an artifact of the writer, not the meaning. They
+     * exist only because Wireframe's Sanitizer skips dot-notation field ids
+     * (CLAUDE.md don't #4), so the dict cannot be a field — this is the way
+     * back. Public because the shape is a pure function of its input, so
+     * callers needn't hold an instance; static for the same reason.
+     *
+     * Incomplete rows are dropped rather than landing an empty key — an
+     * "Add taxonomy override" click with neither select touched is the usual
+     * source. On a duplicate taxonomy the last row wins.
+     *
+     * **No runtime consumer yet.** Nothing reads the per-taxonomy default
+     * when a rule omits its own claim; every handler still falls back to a
+     * hard-coded `merge`. Wiring belongs with the Phase 4 dispatcher (#53),
+     * where rule-level-vs-taxonomy-level precedence gets decided. Rehomed
+     * here (#55) from the deleted `Settings` shell, whose get_settings() was
+     * the only caller. Feed it `get_raw_settings()['conflict_handling_overrides']`.
+     *
+     * @since 0.8.0
+     * @param array $rows Repeater rows from `conflict_handling_overrides`.
+     * @return array<string,string> taxonomy slug ⇒ merge|replace|skip.
+     */
+    public static function flatten_conflict_overrides(array $rows): array {
+        $out = [];
+        foreach ($rows as $row) {
+            if (empty($row['taxonomy']) || empty($row['mode'])) {
+                continue;
+            }
+            $out[$row['taxonomy']] = $row['mode'];
+        }
+        return $out;
+    }
+
+    /**
      * Save settings to options
      *
      * @param array $settings Complete settings array

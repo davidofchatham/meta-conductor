@@ -57,7 +57,6 @@ require $root . '/autoload.php';
 $classes = [
     // root
     'BWS\\MetaConductor\\TaxonomyManager',
-    'BWS\\MetaConductor\\Settings',
     // Core\
     'BWS\\MetaConductor\\Core\\Entity',
     'BWS\\MetaConductor\\Core\\ConditionEvaluator',
