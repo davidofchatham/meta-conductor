@@ -5,6 +5,33 @@ All notable changes to Meta Conductor are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] — Unreleased
+
+The settings page now speaks the domain's own vocabulary. What a rule does about terms a post already has is a **claim** — *owning*, *contributing*, *deferring* — and every dropdown, row title and doc uses those words. No rule behavior changed and nothing migrates, but the labels you read are different, and one of them was actively misleading before.
+
+### Changed
+
+- **Claim vocabulary on the config surfaces.** The propagation rule's "Conflict handling" select and the General tab's per-taxonomy default now read as claims, each option leading with the domain word and a plain gloss:
+  - `Owning: only this rule's terms are allowed here; anything else is removed`
+  - `Contributing: add this rule's terms, leave everything else alone`
+  - `Deferring: add only if the child has no terms in this taxonomy yet`
+
+  The former "Replace existing terms" **hid the most consequential fact about that option**: it does not replace only the terms the rule manages, it replaces *everything* in the taxonomy, including terms placed by hand or by another rule. Owning's gloss now says so. Row titles follow suit — a propagation row reads `Copy Categories terms to children (owning)` instead of `(merge)`.
+- **`skip` is not "contributing" — it is a fourth claim, *deferring*.** It writes only into an empty taxonomy, so on a post that already carries any term the rule's values are never applied at all. It was previously documented as contributing on the strength of "never removes", which is only half of what contributing means. No behavior change; the option now describes what the code has always done.
+- **The words "mode" and "conflict" leave the author-visible strings.** Both remain as stored keys and code identifiers. "Mode" was retired from the domain because it read as the same axis as claim (it is not — *overlap* combines two effects within one rule); "conflict" in this plugin means two *rules* contending, which is not what a single rule's claim is about.
+- **Storage untouched.** `conflict_handling` still stores `merge` | `replace` | `skip` (`replace` = owning, `merge` = contributing, `skip` = deferring). No migration, no re-save required.
+
+### Added
+
+- **Row titles for General-tab claim overrides.** A collapsed override row previously interpolated the raw stored value (`category: replace`) — the one surface the vocabulary would not have reached. It now reads `Categories: owning`, assembled at save like the other four snapshot helpers. Existing rows show the new title after their next save.
+- **One home for the claim vocabulary.** `ConfigHelpers::CLAIM_NAMES` builds both dropdowns (via the new `claim_field()`) and backs both row-title snapshots, so renaming a claim is a one-line change that cannot leave a surface stale. It was previously restated in three places.
+- **Domain model: `jurisdiction`.** The values within one effect target that a rule governs — what makes a Temporal rule's *owning* (its configured terms; a manual "Sale" survives) differ from propagation `replace`'s *owning* (the whole taxonomy; "Sale" is destroyed). Both were "owning" with no way to state the difference. See [ADR 0004](docs/adr/0004-claim-axis-and-jurisdiction.md) and `CONTEXT.md`, which also record the law that falls out of it: *owning requires a statically enumerable jurisdiction* — which is why `merge`/`skip` never reconcile (**#34**), why a scalar effect target always collides, and why `HierarchicalHandler` needs its `_bws_auto_terms` provenance meta when no other rule does.
+- Harness coverage: H3 11 → 21 assertions (option strings, the `<claim>: ` lead-in, both subject wordings, the mapping and its fallback), H4 10 → 15 (the second row-title surface).
+
+### Fixed
+
+- **The `mc-rules` test fixture seeded checkbox fields in a shape Wireframe rejects** (dev tooling only — not shipped). `post_types` and `filter_taxonomies` were written as `{slug: true}` maps; Wireframe's REST validator accepts only a flat list of slugs, and given a map it validates the map's *values*, so `true` arrived as `"1"` and the save failed with `"1" is not a valid option`. Four tabs were unsaveable on a seeded testbed. Handlers were never affected — they read both shapes — which is why it went unnoticed. The docblock that misdescribed the stored shape, and so caused it, is corrected.
+
 ## [0.7.0] — 2026-08-12
 
 Term sync now follows ACF itself: a new write queue on `acf/update_value` catches every ACF write, including Admin Columns edits, bare `update_field()`, and REST, not just the ones that fire a save hook. Also repairs the Data Conversion tool, the bulk "process existing posts" button, and three propagation/severance gaps. Two behavior changes are flagged ⚠ below: imports no longer sync terms, and keep-in-sync rules can now clear a taxonomy from the dependent end.
