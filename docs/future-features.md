@@ -273,12 +273,21 @@ Storage keys (`related_rules`, `time_based_rules`, …) are unaffected — this 
 - **Sketch**: use `action` for all page-level buttons now. For the cascading picker, do the Gap A PR + fork-release, then build a `taxonomy_term_picker` field type (~1 day). File the Gap B issue as goodwill.
 - **Tracking**: no upstream issue exists yet for (a) per-row `action` context or (b) the JS field-type extension API. PR Gap A (+ optionally self-release via fork); file Gap B as an issue. Full plan: [.claude/plans/wireframe-js-field-type-extension-blocker.md](../.claude/plans/wireframe-js-field-type-extension-blocker.md). Upstream PR direction (≤ 2026-06-11) is *extending* the action mechanism, not adding the extension API — which is exactly why the fork path matters for Gap A.
 
-### Conflict-handling option propagation
+### Claim option propagation
 
 - **Status**: idea
-- **Motivation**: per-rule `conflict_handling` overrides currently default to `merge` regardless of the General-tab per-taxonomy default. User expectation: rule-level should inherit from taxonomy-level unless explicitly set.
-- **Sketch**: handler reads General-tab `conflict_handling[$taxonomy]` if rule's own `conflict_handling` is empty/unset.
-- **Phase**: small enough to tackle ad-hoc during Phase 3 handler migration.
+- **Motivation**: per-rule claim overrides (stored `conflict_handling`) currently default to `merge` regardless of the General-tab per-taxonomy default. User expectation: rule-level should inherit from taxonomy-level unless explicitly set. Sharper now the surfaces share wording — both read "Claim on terms" / "Default claim on terms", so an author reasonably expects one to feed the other.
+- **Sketch**: handler reads the General-tab default for `$taxonomy` if the rule's own value is empty/unset.
+- **Phase**: small enough to tackle ad-hoc; wants an "inherit" placeholder option rather than a silent fallback, so the config shows which default is in force.
+
+### Authorable claim on every rule type
+
+- **Status**: idea (the concrete half is filed as **#54**)
+- **Axes**: no change to basis or effect target — this is the **claim** axis becoming author-set where it is currently hardcoded.
+- **Motivation**: only `propagation` lets the author choose a claim. `time_based` and `related` are hardcoded **owning** (they remove their target term when the trigger stops holding), `hierarchical` is contributing, `level_restriction` restricting, `title_slug` owning, `related_post_terms` owning-or-contributing under the name `keep_in_sync`. #54 covers *stating* each one in its config; this entry covers letting the author *change* it.
+- **Sketch**: `ConfigHelpers::claim_field()` already exists and is id-agnostic, so adding the control is cheap. The work is deciding, per rule type, which claims are legal — not all four are, everywhere.
+- **⚠️ Constrained by ADR 0004's law.** *Owning requires a statically enumerable jurisdiction.* `time_based` and `related` qualify (one configured target term each), so owning↔contributing is a genuine choice for them. `hierarchical` does **not** — its derivable set is data-dependent, which is why it already buys the forbidden cell with `_bws_auto_terms` provenance meta; offering it *owning* would either need that meta generalised or a silent widening to the whole taxonomy. `level_restriction` is restricting by construction and has no meaningful alternative. So this is not one uniform dropdown — it is a per-rule-type legality question.
+- **Interacts with Phase 4**: the ordered rule list ([ADR 0003](adr/0003-ordered-rule-list-and-dispatcher.md)) reshapes these configs into one repeater with `conditions`-gated subfields, so the claim field would be gated on rule `type`. Doing it before Phase 4 means building it twice.
 
 ### Phase 3b follow-ups
 
