@@ -118,13 +118,14 @@ class OptionRuleStorage implements RuleStorage {
      * class owns, including CLI and front-end paths that must never resolve
      * `Admin\Config` (CLAUDE.md don't #4).
      *
-     * The four here are the ones NOT live on a real site, so collapsing them
-     * first was free. `related_rules` and `related_post_terms_rules` keep
-     * their own per-type repeaters until #58, and `title_slug_rules` until
-     * #59; a row of theirs must NOT appear in a persisted kind list while
-     * that is true, because the repeater renders every row in the key it is
-     * bound to and Wireframe DROPS any subfield the config does not declare
-     * (`RepeaterField::sanitize`) — rendering a live rule the repeater has no
+     * All six term types are in as of #58 — batch 1 (#57) took the four not
+     * live on a real site, then the two live ones (`related_rules`,
+     * `related_post_terms_rules`) followed in the same change that gave them
+     * repeater subfields. `title_slug_rules` keeps its own section until
+     * #59; a row of a type absent here must NOT appear in a persisted kind
+     * list, because the repeater renders every row in the key it is bound to
+     * and Wireframe DROPS any subfield the config does not declare
+     * (`RepeaterField::sanitize`) — rendering a rule the repeater has no
      * subfields for would silently gut it on the next save.
      *
      * Add a type here in the same change that gives it repeater subfields,
@@ -138,6 +139,8 @@ class OptionRuleStorage implements RuleStorage {
         'time_based_rules',
         'hierarchical_rules',
         'hierarchical_level_restriction_rules',
+        'related_rules',
+        'related_post_terms_rules',
     ];
 
     /**
@@ -851,10 +854,19 @@ class OptionRuleStorage implements RuleStorage {
      *   holder_role absent                → 'target' (= legacy pull-to-holder)
      *   post_status absent                → untouched (= any)
      *
+     * Public since #58: `WireframeBootstrap::repair_stored_rules()` applies it
+     * to the kind-list rows too, closing the gap the one-shot flag leaves — a
+     * legacy-shaped row written AFTER the flag is set (CLI, import) would
+     * otherwise render with config defaults in the unified repeater and be
+     * persisted that way, e.g. an absent `holder_role` rendering as the radio
+     * default `source` and silently reversing a live rule's direction on the
+     * next save. Deliberately does NOT split acf_field_name (see below), so
+     * it is safe on admin-facing shapes.
+     *
      * @param array $rule Normalized-so-far rule (post_type/acf split already done).
      * @return array
      */
-    private static function migrate_related_post_terms_shape(array $rule): array {
+    public static function migrate_related_post_terms_shape(array $rule): array {
         // Taxonomy collapse.
         if (!isset($rule['taxonomy']) || $rule['taxonomy'] === '') {
             $rule['taxonomy'] = $rule['source_taxonomy'] ?? $rule['target_taxonomy'] ?? '';

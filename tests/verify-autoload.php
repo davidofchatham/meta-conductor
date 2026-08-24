@@ -88,11 +88,10 @@ $classes = [
     // Admin\Config\
     'BWS\\MetaConductor\\Admin\\Config\\ConfigHelpers',
     'BWS\\MetaConductor\\Admin\\Config\\GeneralConfig',
-    'BWS\\MetaConductor\\Admin\\Config\\RelatedConfig',
-    'BWS\\MetaConductor\\Admin\\Config\\RelatedPostTermsConfig',
     // The ordered term-rule list. Propagation/TimeBased/Hierarchical/
     // LevelRestriction/Personalize config classes were deleted in 0.8.0 (#57)
-    // when their sections collapsed into this one.
+    // when their sections collapsed into this one; Related and
+    // RelatedPostTerms followed in #58.
     'BWS\\MetaConductor\\Admin\\Config\\TermRulesConfig',
     'BWS\\MetaConductor\\Admin\\Config\\TitleSlugConfig',
     'BWS\\MetaConductor\\Admin\\Config\\WireframeConfig',

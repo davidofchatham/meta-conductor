@@ -30,22 +30,15 @@ class WireframeBootstrap {
         add_action('init', [self::class, 'boot'], 10);
         add_action('admin_menu', [self::class, 'register_subpages'], 11);
 
-        // Snapshot resolved term/taxonomy names into each related rule at save
-        // time so the repeater row title can read them (V11). Wireframe's
-        // title_template does raw value substitution only — it cannot resolve
-        // a stored term ID to a name — so the names must be persisted.
-        add_filter('wp-wireframe/save/payload', [self::class, 'snapshot_related_labels'], 10, 1);
-
-        // Snapshot the ACF-reference row title (SPEC §V10). Separate callback
-        // from the related path — generalize later if shapes converge.
-        add_filter('wp-wireframe/save/payload', [self::class, 'snapshot_acf_reference_labels'], 10, 1);
-
         // Snapshot every row title in the ordered term-rule list (SPEC §V11).
         // One hook for the whole repeater, dispatching on each row's `type` —
         // the per-type propagation and time-based hooks rescoped onto it when
-        // the config collapsed (#57), and hierarchical + level-restriction
-        // gained titles for the first time, which is what finally makes the
-        // "[Disabled] " prefix uniform across the list (#30).
+        // the config collapsed (#57), then related + ACF-reference (#58), and
+        // hierarchical + level-restriction gained titles for the first time,
+        // which is what finally makes the "[Disabled] " prefix uniform across
+        // the list (#30). Wireframe's title_template does raw value
+        // substitution only — it cannot resolve a stored term ID to a name —
+        // so the titles must be persisted.
         add_filter('wp-wireframe/save/payload', [self::class, 'snapshot_term_rule_labels'], 10, 1);
 
         // Snapshot the General-tab claim-override row title. Without it the
@@ -108,50 +101,26 @@ class WireframeBootstrap {
     }
 
     /**
-     * Inject trigger_label / target_label into each related_rules row.
+     * Related-term title. Schema (the shape the old three-token
+     * title_template rendered, now baked into one snapshot):
+     *   {trigger} → {target}{ (post types)}
+     *   e.g. "Categories: Term A → Tags: Term B (Pages)"
+     * Trigger is the taxonomy label when trigger_type=taxonomy, else the
+     * comma-joined trigger term labels.
      *
-     * Hooked on `wp-wireframe/save/payload`, which fires AFTER Wireframe's
-     * Sanitizer (so injected keys survive even though they are not declared
-     * editable) and right before the merge into saved state. Labels are a
-     * save-time snapshot: renaming a term later shows the stale name until
-     * the rule is re-saved (accepted, pre-1.0).
-     *
-     * @param array $clean_values Sanitized top-level field map.
-     * @return array
+     * @since 0.8.0 Replaces snapshot_related_labels (#58).
+     * @param array $rule
+     * @return string Unescaped.
      */
-    public static function snapshot_related_labels(array $clean_values): array {
-        if (empty($clean_values['related_rules']) || !is_array($clean_values['related_rules'])) {
-            return $clean_values;
-        }
+    private static function related_title(array $rule): string {
+        $trigger = (($rule['trigger_type'] ?? 'term') === 'taxonomy')
+            ? self::taxonomy_label($rule['trigger_taxonomy'] ?? '')
+            : self::trigger_terms_label($rule['trigger_term_id'] ?? null);
 
-        foreach ($clean_values['related_rules'] as &$rule) {
-            if (!is_array($rule)) {
-                continue;
-            }
-
-            $trigger_type = $rule['trigger_type'] ?? 'term';
-
-            if ($trigger_type === 'taxonomy') {
-                $rule['trigger_label'] = \esc_html(self::taxonomy_label($rule['trigger_taxonomy'] ?? ''));
-            } else {
-                $rule['trigger_label'] = \esc_html(self::trigger_terms_label($rule['trigger_term_id'] ?? null));
-            }
-
-            $rule['target_label'] = \esc_html(self::term_label($rule['target_term_id'] ?? null));
-            $rule['scope_label']  = \esc_html(self::scope_label($rule['post_types'] ?? []));
-
-            // Flag a disabled rule in the collapsed row title. title_template is
-            // raw token substitution with no client-side conditional, and the
-            // repeater header has no extension slot for a live control, so the
-            // marker is baked into the leading label token at save. It refreshes
-            // on the save that flips `enabled`, so it's accurate for persisted
-            // state. (Live header toggle would need a Wireframe JS fork; tracked
-            // separately.)
-            $rule['trigger_label'] = self::disabled_prefix($rule) . $rule['trigger_label'];
-        }
-        unset($rule);
-
-        return $clean_values;
+        return $trigger
+            . ' ' . "\xE2\x86\x92" . ' '
+            . self::term_label($rule['target_term_id'] ?? null)
+            . self::scope_label($rule['post_types'] ?? []);
     }
 
     /**
@@ -170,12 +139,10 @@ class WireframeBootstrap {
     }
 
     /**
-     * Assemble each ACF-reference rule's row title (SPEC §V10).
-     *
-     * Hooked on `wp-wireframe/save/payload`, PRE-storage — so `acf_field_name`
-     * is still the raw "post_type:field_name" option value (before the storage
-     * adapter splits it). No A→B arrow: same term, same taxonomy, moved across
-     * a relationship.
+     * ACF-reference title (SPEC §V10). Runs PRE-storage — `acf_field_name` is
+     * still the raw "post_type:field_name" option value (before the storage
+     * adapter splits it). No A→B arrow: same term, same taxonomy, moved
+     * across a relationship.
      *
      * Schema: {Copy|Sync} {Taxonomy} terms {to|from} {field_label}{ on {statuses}}
      *   Copy|Sync ← keep_in_sync (off|on)
@@ -183,57 +150,42 @@ class WireframeBootstrap {
      *   field_label ← acf_get_field()['label'] (clean human label), fallback name
      *   on {statuses} ← post_status gate, only when set
      *
-     * @param array $clean_values
-     * @return array
+     * @since 0.8.0 Replaces snapshot_acf_reference_labels (#58).
+     * @param array $rule
+     * @return string Unescaped.
      */
-    public static function snapshot_acf_reference_labels(array $clean_values): array {
-        if (empty($clean_values['related_post_terms_rules']) || !is_array($clean_values['related_post_terms_rules'])) {
-            return $clean_values;
+    private static function acf_reference_title(array $rule): string {
+        $verb = !empty($rule['keep_in_sync'])
+            ? __('Sync', 'meta-conductor')
+            : __('Copy', 'meta-conductor');
+
+        // Default an ABSENT holder_role to 'target', matching the handler
+        // (holder_is_source) and the storage migration — NOT 'source'. The
+        // key is absent only for a legacy raw rule re-saved before the
+        // migration flag is set; defaulting to 'source' here would write a
+        // row title that lies about the rule's runtime direction. A new rule
+        // always carries an explicit holder_role. (PR#24 round 4 #2)
+        $prep = (($rule['holder_role'] ?? 'target') === 'source')
+            ? __('to', 'meta-conductor')
+            : __('from', 'meta-conductor');
+
+        $gate = self::status_gate_label($rule['post_status'] ?? []);
+
+        // Assemble; tolerate empty parts gracefully.
+        $title = trim(sprintf(
+            /* translators: 1: Copy/Sync 2: taxonomy 3: to/from 4: field label */
+            __('%1$s %2$s terms %3$s %4$s', 'meta-conductor'),
+            $verb,
+            self::taxonomy_label($rule['taxonomy'] ?? ''),
+            $prep,
+            self::acf_field_label($rule['acf_field_name'] ?? '')
+        ));
+
+        if ($gate !== '') {
+            $title .= ' ' . sprintf(__('on %s', 'meta-conductor'), $gate);
         }
 
-        foreach ($clean_values['related_post_terms_rules'] as &$rule) {
-            if (!is_array($rule)) {
-                continue;
-            }
-
-            $verb = !empty($rule['keep_in_sync'])
-                ? __('Sync', 'meta-conductor')
-                : __('Copy', 'meta-conductor');
-
-            // Default an ABSENT holder_role to 'target', matching the handler
-            // (holder_is_source) and the storage migration — NOT 'source'. The
-            // key is absent only for a legacy raw rule re-saved before the
-            // migration flag is set; defaulting to 'source' here would write a
-            // row title that lies about the rule's runtime direction. A new rule
-            // always carries an explicit holder_role. (PR#24 round 4 #2)
-            $prep = (($rule['holder_role'] ?? 'target') === 'source')
-                ? __('to', 'meta-conductor')
-                : __('from', 'meta-conductor');
-
-            $tax_label   = self::taxonomy_label($rule['taxonomy'] ?? '');
-            $field_label = self::acf_field_label($rule['acf_field_name'] ?? '');
-            $gate        = self::status_gate_label($rule['post_status'] ?? []);
-
-            // Assemble; tolerate empty parts gracefully.
-            $title = trim(sprintf(
-                /* translators: 1: Copy/Sync 2: taxonomy 3: to/from 4: field label */
-                __('%1$s %2$s terms %3$s %4$s', 'meta-conductor'),
-                $verb,
-                $tax_label,
-                $prep,
-                $field_label
-            ));
-
-            if ($gate !== '') {
-                $title .= ' ' . sprintf(__('on %s', 'meta-conductor'), $gate);
-            }
-
-            // Flag disabled rules in the collapsed title (see disabled_prefix).
-            $rule['row_title'] = self::disabled_prefix($rule) . \esc_html($title);
-        }
-        unset($rule);
-
-        return $clean_values;
+        return $title;
     }
 
     /**
@@ -327,7 +279,21 @@ class WireframeBootstrap {
 
         $repaired = [];
         foreach ($rows as $row) {
-            $repaired[] = is_array($row) ? self::migrate_inheritance_behavior($row) : $row;
+            if (is_array($row)) {
+                $row = self::migrate_inheritance_behavior($row);
+                $row = self::migrate_related_term_shape($row);
+                // The acf-ref key-rename migration is one-shot flag-gated
+                // (maybe_migrate_acf_ref_storage), so a legacy-shaped row
+                // written AFTER the flag was set — CLI, import — would reach
+                // the repeater raw and render with config defaults (absent
+                // holder_role = the radio's `source`, reversing a live rule's
+                // direction on resave). Re-applying here is idempotent and
+                // closes that window for the admin path.
+                if (($row['type'] ?? '') === 'related_post_terms_rules') {
+                    $row = OptionRuleStorage::migrate_related_post_terms_shape($row);
+                }
+            }
+            $repaired[] = $row;
         }
 
         $repaired = self::snapshot_term_rule_labels([$key => $repaired])[$key];
@@ -395,6 +361,45 @@ class WireframeBootstrap {
     }
 
     /**
+     * Rewrite a related-term row's legacy scalar term ids into the array
+     * shapes the repeater's selects render (#58).
+     *
+     * The admin reads the option raw, so a pre-Wireframe row storing
+     * `trigger_term_id => "12"` or `target_term_id => 9` would render its
+     * select EMPTY — the FormTokenField binds an array — and the next save
+     * would persist that emptiness, silently disarming a live rule. The
+     * handlers already tolerate both shapes at read time
+     * (`normalize_rule_shape`); this is the admin half, same split as the
+     * inheritance-behavior migration above.
+     *
+     * Rows of any other type, and rows already in array shape, are untouched.
+     * The stale per-token label keys the old three-token title carried
+     * (`trigger_label` / `target_label` / `scope_label`) are shed here for
+     * the same reason the hierarchical migration sheds its legacy pair:
+     * sanitize would drop them on the next save anyway.
+     *
+     * @since 0.8.0
+     * @param array $row One term-rule row.
+     * @return array
+     */
+    private static function migrate_related_term_shape(array $row): array {
+        if (($row['type'] ?? '') !== 'related_rules') {
+            return $row;
+        }
+
+        foreach (['trigger_term_id', 'target_term_id'] as $key) {
+            if (isset($row[$key]) && !is_array($row[$key])) {
+                $id        = (int) $row[$key];
+                $row[$key] = $id > 0 ? [$id] : [];
+            }
+        }
+
+        unset($row['trigger_label'], $row['target_label'], $row['scope_label']);
+
+        return $row;
+    }
+
+    /**
      * The unescaped row title for one term rule, by type.
      *
      * An unrecognised or absent `type` is named rather than left blank: the
@@ -415,6 +420,10 @@ class WireframeBootstrap {
                 return self::hierarchical_title($rule);
             case 'hierarchical_level_restriction_rules':
                 return self::level_restriction_title($rule);
+            case 'related_rules':
+                return self::related_title($rule);
+            case 'related_post_terms_rules':
+                return self::acf_reference_title($rule);
         }
 
         return __('(no rule type chosen)', 'meta-conductor');

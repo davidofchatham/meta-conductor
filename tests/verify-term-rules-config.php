@@ -82,6 +82,14 @@ if (!function_exists('get_terms')) {
         return [(object) ['term_id' => 7, 'name' => 'Term A', 'taxonomy' => $args['taxonomy'] ?? 'category']];
     }
 }
+// The related-term title resolves single term ids through get_term.
+if (!function_exists('get_term')) {
+    function get_term($id) {
+        return ((int) $id) > 0
+            ? (object) ['term_id' => (int) $id, 'name' => 'Term ' . (int) $id, 'taxonomy' => 'category']
+            : null;
+    }
+}
 if (!function_exists('get_post_status_object')) {
     function get_post_status_object($slug) {
         $labels = ['publish' => 'Published', 'future' => 'Scheduled', 'draft' => 'Draft',
@@ -115,8 +123,12 @@ use BWS\MetaConductor\Handlers\HierarchicalHandler;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 use Wireframe\Framework\Conditions;
 
-$fail = [];
-$check = function (string $name, bool $cond) use (&$fail) { if (!$cond) { $fail[] = $name; } };
+$fail  = [];
+$total = 0;
+$check = function (string $name, bool $cond) use (&$fail, &$total) {
+    $total++;
+    if (!$cond) { $fail[] = $name; }
+};
 
 $KIND      = OptionRuleStorage::KIND_TERM;
 $TYPES     = OptionRuleStorage::migrated_types_for_kind($KIND);
@@ -155,13 +167,16 @@ $check('every offered type is labelled',
 $check('type select warns that changing it clears the old type\'s settings',
     str_contains(strtolower($type_field['description'] ?? ''), 'clears'));
 
-// --- Shared subfields carry NO gate. ----------------------------------------
+// --- Shared subfields every type reads carry NO gate. ------------------------
 // A gate on one of these means it stops saving for every type outside it.
+// `post_types` left this list in #58: the ACF-reference rule never reads it
+// (its post type is pinned by the monitored field), so it is gated to the
+// five types that do — see the gate assertion below.
 
 $by_id = [];
 foreach ($subfields as $s) { $by_id[$s['id']] = $s; }
 
-foreach (['type', 'enabled', 'post_types', 'post_status', 'row_title'] as $shared) {
+foreach (['type', 'enabled', 'post_status', 'row_title'] as $shared) {
     $check("shared subfield '$shared' exists",      isset($by_id[$shared]));
     $check("shared subfield '$shared' is ungated",  !isset($by_id[$shared]['conditions']));
 }
@@ -170,9 +185,23 @@ foreach (['type', 'enabled', 'post_types', 'post_status', 'row_title'] as $share
 $check('post_status is the shared builder\'s field',
     ($by_id['post_status']['args']['options'] ?? null) === ConfigHelpers::post_status_checkbox_options());
 
+// post_types: still the shared builder's field, gated to exactly the types
+// whose handlers read it — every type but the ACF-reference rule (#58). A
+// type missing from this gate loses its scope on save; a type wrongly added
+// gets an inert control that stores junk.
+$check('post_types is the shared builder\'s field',
+    ($by_id['post_types']['args']['options'] ?? null) === ConfigHelpers::post_types_checkbox_options());
+$check('post_types gates on every type except the ACF-reference rule',
+    ($by_id['post_types']['conditions']['value'] ?? [])
+        === array_values(array_diff($TYPES, ['related_post_terms_rules'])));
+
+// taxonomy: the ACF-reference rule joined the shared select's gate in #58.
+$check('taxonomy gate includes the ACF-reference rule',
+    in_array('related_post_terms_rules', $by_id['taxonomy']['conditions']['value'] ?? [], true));
+
 // --- Gated subfields name only real types, via `in`. ------------------------
 
-$ungated = ['type', 'enabled', 'post_types', 'post_status', 'row_title'];
+$ungated = ['type', 'enabled', 'post_status', 'row_title'];
 $gated_ok = true;
 $gate_covers = [];
 foreach ($subfields as $s) {
@@ -292,6 +321,19 @@ $expected_visible = [
         'post_types', 'post_status',
         'restriction_mode', 'include_ancestors', 'row_title',
     ],
+    // The two LIVE types (#58). A subfield missing here is a live rule's
+    // value silently dropped on the next settings save.
+    'related_rules' => [
+        'type', 'enabled', 'post_types', 'post_status',
+        'trigger_type', 'trigger_term_id', 'trigger_taxonomy',
+        'target_term_id', 'bidirectional', 'row_title',
+    ],
+    'related_post_terms_rules' => [
+        'type', 'enabled', 'taxonomy', 'acf_taxonomy_note',
+        'post_status', 'acf_status_note',
+        'acf_field_name', 'holder_role', 'reverse_acf_field_name',
+        'keep_in_sync', 'row_title',
+    ],
 ];
 
 foreach ($TYPES as $type) {
@@ -318,7 +360,7 @@ foreach ($subfields as $s) {
     }
 }
 $check('an untyped row shows only the shared frame',
-    $untyped === ['type', 'enabled', 'post_types', 'post_status', 'row_title']);
+    $untyped === ['type', 'enabled', 'post_status', 'row_title']);
 
 // --- The save path: repeater rows land back in the legacy arrays. ----------
 //
@@ -331,9 +373,10 @@ $payload = WireframeBootstrap::fan_out_rule_lists([
     $KIND => [
         ['type' => 'hierarchical_rules', 'taxonomy' => 'category', 'row_title' => 'first'],
         ['type' => 'propagation_rules',  'taxonomy' => 'category'],
+        ['type' => 'related_rules',      'trigger_taxonomy' => 'category'],
         ['type' => 'hierarchical_rules', 'taxonomy' => 'post_tag'],
     ],
-    'related_rules' => [['taxonomy' => 'untouched']],
+    'title_slug_rules' => [['post_type' => 'untouched']],
 ]);
 $check('fan-out writes each migrated type\'s array',
     $payload['hierarchical_rules'] === [
@@ -342,12 +385,21 @@ $check('fan-out writes each migrated type\'s array',
     ]);
 $check('fan-out carries the baked row title through',
     ($payload['hierarchical_rules'][0]['row_title'] ?? null) === 'first');
+$check('fan-out writes the live types too (#58)',
+    $payload['related_rules'] === [['trigger_taxonomy' => 'category']]);
 $check('fan-out names every migrated type, even the empty ones',
-    $payload['time_based_rules'] === [] && $payload['hierarchical_level_restriction_rules'] === []);
+    $payload['time_based_rules'] === []
+    && $payload['hierarchical_level_restriction_rules'] === []
+    && $payload['related_post_terms_rules'] === []);
 $check('fan-out leaves a non-migrated type alone',
-    $payload['related_rules'] === [['taxonomy' => 'untouched']]);
-$check('fan-out does not write the format kind yet (#59)',
-    !array_key_exists('title_slug_rules', $payload));
+    $payload['title_slug_rules'] === [['post_type' => 'untouched']]);
+// The format kind has no repeater yet (#59): even a payload carrying its
+// list must not project onto title_slug_rules.
+$fmt_payload = WireframeBootstrap::fan_out_rule_lists([
+    OptionRuleStorage::KIND_FORMAT => [['type' => 'title_slug_rules', 'post_type' => 'x']],
+]);
+$check('fan-out does not project the format kind yet (#59)',
+    !array_key_exists('title_slug_rules', $fmt_payload));
 
 // An emptied repeater must CLEAR the legacy arrays. `array_merge($saved,
 // $clean)` only replaces keys the payload carries, so an absent key would
@@ -408,6 +460,92 @@ $check('the do-nothing pair migrates to a DISABLED rule', empty($inert['enabled'
 $check('the do-nothing pair still names a valid outcome',
     in_array($inert['inheritance_behavior'], $behaviour_opts, true));
 
+// --- #58: the two live types' row titles and legacy-shape repair. ------------
+
+// Related: trigger → target, with the disabled prefix like everything else.
+$rel_title = WireframeBootstrap::snapshot_term_rule_labels([$KIND => [[
+    'type' => 'related_rules', 'enabled' => false,
+    'trigger_type' => 'term', 'trigger_term_id' => [7],
+    'target_term_id' => [9],
+]]])[$KIND][0]['row_title'];
+$check('related title joins trigger and target with an arrow',
+    str_contains($rel_title, "\xE2\x86\x92")
+    && str_contains($rel_title, 'Term 7') && str_contains($rel_title, 'Term 9'));
+$check('related title carries the uniform disabled prefix',
+    str_starts_with($rel_title, '[Disabled] '));
+
+// Taxonomy-triggered variant names the taxonomy, not a term.
+$rel_tax_title = WireframeBootstrap::snapshot_term_rule_labels([$KIND => [[
+    'type' => 'related_rules',
+    'trigger_type' => 'taxonomy', 'trigger_taxonomy' => 'category',
+    'target_term_id' => [9],
+]]])[$KIND][0]['row_title'];
+$check('taxonomy-triggered related title names the taxonomy',
+    str_starts_with($rel_tax_title, 'Categories'));
+
+// ACF-reference: verb tracks keep_in_sync, direction tracks holder_role, and
+// the COMBINED "post_type:field" value renders as the bare field name (the
+// value itself round-trips whole — fan-in/fan-out apply no coercion, H10).
+$acf_title = WireframeBootstrap::snapshot_term_rule_labels([$KIND => [[
+    'type' => 'related_post_terms_rules', 'keep_in_sync' => true,
+    'holder_role' => 'source', 'taxonomy' => 'category',
+    'acf_field_name' => 'event:related_team',
+]]])[$KIND][0]['row_title'];
+$check('acf-reference title: Sync + to + bare field name',
+    str_starts_with($acf_title, 'Sync')
+    && str_contains($acf_title, ' to ')
+    && str_contains($acf_title, 'related_team')
+    && !str_contains($acf_title, 'event:'));
+$acf_copy_title = WireframeBootstrap::snapshot_term_rule_labels([$KIND => [[
+    'type' => 'related_post_terms_rules', 'keep_in_sync' => false,
+    'holder_role' => 'target', 'taxonomy' => 'category',
+    'acf_field_name' => 'event:related_team',
+]]])[$KIND][0]['row_title'];
+$check('acf-reference title: Copy + from when pull and not syncing',
+    str_starts_with($acf_copy_title, 'Copy') && str_contains($acf_copy_title, ' from '));
+
+// Legacy related rows: scalar term ids must become the arrays the selects
+// bind, or the admin renders them EMPTY and the next save disarms the rule.
+$repair = new ReflectionMethod(WireframeBootstrap::class, 'migrate_related_term_shape');
+$r = fn(array $row) => $repair->invoke(null, $row);
+
+$legacy_rel = $r(['type' => 'related_rules', 'trigger_term_id' => '12',
+                  'target_term_id' => 9, 'trigger_label' => 'stale']);
+$check('a legacy scalar trigger becomes the select\'s array shape',
+    $legacy_rel['trigger_term_id'] === [12]);
+$check('a legacy scalar target becomes the select\'s array shape',
+    $legacy_rel['target_term_id'] === [9]);
+$check('the stale three-token label keys are shed',
+    !isset($legacy_rel['trigger_label']));
+$check('an array-shaped related row is untouched',
+    $r(['type' => 'related_rules', 'trigger_term_id' => [5], 'target_term_id' => [9]])
+        === ['type' => 'related_rules', 'trigger_term_id' => [5], 'target_term_id' => [9]]);
+$other_rel = ['type' => 'time_based_rules', 'target_term_id' => '21'];
+$check('a row of another type is untouched by the related repair',
+    $r($other_rel) === $other_rel);
+
+// Legacy ACF-reference rows: the key-rename migration is one-shot flag-gated
+// in storage, so the admin repair re-applies it to kind-list rows — a row
+// written behind the flag must not render with the radio's `source` default
+// and have its direction reversed on resave.
+$legacy_acf = OptionRuleStorage::migrate_related_post_terms_shape([
+    'type' => 'related_post_terms_rules',
+    'acf_field_name' => 'event:ref', 'source_taxonomy' => 'category',
+    'bidirectional' => true,
+]);
+$check('a legacy acf-ref row gains the runtime holder_role default, not the config one',
+    $legacy_acf['holder_role'] === 'target');
+$check('a legacy acf-ref row migrates its renamed keys',
+    $legacy_acf['taxonomy'] === 'category'
+    && $legacy_acf['keep_in_sync'] === true
+    && !isset($legacy_acf['source_taxonomy']) && !isset($legacy_acf['bidirectional']));
+$check('the combined acf_field_name is NOT split by the migration',
+    $legacy_acf['acf_field_name'] === 'event:ref');
+$migrated_acf = ['type' => 'related_post_terms_rules', 'acf_field_name' => 'event:ref',
+                 'taxonomy' => 'category', 'holder_role' => 'source', 'keep_in_sync' => false];
+$check('an already-migrated acf-ref row is untouched',
+    OptionRuleStorage::migrate_related_post_terms_shape($migrated_acf) === $migrated_acf);
+
 // --- Tabs: exactly three, Personalize gone. ---------------------------------
 
 $tab_ids = array_map(fn($t) => $t['id'], WireframeConfig::build()['tabs']);
@@ -419,11 +557,10 @@ $check('Restrict is no longer its own tab', !in_array('restrict', $tab_ids, true
 
 // --- Report. ----------------------------------------------------------------
 
-$total = 56;
 if ($fail) {
     fwrite(STDERR, "\nTERM-RULES-CONFIG FAIL — " . count($fail) . "/$total assertions failed:\n");
     foreach ($fail as $f) { fwrite(STDERR, "  \xE2\x9C\x97 $f\n"); }
     exit(1);
 }
-fwrite(STDOUT, "TERM-RULES-CONFIG OK — all $total assertions passed (subfield gates, claim builder, tabs; #57).\n");
+fwrite(STDOUT, "TERM-RULES-CONFIG OK — all $total assertions passed (subfield gates, claim builder, live types, tabs; #57/#58).\n");
 exit(0);

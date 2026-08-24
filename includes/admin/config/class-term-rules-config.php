@@ -29,11 +29,16 @@
  *
  * ## Which types live here
  *
- * `OptionRuleStorage::config_migrated_types()` is the single source of truth,
- * shared with the storage layer so the set of types this repeater offers and
- * the set storage treats as authored cannot drift. Batch 1 (#57) is the four
- * types not live on any real site; `related_rules` and
- * `related_post_terms_rules` keep their own sections until #58.
+ * `OptionRuleStorage::migrated_types_for_kind()` is the single source of
+ * truth, shared with the storage layer so the set of types this repeater
+ * offers and the set storage treats as authored cannot drift. Batch 1 (#57)
+ * was the four types not live on any real site; #58 moved the two live ones
+ * (`related_rules`, `related_post_terms_rules`) in, completing the collapse.
+ * Their rows exist in real data, so two shapes are load-bearing: the ACF
+ * field select's combined "post_type:field_name" value round-trips WHOLE
+ * (the handler splits at read time; persisting the split would break the
+ * select's option keys), and a legacy-shaped stored row must render with its
+ * own values, never config defaults (WireframeBootstrap::repair_stored_rules).
  *
  * The stored `type` value is the LEGACY TYPE KEY VERBATIM
  * (`hierarchical_rules`, not `hierarchical`) — rule-type renaming stays
@@ -70,7 +75,9 @@ class TermRulesConfig {
     private static function type_labels(): array {
         return [
             'propagation_rules'                    => __('From parent post — cascade terms to children', 'meta-conductor'),
+            'related_post_terms_rules'             => __('From referenced post (ACF) — copy terms across a relationship field', 'meta-conductor'),
             'time_based_rules'                     => __('Date window — apply a term while a date range is current', 'meta-conductor'),
+            'related_rules'                        => __('Related term — a trigger term applies a target term', 'meta-conductor'),
             'hierarchical_rules'                   => __('Hierarchy — inherit terms up or down the taxonomy tree', 'meta-conductor'),
             'hierarchical_level_restriction_rules' => __('Level restriction — limit which tree depths may hold terms', 'meta-conductor'),
         ];
@@ -129,8 +136,8 @@ class TermRulesConfig {
     }
 
     /**
-     * The Auto-Set & Restrict tab: the ordered term-rule list, plus the two
-     * per-type sections not yet collapsed into it (#58).
+     * The Auto-Set & Restrict tab: the ordered term-rule list, complete as of
+     * #58 — every term rule type is a row here.
      */
     public static function tab(): array {
         return [
@@ -138,8 +145,6 @@ class TermRulesConfig {
             'title'    => __('Auto-Set & Restrict', 'meta-conductor'),
             'sections' => [
                 self::section(),
-                RelatedPostTermsConfig::section(),
-                RelatedConfig::section(),
             ],
         ];
     }
@@ -191,6 +196,8 @@ class TermRulesConfig {
             self::time_based_subfields(),
             self::hierarchical_subfields(),
             self::level_restriction_subfields(),
+            self::related_subfields(),
+            self::related_post_terms_subfields(),
             [
                 // Snapshot row title (V11/§I.label). Not user-editable;
                 // assembled at save by WireframeBootstrap::snapshot_term_rule_labels.
@@ -215,21 +222,27 @@ class TermRulesConfig {
      * That is what "shared" means here — shared *provenance*, not necessarily
      * shared *scope*.
      *
-     * Three of them are UNGATED and show on every type (`enabled`,
-     * `post_types`, `post_status`, alongside `type` and `row_title`). H11
-     * asserts exactly those carry no `conditions` key, because a subfield that
-     * every type reads must never acquire a gate: it would start dropping its
-     * value on save for every type outside it.
+     * Two of them are UNGATED and show on every type (`enabled` and
+     * `post_status`, alongside `type` and `row_title`). H11 asserts exactly
+     * those carry no `conditions` key, because a subfield that every type
+     * reads must never acquire a gate: it would start dropping its value on
+     * save for every type outside it.
      *
-     * Two are gated, and deliberately, because a rule type that never reads a
-     * value should not be offered it — an inert control stores junk and reads
-     * as a setting that does something:
-     *   - `taxonomy` — every type here scopes by one EXCEPT the date window,
-     *     whose taxonomy is implied by the term it applies.
-     *   - claim (`conflict_handling`) — propagation is the only type in this
-     *     batch whose handler reads it. The other three have a claim fixed in
-     *     code, which #54 is where it gets stated.
-     * Both still come from the one shared builder, and their ids and meanings
+     * Three are gated, and deliberately, because a rule type that never reads
+     * a value should not be offered it — an inert control stores junk and
+     * reads as a setting that does something:
+     *   - `taxonomy` — the date window's taxonomy is implied by the term it
+     *     applies, and the related-term rule names a trigger and a target
+     *     instead of one taxonomy.
+     *   - `post_types` (#58) — the ACF-reference rule's post type is PINNED
+     *     by the relationship field it monitors; its handler never consults
+     *     `post_types`. Every other type reads it via should_process_post.
+     *     The gate lists all five reader types, so nothing that reads the
+     *     value can lose it on save.
+     *   - claim (`conflict_handling`) — propagation is the only type here
+     *     whose handler reads it. The others have a claim fixed in code,
+     *     which #54 is where it gets stated.
+     * All still come from the shared builders, and their ids and meanings
      * are the unified ones. H11 pins which subfields each type sees.
      *
      * @return array[]
@@ -258,11 +271,12 @@ class TermRulesConfig {
                 'columns' => 12,
             ],
             [
-                // Every type here scopes by taxonomy EXCEPT the date window,
-                // whose taxonomy is implied by the term it applies. Gating it
-                // rather than showing an inert select is the whole reason
-                // subfield conditions exist — but note the consequence: a row
-                // switched to a date window loses its taxonomy, which is
+                // Gated to the types that scope by ONE taxonomy. The date
+                // window's taxonomy is implied by the term it applies, and
+                // the related-term rule names a trigger and a target instead.
+                // Gating rather than showing an inert select is the whole
+                // reason subfield conditions exist — but note the consequence:
+                // a row switched to a date window loses its taxonomy, which is
                 // correct and is what the `type` description warns about.
                 'id'          => 'taxonomy',
                 'type'        => 'select',
@@ -274,7 +288,8 @@ class TermRulesConfig {
                 'conditions'  => self::only(
                     'propagation_rules',
                     'hierarchical_rules',
-                    'hierarchical_level_restriction_rules'
+                    'hierarchical_level_restriction_rules',
+                    'related_post_terms_rules'
                 ),
                 'args'        => [
                     'options' => ConfigHelpers::taxonomy_options(),
@@ -290,7 +305,32 @@ class TermRulesConfig {
                     'content' => '<p>' . esc_html__('This rule type only acts on a hierarchical taxonomy — one whose terms have parents. Pointed at a flat taxonomy it does nothing.', 'meta-conductor') . '</p>',
                 ],
             ],
-            ConfigHelpers::post_types_field(),
+            [
+                // The one nuance the shared taxonomy select's generic
+                // description cannot carry for the ACF-reference rule.
+                'id'         => 'acf_taxonomy_note',
+                'type'       => 'html',
+                'columns'    => 12,
+                'conditions' => self::only('related_post_terms_rules'),
+                'args'       => [
+                    'variant' => 'info',
+                    'content' => '<p>' . esc_html__('Terms are copied in this taxonomy, by ID — the same taxonomy on both ends of the relationship.', 'meta-conductor') . '</p>',
+                ],
+            ],
+            // Gated (#58): the ACF-reference rule's post type is pinned by the
+            // relationship field it monitors — its handler never reads
+            // `post_types`, so offering the checkboxes there would store junk
+            // that reads as a working scope. Every type that DOES read the
+            // value is inside the gate, so nothing loses its scope on save.
+            ConfigHelpers::post_types_field([
+                'conditions' => self::only(
+                    'propagation_rules',
+                    'time_based_rules',
+                    'related_rules',
+                    'hierarchical_rules',
+                    'hierarchical_level_restriction_rules'
+                ),
+            ]),
             [
                 'id'         => 'hierarchical_post_type_note',
                 'type'       => 'html',
@@ -307,6 +347,21 @@ class TermRulesConfig {
             // already reads `post_status`; empty means every status, so no
             // existing rule changes behaviour.
             ConfigHelpers::post_status_field(),
+            [
+                // The ACF-reference rule enforces the status gate differently
+                // — on the SOURCE post during term collection, not on the
+                // trigger post (SPEC §V5). The shared field's generic label
+                // stays; this note carries the per-type semantics the old
+                // per-type label ("Limit to source statuses") stated.
+                'id'         => 'acf_status_note',
+                'type'       => 'html',
+                'columns'    => 12,
+                'conditions' => self::only('related_post_terms_rules'),
+                'args'       => [
+                    'variant' => 'info',
+                    'content' => '<p>' . esc_html__('For this rule type the status limit applies to the posts terms are copied FROM: only source posts with these statuses contribute terms.', 'meta-conductor') . '</p>',
+                ],
+            ],
             // Claim is SUPPLIED BY THE SHARED BUILDER, never re-authored here
             // — the 0.8.0 claim vocabulary (ADR 0004) has to stay one map
             // behind the dropdowns and the row titles alike (#53 §6). The
@@ -371,19 +426,8 @@ class TermRulesConfig {
                 'columns'    => 12,
                 'conditions' => $gate,
             ],
-            [
-                'id'         => 'target_term_id',
-                'type'       => 'select',
-                'label'      => __('Target term to apply', 'meta-conductor'),
-                'default'    => '',
-                'columns'    => 12,
-                'conditions' => $gate,
-                'args'       => [
-                    'multiple' => true,
-                    'max'      => 1,
-                    'options'  => ConfigHelpers::all_term_options(),
-                ],
-            ],
+            // target_term_id — shared with the related-term rule — is
+            // declared once in related_subfields(), gated to both types.
         ];
     }
 
@@ -508,6 +552,167 @@ class TermRulesConfig {
                 'label'       => __('Keep ancestor terms', 'meta-conductor'),
                 'description' => __('Also keep the parent chain of every term the rule keeps, so a post tagged with a deep term still appears under its ancestor archives. Applies in all three modes — including "one term per level", where a kept term\'s ancestors are added back even if that leaves more than one term on a level.', 'meta-conductor'),
                 'default'     => false,
+                'columns'     => 12,
+                'conditions'  => $gate,
+            ],
+        ];
+    }
+
+    /**
+     * Related term — when a trigger term is present, apply a target term.
+     *
+     * LIVE on a real site (#58): the field ids and stored shapes here are the
+     * ones the per-type repeater persisted — `trigger_type`,
+     * `trigger_term_id` (FormTokenField array), `trigger_taxonomy`,
+     * `target_term_id` ([N] single-value array), `bidirectional`. Renaming
+     * any of them would orphan live rows' values at sanitize.
+     *
+     * `target_term_id` is declared here ONCE for both this type and the date
+     * window — identical field, identical meaning, and subfield ids must be
+     * unique in the repeater (H11), so a second declaration would clobber.
+     *
+     * @since 0.8.0
+     * @return array[]
+     */
+    private static function related_subfields(): array {
+        $gate = self::only('related_rules');
+
+        return [
+            [
+                'id'      => 'trigger_type',
+                'type'    => 'radio',
+                'label'   => __('Trigger', 'meta-conductor'),
+                'default' => 'term',
+                'columns' => 12,
+                'conditions' => $gate,
+                'args'    => [
+                    'options' => [
+                        'term'     => __('Specific term', 'meta-conductor'),
+                        'taxonomy' => __('Any term from taxonomy', 'meta-conductor'),
+                    ],
+                ],
+            ],
+            [
+                // Both trigger fields stay visible for the whole type rather
+                // than gating on trigger_type: a within-row gate on a sibling
+                // radio would DROP the hidden field's value at sanitize, and
+                // flipping the trigger back would find the old value gone.
+                'id'          => 'trigger_term_id',
+                'type'        => 'select',
+                'label'       => __('Trigger term', 'meta-conductor'),
+                'description' => __('Used when Trigger is "Specific term". Rule fires if post has any of the listed terms.', 'meta-conductor'),
+                'default'     => '',
+                'columns'     => 12,
+                'conditions'  => $gate,
+                'args'        => [
+                    'multiple' => true,
+                    'options'  => ConfigHelpers::all_term_options(),
+                ],
+            ],
+            [
+                'id'          => 'trigger_taxonomy',
+                'type'        => 'select',
+                'label'       => __('Trigger taxonomy', 'meta-conductor'),
+                'description' => __('Used when Trigger is "Any term from taxonomy".', 'meta-conductor'),
+                'default'     => '',
+                'columns'     => 12,
+                'conditions'  => $gate,
+                'args'        => [
+                    'options' => ConfigHelpers::taxonomy_options(),
+                ],
+            ],
+            [
+                'id'         => 'target_term_id',
+                'type'       => 'select',
+                'label'      => __('Target term to apply', 'meta-conductor'),
+                'default'    => '',
+                'columns'    => 12,
+                'conditions' => self::only('related_rules', 'time_based_rules'),
+                'args'       => [
+                    'multiple' => true,
+                    'max'      => 1,
+                    'options'  => ConfigHelpers::all_term_options(),
+                ],
+            ],
+            [
+                'id'          => 'bidirectional',
+                'type'        => 'toggle',
+                'label'       => __('Bidirectional', 'meta-conductor'),
+                'description' => __('Remove the target term when the trigger term is removed.', 'meta-conductor'),
+                'default'     => false,
+                'columns'     => 12,
+                'conditions'  => $gate,
+            ],
+        ];
+    }
+
+    /**
+     * From referenced post (ACF) — copy taxonomy terms between a post and the
+     * posts it relates to via an ACF relationship / post-object field.
+     *
+     * LIVE on a real site (#58). The `acf_field_name` select stores the
+     * COMBINED "post_type:field_name" value and must round-trip it whole:
+     * the option keys are combined, so persisting the split form would
+     * render the select empty and the next save would blank the field. The
+     * handler splits at read time (`normalize_rule_shape`). Same for
+     * `reverse_acf_field_name`.
+     *
+     * `taxonomy` and `post_status` come from the shared frame; the two
+     * type-gated notes beside them carry this type's semantics.
+     *
+     * @since 0.8.0
+     * @return array[]
+     */
+    private static function related_post_terms_subfields(): array {
+        $gate = self::only('related_post_terms_rules');
+
+        return [
+            [
+                'id'          => 'acf_field_name',
+                'type'        => 'select',
+                'label'       => __('Monitored relationship field', 'meta-conductor'),
+                'description' => __('The post-object or relationship field connecting the two posts. Watched at both ends — a change to either post re-syncs. The post type that OWNS this field is the "field holder"; "Source" below decides which end\'s terms win. ⚠ Only top-level relationship/post-object fields are listed — fields nested inside an ACF Group, Repeater, or Flexible Content container are not shown and are not currently supported. ⚠ If two DIFFERENT field groups define separate relationship fields with the SAME field name, reverse-lookup and post-type detection may resolve the wrong one — give same-named fields distinct names, or set an explicit Reverse relationship field below.', 'meta-conductor'),
+                'default'     => '',
+                'required'    => true,
+                'columns'     => 12,
+                'conditions'  => $gate,
+                'args'        => [
+                    'options' => ConfigHelpers::acf_relationship_field_options(),
+                ],
+            ],
+            [
+                'id'          => 'holder_role',
+                'type'        => 'radio',
+                'label'       => __('Source (terms copied from)', 'meta-conductor'),
+                'description' => __('Which end is authoritative — its terms are copied to the other end. The trigger is ambient (a change at either end re-syncs); this decides direction.', 'meta-conductor'),
+                'default'     => 'source',
+                'columns'     => 12,
+                'conditions'  => $gate,
+                'args'        => [
+                    'options' => [
+                        'source' => __('Field holder → copies out to related posts (push)', 'meta-conductor'),
+                        'target' => __('Related posts → copies in to the field holder (pull)', 'meta-conductor'),
+                    ],
+                ],
+            ],
+            [
+                'id'          => 'reverse_acf_field_name',
+                'type'        => 'select',
+                'label'       => __('Reverse relationship field (optional)', 'meta-conductor'),
+                'description' => __('The inverse relationship field on the other end, if any. Speeds the reverse lookup. Leave blank to auto-detect ACF bidirectional fields. ⚠ Only top-level relationship/post-object fields are listed — group/repeater/flexible-content-nested fields are not shown or supported. ⚠ With neither an explicit reverse field nor a detectable bidirectional field, the reverse lookup falls back to an unindexed query on every save — slow on large sites. Set this (or use an ACF bidirectional field) to avoid it.', 'meta-conductor'),
+                'default'     => '',
+                'columns'     => 12,
+                'conditions'  => $gate,
+                'args'        => [
+                    'options' => ConfigHelpers::acf_relationship_field_options(__('— None / auto —', 'meta-conductor')),
+                ],
+            ],
+            [
+                'id'          => 'keep_in_sync',
+                'type'        => 'toggle',
+                'label'       => __('Keep in sync', 'meta-conductor'),
+                'description' => __('Remove copied terms from the target when the source no longer has them. Off = add-only (never removes).', 'meta-conductor'),
+                'default'     => true,
                 'columns'     => 12,
                 'conditions'  => $gate,
             ],

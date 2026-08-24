@@ -30,6 +30,7 @@ Requirements source: [`../handler-fixture-matrix.md`](../handler-fixture-matrix.
 | `seed.php` | Idempotent applier. Order matters: schema → terms → posts → post fields → **rules last** (rules fire on save hooks; posts must land before rules exist). |
 | `verify.php` | Post-seed smoke + negative-control assertions. Not a behavior-sweep replacement. |
 | `sweep-related-post-terms-sever.php` | §4 sever + write-queue sweep (#42/#43). Stepped, one step per eval — the #42 flush runs on `shutdown`, so a bare `update_field()` can only be asserted in a later request. Read its header before running: step `s7` fails by design. |
+| `sweep-58-roundtrip.php` | #58 dynamic sweep: admin-load storage sequence, then every stored term-rule row through Wireframe's real `RepeaterField::sanitize` — asserts no value a live rule type reads is dropped by the unified repeater's gates. |
 
 ## Seeding
 
