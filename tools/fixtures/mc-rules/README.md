@@ -73,6 +73,14 @@ match so the seeder converges on the surviving post where duplicates exist.
 `verify.php` asserts exactly one post per fixture slug, so any regression here
 fails loudly instead of growing silently.
 
+Those explicit statuses deliberately exclude `trash` — a trashed fixture should
+be re-created, not silently revived by an upsert. That is right for the seeder,
+but section B3 reuses the same lookup for a read-only assertion, so
+core-structures' deliberately trashed `gate-trashed` staff fixture reads as
+missing and B3 fails. Known, tracked in
+[#70](https://github.com/davidofchatham/meta-conductor/issues/70); the seeder's
+status list must not change to fix it.
+
 ### Seed order is load-bearing
 
 `seed.php` **empties the MC rule arrays before writing any content** and

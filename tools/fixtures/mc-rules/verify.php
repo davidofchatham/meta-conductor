@@ -205,7 +205,7 @@ if ( class_exists( '\\BWS\\MetaConductor\\Storage\\StorageFactory' ) ) {
 // CONTRACT ASSERTED: the documented over-removal (handler-fixture-matrix.md
 // §6e). cleanup_expired_rule() records no provenance — it strips the target
 // term from EVERY matching post however the term got there — so a hand-planted
-// subject is a faithful one today. If provenance tracking ever lands, this
+// subject is a faithful one today. If provenance tracking ever lands (#69), this
 // assertion is the canary that flips; update it deliberately, don't delete it.
 //
 // NOT asserted here: the manifest's THIRD time_based rule is future-dated
@@ -213,8 +213,8 @@ if ( class_exists( '\\BWS\\MetaConductor\\Storage\\StorageFactory' ) ) {
 // permanently-expired rule[1] strips daily what rule[2] applies. Reproduced on
 // the testbed by sliding rule[2] into range: save → [Archived], cron → []. It
 // is unreachable on seed day (a future rule has applied nothing), so it does
-// not change the state asserted below — it is a handler defect, tracked
-// separately, not a fixture one.
+// not change the state asserted below — it is a handler defect (#69, matrix
+// §6f), not a fixture one.
 $mc_a7_solo = $mc_post( 'item-solo-a' );
 $mc_a7_arch = $mc_term( 'topic-archived' );
 $mc_a7_feat = $mc_term( 'topic-featured' );

@@ -406,7 +406,7 @@ this is date-independent.)
   order, and registers the restore as a shutdown function.
 
 - **§6f expired rule fights an ACTIVE rule on the same term** ❌ *handler defect,
-  not fixture.* The manifest's third rule is future-dated
+  not fixture — [#69](https://github.com/davidofchatham/meta-conductor/issues/69).* The manifest's third rule is future-dated
   (`{TODAY+10}..{TODAY+20}`) on the SAME Archived target as the expired one.
   Once that window opens, rule[1] is still expired — `cleanup_expired_rules()`
   has no "already cleaned" flag and re-runs daily forever — so the daily cron
