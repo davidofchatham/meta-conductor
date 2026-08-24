@@ -392,6 +392,29 @@ this is date-independent.)
   expired rule's Archived target from ALL matching `mc_item` posts in one pass.
   This is the documented **over-removal**: no per-post provenance tracking, so it
   removes Archived from every matching post regardless of how it got there.
+
+  **Now also asserted by `verify.php` A7** (0.8.0), behaviourally. The old A7
+  checked `wp_next_scheduled()`, which proves nothing: the event is scheduled at
+  plugin load and stays scheduled under `DISABLE_WP_CRON` (that constant disables
+  only the page-load spawner), so it passed on a site where
+  `cleanup_expired_rules()` never ran. And no seeded post holds Archived — term
+  count is 0 after a clean seed — so firing the action and asserting "term gone"
+  is vacuous unless a subject is planted first. A7 therefore isolates
+  `time_based_rules`, plants Archived **+ Featured** on `item-solo-a`, fires,
+  and asserts Archived went and Featured stayed (the in-range rule's target is
+  not an expired one). It restores the option snapshot and the subject, in that
+  order, and registers the restore as a shutdown function.
+
+- **§6f expired rule fights an ACTIVE rule on the same term** ❌ *handler defect,
+  not fixture.* The manifest's third rule is future-dated
+  (`{TODAY+10}..{TODAY+20}`) on the SAME Archived target as the expired one.
+  Once that window opens, rule[1] is still expired — `cleanup_expired_rules()`
+  has no "already cleaned" flag and re-runs daily forever — so the daily cron
+  strips exactly what the active rule applies. Reproduced on the testbed by
+  sliding rule[2] into range with rule[1] left expired: save → `[Archived]`,
+  `do_action('bws_taxonomy_manager_cleanup')` → `[]`. Unreachable on seed day
+  (a future rule has applied nothing), which is why A7 can assert the seed-day
+  state without waiting on a fix.
 - Negative controls unchanged.
 
 ### §7 title_slug — results
