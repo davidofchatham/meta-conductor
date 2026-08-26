@@ -28,7 +28,7 @@ Requirements source: [`../handler-fixture-matrix.md`](../handler-fixture-matrix.
 | `sweep-lib.php` | Behavior-sweep helper library (isolate / read / assert / restore without a full re-seed). See Sweep discipline. |
 | `schema.php` | CPT/taxonomy registration + ACF groups. Loaded by mu-plugin stub seed.php installs. |
 | `seed.php` | Idempotent applier. Order matters: schema → terms → posts → post fields → **rules last** (rules fire on save hooks; posts must land before rules exist). |
-| `verify.php` | Post-seed smoke + negative-control assertions. Not a behavior-sweep replacement — with one exception: **A7 is behavioural and MUTATES** (isolates `time_based_rules`, plants a subject, fires `bws_taxonomy_manager_cleanup`, asserts, restores). Safe to re-run; a scheduled-event check could only ever be a false green. See matrix §6e. |
+| `verify.php` | Post-seed smoke + negative-control assertions. Not a behavior-sweep replacement, with one exception: **A7 is behavioural and MUTATES** — it drives the time_based cron cleanup through the handler and restores. Safe to re-run against a seeded site; requires `item-solo-a` at seed state. See matrix §6e-bis. |
 | `sweep-related-post-terms-sever.php` | §4 sever + write-queue sweep (#42/#43). Stepped, one step per eval — the #42 flush runs on `shutdown`, so a bare `update_field()` can only be asserted in a later request. Read its header before running: step `s7` fails by design. |
 | `sweep-58-roundtrip.php` | #58 dynamic sweep: admin-load storage sequence, then every stored term-rule row through Wireframe's real `RepeaterField::sanitize` — asserts no value a live rule type reads is dropped by the unified repeater's gates. |
 
@@ -73,13 +73,9 @@ match so the seeder converges on the surviving post where duplicates exist.
 `verify.php` asserts exactly one post per fixture slug, so any regression here
 fails loudly instead of growing silently.
 
-Those explicit statuses deliberately exclude `trash` — a trashed fixture should
-be re-created, not silently revived by an upsert. That is right for the seeder,
-but section B3 reuses the same lookup for a read-only assertion, so
-core-structures' deliberately trashed `gate-trashed` staff fixture reads as
-missing and B3 fails. Known, tracked in
-[#70](https://github.com/davidofchatham/meta-conductor/issues/70); the seeder's
-status list must not change to fix it.
+Those statuses exclude `trash` by design, which makes B3 fail on
+core-structures' deliberately trashed `gate-trashed` fixture —
+[#70](https://github.com/davidofchatham/meta-conductor/issues/70).
 
 ### Seed order is load-bearing
 

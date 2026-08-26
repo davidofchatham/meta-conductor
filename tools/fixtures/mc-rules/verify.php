@@ -12,11 +12,10 @@
  *      isolation breaks: an MC rule that leaked onto page/post/staff.
  *
  * NOT a behavior-sweep replacement — asserts state, not handler outcomes. The
- * ONE exception is A7 (time_based cron cleanup): a scheduled-event check can
- * only ever be a false green, so A7 snapshots the rule option, isolates
- * time_based, plants a subject, fires the action, asserts, and restores (also
- * via register_shutdown_function). It is the only MUTATING probe in this file.
- * Keep it that way — everything else belongs in a sweep.
+ * ONE exception is A7 (time_based cron cleanup): a scheduled-event check cannot
+ * prove the handler ever ran, and this file is the only thing seed-all.sh runs.
+ * A7 is the only MUTATING probe here — keep it that way, everything else
+ * belongs in a sweep. See its own comment, and matrix §6e/§6f/§6g.
  * Exits non-zero if any assertion fails.
  */
 
@@ -188,57 +187,68 @@ if ( class_exists( '\\BWS\\MetaConductor\\Storage\\StorageFactory' ) ) {
 
 // A7. Cron cleanup for expired time_based rules — BEHAVIOURAL.
 //
-// The only probe in this file that MUTATES, because the subject is a handler
-// outcome and nothing static stands in for it. It snapshots, isolates,
-// asserts and restores in-place; the restore is also registered as a shutdown
-// function so a fatal mid-probe cannot leave the site isolated.
+// The only MUTATING probe in this file. It snapshots the rule option, isolates
+// time_based, drives the handler, asserts, and restores — the restore also
+// registered as a shutdown function so a fatal mid-probe cannot leave the site
+// isolated. Rationale for covering cron here at all, and the over-removal this
+// probe deliberately does NOT pin: handler-fixture-matrix.md §6e/§6f/§6g.
 //
-// What it replaced, and why: `wp_next_scheduled( 'bws_taxonomy_manager_cleanup' )`
-// is a false green twice over. (a) The event is scheduled at plugin load
-// (meta-conductor.php) and STAYS scheduled under DISABLE_WP_CRON — which
-// disables only the page-load spawner — so the check passed on a site where
-// cleanup_expired_rules() never ran once. (b) Even fired, the manifest's
-// expired rule targets Archived, which NO seeded post holds (term count 0
-// after a clean seed), so "term gone afterwards" is vacuously true unless a
-// subject is planted first.
+// PRECONDITION: item-solo-a at seed state. The manifest gives it no post_terms
+// entry, so no mc_topic terms; the restore CLEARS mc_topic rather than putting
+// back what it found, so running this against a solo-a some sweep is mid-way
+// through would discard that sweep's state.
 //
-// CONTRACT ASSERTED: the documented over-removal (handler-fixture-matrix.md
-// §6e). cleanup_expired_rule() records no provenance — it strips the target
-// term from EVERY matching post however the term got there — so a hand-planted
-// subject is a faithful one today. If provenance tracking ever lands (#69), this
-// assertion is the canary that flips; update it deliberately, don't delete it.
-//
-// NOT asserted here: the manifest's THIRD time_based rule is future-dated
-// ({TODAY+10}..{TODAY+20}) on this same Archived term, so once it opens the
-// permanently-expired rule[1] strips daily what rule[2] applies. Reproduced on
-// the testbed by sliding rule[2] into range: save → [Archived], cron → []. It
-// is unreachable on seed day (a future rule has applied nothing), so it does
-// not change the state asserted below — it is a handler defect (#69, matrix
-// §6f), not a fixture one.
+// WHY IT SYNTHESIZES A RULE SET: the subject must be applied by the HANDLER,
+// not planted by hand — a hand-planted term only proves the un-provenanced
+// over-removal (§6e), and would go red the day #69 adds provenance. Driving
+// the apply needs two deviations from the seeded rules, both asserted below:
+// the expired rule's window is slid in-range, and it runs ALONE. The second is
+// not tidiness — the manifest's future-dated rule shares the target term and
+// removes it in the SAME save pass (§6g), so with it present nothing lands.
 $mc_a7_solo = $mc_post( 'item-solo-a' );
 $mc_a7_arch = $mc_term( 'topic-archived' );
 $mc_a7_feat = $mc_term( 'topic-featured' );
 
 $check( 'cron bws_taxonomy_manager_cleanup scheduled', (bool) wp_next_scheduled( 'bws_taxonomy_manager_cleanup' ) );
-$check( 'a handler is hooked to bws_taxonomy_manager_cleanup', false !== has_action( 'bws_taxonomy_manager_cleanup' ) );
+$check( 'a handler is hooked to bws_taxonomy_manager_cleanup', (bool) has_action( 'bws_taxonomy_manager_cleanup' ) );
 
-if ( ! $mc_a7_solo || ! $mc_a7_arch || ! $mc_a7_feat || ! class_exists( '\BWS\MetaConductor\Storage\StorageFactory' ) ) {
+if ( ! $mc_a7_solo || ! $mc_a7_arch || ! $mc_a7_feat || ! class_exists( '\\BWS\\MetaConductor\\Storage\\StorageFactory' ) ) {
 	$check( 'A7 cron-cleanup probe has its subjects', false, 'solo-a/Archived/Featured/storage missing — probe skipped' );
 } else {
 	$mc_a7_opt      = 'bws_meta_conductor_settings';
 	$mc_a7_snapshot = get_option( $mc_a7_opt, array() );
+	$mc_a7_today    = current_time( 'Y-m-d' );
 	$mc_a7_done     = false;
 
-	// Restore order is load-bearing: clear the subject WHILE still isolated,
-	// then put the rules back. The reverse lets the live hierarchical/related/
-	// level-restriction handlers re-populate mc_topic on the clearing write.
+	/** solo-a's mc_topic ids, sorted. WP_Error-safe — see sweep-lib's mc_terms(). */
+	$mc_a7_topics = function () use ( $mc_a7_solo ) {
+		$terms = wp_get_object_terms( $mc_a7_solo, 'mc_topic', array( 'fields' => 'ids' ) );
+		if ( is_wp_error( $terms ) ) {
+			return array();
+		}
+		$terms = array_map( 'intval', $terms );
+		sort( $terms );
+		return $terms;
+	};
+
+	/** Write one rule set and re-read it through the handlers' storage instance. */
+	$mc_a7_set_rules = function ( array $rules ) use ( $mc_a7_opt ) {
+		$settings                     = get_option( $mc_a7_opt, array() );
+		$settings['time_based_rules'] = $rules;
+		update_option( $mc_a7_opt, $settings );
+		\BWS\MetaConductor\Storage\StorageFactory::get_instance()->clear_cache();
+	};
+
+	// Restore ORDER is load-bearing: clear the subject WHILE still isolated, then
+	// put the rules back. The reverse lets the live hierarchical / related /
+	// level-restriction handlers re-populate mc_topic on the clearing write. Only
+	// mc_topic and _bws_auto_terms are touched — all this probe writes.
 	$mc_a7_restore = function () use ( $mc_a7_opt, $mc_a7_snapshot, $mc_a7_solo, &$mc_a7_done ) {
 		if ( $mc_a7_done ) {
 			return;
 		}
 		$mc_a7_done = true;
 		wp_set_object_terms( $mc_a7_solo, array(), 'mc_topic' );
-		wp_set_object_terms( $mc_a7_solo, array(), 'mc_flag' );
 		delete_post_meta( $mc_a7_solo, '_bws_auto_terms' );
 		update_option( $mc_a7_opt, $mc_a7_snapshot );
 		\BWS\MetaConductor\Storage\StorageFactory::get_instance()->clear_cache();
@@ -257,35 +267,59 @@ if ( ! $mc_a7_solo || ! $mc_a7_arch || ! $mc_a7_feat || ! class_exists( '\BWS\Me
 	update_option( $mc_a7_opt, $mc_a7_isolated );
 	\BWS\MetaConductor\Storage\StorageFactory::get_instance()->clear_cache();
 
-	// Plant the subject the assertion needs: the expired rule's target, plus a
-	// second term no expired rule owns (Featured belongs to the IN-RANGE rule).
-	wp_set_object_terms( $mc_a7_solo, array( $mc_a7_arch, $mc_a7_feat ), 'mc_topic' );
-	$mc_a7_pre = array_map( 'intval', wp_get_object_terms( $mc_a7_solo, 'mc_topic', array( 'fields' => 'ids' ) ) );
-	sort( $mc_a7_pre );
-	$mc_a7_want_pre = array( $mc_a7_arch, $mc_a7_feat );
-	sort( $mc_a7_want_pre );
-	// If this fails the isolation leaked and the cleanup assertion below is
-	// reading a polluted subject — fail here rather than misattribute it.
-	$check(
-		'A7 subject planted clean (isolation held)',
-		$mc_a7_pre === $mc_a7_want_pre,
-		'got [' . implode( ',', $mc_a7_pre ) . '] want [' . implode( ',', $mc_a7_want_pre ) . ']'
-	);
+	// Find the seeded expired-Archived rule by its shape, not its index.
+	$mc_a7_expired = null;
+	foreach ( (array) ( $mc_a7_snapshot['time_based_rules'] ?? array() ) as $mc_a7_rule ) {
+		if ( (int) ( $mc_a7_rule['target_term_id'] ?? 0 ) === $mc_a7_arch
+			&& ! empty( $mc_a7_rule['end_date'] )
+			&& $mc_a7_rule['end_date'] < $mc_a7_today ) {
+			$mc_a7_expired = $mc_a7_rule;
+			break;
+		}
+	}
+	$check( 'A7 found the seeded expired Archived rule', is_array( $mc_a7_expired ) );
 
-	do_action( 'bws_taxonomy_manager_cleanup' );
+	if ( is_array( $mc_a7_expired ) ) {
+		// Deviation 1+2: slide the window in-range, and run this rule ALONE.
+		$mc_a7_in_range               = $mc_a7_expired;
+		$mc_a7_in_range['start_date'] = gmdate( 'Y-m-d', strtotime( $mc_a7_today . ' -1 day' ) );
+		$mc_a7_in_range['end_date']   = gmdate( 'Y-m-d', strtotime( $mc_a7_today . ' +7 days' ) );
+		$mc_a7_set_rules( array( $mc_a7_in_range ) );
 
-	$mc_a7_post = array_map( 'intval', wp_get_object_terms( $mc_a7_solo, 'mc_topic', array( 'fields' => 'ids' ) ) );
-	sort( $mc_a7_post );
-	$check(
-		'A7 cron cleanup removed the EXPIRED rule target (Archived) from mc_item',
-		! in_array( $mc_a7_arch, $mc_a7_post, true ),
-		'solo-a still holds [' . implode( ',', $mc_a7_post ) . ']'
-	);
-	$check(
-		'A7 cron cleanup left the IN-RANGE rule target (Featured) alone',
-		$mc_a7_post === array( $mc_a7_feat ),
-		'got [' . implode( ',', $mc_a7_post ) . '] want [' . $mc_a7_feat . ']'
-	);
+		wp_set_object_terms( $mc_a7_solo, array(), 'mc_topic' );
+		delete_post_meta( $mc_a7_solo, '_bws_auto_terms' );
+		wp_update_post( array( 'ID' => $mc_a7_solo ) );
+
+		// If this fails the apply never happened and the cleanup assertion below
+		// would be vacuously green — fail here rather than misattribute it.
+		$mc_a7_applied = $mc_a7_topics();
+		$check(
+			'A7 the HANDLER applied the target term on save',
+			$mc_a7_applied === array( $mc_a7_arch ),
+			'got [' . implode( ',', $mc_a7_applied ) . '] want [' . $mc_a7_arch . ']'
+		);
+
+		// Negative control, hand-planted on purpose: its claim is only "a term the
+		// cleanup does not target stays put", so how it got there is irrelevant.
+		// Appended, not set, so the handler-applied term above is left as it landed.
+		wp_add_object_terms( $mc_a7_solo, array( $mc_a7_feat ), 'mc_topic' );
+
+		// Put the expiry back, then fire the event wp-cron would have fired.
+		$mc_a7_set_rules( array( $mc_a7_expired ) );
+		do_action( 'bws_taxonomy_manager_cleanup' );
+
+		$mc_a7_post = $mc_a7_topics();
+		$check(
+			'A7 cron cleanup removed the term its own expired rule applied',
+			! in_array( $mc_a7_arch, $mc_a7_post, true ),
+			'solo-a still holds [' . implode( ',', $mc_a7_post ) . ']'
+		);
+		$check(
+			'A7 cron cleanup left the untargeted term alone',
+			$mc_a7_post === array( $mc_a7_feat ),
+			'got [' . implode( ',', $mc_a7_post ) . '] want [' . $mc_a7_feat . ']'
+		);
+	}
 
 	$mc_a7_restore();
 }
