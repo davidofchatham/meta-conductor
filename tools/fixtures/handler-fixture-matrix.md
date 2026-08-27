@@ -622,6 +622,22 @@ asserts the restore.
   they only escape it by having no non-published fixtures.
 - **Assert one-post-per-slug.** The duplication above was invisible for four
   runs because nothing checked. Cheap assertion, catches a whole bug class.
+- **A composed-on blueprint's manifest is read LIVE, not at the pinned version.**
+  `verify.php` `require`s core-structures' `manifest.php` directly and section B
+  iterates every `posts` entry in it; `min_version => 4` is a floor, not a pin.
+  So a fixture added upstream arrives in our negative controls unannounced —
+  which is the point, but it means an upstream assumption change lands silently.
+  core-structures v14 added `staff-gate-trashed` in status `trash` **on purpose**
+  and listed `trash` in its own seeder's status lookup; ours did not follow, so
+  the post read as missing and B3 reported a slug change that had never happened.
+  The fix separates a **policy** from a **census**: `mc_fixture_post_statuses()`
+  is what an MC-OWNED fixture may hold (no trash — a trashed one should be
+  re-created, not revived by an upsert), and `mc_fixture_readable_statuses()`
+  adds trash for reading posts another blueprint owns. Only the core resolver
+  passes the wider set, so seeding is unchanged. B3 gained a **post_status**
+  assertion alongside the slug one: with trash now findable, an MC rule that
+  trashed a core post would otherwise leave B3 green, the slug being intact in
+  the bin. Fault-injection verified.
 
 ## Harnesses
 

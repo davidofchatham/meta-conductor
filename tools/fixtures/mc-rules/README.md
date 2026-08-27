@@ -23,7 +23,7 @@ Requirements source: [`../handler-fixture-matrix.md`](../handler-fixture-matrix.
 | File | Role |
 |---|---|
 | `manifest.php` | Data contract — terms tree, posts, ACF values, rule baselines. Consumers pin `version`. |
-| `lookup.php` | Shared fixture-post lookup. Read its header before touching any post query here — see the trap below. |
+| `lookup.php` | Shared fixture-post lookup. Read its header before touching any post query here — see the trap below. Two status sets: `mc_fixture_post_statuses()` (upsert, no trash) vs `mc_fixture_readable_statuses()` (reads of posts another blueprint owns, trash included). |
 | `resolve.php` | Shared rule token resolver (`{TERM:}` / `{TODAY±N}`). Used by both seed.php and sweep-lib.php so seed-time and restore-time rules never diverge. |
 | `sweep-lib.php` | Behavior-sweep helper library (isolate / read / assert / restore without a full re-seed). See Sweep discipline. |
 | `schema.php` | CPT/taxonomy registration + ACF groups. Loaded by mu-plugin stub seed.php installs. |

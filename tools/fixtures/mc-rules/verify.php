@@ -341,11 +341,18 @@ if ( ! $mc_core_manifest ) {
 		if ( ! $def ) {
 			return 0;
 		}
-		// Same status-blind trap as the MC lookup (see lookup.php). Every
-		// core-structures fixture is published today, so `'any'` would work
-		// here by luck — use the safe helper anyway so a future non-published
-		// core fixture doesn't silently read as missing.
-		return mc_fixture_find_post( $def['post_name'], $def['post_type'] );
+		// Same status-blind trap as the MC lookup (see lookup.php), and the
+		// "future non-published core fixture" this comment used to hypothesise
+		// has since arrived: core-structures v14 added `staff-gate-trashed` in
+		// status `trash`, on purpose. Read with the READABLE set, not the
+		// upsert one — trash is excluded there because an MC fixture in the bin
+		// should be re-created, which is a policy about OUR posts and says
+		// nothing about what another blueprint may legitimately own.
+		return mc_fixture_find_post(
+			$def['post_name'],
+			$def['post_type'],
+			mc_fixture_readable_statuses()
+		);
 	};
 
 	// B1. department term assignments still match the core manifest.
@@ -391,11 +398,24 @@ if ( ! $mc_core_manifest ) {
 
 	// B3. Slugs unchanged (title_slug isolation — a leaked rule renames posts
 	// and every GBDTE matrix URL breaks).
+	//
+	// B3b rides along because B3's lookup now includes trash: without a status
+	// assertion, an MC rule that TRASHED a core post would leave B3 green (the
+	// slug is intact in the bin). The manifest declares post_status per post,
+	// absent meaning publish, so the expectation costs nothing to state.
 	foreach ( $mc_core_manifest['posts'] as $mc_slug => $mc_def ) {
 		$mc_pid = $mc_core_post( $mc_slug );
 		$check(
 			"NEG core {$mc_slug}: post_name still '{$mc_def['post_name']}'",
 			$mc_pid && get_post_field( 'post_name', $mc_pid ) === $mc_def['post_name']
+		);
+
+		$mc_want_status = $mc_def['post_status'] ?? 'publish';
+		$mc_got_status  = $mc_pid ? get_post_status( $mc_pid ) : '(missing)';
+		$check(
+			"NEG core {$mc_slug}: post_status still '{$mc_want_status}'",
+			$mc_got_status === $mc_want_status,
+			"got {$mc_got_status}"
 		);
 	}
 
