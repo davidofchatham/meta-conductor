@@ -93,7 +93,7 @@ $classes = [
     // when their sections collapsed into this one; Related and
     // RelatedPostTerms followed in #58.
     'BWS\\MetaConductor\\Admin\\Config\\TermRulesConfig',
-    'BWS\\MetaConductor\\Admin\\Config\\TitleSlugConfig',
+    'BWS\\MetaConductor\\Admin\\Config\\FormatRulesConfig',
     'BWS\\MetaConductor\\Admin\\Config\\WireframeConfig',
     // Support\ (concrete)
     'BWS\\MetaConductor\\Support\\BatchProcessor',

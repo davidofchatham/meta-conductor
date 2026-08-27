@@ -31,6 +31,8 @@ Requirements source: [`../handler-fixture-matrix.md`](../handler-fixture-matrix.
 | `verify.php` | Post-seed smoke + negative-control assertions. Not a behavior-sweep replacement, with one exception: **A7 is behavioural and MUTATES** — it drives the time_based cron cleanup through the handler and restores. Safe to re-run against a seeded site; requires `item-solo-a` at seed state. See matrix §6e-bis. |
 | `sweep-related-post-terms-sever.php` | §4 sever + write-queue sweep (#42/#43). Stepped, one step per eval — the #42 flush runs on `shutdown`, so a bare `update_field()` can only be asserted in a later request. Read its header before running: step `s7` fails by design. |
 | `sweep-58-roundtrip.php` | #58 dynamic sweep: admin-load storage sequence, then every stored term-rule row through Wireframe's real `RepeaterField::sanitize` — asserts no value a live rule type reads is dropped by the unified repeater's gates. |
+| `sweep-59-roundtrip.php` | #59 dynamic sweep, format kind: admin-load sequence, then every stored `format_rules` row through the real `RepeaterField::sanitize` — asserts the title/slug rule survives the move to the ordered repeater with its patterns and slug mode intact. |
+| `sweep-59-behaviour.php` | #59 behaviour sweep: authors two title/slug rules on one post type through the FULL save path (sanitize → row-title snapshot → projection), proves reordering them swaps which one the handler applies, and resolves `{meta:}` / `{term:}` / `{terms:}` / `{pub_*}` against a real post. **Saves no post**, so it renames nothing and the §7 restore gotcha does not apply; restores the settings option in a `finally`. |
 
 ## Seeding
 

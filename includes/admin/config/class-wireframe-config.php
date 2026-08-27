@@ -12,8 +12,16 @@
  *                           writes terms like every other rule here, and
  *                           putting it in the same ordered list is the point
  *                           of the model rather than a tidy-up.
- *   - Format & Transform  — title/slug + future field transformations.
+ *   - Format & Transform  — the ordered format-rule list: everything whose
+ *                           effect is "how a post's own fields read".
+ *                           title/slug is its only member today; the list
+ *                           shape landed in #59 so the second format rule
+ *                           type is an addition, not a restructure.
  *   - General             — default claim per taxonomy, processing options.
+ *
+ * Both rule tabs are now one ordered repeater bound to their effect kind's
+ * persisted list, which is the whole of ADR 0003 decision 1 on the config
+ * side: no tab holds a per-type section any more.
  *
  * Gone with the same change: the empty Personalize placeholder (it described
  * rule types that do not exist yet, and an empty tab reads as a broken
@@ -39,25 +47,8 @@ class WireframeConfig {
             'subtitle' => __('Unified meta and taxonomy management.', 'meta-conductor'),
             'tabs'     => [
                 TermRulesConfig::tab(),
-                self::format_transform_tab(),
+                FormatRulesConfig::tab(),
                 GeneralConfig::tab(),
-            ],
-        ];
-    }
-
-    /**
-     * Format & Transform tab — title/slug and future field transformations.
-     *
-     * Still one per-type section: `title_slug_rules` is the only member of
-     * the `format_rules` kind, and it collapses into an ordered repeater of
-     * its own in #59.
-     */
-    private static function format_transform_tab(): array {
-        return [
-            'id'       => 'format-transform',
-            'title'    => __('Format & Transform', 'meta-conductor'),
-            'sections' => [
-                TitleSlugConfig::section(),
             ],
         ];
     }

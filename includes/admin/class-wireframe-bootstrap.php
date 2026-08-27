@@ -41,6 +41,13 @@ class WireframeBootstrap {
         // so the titles must be persisted.
         add_filter('wp-wireframe/save/payload', [self::class, 'snapshot_term_rule_labels'], 10, 1);
 
+        // The same, for the ordered format-rule list (#59). A separate hook
+        // rather than one generic snapshot over both kinds: the two lists
+        // dispatch on disjoint type sets and share nothing but the disabled
+        // prefix, so merging them would buy a parameter and cost the ability
+        // to read either one on its own.
+        add_filter('wp-wireframe/save/payload', [self::class, 'snapshot_format_rule_labels'], 10, 1);
+
         // Snapshot the General-tab claim-override row title. Without it the
         // repeater interpolates the raw stored value ("category: replace"),
         // the one surface the claim vocabulary would miss (ADR 0004). This is
@@ -227,6 +234,110 @@ class WireframeBootstrap {
     }
 
     /**
+     * Assemble the row title for every rule in the ordered format-rule list
+     * (#59). The format-kind twin of snapshot_term_rule_labels, hooked on the
+     * same `wp-wireframe/save/payload` seam at the same priority.
+     *
+     * The list this replaces interpolated `{name}` live, which needed no
+     * snapshot at all. Baking one now is what lets the title carry the
+     * disabled marker and the post-type scope — and, when
+     * `field_transformation` joins, a per-type schema — none of which
+     * Wireframe's substitution-only `title_template` can produce.
+     *
+     * @since 0.8.0
+     * @param array $clean_values Sanitized top-level field map.
+     * @return array
+     */
+    public static function snapshot_format_rule_labels(array $clean_values): array {
+        $key = OptionRuleStorage::KIND_FORMAT;
+
+        if (empty($clean_values[$key]) || !is_array($clean_values[$key])) {
+            return $clean_values;
+        }
+
+        foreach ($clean_values[$key] as &$rule) {
+            if (!is_array($rule)) {
+                continue;
+            }
+
+            $rule['row_title'] = self::disabled_prefix($rule)
+                . \esc_html(self::format_rule_title($rule));
+        }
+        unset($rule);
+
+        return $clean_values;
+    }
+
+    /**
+     * The unescaped row title for one format rule, by type.
+     *
+     * One `case` today, and a `switch` anyway: the dispatch IS the shape #59
+     * exists to establish, and collapsing it to a single expression would have
+     * to be undone by the ticket that adds the second type.
+     *
+     * @param array $rule Clean rule values.
+     * @return string Unescaped.
+     */
+    private static function format_rule_title(array $rule): string {
+        switch ((string) ($rule['type'] ?? '')) {
+            case 'title_slug_rules':
+                return self::title_slug_title($rule);
+        }
+
+        return __('(no rule type chosen)', 'meta-conductor');
+    }
+
+    /**
+     * Title & slug rule title. Schema:
+     *   {name}{ (Post type)}
+     *   e.g. "MC item slug (MC Items)"
+     *
+     * The author names these rules themselves (`name` is required), so unlike
+     * the term titles there is nothing to assemble from the mechanics — the
+     * snapshot's job here is the scope suffix and the disabled marker. A row
+     * that reached storage without a name (a fixture, an import) is NAMED
+     * rather than left blank: it is still selectable in a collapsed,
+     * reorderable list and has to stay findable.
+     *
+     * @param array $rule
+     * @return string Unescaped.
+     */
+    private static function title_slug_title(array $rule): string {
+        $name = trim((string) ($rule['name'] ?? ''));
+
+        if ($name === '') {
+            $name = __('Untitled title/slug rule', 'meta-conductor');
+        }
+
+        return $name . self::post_type_scope_label($rule['post_type'] ?? '');
+    }
+
+    /**
+     * Post-type scope SUFFIX " (Label)" for a rule that names ONE post type,
+     * '' when it names none.
+     *
+     * The scalar counterpart of scope_label(), which reads a checkboxes value.
+     * They are not one function taking either shape on purpose: a scalar
+     * `post_type` and a `post_types` gate mean different things — a lookup key
+     * versus a scope — and selected_checkbox_slugs() silently returns [] for a
+     * string, so a shared helper would render an empty scope for every
+     * title/slug rule rather than failing visibly.
+     *
+     * @param mixed $post_type Single post-type slug.
+     * @return string
+     */
+    private static function post_type_scope_label($post_type): string {
+        $slug = is_string($post_type) ? $post_type : '';
+        if ($slug === '') {
+            return '';
+        }
+
+        $obj = \get_post_type_object($slug);
+
+        return ' (' . ($obj ? $obj->label : $slug) . ')';
+    }
+
+    /**
      * Bring stored rules up to what the ordered repeater expects, before
      * Wireframe reads the settings option raw.
      *
@@ -251,8 +362,15 @@ class WireframeBootstrap {
      *    some other way — a seeded fixture, `save_rule()` from WP-CLI, an
      *    import — has none, and `title_template` renders its collapsed row
      *    blank. The per-type repeaters mostly hid this by interpolating a live
-     *    token (`{taxonomy}`) instead; one shared template means one shared
-     *    fix.
+     *    token (`{taxonomy}`, `{name}`) instead; one shared template means one
+     *    shared fix.
+     *
+     * Since #59 this runs over BOTH kind lists. Only the title backfill
+     * applies to `format_rules` — `title_slug_rules`' stored shape is
+     * unchanged by the move, which is the ticket's "existing rules survive
+     * intact" criterion restated as an absence of migration code — but the
+     * blank-collapsed-row failure is identical, and it is newly reachable
+     * there because the format list stopped interpolating `{name}` live.
      *
      * The result is written to BOTH the ordered list and the type-keyed
      * arrays, through the same fan-out the save path uses. That is not
@@ -263,21 +381,67 @@ class WireframeBootstrap {
      *
      * Self-limiting — once every row is migrated and titled there is nothing
      * to do, so this is at most one write per rule set, not one per admin load.
+     * Both kinds are repaired in ONE write for the same reason: two
+     * update_option calls would leave a window where the two lists disagree
+     * about which admin load they belong to.
      *
      * @since 0.8.0
      * @param RuleStorage $storage The instance handlers hold this request.
      * @return void
      */
     private static function repair_stored_rules(RuleStorage $storage): void {
-        $key      = OptionRuleStorage::KIND_TERM;
         $settings = $storage->get_raw_settings();
-        $rows     = $settings[$key] ?? [];
+        $changed  = [];
 
-        if (!is_array($rows) || empty($rows)) {
+        foreach ([
+            OptionRuleStorage::KIND_TERM   => 'repair_term_rows',
+            OptionRuleStorage::KIND_FORMAT => 'repair_format_rows',
+        ] as $key => $repairer) {
+            $rows = $settings[$key] ?? [];
+
+            if (!is_array($rows) || empty($rows)) {
+                continue;
+            }
+
+            $repaired = self::$repairer($rows);
+
+            if ($repaired !== $rows) {
+                $changed[$key] = $repaired;
+            }
+        }
+
+        if (empty($changed)) {
             return;
         }
 
+        $settings = array_merge($settings, self::fan_out_rule_lists($changed));
+
+        // update_option returns false for a genuine failure AND for a no-op on
+        // equality; here the values provably differ, so false can only mean the
+        // write failed. Leaving the request cache pointing at the repaired rows
+        // in that case would have handlers act on rules that are not in the
+        // database. (architecture.md invariant #7)
+        if (!update_option(OptionRuleStorage::OPTION_NAME, $settings)) {
+            return;
+        }
+
+        // Drop the cache so nothing in this request keeps serving the
+        // pre-repair rows.
+        $storage->clear_cache();
+    }
+
+    /**
+     * The term list's row repairs: three shape migrations, then the title
+     * backfill. Pure — takes rows, returns rows, so the caller decides whether
+     * anything is worth writing.
+     *
+     * @since 0.8.0
+     * @param array $rows Stored `term_rules` rows.
+     * @return array
+     */
+    private static function repair_term_rows(array $rows): array {
         $repaired = [];
+
         foreach ($rows as $row) {
             if (is_array($row)) {
                 $row = self::migrate_inheritance_behavior($row);
@@ -296,26 +460,28 @@ class WireframeBootstrap {
             $repaired[] = $row;
         }
 
-        $repaired = self::snapshot_term_rule_labels([$key => $repaired])[$key];
+        $key = OptionRuleStorage::KIND_TERM;
 
-        if ($repaired === $rows) {
-            return;
-        }
+        return self::snapshot_term_rule_labels([$key => $repaired])[$key];
+    }
 
-        $settings = array_merge($settings, self::fan_out_rule_lists([$key => $repaired]));
+    /**
+     * The format list's row repairs: the title backfill, and nothing else.
+     *
+     * No shape migration, deliberately. `title_slug_rules` moved into the
+     * ordered repeater (#59) with its stored keys unchanged, so there is no
+     * legacy shape to translate — and an empty migration is the honest way to
+     * say so. If a future format type needs one it goes here, beside the term
+     * list's three.
+     *
+     * @since 0.8.0
+     * @param array $rows Stored `format_rules` rows.
+     * @return array
+     */
+    private static function repair_format_rows(array $rows): array {
+        $key = OptionRuleStorage::KIND_FORMAT;
 
-        // update_option returns false for a genuine failure AND for a no-op on
-        // equality; here the values provably differ, so false can only mean the
-        // write failed. Leaving the request cache pointing at the repaired rows
-        // in that case would have handlers act on rules that are not in the
-        // database. (architecture.md invariant #7)
-        if (!update_option(OptionRuleStorage::OPTION_NAME, $settings)) {
-            return;
-        }
-
-        // Drop the cache so nothing in this request keeps serving the
-        // pre-repair rows.
-        $storage->clear_cache();
+        return self::snapshot_format_rule_labels([$key => $rows])[$key];
     }
 
     /**

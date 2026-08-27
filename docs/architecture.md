@@ -120,10 +120,11 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
    where a single `type` select gates every type-specific subfield — and where
    the drop-on-hide behaviour is load-bearing rather than incidental: changing a
    row's type is HOW its old type's values are discarded. `tests/verify-term-rules-config.php`
-   (H11) runs the real `Conditions::evaluate()` over the config and asserts the
-   visible set per type, because a wrong gate is silent data loss. The configs
-   not yet collapsed still carry the old description-text workaround; convert as
-   each is touched. (don't #3, SPEC §V11)
+   (H11) and `tests/verify-format-rules-config.php` (H12) run the real
+   `Conditions::evaluate()` over each config and assert the visible set per
+   type, because a wrong gate is silent data loss. Both rule tabs are ordered
+   repeaters as of #59, so no config carries the old description-text
+   workaround any more. (don't #3, SPEC §V11)
 
 10. **Parent↔child term sync fires on the CHILD's own `save_post`, honoring
     `conflict_handling`.** A child inherits its parent's terms via
@@ -277,15 +278,15 @@ The settings UI is a React app provided by `tdrayson/wp-wireframe`. Config class
 
 | Tab | Sections |
 |---|---|
-| Auto-Set & Restrict | **The ordered term-rule list** ([TermRulesConfig](../includes/admin/config/class-term-rules-config.php)) + the two per-type sections not yet collapsed into it: Related Post Terms (ACF), Related Terms |
-| Format & Transform | Title & Slug. Future: date / name / phone field transforms |
+| Auto-Set & Restrict | **The ordered term-rule list** ([TermRulesConfig](../includes/admin/config/class-term-rules-config.php)) — all six term rule types (#57, #58) |
+| Format & Transform | **The ordered format-rule list** ([FormatRulesConfig](../includes/admin/config/class-format-rules-config.php)) — `title_slug` today (#59). Future: date / name / phone field transforms |
 | General | Per-taxonomy claim overrides, manual processing toggle |
 
 Boot path: [class-wireframe-bootstrap.php](../includes/admin/class-wireframe-bootstrap.php) calls `\Wireframe\App::boot()` on `init` priority 10 with the assembled config.
 
-### The ordered term-rule repeater
+### The ordered rule repeaters
 
-One repeater bound to the persisted `term_rules` key ([ADR 0003](adr/0003-ordered-rule-list-and-dispatcher.md), #57). Each row carries a `type` select — storing the **legacy type key verbatim** (`hierarchical_rules`, not `hierarchical`), so `get_enabled_rules()` filters on `get_rule_type()` with no mapping table — and every type-specific subfield is `conditions`-gated on it. Restrict stopped being a tab because a level-restriction rule writes terms like every other rule in the list; Personalize went because it described rule types that do not exist yet.
+**One repeater per effect kind**, each bound to that kind's persisted list — `term_rules` (#57, #58) and `format_rules` (#59) ([ADR 0003](adr/0003-ordered-rule-list-and-dispatcher.md)). No tab holds a per-type section any more. Each row carries a `type` select — storing the **legacy type key verbatim** (`hierarchical_rules`, not `hierarchical`), so `get_enabled_rules()` filters on `get_rule_type()` with no mapping table — and every type-specific subfield is `conditions`-gated on it. Restrict stopped being a tab because a level-restriction rule writes terms like every other rule in the list; Personalize went because it described rule types that do not exist yet.
 
 Two Wireframe constraints drive the shape, both verified against the vendored 1.0.6: there is **no cross-repeater ordering primitive** (so an ordered list spanning rule types must be one repeater), and there is **no flexible content** (so that repeater has one fixed subfield superset, gated per type).
 
@@ -295,11 +296,13 @@ Two Wireframe constraints drive the shape, both verified against the vendored 1.
 - Two subfields sharing an `id` let one overwrite the other, last-write-wins, invisibly.
 - Changing a row's `type` **discards its type-specific values** — which is the correct behaviour and how the design works, but it is silent, so the `type` select's description says so.
 
-H11 (`tests/verify-term-rules-config.php`) runs Wireframe's own `Conditions::evaluate()` over the config and asserts the exact visible subfield set per rule type, plus id uniqueness, that shared subfields carry no gate, and that claim comes through `ConfigHelpers::claim_field()` rather than being re-authored inline. Every show/hide combination is additionally swept on the testbed — the harness proves the config's shape, only a real save proves the round-trip.
+H11 (`tests/verify-term-rules-config.php`) and H12 (`tests/verify-format-rules-config.php`) run Wireframe's own `Conditions::evaluate()` over each config and assert the exact visible subfield set per rule type, plus id uniqueness, that shared subfields carry no gate, and that claim comes through `ConfigHelpers::claim_field()` rather than being re-authored inline. Every show/hide combination is additionally swept on the testbed (`sweep-58-roundtrip.php`, `sweep-59-roundtrip.php`) — the harness proves the config's shape, only a real save proves the round-trip.
 
-Row titles are a **save-time snapshot** (`row_title`, rendered by `title_template`), assembled by `snapshot_term_rule_labels()` dispatching on the row's `type`.
+**A one-type list still needs the harness, and the dangerous direction inverts.** On `term_rules` the classic bug is a gate that is too narrow. On `format_rules`, where there is one rule type, the bug is a gate that exists at all where it should not: it evaluates false for the only type there is and deletes the field outright. So H12 pins the shared frame's ungatedness first.
 
-`WireframeBootstrap::repair_stored_rules()` runs on admin load, before `App::boot()`, and exists because **Wireframe reads the settings option raw** — it does not pass through the storage layer's read-time adapters, so anything a handler tolerates on read but the config does not declare gets rewritten by the first save (`RepeaterField::sanitize` rebuilds each row from declared subfields, filling defaults). That is invariant #1's hazard, and it takes two repairs here: the `#16` `inheritance_behavior` rewrite, and backfilling a `row_title` for any rule that reached storage some other way. Both write through `fan_out_rule_lists()` so the ordered list and the type-keyed arrays stay in agreement — repairing one side only would make `authored_kind_list()` distrust the list and throw the authored order away.
+Row titles are a **save-time snapshot** (`row_title`, rendered by `title_template`), assembled by `snapshot_term_rule_labels()` / `snapshot_format_rule_labels()` dispatching on the row's `type`. The format list gained one in #59 despite `{name}` having been interpolable live: a substitution-only template cannot carry the disabled marker, the post-type scope, or a second rule type's schema, and adding the snapshot later would be the restructure #59 exists to avoid.
+
+`WireframeBootstrap::repair_stored_rules()` runs on admin load, before `App::boot()`, and exists because **Wireframe reads the settings option raw** — it does not pass through the storage layer's read-time adapters, so anything a handler tolerates on read but the config does not declare gets rewritten by the first save (`RepeaterField::sanitize` rebuilds each row from declared subfields, filling defaults). That is invariant #1's hazard, and it takes two kinds of repair: the term list's shape migrations (`#16` `inheritance_behavior`, legacy related term ids, the ACF-reference key rename), and — on **both** kind lists since #59 — backfilling a `row_title` for any rule that reached storage some other way. `title_slug_rules` needs no shape migration: it moved into the format repeater with its stored keys unchanged. Everything writes through `fan_out_rule_lists()` in ONE `update_option`, so the ordered lists and the type-keyed arrays stay in agreement — repairing one side only would make `authored_kind_list()` distrust the list and throw the authored order away.
 
 ### Why Wireframe
 
@@ -339,7 +342,7 @@ It ships **expand-first**, so both shapes are live at once and the split of duti
 
 ### Authored order vs derived rules
 
-The config collapse (#57) made the persisted `term_rules` key the thing the settings page **writes**, which splits the two lists' roles in a way worth stating plainly:
+The config collapse (#57, #58, #59) made the persisted `term_rules` and `format_rules` keys the things the settings page **writes**, which splits the two lists' roles in a way worth stating plainly:
 
 - The **rules** are derived. `WireframeBootstrap::fan_out_rule_lists()` projects each saved row back into its type-keyed array on the same save, so the derived read keeps seeing repeater edits, and a deleted row actually stops firing (the projection writes an *empty* array rather than omitting the key — Wireframe merges rather than replaces, so an absent key would leave the rule in place).
 - The **order** is authored, and only the persisted list has it. `fan_in()` groups by type, so it can never reproduce a list where a level-restriction rule sits above a propagation rule. Nothing consumes cross-type order yet — each handler still filters to its own type — which is why this is safe to carry until the dispatcher (#60–#64).
@@ -348,12 +351,12 @@ The config collapse (#57) made the persisted `term_rules` key the thing the sett
 
 | Kind has… | Behaviour |
 |---|---|
-| no migrated types (`format_rules` until #59) | plain `fan_in()` — a pure derived duplicate, #56's regime |
-| migrated types (`term_rules`) | keep the stored list while `fan_out_types()` of it still equals the type-keyed arrays; otherwise rebuild |
+| migrated types (both kinds since #59) | keep the stored list while `fan_out_types()` of it still equals the type-keyed arrays; otherwise rebuild |
+| no migrated types (no kind, since #59) | plain `fan_in()` — a pure derived duplicate, #56's regime. Kept as what makes declaring a future type in `KIND_TYPES` safe a change before its subfields exist |
 
 The rebuild path is what picks up a write that bypassed the page — a WP-CLI `save_rule()`, a seeded fixture, an import — at the cost of the authored order, which that writer never had. Still not gated on the schema flag, which stays a marker: a one-shot gate would refuse to ever repair the list again.
 
-**Types whose config has not collapsed yet are excluded from the persisted list.** The repeater renders every row in the key it is bound to, and `RepeaterField::sanitize` drops any subfield the config does not declare — so a row the repeater has no subfields for would be gutted on the next save. `CONFIG_MIGRATED_TYPES` is the list of types with repeater subfields, and a type is added to it in the same change that gives it those subfields, never before. As of #58 every term type is in (batch 1 took the four not live on a real site, then `related_rules` + `related_post_terms_rules` followed with their subfields); only `title_slug_rules` remains outside until #59. Handlers are unaffected: they derive, so behaviour never depended on the persisted list's membership.
+**Types whose config has not collapsed yet are excluded from the persisted list.** The repeater renders every row in the key it is bound to, and `RepeaterField::sanitize` drops any subfield the config does not declare — so a row the repeater has no subfields for would be gutted on the next save. `CONFIG_MIGRATED_TYPES` is the list of types with repeater subfields, and a type is added to it in the same change that gives it those subfields, never before. As of #59 every rule type is in: batch 1 (#57) took the four term types not live on a real site, `related_rules` + `related_post_terms_rules` followed with their subfields (#58), and `title_slug_rules` joined the format repeater (#59). The list is now identical to the flattened `KIND_TYPES` and stays a separate constant precisely so the next type can be declared in `KIND_TYPES` — and therefore fanned in and read — a change before its subfields exist. Handlers are unaffected: they derive, so behaviour never depended on the persisted list's membership.
 
 Three invariants hold the expand phase together, all asserted by H10 (`tests/verify-kind-lists.php`):
 

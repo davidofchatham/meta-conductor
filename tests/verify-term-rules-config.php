@@ -391,15 +391,21 @@ $check('fan-out names every migrated type, even the empty ones',
     $payload['time_based_rules'] === []
     && $payload['hierarchical_level_restriction_rules'] === []
     && $payload['related_post_terms_rules'] === []);
-$check('fan-out leaves a non-migrated type alone',
+// The payload carries the TERM list only — a save from the Auto-Set tab. The
+// term projection must not reach into another kind's array. (Until #59 this
+// read as "leaves a non-migrated type alone"; title_slug_rules is migrated now,
+// and the guard that drops rows of types outside the requested list is
+// exercised by H10's fan_out_types assertions.)
+$check('a term-list save does not touch the format kind\'s array',
     $payload['title_slug_rules'] === [['post_type' => 'untouched']]);
-// The format kind has no repeater yet (#59): even a payload carrying its
-// list must not project onto title_slug_rules.
+// The same projection runs for the format kind since #59 — one loop, both
+// lists. H12 owns the format side; this asserts only that the term list's
+// projection did not become term-only.
 $fmt_payload = WireframeBootstrap::fan_out_rule_lists([
     OptionRuleStorage::KIND_FORMAT => [['type' => 'title_slug_rules', 'post_type' => 'x']],
 ]);
-$check('fan-out does not project the format kind yet (#59)',
-    !array_key_exists('title_slug_rules', $fmt_payload));
+$check('fan-out projects the format kind too (#59)',
+    $fmt_payload['title_slug_rules'] === [['post_type' => 'x']]);
 
 // An emptied repeater must CLEAR the legacy arrays. `array_merge($saved,
 // $clean)` only replaces keys the payload carries, so an absent key would

@@ -118,18 +118,20 @@ class OptionRuleStorage implements RuleStorage {
      * class owns, including CLI and front-end paths that must never resolve
      * `Admin\Config` (CLAUDE.md don't #4).
      *
-     * All six term types are in as of #58 — batch 1 (#57) took the four not
-     * live on a real site, then the two live ones (`related_rules`,
-     * `related_post_terms_rules`) followed in the same change that gave them
-     * repeater subfields. `title_slug_rules` keeps its own section until
-     * #59; a row of a type absent here must NOT appear in a persisted kind
-     * list, because the repeater renders every row in the key it is bound to
-     * and Wireframe DROPS any subfield the config does not declare
-     * (`RepeaterField::sanitize`) — rendering a rule the repeater has no
-     * subfields for would silently gut it on the next save.
+     * **Every rule type is in as of #59.** Batch 1 (#57) took the four term
+     * types not live on a real site, the two live ones (`related_rules`,
+     * `related_post_terms_rules`) followed in #58, and `title_slug_rules`
+     * joined the format repeater in #59. A row of a type absent here must NOT
+     * appear in a persisted kind list, because the repeater renders every row
+     * in the key it is bound to and Wireframe DROPS any subfield the config
+     * does not declare (`RepeaterField::sanitize`) — rendering a rule the
+     * repeater has no subfields for would silently gut it on the next save.
      *
      * Add a type here in the same change that gives it repeater subfields,
-     * never before. #66 empties the exception list by moving the last one in.
+     * never before. The list is now identical to the flattened KIND_TYPES,
+     * and it stays a separate constant precisely so the NEXT type
+     * (`field_transformation`) can be declared in KIND_TYPES — and therefore
+     * fanned in and read — a change before its subfields exist.
      *
      * @since 0.8.0
      * @var string[]
@@ -141,6 +143,7 @@ class OptionRuleStorage implements RuleStorage {
         'hierarchical_level_restriction_rules',
         'related_rules',
         'related_post_terms_rules',
+        'title_slug_rules',
     ];
 
     /**
@@ -537,8 +540,10 @@ class OptionRuleStorage implements RuleStorage {
      * types (see CONFIG_MIGRATED_TYPES):
      *
      * **No migrated types** ⇒ the list is a pure derived duplicate, so it is
-     * simply the fan-in. That is #56's regime, unchanged, and it is still
-     * `format_rules`' regime until #59 moves `title_slug_rules` in.
+     * simply the fan-in. That was #56's regime, and since #59 moved
+     * `title_slug_rules` into the format repeater NO kind is in it any more.
+     * The branch stays because it is what makes declaring a future type in
+     * KIND_TYPES safe a change before its subfields exist.
      *
      * **Some migrated types** ⇒ the stored list is AUTHORED — the repeater
      * wrote the row order, and cross-type order is exactly what the fan-in

@@ -343,8 +343,9 @@ $check('the term kind reports its migrated types — all six as of #58',
         'hierarchical_rules',
         'hierarchical_level_restriction_rules',
     ]);
-$check('the format kind has no migrated types yet (#59)',
-    OptionRuleStorage::migrated_types_for_kind(OptionRuleStorage::KIND_FORMAT) === []);
+$check('the format kind reports its migrated type (#59)',
+    OptionRuleStorage::migrated_types_for_kind(OptionRuleStorage::KIND_FORMAT)
+        === ['title_slug_rules']);
 
 // fan_out_types: the save path's projection back onto the legacy arrays.
 $rows = [
@@ -434,11 +435,41 @@ $behind_back[OptionRuleStorage::KIND_TERM] = $rebuilt;
 $check('authored_kind_list is idempotent',
     OptionRuleStorage::authored_kind_list(OptionRuleStorage::KIND_TERM, $behind_back) === $rebuilt);
 
-// A kind no repeater authors yet stays a pure derived duplicate (#56's regime).
-$fmt = ['title_slug_rules' => [['pattern' => 'x']]];
-$check('a kind with no migrated types is still the plain fan-in',
+// The format kind is authored too since #59, so it gets the same two
+// decisions the term kind does: keep the author's order while the legacy
+// array still agrees, rebuild when something wrote behind the repeater's back.
+// (The "no migrated types" branch of authored_kind_list is now unreachable for
+// both kinds; it stays in the code as what makes declaring a future type in
+// KIND_TYPES safe a change before its subfields exist.)
+// `type` written LAST, matching where fan_in() appends it — the seed
+// assertion below compares with ===, which is key-order sensitive.
+$fmt_authored = [
+    ['post_type' => 'page', 'name' => 'B', 'type' => 'title_slug_rules'],
+    ['post_type' => 'post', 'name' => 'A', 'type' => 'title_slug_rules'],
+];
+$fmt = [
+    'title_slug_rules' => [
+        ['post_type' => 'page', 'name' => 'B'],
+        ['post_type' => 'post', 'name' => 'A'],
+    ],
+    OptionRuleStorage::KIND_FORMAT => $fmt_authored,
+];
+$check('the format kind keeps its authored order when the legacy array agrees',
     OptionRuleStorage::authored_kind_list(OptionRuleStorage::KIND_FORMAT, $fmt)
-        === OptionRuleStorage::fan_in($fmt)[OptionRuleStorage::KIND_FORMAT]);
+        === $fmt_authored);
+
+$fmt_behind = $fmt;
+$fmt_behind['title_slug_rules'][] = ['post_type' => 'mc_item', 'name' => 'C'];
+$check('a title/slug rule written behind the repeater\'s back rebuilds the format list',
+    count(OptionRuleStorage::authored_kind_list(OptionRuleStorage::KIND_FORMAT, $fmt_behind)) === 3);
+
+// A first upgrade has no stored format list — seed from the legacy array, in
+// the array's own order.
+$fmt_unseeded = $fmt;
+unset($fmt_unseeded[OptionRuleStorage::KIND_FORMAT]);
+$check('an absent format list seeds from title_slug_rules',
+    OptionRuleStorage::authored_kind_list(OptionRuleStorage::KIND_FORMAT, $fmt_unseeded)
+        === $fmt_authored);
 
 // A first upgrade has no stored list at all — seed from the legacy arrays.
 $unseeded = $settings;

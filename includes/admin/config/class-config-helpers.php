@@ -22,12 +22,12 @@ class ConfigHelpers {
      * types, post statuses) — the ONE loop behind every option builder here.
      *
      * Before 0.8.0 this body was copy-pasted seven times (four post-type
-     * variants and two taxonomy variants here, plus one on TitleSlugConfig)
+     * variants and two taxonomy variants here, plus one on the title/slug config)
      * differing only in the registry query and whether a leading placeholder
      * row was prepended (#38 cluster 1). The variation is now entirely in the
      * caller's `get_*()` args, which is why this takes ALREADY-FETCHED objects
      * rather than a query: a caller that has to filter the registry first
-     * (TitleSlugConfig drops `attachment`) can still share the loop.
+     * (FormatRulesConfig drops `attachment`) can still share the loop.
      *
      * @param object[]    $objects     Registered objects with ->name / ->label.
      * @param string|null $placeholder Leading `'' => …` row, or null for none

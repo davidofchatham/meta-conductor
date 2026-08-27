@@ -543,6 +543,50 @@ round-trip through `resolve_behavior()`/`behavior_key()`, every legacy pair
 still resolves to its old mechanism, and an unknown outcome is rejected by
 `validate_rule_internal()`.
 
+### §9 ordered format repeater (#59, 0.8.0) — results
+
+Run 2026-08-27 on the docker testbed, seeded mc-rules fixture. #59 moves the
+title/slug config into a `format_rules` repeater; the stored rule shape is
+untouched, so the sweep's job is to prove *both* halves of that claim — the
+existing rule survives, and a rule authored the new way still fires.
+
+**§9a stored-rule survival** (`sweep-59-roundtrip.php`) ✅ The admin-load
+sequence (`sync_kind_lists()` → `repair_stored_rules()`) leaves `format_rules`
+carrying the seeded rule with its `type`, a backfilled `row_title`
+(`MC item slug (MC Items)`) and every stored key intact. What the handler reads
+is byte-identical apart from `row_title`. Every key `TitleSlugHandler` reads
+survives Wireframe's real `RepeaterField::sanitize` against the live
+`FormatRulesConfig` subfields, and the fan-out reproduces `title_slug_rules`
+row-for-row. Both copies were repaired in ONE `update_option`.
+
+**§9b validator + sanitizer over the whole page** ✅ A fully populated
+title/slug row validates clean against the assembled page config; the clean row
+carries all eleven declared subfields. An **untyped** row is *rejected*
+(`"The Type is required"`, plus name and post type) rather than silently
+gutted — the same answer §8c got on the term list.
+
+**§9c authored order decides the winner** (`sweep-59-behaviour.php`) ✅ Two
+rules on the SAME post type, pushed through the full save path (sanitize →
+`snapshot_format_rule_labels` → `fan_out_rule_lists`). Stored order, projected
+order and read-back order all agree; `find_matching_rule()` picks the top rule;
+**swapping the two rows swaps which rule applies**. A disabled top row still
+stores and drops out of the enabled set. This is the assertion the post-type
+field's new description promises, and the first time authored order in a
+repeater has been shown to change behaviour anywhere in the plugin.
+
+**§9d token engine unchanged** ✅ Resolved through the handler against
+`mc-item-alpha`, compared to expectations computed independently from WP:
+`{meta:mc_event_date}` raw in title context and `sanitize_title()`d in slug
+context; `{date_year:}` = the meta date's year; `{term:mc_topic}` first name /
+first slug; `{terms:mc_topic}` comma-joined names / hyphen-joined slugs;
+`{pub_year}`/`{pub_month}`/`{pub_day}` site-LOCAL (month as name in title,
+number in slug); `{default_slug}` from the computed title.
+
+**NON-MUTATING, unlike §7.** The behaviour sweep saves no post, so no
+`post_name` is rewritten and the §7 restore gotcha does not apply. The settings
+option is snapshotted up front and restored in a `finally`, and the sweep
+asserts the restore.
+
 ## Cross-handler interaction scenarios (later phase, own snapshot each)
 
 - level_restriction (p5) + hierarchical (p10) same taxonomy — prune-then-expand
@@ -566,6 +610,12 @@ still resolves to its old mechanism, and an unknown outcome is rejected by
 
 ## Harnesses
 
+- **H12 — `tests/verify-format-rules-config.php`** (static, no WP): the format
+  repeater's shape (#59). H11's twin, and the dangerous direction inverts — with
+  one rule type a gate that should not exist deletes its field outright rather
+  than narrowing it, so the shared frame's ungatedness is asserted first. Runs
+  Wireframe's real `Conditions::evaluate()` for the visible set, then checks
+  separately that every key `TitleSlugHandler` reads is inside it.
 - **H10 — `tests/verify-kind-lists.php`** (static, no WP): the 7-type-arrays →
   2-kind-lists fan-in (#56) — idempotent, lossless, every legacy rule shape
   round-trips, and the kind read path reproduces the type read path element for
