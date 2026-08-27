@@ -372,7 +372,10 @@ H7 extended to validate `{TERM:}` tokens in `post_fields`.
 
 3 seeded rules (dates relative to seed day): [0] in-range `{TODAY-1}..{TODAY+7}`
 → Featured, filter `mc_topic`; [1] expired `{TODAY-30}..{TODAY-2}` → Archived,
-no filter; [2] future `{TODAY+10}..{TODAY+20}` → Archived. Fires on
+no filter; [2] future `{TODAY+10}..{TODAY+20}` → Archived. **[1] and [2]
+share a target term on purpose** — a deliberate collision pair (§6f/§6g, #69),
+and the ready-made testbed case for #65's detector. Don't "tidy" the duplicate
+target away. Fires on
 `save_post`/`publish_post` + the daily `bws_taxonomy_manager_cleanup` cron.
 String Y-m-d comparison. Run against gamma/delta/solo subjects, time_based
 isolated. (Seeded on 2026-07-21; the ± windows are re-resolved every seed, so
@@ -388,17 +391,25 @@ this is date-independent.)
   only `mc_topic` term is Archived momentarily satisfies rule[0]'s taxonomy
   filter, so Featured is added in the same save — expected multi-rule
   composition, not a defect.)
-- **§6e cron cleanup / over-removal** ✅ `do_action('bws_taxonomy_manager_cleanup')`
+- **§6e cron cleanup / retroactive ownership** ✅ `do_action('bws_taxonomy_manager_cleanup')`
   strips the expired rule's Archived target from ALL matching `mc_item` posts in
-  one pass. This is the documented **over-removal**: no per-post provenance
-  tracking, so it removes Archived from every matching post regardless of how it
-  got there.
+  one pass, regardless of how the term got onto each post.
 
-  **Sweep-verified only — nothing automated covers it.** `verify.php` A7
-  deliberately does not assert it: pinning over-removal would mean a test that
-  goes red the day [#69](https://github.com/davidofchatham/meta-conductor/issues/69)
-  adds provenance, i.e. a test arguing against its own fix. If #69 closes that
-  way, this row disappears rather than needing unpicking.
+  **This is the model, not a limitation.** A rule owns exactly its configured
+  target terms and recomputes correctness from config each evaluation, keeping
+  no record of what it applied — which is what makes ownership *retroactive*: a
+  rule corrects posts tagged before it existed, with no migration. The accepted
+  cost is that a manual tag colliding with a configured target is swept. See
+  [ADR 0001](../../docs/adr/0001-temporal-rule-general-model-constrained-ui.md)
+  → Consequences, and CONTEXT.md: *"A claim is settled by config and live
+  recomputation, never by provenance."*
+
+  **Sweep-verified only — nothing automated covers it,** and that is deliberate.
+  Provenance is rejected *at this point* rather than unconditionally (ADR 0002
+  records the third rejection), so pinning this in `verify.php` would be a small
+  standing bet against a decision that could be revisited, paid for by widening
+  the one mutating probe that file tolerates. The sweep record is the right
+  weight.
 
 - **§6e-bis cron cleanup, provenance-neutral** ✅ **this is what A7 asserts.**
   `verify.php` A7 drives the apply through the handler and then fires the event:
@@ -406,40 +417,41 @@ this is date-independent.)
   expired-Archived rule with its window slid in-range, save `item-solo-a` so the
   handler applies Archived, assert that landed, append Featured by hand as a
   negative control, write the expiry back, fire, assert Archived went and
-  Featured stayed. Survives a provenance fix unchanged.
+  Featured stayed.
 
-  Both deviations from the seeded rule set are deliberate and asserted. Running
-  the rule alone is not tidiness — see §6g. A7 replaced a
-  `wp_next_scheduled()` check, which proves nothing: the event is scheduled at
-  plugin load and stays scheduled under `DISABLE_WP_CRON` (that constant
-  disables only the page-load spawner), so it passed on a site where
-  `cleanup_expired_rules()` had never run. A7's PRECONDITION is `item-solo-a` at
-  seed state — it clears the subject rather than restoring it.
+  Handler-applied because that asserts the actual contract — *cleanup removes
+  what its own rule applied* — and exercises the apply path a hand-planted term
+  leaves untested. (That path is how §6g was found.) Both deviations from the
+  seeded rule set are deliberate and asserted; running the rule ALONE is not
+  tidiness, see §6g. A7 replaced a `wp_next_scheduled()` check, which proves
+  nothing: the event is scheduled at plugin load and stays scheduled under
+  `DISABLE_WP_CRON` (that constant disables only the page-load spawner), so it
+  passed on a site where `cleanup_expired_rules()` had never run. A7's
+  PRECONDITION is `item-solo-a` at seed state — it clears the subject rather
+  than restoring it.
 
-- **§6f expired rule fights an ACTIVE rule on the same term, via CRON** ❌
-  *handler defect, not fixture —
-  [#69](https://github.com/davidofchatham/meta-conductor/issues/69).*
-  The manifest's third rule is future-dated (`{TODAY+10}..{TODAY+20}`) on the
-  SAME Archived target as the expired one. Once that window opens, rule[1] is
-  still expired — `cleanup_expired_rules()` has no "already cleaned" flag and
-  re-runs daily forever — so the daily cron strips exactly what the active rule
-  applies. Reproduced on the testbed by sliding rule[2] into range with rule[1]
-  left expired: save → `[Archived]`,
-  `do_action('bws_taxonomy_manager_cleanup')` → `[]`. Unreachable on seed day
-  (a future rule has applied nothing), which is why A7 can assert the seed-day
-  state without waiting on a fix.
+- **§6f the collision on the CRON path** ⚠ *known collision, warned not resolved
+  — [#69](https://github.com/davidofchatham/meta-conductor/issues/69).*
+  The seeded rule[1] (expired) and rule[2] (future) both target Archived — a
+  deliberate pair, see the §6 preamble. `cleanup_expired_rules()` re-runs daily
+  for as long as rule[1] stays expired, which is `recompute each evaluation`
+  working as intended, so once rule[2]'s window opens the daily cron strips what
+  rule[2] applies. Reproduced by sliding rule[2] into range with rule[1] left
+  expired: save → `[Archived]`,
+  `do_action('bws_taxonomy_manager_cleanup')` → `[]`. Unreachable on seed day —
+  a future rule has applied nothing — which is why A7 can assert the seed-day
+  state without waiting on anything.
 
-- **§6g an out-of-range rule undoes an in-range rule's apply in the SAME SAVE**
-  ❌ *handler defect, not fixture —
-  [#71](https://github.com/davidofchatham/meta-conductor/issues/71).* Sibling of
-  §6f on the save path, and the more immediate of the two.
-  `apply_time_based_rule()` ends with
+- **§6g the collision on the SAVE path** ⚠ *known collision, warned not resolved
+  — [#69](https://github.com/davidofchatham/meta-conductor/issues/69).* The
+  sharper of the two. `apply_time_based_rule()` ends with
   `elseif (!$in_date_range && $has_target_term) { remove }`, evaluated per rule
-  in array order with no provenance. So a rule that is out of range removes the
-  target term whoever applied it — including a rule earlier in the same
-  `process_post()` loop. From `{TODAY+10}` the future rule's term can therefore
+  in array order against a freshly-read `$has_target_term`. So an out-of-range
+  rule removes the target term whoever applied it — including a rule earlier in
+  the same `process_post()` loop. From `{TODAY+10}` rule[2]'s term can therefore
   never land at all: it applies, and the permanently-expired rule[1] strips it
-  before the save returns.
+  before the save returns. ADR 0001 contemplated two rules that *"may fight"*;
+  this is the degenerate case where neither ever wins.
 
   Found while making A7 handler-driven, because it blocks that route outright.
   Isolated on the testbed by varying only rule-set membership:
@@ -451,6 +463,9 @@ this is date-independent.)
   ```
 
   This is why A7 synthesizes a single-rule set instead of only sliding dates.
+  Under #61's ordered passes the outcome becomes deterministic by
+  author-controlled list order rather than array order (ADR 0002 — order is the
+  resolution mechanism); #65 is what makes the pair visible at authoring time.
 - Negative controls unchanged.
 
 ### §7 title_slug — results

@@ -199,12 +199,18 @@ if ( class_exists( '\\BWS\\MetaConductor\\Storage\\StorageFactory' ) ) {
 // through would discard that sweep's state.
 //
 // WHY IT SYNTHESIZES A RULE SET: the subject must be applied by the HANDLER,
-// not planted by hand — a hand-planted term only proves the un-provenanced
-// over-removal (§6e), and would go red the day #69 adds provenance. Driving
-// the apply needs two deviations from the seeded rules, both asserted below:
+// not planted by hand. Hand-planting asserts only that cleanup strips a term
+// the post happens to hold — the retroactive ownership of §6e — and never
+// exercises the apply path at all; driving the apply is what surfaced §6g.
+// The claim worth making is the contract itself: cleanup removes what its own
+// rule applied.
+//
+// Driving it needs two deviations from the seeded rules, both asserted below:
 // the expired rule's window is slid in-range, and it runs ALONE. The second is
-// not tidiness — the manifest's future-dated rule shares the target term and
-// removes it in the SAME save pass (§6g), so with it present nothing lands.
+// not tidiness — the manifest seeds a future-dated rule on the SAME target
+// term, a deliberate collision pair, and an out-of-range rule strips that term
+// whoever applied it, in the same save pass. With it present nothing lands.
+// (§6f/§6g, #69 — a known collision, warned by #65, not a defect to code round.)
 $mc_a7_solo = $mc_post( 'item-solo-a' );
 $mc_a7_arch = $mc_term( 'topic-archived' );
 $mc_a7_feat = $mc_term( 'topic-featured' );

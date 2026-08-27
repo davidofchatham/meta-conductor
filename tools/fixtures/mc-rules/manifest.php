@@ -239,6 +239,14 @@ return array(
 		),
 
 		// matrix §6 — in-range / expired / future windows around seed day.
+		//
+		// [1] and [2] SHARE A TARGET TERM ON PURPOSE (topic-archived). They are a
+		// deliberate collision pair: an out-of-range rule strips the target term
+		// whoever applied it, so the two cancel — on save (§6g) and on the daily
+		// cron (§6f). Tracked as #69, warned at authoring time by #65 once that
+		// lands, and this is the ready-made fixture for its detector. Do NOT give
+		// [2] a different target to make §6 read cleanly — the duplication IS the
+		// case, and verify.php A7 already works around it deliberately.
 		'time_based_rules' => array(
 			array(
 				'enabled'           => true,
