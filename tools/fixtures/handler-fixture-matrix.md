@@ -256,6 +256,12 @@ Seeded rules: [0] term-trigger Coastal(15)⇒Featured(20), bidirectional;
 [1] taxonomy-trigger any `mc_flag`⇒Featured(20), one-directional.
 Run against `item-solo-a`, related isolated, one scenario per eval.
 
+**Converted to a pure applier by #61.** The handler registers no hooks; the
+dispatcher runs it in list position and it recomputes from LIVE STATE. So a
+sweep must provoke a pass (`drain()` / `run_pass()`) before reading terms back
+in the same request, and the removal rule below changed — see the closing note.
+Covered by `sweep-61-appliers.php` step `related`.
+
 - **§3a term add** ✅ assign Coastal(15) → `[Coastal,Featured]`.
 - **§3b bidirectional remove** ✅ remove Coastal (last trigger) → `[]`.
   Featured dropped — `get_trigger_terms` confirmed no trigger remains
@@ -267,10 +273,25 @@ Run against `item-solo-a`, related isolated, one scenario per eval.
   added to `mc_topic`. Cross-taxonomy trigger→target: `mc_flag` change drives
   an `mc_topic` write.
 - Negative controls unchanged.
-- Note: apply is merge-add; removal fires ONLY when a trigger was actually
-  removed in the change AND none remains (absence alone never removes —
-  `apply_related_terms` needs the old/new tt_id diff, so a plain re-save of a
-  post that lacks the trigger is a no-op, not a removal).
+- **§3e removal from ABSENCE, not from a delta** ✅ *(#61 behaviour change).*
+  `item-solo-b` given Featured with the rules silenced, then a pass run: the
+  bidirectional rule removes Featured even though no trigger was ever present,
+  so no removal delta ever existed. Under the delta model that post kept the
+  term indefinitely.
+- **§3f a rule whose trigger no longer EXISTS removes nothing** ✅ *(#61, the
+  floor under §3e).* Same bidirectional rule with a nonexistent
+  `trigger_term_id`: Featured stays. `get_trigger_terms()` answers `[]` both for
+  "not on this post" and for "names a term that was deleted", and only the
+  live-state reading has to tell them apart — under the delta model a
+  nonexistent trigger simply generated no signal. Reading absence as *remove*
+  here would turn one deleted term into a rule stripping its target from every
+  in-scope post on every pass. A rule listing several triggers still works off
+  whichever survive (§3c's shape).
+- Note: apply is merge-add. Removal fires whenever the rule is bidirectional
+  and NO trigger term is on the post — checked across ALL taxonomies, not just
+  one. It used to require a trigger to have been removed *in that write*, which
+  a pass cannot know; §3b/§3c still hold because they are also true of the
+  live-state reading, and §3e is the case that separates the two.
 
 ### §4 related_post_terms — results
 
@@ -375,9 +396,11 @@ H7 extended to validate `{TERM:}` tokens in `post_fields`.
 no filter; [2] future `{TODAY+10}..{TODAY+20}` → Archived. **[1] and [2]
 share a target term on purpose** — a deliberate collision pair (§6f/§6g, #69),
 and the ready-made testbed case for #65's detector. Don't "tidy" the duplicate
-target away. Fires on
-`save_post`/`publish_post` + the daily `bws_taxonomy_manager_cleanup` cron.
-String Y-m-d comparison. Run against gamma/delta/solo subjects, time_based
+target away. **Converted to a pure applier by #61.** The handler registers nothing;
+`save_post`/`publish_post` are the dispatcher's business now, and the daily
+`bws_taxonomy_manager_cleanup` cron is registered in `TaxonomyManager` and
+ENQUEUES the posts it selects rather than removing terms itself (§6h). String
+Y-m-d comparison. Run against gamma/delta/solo subjects, time_based
 isolated. (Seeded on 2026-07-21; the ± windows are re-resolved every seed, so
 this is date-independent.)
 
@@ -463,9 +486,38 @@ this is date-independent.)
   ```
 
   This is why A7 synthesizes a single-rule set instead of only sliding dates.
-  Under #61's ordered passes the outcome becomes deterministic by
+  Under #61's ordered passes the outcome is now deterministic by
   author-controlled list order rather than array order (ADR 0002 — order is the
   resolution mechanism); #65 is what makes the pair visible at authoring time.
+  The collision itself is unchanged — a pair on one target still cancels — but
+  *which* of the two wins is now something the author drags rather than an
+  artefact of array position.
+
+- **§6h the cron sweep is a full ordered pass** ✅ *(#61).*
+  `cleanup_expired_rules()` no longer removes anything itself: it selects the
+  posts an expired rule still holds its target on, marks each dirty and drains.
+  Proved on a hand-authored three-row list — expired rule (the selection
+  basis), an in-range rule (the PRODUCER, writes Featured), and a `related`
+  rule keyed on Featured (the CONSUMER, writes Coastal). `item-solo-a` holding
+  only Archived, then `do_action('bws_taxonomy_manager_cleanup')`:
+
+  ```
+  consumer BELOW producer   after cron = [coastal, featured]   (archived gone)
+  consumer ABOVE producer   after cron = [featured]
+  ```
+
+  The control is the assertion. A sweep that still removed terms by hand, or a
+  pass that ran rules in any order but the authored one, would leave the first
+  line looking identical and only the second would move. The consumer has no
+  trigger of its own for the producer's write — the producer's
+  `wp_set_object_terms` is exactly what the pass lock suppresses — so seeing
+  Coastal at all means it ran later in the SAME pass.
+  (`sweep-61-appliers.php` steps `cron` / `cron-swap`.)
+
+- **§6i publish still provokes the date-window path** ✅ *(#61.)* The handler's
+  own `publish_post` hook is gone; a draft→publish transition reaches the pass
+  through the dispatcher's save-path drain (`wp_after_insert_post` p999), with
+  no explicit drain in the sweep. (`sweep-61-appliers.php` step `publish`.)
 - Negative controls unchanged.
 
 ### §7 title_slug — results

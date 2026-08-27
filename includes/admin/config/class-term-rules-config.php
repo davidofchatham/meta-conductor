@@ -638,7 +638,11 @@ class TermRulesConfig {
                 'id'          => 'bidirectional',
                 'type'        => 'toggle',
                 'label'       => __('Bidirectional', 'meta-conductor'),
-                'description' => __('Remove the target term when the trigger term is removed.', 'meta-conductor'),
+                // Wording follows the #61 conversion: the applier recomputes
+                // from live state, so the condition is the trigger's ABSENCE,
+                // not the moment of its removal. A post that holds the target
+                // but has never held a trigger now loses it too.
+                'description' => __('Remove the target term whenever no trigger term is present on the post.', 'meta-conductor'),
                 'default'     => false,
                 'columns'     => 12,
                 'conditions'  => $gate,

@@ -24,46 +24,48 @@ class TimeBasedHandler extends UnifiedHandlerBase {
     }
 
     /**
-     * Initialize hooks
+     * Pure applier: no hooks (#61).
+     *
+     * `save_post` p20 and `publish_post` p10 lived here until 0.8.0.
+     * `TermDispatcher` owns the trigger union now, so registering either would
+     * run this handler's rules twice — once out of authored order, once in it.
+     *
+     * The daily `bws_taxonomy_manager_cleanup` sweep is NOT registered here
+     * either, even though it is a provocation rather than an apply: it is wired
+     * in `TaxonomyManager::init_handlers()`, next to the dispatcher it
+     * provokes. A converted handler registering NOTHING is a bright line a
+     * static check can hold (H13); "nothing except the one hook that only
+     * enqueues" is not.
      */
-    protected function init_hooks() {
-        // Hook into post save to check date-based rules
-        add_action('save_post', array($this, 'on_post_save'), 20, 3);
+    protected function init_hooks() {}
 
-        // Hook into publish_post to handle newly published posts
-        add_action('publish_post', array($this, 'on_post_publish'), 10, 2);
-
-        // Daily cleanup hook
-        add_action('bws_taxonomy_manager_cleanup', array($this, 'cleanup_expired_rules'));
-    }
-
-    // NOTE: unlike the hook-into-terms handlers (related/propagation/level-
-    // restriction), time-based genuinely USES process_post as its work method —
-    // its own save_post/publish_post hooks call it. So this is NOT a no-op. Runs
-    // once per save now; the redundant TaxonomyManager on_post_save loop that
-    // used to also call it was removed in the Phase-3 teardown. Writes are still
-    // idempotent (has-term / date-range guards). (V6)
-    public function process_post($post_id, $post, $update) {
-        $enabled_rules = $this->get_enabled_rules();
-
-        foreach ($enabled_rules as $rule) {
-            if (!$this->should_process_post($post_id, $rule)) {
-                continue;
-            }
-
-            $this->apply_time_based_rule($post_id, $post, $rule);
-        }
-    }
+    // Intentional no-op AS OF #61 — it used to be this handler's work method,
+    // called by its own save_post/publish_post hooks. Those hooks are gone and
+    // apply_to_post() is the applier; the base process_post routes through
+    // RuleEngine, which time-based does not use, so it must not be inherited.
+    public function process_post($post_id, $post, $update) {}
 
     /**
-     * Bulk-apply primitive (#31). Delegates to apply_time_based_rule for one
-     * rule + post. Overrides the base default (which routes RuleEngine) because
-     * time-based's real work is the date-range apply, not RuleEngine. No
-     * $processing guard needed — writes are idempotent (has-term / date-range
-     * guards) and time-based fires no re-entrant term hooks of its own. Returns
-     * whether the target-term taxonomy changed (in-range+already-tagged, or
-     * out-of-range+absent, are both no-ops ⇒ false), so the bulk count is honest
-     * (#31).
+     * Apply ONE time-based rule to ONE post. The whole of what `on_post_save`
+     * and `on_post_publish` used to do for a single rule (#61), and still the
+     * bulk-apply primitive it was added as (#31).
+     *
+     * Overrides the base default (which routes RuleEngine) because time-based's
+     * real work is the date-range apply, not RuleEngine.
+     *
+     * Idempotent by construction, which is what lets a pass re-run it whether
+     * or not anything time-based provoked the pass: both branches are guarded
+     * on has-term and on the date range, so in-range+already-tagged and
+     * out-of-range+absent are alike no-ops. No re-entrancy boolean is needed or
+     * permitted — the pass lock is the only guard (ADR 0003 decision 4).
+     *
+     * The trailing removal branch is deliberate and load-bearing: it strips the
+     * target term from an out-of-range post regardless of who applied it, which
+     * is the retroactive ownership ADR 0001 grants this rule type (provenance
+     * is rejected). Do not "fix" it into a provenance check.
+     *
+     * Returns whether the target-term taxonomy changed, so the bulk count is
+     * honest (#31).
      */
     public function apply_to_post(int $post_id, array $rule): bool {
         if (!$this->should_process_post($post_id, $rule)) {
@@ -84,25 +86,6 @@ class TimeBasedHandler extends UnifiedHandlerBase {
         return $this->terms_fingerprint($post_id, $taxonomy) !== $before;
     }
 
-    /**
-     * Handle post save events
-     */
-    public function on_post_save($post_id, $post, $update) {
-        // Skip autosaves and revisions
-        if (wp_is_post_autosave($post_id) || wp_is_post_revision($post_id)) {
-            return;
-        }
-        
-        $this->process_post($post_id, $post, $update);
-    }
-    
-    /**
-     * Handle post publish events
-     */
-    public function on_post_publish($post_id, $post) {
-        $this->process_post($post_id, $post, false);
-    }
-    
     /**
      * Apply time-based rule to a post
      */
@@ -188,32 +171,92 @@ class TimeBasedHandler extends UnifiedHandlerBase {
     }
     
     /**
-     * Cleanup expired rules and terms
+     * The daily sweep. ENQUEUES the posts an expired rule still holds and lets
+     * the dispatcher drain them as full ordered passes (#61).
+     *
+     * Registered by `TaxonomyManager::init_handlers()`, not by this class — see
+     * `init_hooks()`.
+     *
+     * WHY IT NO LONGER REMOVES ANYTHING ITSELF. The removal it used to perform
+     * is exactly `apply_time_based_rule()`'s trailing out-of-range branch, so
+     * the sweep was a second, private execution path for one rule — running
+     * that rule in isolation, outside any pass, in whatever order the handler
+     * map happened to be in. A term the sweep stripped at 3am was therefore
+     * invisible to every rule that should have reacted to its going, and a
+     * later rule that would have re-applied it never got the chance. Selecting
+     * posts is the sweep's real job; deciding what happens to them is the
+     * pass's (CONTEXT.md → Pass: "a save, an ACF write, a bulk re-apply, a cron
+     * sweep ... it is the same pass in every case").
+     *
+     * The removal RULE is unchanged: for each swept post the pass runs this
+     * handler's expired rule, whose out-of-range branch removes the target term
+     * whoever applied it (ADR 0001 retroactive ownership).
+     *
+     * ONE THING DID CHANGE, and it is a correction. The old sweep removed from
+     * every post its query returned, consulting no gate at all — so a rule
+     * scoped to published posts still stripped its term from drafts on the
+     * nightly run, while a save of that same draft left it alone. Going through
+     * the pass means going through `should_process_post()`, so cron and save now
+     * agree, which is the whole point of routing the sweep here. The selection
+     * below is narrowed to match rather than left wide: enqueuing a post the
+     * rule cannot touch is not harmless once the sweep provokes a FULL pass on
+     * it — every other rule in the list would run on a post nothing had
+     * provoked.
+     *
+     * Drains explicitly rather than leaving it to `shutdown`. A cron request
+     * does reach shutdown, but a caller that provokes the sweep and reads terms
+     * back in the same request — the mc-rules `verify.php` A7 probe fires
+     * `bws_taxonomy_manager_cleanup` by hand — would otherwise read pre-pass
+     * state, which is trap (a) of the dispatcher's contract.
      */
     public function cleanup_expired_rules() {
+        $dispatcher = \BWS\MetaConductor\Core\TermDispatcher::instance();
+        if (!$dispatcher) {
+            return;
+        }
+
         $enabled_rules = $this->get_enabled_rules();
-        $current_date = current_time('Y-m-d');
-        
+        $current_date  = current_time('Y-m-d');
+        $swept         = array();
+
         foreach ($enabled_rules as $rule) {
             // Skip rules that haven't expired yet
             if ($current_date <= $rule['end_date']) {
                 continue;
             }
-            
-            $this->cleanup_expired_rule($rule, $current_date);
+
+            foreach ($this->expired_rule_posts($rule) as $post_id) {
+                $swept[$post_id] = true;
+                $dispatcher->mark_dirty($post_id);
+            }
         }
-    }
-    
-    /**
-     * Cleanup a specific expired rule
-     */
-    private function cleanup_expired_rule($rule, $current_date) {
-        $target_term = get_term($rule['target_term_id']);
-        if (!$target_term || is_wp_error($target_term)) {
+
+        if (empty($swept)) {
             return;
         }
-        
-        // Resolve the rule's post types for the cleanup query. Empty ⇒ all
+
+        $this->debug_log(
+            sprintf('Time-based sweep enqueued %d posts for an ordered pass', count($swept)),
+            array('cleanup_date' => $current_date, 'post_ids' => array_keys($swept))
+        );
+
+        $dispatcher->drain();
+    }
+
+    /**
+     * The posts an expired rule still holds its target term on — the sweep's
+     * selection, with no effect of its own.
+     *
+     * @param array $rule One expired, enabled time-based rule.
+     * @return int[] Post IDs, possibly empty.
+     */
+    private function expired_rule_posts($rule): array {
+        $target_term = get_term((int) ($rule['target_term_id'] ?? 0));
+        if (!$target_term || is_wp_error($target_term)) {
+            return array();
+        }
+
+        // Resolve the rule's post types for the sweep query. Empty ⇒ all
         // public types (get_posts needs a concrete set; the gate treats empty
         // as "all"). get_posts accepts an array of slugs.
         $post_types = \BWS\MetaConductor\Admin\Config\ConfigHelpers::selected_checkbox_slugs($rule['post_types'] ?? []);
@@ -221,10 +264,18 @@ class TimeBasedHandler extends UnifiedHandlerBase {
             $post_types = array_values(get_post_types(array('public' => true)));
         }
 
+        // Resolve the rule's post STATUSES the same way, so selection matches
+        // the gate the pass will apply (see cleanup_expired_rules()). Empty ⇒
+        // the historical set, which is what an unscoped rule always swept.
+        $post_statuses = \BWS\MetaConductor\Admin\Config\ConfigHelpers::selected_checkbox_slugs($rule['post_status'] ?? []);
+        if (empty($post_statuses) || $post_statuses[0] === 'any') {
+            $post_statuses = array('publish', 'draft', 'private');
+        }
+
         // Find all posts that have this term
         $posts_with_term = get_posts(array(
             'post_type' => $post_types,
-            'post_status' => array('publish', 'draft', 'private'),
+            'post_status' => $post_statuses,
             'numberposts' => -1,
             'fields' => 'ids',
             'tax_query' => array(
@@ -235,24 +286,10 @@ class TimeBasedHandler extends UnifiedHandlerBase {
                 )
             )
         ));
-        
-        $removed_count = 0;
-        
-        foreach ($posts_with_term as $post_id) {
-            // Only remove if this was likely added by our time-based rule
-            // (We could add metadata to track this, but for now we'll remove from all matching posts)
-            $this->remove_terms_from_post($post_id, $target_term->taxonomy, array($target_term->term_id));
-            $removed_count++;
-        }
-        
-        if ($removed_count > 0) {
-            $this->debug_log(
-                sprintf('Cleaned up expired time-based rule: removed term %d from %d posts', $rule['target_term_id'], $removed_count),
-                array('rule' => $rule, 'cleanup_date' => $current_date)
-            );
-        }
+
+        return array_map('intval', (array) $posts_with_term);
     }
-    
+
     /**
      * Get active rules for current date
      */

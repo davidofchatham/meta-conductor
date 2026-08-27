@@ -31,7 +31,10 @@
  *   7. UNCONVERTED handlers are enumerated, and the enumeration matches which
  *      handlers still register hooks — so each conversion ticket shrinks a list
  *      that is visible in its diff, and cannot shrink it without doing the work.
- *   8. CONVERTED and UNCONVERTED partition the storage layer's rule types: no
+ *   8. The time-based cron sweep is still registered — outside the converted
+ *      handler, which registers nothing — and ENQUEUES rather than removing
+ *      terms itself: a provocation names entities, a pass decides their fate.
+ *   9. CONVERTED and UNCONVERTED partition the storage layer's rule types: no
  *      type is in both (double-apply) and none is in neither (silently retired).
  *
  * Run:  php tests/verify-term-dispatcher.php
@@ -389,7 +392,66 @@ foreach (($unconverted ?? []) as $type) {
     }
 }
 
-// --- 8. The two lists partition the term-kind rule types -------------------
+// --- 8. The time-based cron sweep enqueues, and is still registered --------
+// The sweep is the one provocation that is neither a hook the dispatcher owns
+// nor a user action, and converting it (#61) moved its registration OUT of the
+// handler — group 6 above would otherwise have flagged it. Two things can now
+// break silently. It can stop being registered at all, which retires the whole
+// expiry behaviour with nothing to observe but terms that never go away. Or it
+// can quietly go back to removing terms itself, which puts one rule on a
+// private execution path outside any pass again — the exact defect the
+// conversion removed, and invisible because the end state for that ONE rule is
+// the same.
+$sweep_hook   = 'bws_taxonomy_manager_cleanup';
+$sweep_method = 'cleanup_expired_rules';
+
+if (in_array('time_based_rules', $converted ?? [], true)) {
+    $manager_file = $root . '/includes/class-taxonomy-manager.php';
+    if (!is_file($manager_file)) {
+        $errors[] = 'includes/class-taxonomy-manager.php missing — cannot verify the time-based sweep is registered.';
+    } elseif (!preg_match(
+        '/add_action\(\s*[\'"]' . preg_quote($sweep_hook, '/') . '[\'"].*?[\'"]' . preg_quote($sweep_method, '/') . '[\'"]/s',
+        $strip_comments((string) file_get_contents($manager_file))
+    )) {
+        $errors[] = sprintf(
+            'The %s sweep is not registered in TaxonomyManager — a converted TimeBasedHandler registers nothing itself, so the daily expiry sweep would run nowhere.',
+            $sweep_hook
+        );
+    }
+
+    $tb_file = $root . '/includes/handlers/class-time-based-handler.php';
+    if (!is_file($tb_file)) {
+        $errors[] = 'class-time-based-handler.php missing.';
+    } elseif (!preg_match(
+        '/function\s+' . preg_quote($sweep_method, '/') . '\s*\([^)]*\)\s*\{(.*?)\n    \}/s',
+        $strip_comments((string) file_get_contents($tb_file)),
+        $swm
+    )) {
+        $errors[] = sprintf('%s() not found on TimeBasedHandler.', $sweep_method);
+    } else {
+        $body = $swm[1];
+        if (!preg_match('/->mark_dirty\(/', $body)) {
+            $errors[] = sprintf('%s() does not mark the posts it selects dirty — the sweep must ENQUEUE, not execute (#61).', $sweep_method);
+        }
+        if (!preg_match('/->drain\(/', $body)) {
+            $errors[] = sprintf(
+                '%s() does not drain — a caller that provokes the sweep and reads terms back in the same request would see pre-pass state.',
+                $sweep_method
+            );
+        }
+        foreach (['remove_terms_from_post', 'apply_terms_to_post', 'apply_time_based_rule'] as $effect) {
+            if (preg_match('/\b' . $effect . '\s*\(/', $body)) {
+                $errors[] = sprintf(
+                    '%s() calls %s() — the sweep selects posts; what happens to them is the pass\'s job, or one rule runs outside any pass and out of authored order (#61).',
+                    $sweep_method,
+                    $effect
+                );
+            }
+        }
+    }
+}
+
+// --- 9. The two lists partition the term-kind rule types -------------------
 // A type in both would double-apply; a type in neither would be silently
 // retired, which is the failure mode that looks most like nothing happening.
 $storage_file = $root . '/includes/storage/class-option-rule-storage.php';

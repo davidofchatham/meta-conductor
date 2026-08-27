@@ -68,6 +68,12 @@ if (!defined('ABSPATH')) {
  * (entity, kind), a rule writing a different entity still starts that entity's
  * own pass and a genuine cycle terminates on the first entity's held lock.
  *
+ * NOT EVERY PROVOCATION IS A HOOK. Bulk apply and time-based's daily sweep
+ * reach the queue as ordinary callers — the sweep selects the posts an expired
+ * rule still holds, marks each dirty and drains (#61). A provocation's job is
+ * to name entities; what happens to them is the pass's, which is what makes
+ * "the same pass however provoked" true of cron as well as of a save.
+ *
  * CONVERSION IS INCREMENTAL. `CONVERTED_TYPES` is what a pass runs;
  * `UNCONVERTED_TYPES` still own their hooks and are named here so each
  * conversion ticket shrinks a visible list. H13
@@ -125,13 +131,15 @@ class TermDispatcher {
     private const CONVERTED_TYPES = [
         'hierarchical_rules',
         'hierarchical_level_restriction_rules',
+        'time_based_rules',
+        'related_rules',
     ];
 
     /**
      * Rule types that still own their apply hooks. MUST be empty by #66.
      *
      * Named rather than inferred so the list shrinking is visible in the diff
-     * of each conversion ticket: #61 takes time_based + related, #62
+     * of each conversion ticket: #61 took time_based + related, #62 takes
      * propagation, #63 related_post_terms.
      *
      * @var string[]
@@ -139,8 +147,6 @@ class TermDispatcher {
     private const UNCONVERTED_TYPES = [
         'propagation_rules',
         'related_post_terms_rules',
-        'time_based_rules',
-        'related_rules',
     ];
 
     /**

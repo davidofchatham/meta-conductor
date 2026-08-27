@@ -184,9 +184,12 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
       ONLY; native taxonomy columns via `wp_set_object_terms` → fires
       `set_object_terms` (handlers already catch that). So the ACF-column path
       needs a bridge: AC v7's post-persist `ac/editing/saved` action → a shared
-      `UnifiedHandlerBase::reapply_for_post(int $post_id)` (no-op default; the five
-      ACF-listening handlers override it to delegate to their own gated
-      `on_acf_save_post`). The bridge does NOT dispatch by column type — it hands
+      `UnifiedHandlerBase::reapply_for_post(int $post_id)` (no-op default; the
+      ACF-listening handlers that still own their hooks override it to delegate
+      to their own gated `on_acf_save_post`). A CONVERTED handler has no
+      override and no `on_acf_save_post` to delegate to — the ACF write queue
+      marks the post dirty instead and the dispatcher's pass does the work
+      (#60), so the seam shrinks with each conversion and goes at #66. The bridge does NOT dispatch by column type — it hands
       the post ID to EVERY handler, each self-gating, mirroring how `save_post`
       fires for every post. Hook post-persist, never the pre-write
       `acf/update_value` (the capture path reads OLD there — see the sever model).
@@ -333,6 +336,31 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
     the captured value is consumed by the applier during a pass. The allow-list
     is `TermDispatcher::CAPTURE_HOOKS`, empty until `related_post_terms`
     converts (#63).
+
+    **A provocation names entities; the pass decides their fate (#61).** Not
+    every entry point is one of the dispatcher's own hooks — bulk apply and
+    `time_based`'s daily expiry sweep are ordinary callers. Both mark entities
+    dirty and drain; neither applies a rule. The sweep is the instructive one,
+    because it used to do the opposite: it removed its own rule's target term
+    from each post it found, which is one rule executed alone, outside any pass,
+    in handler-map order. A term written that way was invisible to every rule
+    that should have consumed it until somebody re-saved the post. Selecting the
+    posts is the sweep's job; what happens to them is the pass's, which is what
+    makes "the same pass however provoked" (CONTEXT.md → **Pass**) true of cron
+    as well as of a save. A converted handler's non-apply hook therefore lives
+    at its registration site — `TaxonomyManager` — not in the handler, so
+    "a converted handler registers nothing" stays a line H13 can hold.
+
+    **A delta is not available to an applier, so a rule that wanted one must be
+    restated in terms of live state (#61).** `related`'s removal used to read
+    `set_object_terms`' old/new term-taxonomy IDs and fire only when a trigger
+    left in *that* write. A pass hands over rules, not deltas — deliberately,
+    per the third bullet above — so the condition became "no trigger is present"
+    rather than "a trigger just went". That is a real behaviour change on a live
+    rule type, recorded as such in the changelog, and it is the shape every
+    remaining conversion should expect to hit: the alternative, capturing the
+    delta, buys exact parity at the cost of the rule no longer being a function
+    of live state, which makes bulk and cron disagree with a save.
 
 ## Settings UI — WP Wireframe
 

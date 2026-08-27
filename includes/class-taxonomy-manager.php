@@ -183,6 +183,15 @@ class TaxonomyManager {
         $this->term_dispatcher = new TermDispatcher($this->handlers);
         $this->term_dispatcher->register();
 
+        // Time-based's daily sweep (#61). It lives HERE rather than in
+        // TimeBasedHandler::init_hooks() because a converted handler must
+        // register nothing at all — that is the bright line H13 holds, and
+        // "nothing except the one hook that only enqueues" is not a line a
+        // static check can hold. The sweep is a provocation like bulk apply,
+        // not an apply: it selects the posts an expired rule still holds, marks
+        // them dirty on the dispatcher above and drains ordered passes.
+        add_action('bws_taxonomy_manager_cleanup', array($this->handlers['time_based'], 'cleanup_expired_rules'));
+
         // AC-agnostic ACF write queue (#42). Watches ACF's own write filter, so
         // EVERY write that bypasses the save_post family — AC v7 inline/bulk,
         // bare update_field(), REST — reapplies the handlers afterwards. This
