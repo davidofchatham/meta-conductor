@@ -444,6 +444,51 @@ class OptionRuleStorage implements RuleStorage {
     }
 
     /**
+     * Read a kind list in AUTHORED order — the dispatcher's read path (#60).
+     *
+     * `get_kind_rules()` derives its list from the type-keyed arrays, which
+     * groups by type; that is deliberate there (it is what guarantees a
+     * front-end or cron request sees the admin's last save) and it is exactly
+     * why it cannot reproduce cross-type order. Nothing consumed that order
+     * until the dispatcher: every handler filtered the list down to its own
+     * type, where derived order and authored order are the same sequence.
+     *
+     * A pass DOES consume it — authored order IS the composition semantics
+     * (ADR 0003 decision 3), so a hierarchical rule sequenced after a
+     * level-restriction rule has to run after it. So this path reads the
+     * PERSISTED key through `authored_kind_list()`, which keeps the stored row
+     * order whenever it still agrees with the type-keyed arrays as sets per
+     * type, and rebuilds in KIND_TYPES order when something wrote a legacy
+     * array behind the repeater's back. That fallback is why the derived read
+     * is not simply replaced here: the persisted list is authoritative for
+     * ORDER, the type-keyed arrays stay authoritative for MEMBERSHIP, and
+     * `authored_kind_list()` is the one place that reconciliation lives.
+     *
+     * The two read paths collapse into one in the contract ticket (#66), when
+     * the type-keyed write path is deleted and the persisted list becomes
+     * authoritative for both.
+     *
+     * Not memoized on purpose. `authored_kind_list()` reads only what
+     * `get_all_settings()` already cached, a pass calls this once, and a third
+     * request-scoped cache would need resetting in lockstep with two others
+     * (see `$cached_kind_lists`) — a live trap for a cost that is not there.
+     *
+     * @since 0.8.0
+     * @param string $kind    KIND_TERM or KIND_FORMAT.
+     * @param array  $filters Same filters as get_kind_rules().
+     * @return array Rules in authored order.
+     */
+    public function get_authored_kind_rules(string $kind, array $filters = []): array {
+        if (!isset(self::KIND_TYPES[$kind])) {
+            return [];
+        }
+
+        $rows = self::authored_kind_list($kind, $this->get_all_settings());
+
+        return self::filter_rules(self::project_kind_rules($rows), $filters);
+    }
+
+    /**
      * Read-time projection of a kind list: assign per-type `id`, then apply the
      * canonical-shape coercion. Pure — the harness runs it without WordPress.
      *
@@ -554,6 +599,16 @@ class OptionRuleStorage implements RuleStorage {
      * wrote a legacy array behind the repeater's back — is authored order
      * discarded and the list rebuilt, so the repeater shows the new rules
      * rather than hiding them.
+     *
+     * ⚠️ **That rebuild now changes BEHAVIOUR, not just presentation (#60).**
+     * Authored order is what a pass executes in, so falling back to KIND_TYPES
+     * order can change the end state of every rule in the kind — the writers
+     * above silently reorder the author's list as a side effect of adding one
+     * rule. Rebuilding is still the right answer while the type-keyed arrays
+     * are authoritative for membership (the alternative is hiding the new rules
+     * entirely), but it stopped being a free repair the moment order meant
+     * something. #66 settles it by making the list itself authoritative rather
+     * than reconciled.
      *
      * Rows of NON-migrated types are excluded from the list either way. They
      * are still authored in their own per-type repeaters, and a row the bound

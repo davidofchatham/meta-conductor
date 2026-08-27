@@ -18,6 +18,7 @@ use BWS\MetaConductor\Conversion\ConversionManager;
 use BWS\MetaConductor\Conversion\ConversionCli;
 use BWS\MetaConductor\Storage\StorageFactory;
 use BWS\MetaConductor\Core\AcfWriteQueue;
+use BWS\MetaConductor\Core\TermDispatcher;
 
 // Prevent direct access
 if (!defined('ABSPATH')) {
@@ -49,6 +50,13 @@ class TaxonomyManager {
     private $acf_write_queue = null;
 
     /**
+     * Term dispatcher — sole entry point to term-rule execution (#60).
+     *
+     * @var TermDispatcher|null
+     */
+    private $term_dispatcher = null;
+
+    /**
      * Get singleton instance
      */
     public static function get_instance() {
@@ -77,6 +85,20 @@ class TaxonomyManager {
      */
     public function get_acf_write_queue() {
         return $this->acf_write_queue;
+    }
+
+    /**
+     * Get the term dispatcher (#60).
+     *
+     * Exposed for the same reason as get_acf_write_queue(): a behaviour sweep
+     * needs to provoke a pass directly (`run_pass`/`drain_post`) rather than
+     * wait for the shutdown drain, which WP-CLI reaches only at the very end of
+     * a run.
+     *
+     * @return TermDispatcher|null
+     */
+    public function get_term_dispatcher() {
+        return $this->term_dispatcher;
     }
 
     /**
@@ -149,12 +171,24 @@ class TaxonomyManager {
 			'title_slug' => new TitleSlugHandler(),
         );
 
+        // Term dispatcher (#60) — sole entry point to term-rule execution.
+        // Built BEFORE the ACF write queue because the queue marks entities
+        // dirty on it: a bare update_field() fires none of the dispatcher's
+        // triggers, so the queue is how that write reaches a pass.
+        //
+        // Construction order carries no execution meaning any more, which is
+        // the point. The propagation-before-hierarchical and title-slug-last
+        // dependencies that used to live in the array above are dead for the
+        // converted types and die entirely at #66.
+        $this->term_dispatcher = new TermDispatcher($this->handlers);
+        $this->term_dispatcher->register();
+
         // AC-agnostic ACF write queue (#42). Watches ACF's own write filter, so
         // EVERY write that bypasses the save_post family — AC v7 inline/bulk,
         // bare update_field(), REST — reapplies the handlers afterwards. This
         // generalises the #37 AC-only fallback below, which now just asks the
         // queue to flush one post immediately.
-        $this->acf_write_queue = new AcfWriteQueue($this->handlers);
+        $this->acf_write_queue = new AcfWriteQueue($this->handlers, $this->term_dispatcher);
         $this->acf_write_queue->register();
 
         // Admin Columns v7 immediate flush (#37). Gate on the ACP_VERSION

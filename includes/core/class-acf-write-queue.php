@@ -65,6 +65,14 @@ if (!defined('ABSPATH')) {
  * respectively, so any narrowing would reintroduce a smaller version of the bug
  * this fixes. (arch.md handler-invariant #14)
  *
+ * SECOND APPLY CONTRACT, FOR CONVERTED TYPES (#60). A handler the dispatcher
+ * owns registers no hooks and overrides no reapply seam, so the loop above
+ * reaches nothing for it. Those types are covered by marking the post dirty on
+ * the dispatcher instead: the shutdown drain (priority 20, after this flush's
+ * 10) runs one full ordered pass per post. Both contracts are live while the
+ * conversion is partial; the first one goes away with the last unconverted
+ * handler (#66).
+ *
  * SIDE EFFECT WORTH KNOWING. RelatedPostTermsHandler::reapply_for_post routes
  * through its normal acf/save_post entry point, which also drains its pending
  * sever bookkeeping. The flush therefore closes that handler's separately
@@ -104,10 +112,27 @@ class AcfWriteQueue {
     private bool $flushing = false;
 
     /**
-     * @param array<string,\BWS\MetaConductor\Handlers\UnifiedHandlerBase> $handlers
+     * Term dispatcher, if one is running (#60).
+     *
+     * A CONVERTED handler has no `reapply_for_post` to call — it has no hooks
+     * at all — so the loop below cannot reach it. This is how the ACF-only
+     * write path still provokes a pass for those rule types: the flush marks
+     * the post dirty and the dispatcher's own shutdown drain (priority 20, this
+     * flush is 10) runs the pass.
+     *
+     * Nullable so the queue can still be constructed standalone.
+     *
+     * @var TermDispatcher|null
      */
-    public function __construct(array $handlers) {
-        $this->handlers = $handlers;
+    private ?TermDispatcher $dispatcher;
+
+    /**
+     * @param array<string,\BWS\MetaConductor\Handlers\UnifiedHandlerBase> $handlers
+     * @param TermDispatcher|null                                          $dispatcher
+     */
+    public function __construct(array $handlers, ?TermDispatcher $dispatcher = null) {
+        $this->handlers   = $handlers;
+        $this->dispatcher = $dispatcher;
     }
 
     /**
@@ -246,6 +271,14 @@ class AcfWriteQueue {
             unset($this->pending[$post_id]);
             $this->apply($post_id);
         });
+
+        // apply() only MARKED the post for the dispatcher; the whole point of
+        // this entry point is that AC builds its inline-edit response before
+        // shutdown, so the pass has to happen now too or the column renders
+        // pre-pass terms. Outside guarded() deliberately — this is a different
+        // mechanism's queue with its own re-entrancy guard, and nesting it
+        // inside this one would make a mid-flush call a silent no-op. (#60)
+        $this->dispatcher?->drain_post($post_id);
     }
 
     /**
@@ -286,6 +319,13 @@ class AcfWriteQueue {
         foreach ($this->handlers as $handler) {
             $handler->reapply_for_post($post_id);
         }
+
+        // Converted rule types have no reapply seam to call — the dispatcher
+        // runs them. Marking rather than passing here keeps the coalescing
+        // property: a flush of N posts leaves N dirty entities and the drain
+        // runs one pass each, instead of a pass firing inside this loop and
+        // re-entering it through its own writes. (#60)
+        $this->dispatcher?->mark_dirty($post_id);
     }
 
     /**

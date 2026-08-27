@@ -17,6 +17,7 @@ if (!defined('ABSPATH')) {
 
 use BWS\MetaConductor\Core\RuleEngine;
 use BWS\MetaConductor\Core\Entity;
+use BWS\MetaConductor\Core\TermDispatcher;
 use BWS\MetaConductor\Storage\StorageFactory;
 
 abstract class UnifiedHandlerBase {
@@ -86,6 +87,22 @@ abstract class UnifiedHandlerBase {
      * @return string Rule type key (e.g., 'hierarchical_rules')
      */
     abstract protected function get_rule_type();
+
+    /**
+     * Public reader for the rule type key.
+     *
+     * The dispatcher keys its handler map by RULE type, because that is what a
+     * kind-list row carries, and it resolves a handler's effect kind through
+     * the same key. `get_rule_type()` is protected and stays that way — every
+     * subclass declares it protected, so widening it in place would be a fatal
+     * on all seven. This is the one-line seam instead. (#60)
+     *
+     * @since 0.8.0
+     * @return string Rule type key (e.g. 'hierarchical_rules').
+     */
+    public function rule_type(): string {
+        return $this->get_rule_type();
+    }
 
     /**
      * Process a rule using unified engine
@@ -588,19 +605,30 @@ abstract class UnifiedHandlerBase {
     }
 
     /**
-     * Apply ONE rule to ONE existing post OUT OF BAND — the bulk-apply primitive
-     * process_existing_posts() drives, decoupled from the hook-path process_post.
+     * Apply ONE rule to ONE post. THE applier seam.
      *
-     * Why this exists (#31): the hook-driven handlers (related, propagation,
-     * level-restriction) make process_post a no-op — their real work fires from
-     * their own set_object_terms/save_post/acf hooks, so the base process_post
-     * (which routes through RuleEngine) must NOT run for them. That left the bulk
-     * "process existing posts" tool inert: it looped process_post, which did
-     * nothing, yet counted every post as processed (the "lying button"). Bulk now
-     * loops THIS instead. Each hook-driven handler overrides it, delegating to its
-     * own per-post primitive with the same $processing re-entry guard its hooks
-     * use; RuleEngine handlers (hierarchical, title-slug, and time-based via its
-     * functional process_post) inherit this default.
+     * Why it exists (#31): the hook-driven handlers made process_post a no-op —
+     * their real work fired from their own set_object_terms/save_post/acf hooks,
+     * so the base process_post (which routes through RuleEngine) must NOT run
+     * for them. That left the bulk "process existing posts" tool inert: it
+     * looped process_post, which did nothing, yet counted every post as
+     * processed (the "lying button"). Bulk loops THIS instead.
+     *
+     * What it became (#60): the seam a CONVERTED handler is reduced to. A
+     * converted handler registers no hooks at all; `TermDispatcher` owns the
+     * trigger union and calls this once per rule per pass, in authored order.
+     * So an override must be the handler's WHOLE apply — everything its hooks
+     * used to do — and it must be idempotent, because a pass re-runs every rule
+     * whether or not that rule's own trigger fired. It must NOT carry a
+     * re-entrancy boolean: the pass lock is the only guard, and a second one
+     * silently suppresses the author's own chain (ADR 0003, rejected option).
+     *
+     * Handlers still awaiting conversion keep their hooks and their overrides
+     * of this as the bulk primitive only — see TermDispatcher::UNCONVERTED_TYPES.
+     *
+     * ONLY `TermDispatcher::apply()` may call this. H13 asserts the single call
+     * site; that is what makes "every execution went through a pass" checkable
+     * rather than merely intended.
      *
      * @param int   $post_id Post to apply the rule to.
      * @param array $rule    One enabled rule (canonical shape).
@@ -768,20 +796,43 @@ abstract class UnifiedHandlerBase {
 
         $processed = 0;
 
-        // Loop rules × posts through apply_to_post (the bulk primitive), NOT
-        // process_post — the hook-driven handlers no-op process_post (#31). Count
-        // a post as processed only when at least one rule actually applied to it,
-        // so the reported total reflects work done, not just posts iterated (the
-        // old loop counted every iteration → "Processed N of N" while writing
+        // Loop rules × posts through the applier seam, NOT process_post — the
+        // hook-driven handlers no-op process_post (#31). Count a post as
+        // processed only when at least one rule actually applied to it, so the
+        // reported total reflects work done, not just posts iterated (the old
+        // loop counted every iteration → "Processed N of N" while writing
         // nothing).
+        //
+        // The call goes through TermDispatcher::apply() rather than straight to
+        // $this->apply_to_post(): the dispatcher is the sole caller of that seam
+        // (#60), which is what lets H13 prove by inspection that nothing
+        // executes a rule outside it. It also means bulk apply takes the same
+        // pass lock a hook-driven pass does, so the writes a rule makes here
+        // don't enqueue this post for a redundant second pass at shutdown.
+        //
+        // A CONVERTED type takes the pass instead. Looping this handler's own
+        // rules would apply them in isolation, so bulk would produce a
+        // different end state than a save over the same rule set whenever a
+        // rule of another type sits between two of this one's — which is
+        // exactly the arrangement the ordered list exists to allow. A pass is
+        // the same pass however it was provoked (CONTEXT.md → Pass), so bulk
+        // provokes one. Handlers still owning their hooks keep the per-rule
+        // loop; the branch goes away with the last of them (#66).
+        $dispatcher   = TermDispatcher::instance();
+        $run_full_pass = $dispatcher !== null && TermDispatcher::owns($this->get_rule_type());
+
         foreach ($query->posts as $post_id) {
             if (!get_post($post_id)) {
                 continue;
             }
             $applied = false;
-            foreach ($rules as $rule) {
-                if ($this->apply_to_post($post_id, $rule)) {
-                    $applied = true;
+            if ($run_full_pass) {
+                $applied = $dispatcher->run_pass((int) $post_id) > 0;
+            } else {
+                foreach ($rules as $rule) {
+                    if (TermDispatcher::apply($post_id, $rule, $this)) {
+                        $applied = true;
+                    }
                 }
             }
             if ($applied) {
@@ -803,7 +854,20 @@ abstract class UnifiedHandlerBase {
             // this batch's changed posts, count($query->posts) is this batch's
             // scanned posts — mixing per-batch numerator with a cumulative
             // denominator would misreport under pagination.
-            'message' => sprintf(
+            //
+            // On the pass path the count means "posts some rule in the ordered
+            // list changed", not "posts THIS rule type changed", and the posts
+            // scanned are still the ones this handler's rules name. Both are
+            // consequences of bulk provoking a real pass, so the message says
+            // which of the two it is rather than reporting the wider number
+            // under the narrower sentence.
+            'message' => $run_full_pass
+                ? sprintf(
+                    __('Ran the ordered rule list over %2$d posts; %1$d changed.', 'meta-conductor'),
+                    $processed,
+                    count($query->posts)
+                )
+                : sprintf(
                 __('Applied to %d of %d posts scanned.', 'meta-conductor'),
                 $processed,
                 count($query->posts)

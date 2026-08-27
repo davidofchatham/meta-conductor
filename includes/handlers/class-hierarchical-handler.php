@@ -26,11 +26,14 @@ class HierarchicalHandler extends UnifiedHandlerBase {
 
     private const AUTO_TERMS_META = '_bws_auto_terms';
 
-    private bool $processing = false;
-
-    protected function init_hooks() {
-        add_action('set_object_terms', array($this, 'on_terms_set'), 10, 6);
-    }
+    /**
+     * Pure applier: no hooks (#60).
+     *
+     * `set_object_terms` p10 lived here until 0.8.0. `TermDispatcher` owns the
+     * trigger union now, so registering anything here would run this handler's
+     * rules twice — once out of order, once in it.
+     */
+    protected function init_hooks() {}
 
     public function get_handler_type() {
         return 'hierarchical';
@@ -40,20 +43,43 @@ class HierarchicalHandler extends UnifiedHandlerBase {
         return 'hierarchical_rules';
     }
 
-    // Hierarchical rules use on_terms_set exclusively. Base class process_post
-    // routes through RuleEngine which expects action/source_type keys.
+    // Not the applier — apply_to_post() is. The base process_post routes
+    // through RuleEngine, which expects action/source_type keys these flat
+    // Wireframe rules do not carry, so it must stay a no-op here.
     public function process_post($post_id, $post, $update) {}
 
-    public function on_terms_set($object_id, $terms, $tt_ids, $taxonomy, $append, $old_tt_ids) {
-        if ($this->processing) {
-            return;
+    /**
+     * Apply ONE hierarchical rule to ONE post. The whole of what `on_terms_set`
+     * used to do, minus the taxonomy filtering the hook signature gave it for
+     * free: a pass hands over rules, not taxonomies, so the rule's own
+     * `taxonomy` is the one to expand.
+     *
+     * Overrides the base default deliberately. That default routes through
+     * RuleEngine, which this handler has never used — inheriting it would have
+     * made the dispatcher call a no-op and silently retire the rule type.
+     *
+     * No re-entrancy boolean: the `private $processing` flag that used to wrap
+     * the write is deleted, because the pass lock already suppresses the
+     * `set_object_terms` this fires (#60, ADR 0003 decision 4).
+     *
+     * @param int   $post_id Post to apply to.
+     * @param array $rule    One enabled hierarchical rule.
+     * @return bool Whether the post's terms actually changed.
+     */
+    public function apply_to_post(int $post_id, array $rule): bool {
+        if (!$this->should_process_post($post_id, $rule)) {
+            return false;
         }
 
-        foreach ($this->get_rules_for_taxonomy($taxonomy) as $rule) {
-            if ($this->should_process_post($object_id, $rule)) {
-                $this->apply_rule((int) $object_id, $taxonomy, $rule);
-            }
+        $taxonomy = $rule['taxonomy'] ?? '';
+        if ($taxonomy === '' || !taxonomy_exists($taxonomy)) {
+            return false;
         }
+
+        $before = $this->terms_fingerprint($post_id, $taxonomy);
+        $this->apply_rule($post_id, $taxonomy, $rule);
+
+        return $this->terms_fingerprint($post_id, $taxonomy) !== $before;
     }
 
     /**
@@ -118,9 +144,7 @@ class HierarchicalHandler extends UnifiedHandlerBase {
             return;
         }
 
-        $this->processing = true;
         wp_set_object_terms($post_id, $final, $taxonomy);
-        $this->processing = false;
     }
 
     /**
@@ -321,18 +345,10 @@ class HierarchicalHandler extends UnifiedHandlerBase {
         }
     }
 
-    protected function get_rules_for_taxonomy(string $taxonomy): array {
-        $matching = [];
-
-        foreach ($this->get_enabled_rules() as $rule_id => $rule) {
-            if (($rule['taxonomy'] ?? '') === $taxonomy) {
-                $rule['id'] = $rule_id;
-                $matching[] = $rule;
-            }
-        }
-
-        return $matching;
-    }
+    // get_rules_for_taxonomy() lived here until 0.8.0. It selected this
+    // handler's rules by the taxonomy the `set_object_terms` hook reported;
+    // with the hook gone, a pass hands over one rule at a time and the rule's
+    // own `taxonomy` is the only one that matters. (#60)
 
     protected function validate_rule_internal($rule) {
         if (empty($rule['enabled'])) {

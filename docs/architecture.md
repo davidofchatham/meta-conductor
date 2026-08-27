@@ -272,6 +272,68 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
     model silently broken by a flush that now runs AFTER the restore. The
     plugin's own bulk apply action is exempt: it does not write through ACF.
 
+17. **A converted handler owns no hooks, and the dispatcher is the only caller
+    of `apply_to_post`.** This INVERTS the rule every hook-driven handler was
+    written to (#60, [ADR 0003](adr/0003-ordered-rule-list-and-dispatcher.md)
+    decisions 3 and 4). `Core\TermDispatcher` owns the trigger union for the
+    `term_rules` kind; handlers of the types it has taken over are pure appliers
+    on the `apply_to_post(int, array): bool` seam. The conversion is
+    incremental, so both regimes are live — `CONVERTED_TYPES` and
+    `UNCONVERTED_TYPES` on the dispatcher name which is which, and
+    `tests/verify-term-dispatcher.php` (H13) fails if a handler's registrations
+    disagree with the side it is listed on. Four things make it correct:
+
+    - *Triggers mark, they never execute.* One editor save fires `save_post`,
+      `acf/save_post` and one `set_object_terms` per taxonomy touched. Executing
+      per trigger is six passes, five of them over half-written state. Each
+      trigger instead marks the entity dirty, and the queue drains once per
+      request at `shutdown` — after `AcfWriteQueue::flush`, which marks the
+      posts behind bare `update_field()` writes as it flushes. The observable
+      cost is that the apply is no longer synchronous with the term write: a
+      caller reading terms back in the same request sees pre-pass state unless
+      it drains explicitly (`drain_post()`; what the AC inline-edit bridge uses
+      so its response is not stale). There is a second drain on
+      `wp_after_insert_post` for the same reason at editor scale — `shutdown`
+      lands after the response, so without it a block-editor save would render
+      the author's raw selection until reload. One pass per *save*, therefore,
+      rather than always one per request: a block-editor save that writes ACF
+      fields on `rest_after_insert_*` marks the post again and gets a second
+      pass, which recomputes to the same state.
+    - *The off switch sits on the pass, not on the triggers.* Same argument as
+      #14's: `drain_post()` and bulk apply reach a pass directly, so gating the
+      triggers would leave them running. `pass_enabled()` honours
+      `meta_conductor_acf_reapply_enabled` first — every existing user of that
+      filter means "do not recompute rules for this post", the fixture seeder's
+      empty-rules-then-restore window included, which the drain would otherwise
+      reopen — then `meta_conductor_term_pass_enabled` as the finer control.
+    - *A pass runs the WHOLE list, not the rules whose trigger fired.* A rule
+      consuming an earlier rule's write has no trigger for it — that write is
+      exactly what the lock suppresses — so trigger-filtering would skip the
+      consumer in precisely the case authored order exists to settle. Every
+      enabled rule of the kind runs, in authored order, recomputing from live
+      state. Idempotence is therefore the applier's contract: an override must
+      be the handler's WHOLE apply, and must do nothing when nothing changed.
+    - *The lock is pass-scoped and keyed (entity, effect kind).* Not
+      request-scoped, which silences the author's own chain after its first
+      write; not per-taxonomy, which lets a cross-taxonomy write start a nested
+      pass and reintroduces cascade as a second composition mechanism competing
+      with order. A converted handler carries **no** `private $processing`
+      boolean — a second guard is not defence in depth, it is the defect class
+      #35 was.
+    - *The queue sits ABOVE the lock.* `mark_dirty()` consults the lock, so a
+      rule's write to the entity under pass is the pass's own echo and is
+      dropped, while a write to a DIFFERENT entity enqueues and gets its own
+      pass in the same drain. That is how cross-entity effects still happen
+      without nesting, and why a genuine cycle terminates on the first entity's
+      held lock.
+
+    A converted handler may keep an allow-listed **capture** hook — one that
+    only snapshots pre-write state into a request-scoped queue, because the
+    state it reads does not survive the write (#12). Capture is not execution;
+    the captured value is consumed by the applier during a pass. The allow-list
+    is `TermDispatcher::CAPTURE_HOOKS`, empty until `related_post_terms`
+    converts (#63).
+
 ## Settings UI — WP Wireframe
 
 The settings UI is a React app provided by `tdrayson/wp-wireframe`. Config classes live under [includes/admin/config/](../includes/admin/config/), each exposing a `section()` method; the top-level composer assembles **three tabs** from them:
@@ -345,7 +407,9 @@ It ships **expand-first**, so both shapes are live at once and the split of duti
 The config collapse (#57, #58, #59) made the persisted `term_rules` and `format_rules` keys the things the settings page **writes**, which splits the two lists' roles in a way worth stating plainly:
 
 - The **rules** are derived. `WireframeBootstrap::fan_out_rule_lists()` projects each saved row back into its type-keyed array on the same save, so the derived read keeps seeing repeater edits, and a deleted row actually stops firing (the projection writes an *empty* array rather than omitting the key — Wireframe merges rather than replaces, so an absent key would leave the rule in place).
-- The **order** is authored, and only the persisted list has it. `fan_in()` groups by type, so it can never reproduce a list where a level-restriction rule sits above a propagation rule. Nothing consumes cross-type order yet — each handler still filters to its own type — which is why this is safe to carry until the dispatcher (#60–#64).
+- The **order** is authored, and only the persisted list has it. `fan_in()` groups by type, so it can never reproduce a list where a level-restriction rule sits above a propagation rule.
+
+  Since #60 that order has a consumer, and it reads the persisted list: `get_authored_kind_rules()` is the dispatcher's path, `get_kind_rules()` stays every handler's. Two reads of one kind is not duplication but a division of authority while both shapes are live — the persisted list is authoritative for ORDER, the type-keyed arrays for MEMBERSHIP, and `authored_kind_list()` is where the two are reconciled (keep the stored order while it still agrees per type; rebuild in `KIND_TYPES` order when a writer went behind the repeater's back). Handlers keep the derived read because they filter to their own type, where the two orders are the same sequence. The pair collapses at #66.
 
 `sync_kind_lists()` therefore stopped being a plain recompute, because on an authored list a recompute *is* a clobber. `authored_kind_list()` decides per kind:
 
@@ -355,6 +419,8 @@ The config collapse (#57, #58, #59) made the persisted `term_rules` and `format_
 | no migrated types (no kind, since #59) | plain `fan_in()` — a pure derived duplicate, #56's regime. Kept as what makes declaring a future type in `KIND_TYPES` safe a change before its subfields exist |
 
 The rebuild path is what picks up a write that bypassed the page — a WP-CLI `save_rule()`, a seeded fixture, an import — at the cost of the authored order, which that writer never had. Still not gated on the schema flag, which stays a marker: a one-shot gate would refuse to ever repair the list again.
+
+**Since #60 that cost is behavioural.** Authored order is what a pass executes in, so a rebuild can change the end state of every rule in the kind, and `import_rules()` / `duplicate_rule()` / a CLI `save_rule()` reorder the author's list as a side effect of adding one rule. Rebuilding remains right while the type-keyed arrays are authoritative for membership — hiding the new rules would be worse — but it is no longer free, and #66 resolves it by making the persisted list authoritative rather than reconciled.
 
 **Types whose config has not collapsed yet are excluded from the persisted list.** The repeater renders every row in the key it is bound to, and `RepeaterField::sanitize` drops any subfield the config does not declare — so a row the repeater has no subfields for would be gutted on the next save. `CONFIG_MIGRATED_TYPES` is the list of types with repeater subfields, and a type is added to it in the same change that gives it those subfields, never before. As of #59 every rule type is in: batch 1 (#57) took the four term types not live on a real site, `related_rules` + `related_post_terms_rules` followed with their subfields (#58), and `title_slug_rules` joined the format repeater (#59). The list is now identical to the flattened `KIND_TYPES` and stays a separate constant precisely so the next type can be declared in `KIND_TYPES` — and therefore fanned in and read — a change before its subfields exist. Handlers are unaffected: they derive, so behaviour never depended on the persisted list's membership.
 
