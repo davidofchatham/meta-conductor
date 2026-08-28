@@ -699,6 +699,36 @@ abstract class UnifiedHandlerBase {
     }
 
     /**
+     * Entities an allow-listed CAPTURE hook says need a pass. THE capture-queue
+     * seam (#63). Consuming: the dispatcher asks once per drain, and what it
+     * was told is spent.
+     *
+     * WHY IT IS NOT `fan_out()`. The fan-out is asked while passing over a
+     * post, and names entities reachable FROM it. A capture exists precisely
+     * because the thing that would make an entity reachable is what the write
+     * destroyed — a severed relationship, a deleted holder — so the entity it
+     * names is reachable from no post that will get a pass. Folding the two
+     * together would make the sever depend on some unrelated post happening to
+     * be saved in the same request, which is the "keys under a post that is
+     * never saved" trap invariant #15 records.
+     *
+     * WHY IT IS NOT the capture hook marking dirty itself. Capture is not
+     * execution and must not reach into the dispatcher; keeping the direction
+     * (dispatcher asks handler) is what lets H13 check the capture callbacks
+     * for writes and find nothing but recording.
+     *
+     * Empty by default: a handler with no capture hooks has nothing to hand
+     * over, and the dispatcher's ask costs an empty array.
+     *
+     * @return int[] Entity IDs to mark dirty. MUST be consumed — returning the
+     *               same IDs on every call would refill the queue faster than
+     *               the drain empties it.
+     */
+    public function drain_captures(): array {
+        return [];
+    }
+
+    /**
      * Reapply this handler's term-sync to a single post after an out-of-band
      * write that fired NO save_post-family hook.
      *

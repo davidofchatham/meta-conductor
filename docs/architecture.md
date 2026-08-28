@@ -266,9 +266,14 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
     the matrix; do not assume the rule's direction tells you where the edit lands.
     This is recorded because it was the second omission of the same class: B8
     added the pull-rule source-end case, #43 the push-rule dependent-end case.
-    Related: a sever queue must be keyed by the post whose save DRAINS it, not by
-    the post that caused it — anything else keys under a post that is never saved
-    in that request and silently never drains (see `RelatedPostTermsHandler`).
+    Related: a sever queue must be keyed by something that will actually reach
+    the code that acts on it. Before #63 that meant the post whose save DRAINS
+    the entry, because nothing else would ever look; keying by the post that
+    caused the sever put it under a post that is never saved in that request, so
+    it silently never drained. With a dirty-entity queue the natural key is the
+    post to RECOMPUTE — the applier asks with exactly that — and the entities
+    reach a pass through `drain_captures()` rather than through somebody else's
+    save (see `RelatedPostTermsHandler`).
 
 16. **Anything that writes ACF fields in bulk must stand the queue down.** The
     queue cannot tell a user edit from a bulk rewrite; both are `update_field()`.
@@ -340,9 +345,9 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
     state it reads does not survive the write (#12). Capture is not execution;
     the captured value is consumed by the applier during a pass. The allow-list
     is `TermDispatcher::CAPTURE_HOOKS`; `propagation_rules` is its first entry
-    (#62, see the cross-entity bullet below), and `related_post_terms` will be
-    its second (#63). H13 checks both halves — that the hook is registered, and
-    that its callback writes nothing.
+    (#62, see the cross-entity bullet below) and `related_post_terms_rules` its
+    second and larger one (#63, three hooks). H13 checks both halves — that the
+    hook is registered, and that its callback writes nothing.
 
     **A provocation names entities; the pass decides their fate (#61).** Not
     every entry point is one of the dispatcher's own hooks — bulk apply and
@@ -397,6 +402,51 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
     dependency, which existed only because `TaxonomyManager` happened to
     construct the two handlers in that sequence. Both orders are now authorable
     and produce different, documented results (fixture matrix §62c/§62d).
+
+    **The unit of execution is a rule ROW, and for a multi-row type that is a
+    behaviour change, not a refactor (#63).** `related_post_terms` was the last
+    conversion and the one where this bites: it ran *every* rule it owned from
+    each of its own hooks, so however many rows it held it occupied ONE slot in
+    the order and two of its rows straddling another type's rule was
+    inexpressible — the failure mode ADR 0003 rejected type-level ordering for.
+    Splitting it per row is what makes the position of each row mean something,
+    and it necessarily changes what two rows in one taxonomy do: they used to
+    union into a single write and they now compose by order, so a keep-in-sync
+    (*owning*) row ordered last replaces what an earlier one wrote. One rule's
+    own multiple sources still union — that is the rule resolving its
+    jurisdiction, not two rules contending. A conversion that preserved the
+    union would have had to keep the type as one slot, which is the thing being
+    removed.
+
+    The corollary is that a **captured sever must be recorded against the rule
+    whose link was cut**, not against the taxonomy. That record is the one thing
+    permitted to bypass the zero-source gate (invariant #2) — the one thing that
+    lets a rule empty a post it resolves no source for — and while a single
+    cross-rule write could afford a taxonomy key (it summed `source_count` over
+    every rule before writing anything), a per-row applier cannot: a link cut
+    under one row would license an unrelated row to empty-replace the taxonomy
+    over what an earlier row had just legitimately written.
+
+    **A capture can name an entity no fan-out can reach, and needs its own way
+    into the queue (#63).** A fan-out is asked while passing over a post and
+    names entities reachable *from* it. A sever capture exists precisely because
+    the link that made the far entity reachable is what the write destroyed — or
+    because the post holding it was deleted — so there is nothing left to
+    declare from. The handler therefore hands those entities over through
+    `UnifiedHandlerBase::drain_captures()`, which `TermDispatcher::drain()` asks
+    every converted handler once per drain, before the loop. Which capture types
+    need one is enumerated (`CAPTURE_QUEUE_TYPES`), not inferred: propagation's
+    capture is consumed by an applier the queue was going to run anyway, so
+    having no override is correct there and a silent dead end for a sever.
+    Asked rather than
+    pushed: a capture callback that marked dirty itself would be reaching into
+    the dispatcher, and "a capture records and applies nothing" would stop being
+    a property H13 can read off the callback body. Consuming rather than
+    repeating: a handler that returned the same IDs on every call would refill
+    the queue faster than the drain empties it. The visible payoff is that a
+    bare `update_field()` sever — no `save_post`, no `acf/save_post` — now
+    reconciles, which was a documented dead end before (invariant #15's note,
+    fixture matrix §4).
 
     **The one thing live state cannot answer is a removal, and that is what a
     capture hook is for.** A term the parent HELD and then lost is, on the

@@ -301,11 +301,25 @@ Coastal+East) references `item-alpha`/`item-beta`; `section-holder2` is the
 second-holder subject. This is the handler whose push clobbers plain mc_item
 sweeps — tested here WITH itself isolated (other rule arrays emptied).
 
-**CLI trigger note (handler KNOWN LIMIT, ~line 417):** a bare
-`update_field($f,$v,$id)` fires `acf/update_value` (→ sever capture) but
-neither `save_post` NOR `acf/save_post`, so the sever is captured but never
-drained. Every relationship edit in a sweep must be followed by
-`do_action('acf/save_post', $holder_id)` to flush. All §4 evals do this.
+**Converted to a per-rule pull applier + declared fan-out + capture layer by
+#63** (`sweep-63-acf-reference.php`). The §4 results below stand as behaviour;
+what changed is when and in what company they happen — see §63 at the end of
+this section.
+
+**CLI trigger note — CLOSED by #63.** A bare `update_field($f,$v,$id)` fires
+`acf/update_value` (→ sever capture) but neither `save_post` NOR
+`acf/save_post`, and before #63 the sever was captured and then never drained,
+so the dependent kept a term whose source was gone. The capture now hands its
+entities to the dispatcher at drain start and `AcfWriteQueue`'s shutdown flush
+marks the post, so the bare write reconciles on its own (§63d/e). The
+`do_action('acf/save_post', $holder_id)` flush in the §4 evals is no longer
+load-bearing; it is left in place because it is also what a real form save
+does.
+
+**Reading terms back in the same eval now needs a drain.** The pass is no
+longer synchronous with the write (CLAUDE.md don't 6b, trap a), which is what
+made `sweep-related-post-terms-sever.php` step `s9` fail on conversion — it
+asserted immediately after `wp_delete_post()`. It calls `drain()` now.
 
 - **§4a push** ✅ save holder → `item-alpha`/`item-beta` both replaced with the
   holder set `[East,Coastal]` (keep_in_sync replace; a stale term on an item
@@ -325,6 +339,54 @@ drained. Every relationship edit in a sweep must be followed by
   holders' contributions, not blindly emptied.
 - Negative controls unchanged. Restore = re-seed (recreates the force-deleted
   holder and its relationship + terms).
+
+**§4d is still a union and always will be** — that is ONE rule resolving two
+sources, and a rule unions its own sources. What #63 changed is two *rows*, see
+§63a/b.
+
+#### §63 related_post_terms as a per-rule applier (#63, 0.8.0) — results
+
+`sweep-63-acf-reference.php`, nine assertions, all green. Rules are authored by
+hand: the seeded pair is two rows in two different taxonomies, which cannot
+contend and so cannot demonstrate precedence. Subject is `item-solo-a` (alpha
+is renamed by the title_slug rule on any real save).
+
+- **§63a/b — two rows straddling another type's rule.** Row A pushes from
+  `mc-holder` (Coastal) over the tier-1 explicit reverse; row C pushes from
+  `mc-bidi-holder` (West) over the tier-2 native bidi; row B is a `related`
+  rule keyed on Coastal ⇒ Inland. `[A,B,C]` → `[west]`; `[C,A,B]` →
+  `[coastal,inland]`. Both halves differ: which owning row won, and whether the
+  middle rule fired at all. Before #63 the type held one slot in the order, so
+  these two arrangements were the same arrangement.
+- **§63c — sever inside an ordered pass.** Dependent-end sever (#43 shape) with
+  row B after it: the subject empties AND Inland is not re-added, because B runs
+  against the withdrawn state. A private write would have left B reading the
+  pre-withdrawal terms.
+- **§63d/e — the bare-`update_field()` sever now reconciles**, split across
+  three evals (stage / bare write / assert). This is the KNOWN LIMIT above,
+  closed.
+- **§63f — pull direction + tier-3 reverse lookup.** `holder_role=target` over
+  `mc_item:mc_parent_section` with no reverse field and no native bidi. Editing
+  the SOURCE re-syncs the holder, reached only by `fan_out()` running the tier-3
+  scan — nothing else marks the holder dirty.
+
+- **§63g — a sever licenses only the row whose link was cut.** Three rows in
+  one taxonomy over one subject: A (tier-1 push), C (tier-2 bidi push) and S (a
+  pull control over the subject's own `mc_parent_section`). Cutting A's link
+  leaves A and S both resolving nothing, but only A is RECORDED as severed, so
+  after the pass the subject holds C's `{west}` rather than being emptied by S.
+  Verified discriminating: with the sever record keyed by taxonomy alone the
+  step returns `[]`. **A row over the tier-2 bidi pair does not work as this
+  control** — ACF writes both sides, so clearing the item's `mc_bidi_sections`
+  also fires `acf/update_value` for the holder's `mc_bidi_items`, and a pull row
+  over one side has the other side as its reverse field. Both are severed, and
+  correctly: they are two views of one link.
+
+**Sweep trap (recorded because it cost a red run).** The capture path reads
+rules through a request-lifetime memo, and `mc63_stage()` writes relationship
+fields while the rules are silenced — which fills that memo with the empty set.
+A sever later in the SAME eval is then captured against no rules and silently
+does nothing. Every sever step therefore runs in its own request.
 
 ### §5 propagation — results
 

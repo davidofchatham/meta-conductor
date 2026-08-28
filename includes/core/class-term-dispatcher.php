@@ -83,11 +83,21 @@ if (!defined('ABSPATH')) {
  * closures keeps the recursion in the queue, where the drain's one-pass-per-
  * entity bound terminates it.
  *
- * CONVERSION IS INCREMENTAL. `CONVERTED_TYPES` is what a pass runs;
- * `UNCONVERTED_TYPES` still own their hooks and are named here so each
- * conversion ticket shrinks a visible list. H13
- * (tests/verify-term-dispatcher.php) reads both constants and fails if a
- * handler's registrations disagree with the side it is listed on.
+ * A CAPTURE NAMES ENTITIES A FAN-OUT CANNOT REACH. An allow-listed capture
+ * hook records what a write is about to destroy; the entity that record
+ * concerns is, by construction, one nothing points at any more — a dependent
+ * whose relationship was just severed, a deleted holder's dependents. So the
+ * dispatcher asks every converted handler for those entities at drain start
+ * (`enqueue_captures()` → `UnifiedHandlerBase::drain_captures()`) and marks
+ * them, which is what makes a sever reach a full ordered pass by the same route
+ * a save does (#63).
+ *
+ * THE CONVERSION IS COMPLETE FOR THIS KIND. `CONVERTED_TYPES` is what a pass
+ * runs and now holds every term rule type; `UNCONVERTED_TYPES` is empty (#63)
+ * and stays as the other half of the partition, so a term type added later must
+ * be named on one side or the other. H13 (tests/verify-term-dispatcher.php)
+ * reads both constants and fails if a handler's registrations disagree with the
+ * side it is listed on.
  */
 class TermDispatcher {
 
@@ -164,20 +174,25 @@ class TermDispatcher {
         'time_based_rules',
         'related_rules',
         'propagation_rules',
+        'related_post_terms_rules',
     ];
 
     /**
-     * Rule types that still own their apply hooks. MUST be empty by #66.
+     * Rule types that still own their apply hooks.
      *
-     * Named rather than inferred so the list shrinking is visible in the diff
-     * of each conversion ticket: #61 took time_based + related, #62 takes
+     * EMPTY as of #63 — every term-kind rule type is a pure applier and the
+     * dispatcher runs all of them. Kept rather than deleted because it is half
+     * of the partition group 9 checks: a term type added later must land in one
+     * list or the other, and a new type that arrives hook-driven (as every type
+     * here once was) needs somewhere to be named while it is.
+     *
+     * Named rather than inferred so the list shrinking was visible in the diff
+     * of each conversion ticket: #61 took time_based + related, #62
      * propagation, #63 related_post_terms.
      *
      * @var string[]
      */
-    private const UNCONVERTED_TYPES = [
-        'related_post_terms_rules',
-    ];
+    private const UNCONVERTED_TYPES = [];
 
     /**
      * Hooks a CONVERTED handler may still register, by rule type.
@@ -200,16 +215,54 @@ class TermDispatcher {
      * parent lost. The capture writes to a request-scoped map and applies
      * nothing.
      *
-     * `related_post_terms` is the type that will need the next entries
-     * (`capture_removed_dependents` on `acf/update_value/type=relationship`
-     * and `.../type=post_object`, which read the dependent end of a
-     * relationship before ACF overwrites it); it is unconverted, so every hook
-     * it registers is still its own and none of them belong on this list yet.
+     * `related_post_terms_rules` is the second and larger entry (#63). All
+     * three of its hooks read a relationship that the write is about to
+     * destroy: the two `acf/update_value` filters fire at priority 5, before
+     * ACF replaces the field's value, and `before_delete_post` is the last
+     * moment a dying post's relationships can be read at all — there is no
+     * field-update hook on a delete (invariant #5). What they capture is a
+     * SEVER, and it is unrecoverable afterwards for the reason a pull applier
+     * exists: in the post-write graph a link that was just cut and a link that
+     * never existed are the same absence.
+     *
+     * Its captures name entities no fan-out can reach, so they reach the queue
+     * through the other half of the capture contract —
+     * `UnifiedHandlerBase::drain_captures()`, which `enqueue_captures()` asks
+     * every converted handler at drain start.
      *
      * @var array<string,string[]>
      */
     private const CAPTURE_HOOKS = [
-        'propagation_rules' => ['deleted_term_relationships'],
+        'propagation_rules'        => ['deleted_term_relationships'],
+        'related_post_terms_rules' => [
+            'acf/update_value/type=relationship',
+            'acf/update_value/type=post_object',
+            'before_delete_post',
+        ],
+    ];
+
+    /**
+     * Capture types whose records name entities the QUEUE would not otherwise
+     * hear about, and which therefore must implement `drain_captures()`.
+     *
+     * Not every capture needs one, which is why this is a second list rather
+     * than an inference from CAPTURE_HOOKS. `propagation_rules` records a
+     * removal on a post whose children are already reached by its own
+     * `fan_out()`, so its captured value is consumed by an applier the queue
+     * was going to run anyway. `related_post_terms_rules` records a SEVER, and
+     * the whole point of a sever is that the link naming the affected entity is
+     * the thing that was destroyed — nothing points at it, no fan-out can
+     * declare it, and without a `drain_captures()` the record would be made and
+     * then silently never acted on. That failure is invisible: every other path
+     * still works and the dependent simply keeps a term whose source is gone.
+     *
+     * H13 reads this list and fails if a type on it has no `drain_captures()`
+     * override.
+     *
+     * @var string[]
+     */
+    private const CAPTURE_QUEUE_TYPES = [
+        'related_post_terms_rules',
     ];
 
     /**
@@ -433,6 +486,8 @@ class TermDispatcher {
         $this->draining = true;
 
         try {
+            $this->enqueue_captures();
+
             $passes = [];
             while (!empty($this->dirty)) {
                 $ids         = array_keys($this->dirty);
@@ -559,6 +614,40 @@ class TermDispatcher {
     private function enqueue_fan_out(int $post_id, array $rule, UnifiedHandlerBase $handler): void {
         foreach ($handler->fan_out($post_id, $rule) as $entity_id) {
             $this->mark_dirty($entity_id);
+        }
+    }
+
+    /**
+     * Mark the entities a converted handler's CAPTURE hooks named (#63).
+     *
+     * The second way into the queue that is not a trigger, and it exists for
+     * the entities a fan-out structurally cannot reach: a capture fires because
+     * a write is about to destroy the relationship that would have named the
+     * far entity, so after the write nothing points at it. A severed dependent
+     * or a deleted holder's dependents would otherwise be reconciled only if
+     * some unrelated post happened to be saved in the same request.
+     *
+     * ASKED, NOT PUSHED. The handler hands its list over here rather than
+     * marking dirty from inside the capture callback, which keeps "a capture
+     * records and applies nothing" a property H13 can read off the callback
+     * body, and keeps the dispatcher the only thing that touches the queue.
+     *
+     * ONCE PER DRAIN, BEFORE THE LOOP — deliberately not inside it.
+     * `drain_captures()` consumes, but a handler that returned the same IDs
+     * repeatedly would refill `$dirty` on every iteration and the while loop
+     * would never see it empty; asking once bounds the drain regardless of what
+     * a handler does. A capture that arrives later still gets a drain of its
+     * own — `shutdown` always runs, and it is a second drain after the save
+     * one.
+     */
+    private function enqueue_captures(): void {
+        foreach ($this->handlers as $type => $handler) {
+            if (!in_array($type, self::CONVERTED_TYPES, true)) {
+                continue;
+            }
+            foreach ($handler->drain_captures() as $entity_id) {
+                $this->mark_dirty($entity_id);
+            }
         }
     }
 

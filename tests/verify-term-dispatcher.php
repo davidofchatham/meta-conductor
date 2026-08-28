@@ -43,6 +43,12 @@
  *      was handed. A handler that reached the far entity directly would
  *      reconcile it by one rule, out of authored order — which is #35, the
  *      defect #62 exists to remove, and it looks like working code.
+ *  11. The CAPTURE QUEUE reaches the dirty queue. A capture names an entity
+ *      nothing else points at — the relationship that would have named it is
+ *      what the write destroyed — so `drain_captures()` on the base,
+ *      `enqueue_captures()` on the dispatcher and the call to it from `drain()`
+ *      are the whole path a sever has. Break any link and the sever is recorded
+ *      and then silently never applied (#63).
  *
  * Run:  php tests/verify-term-dispatcher.php
  *
@@ -560,7 +566,11 @@ foreach (($capture ?? []) as $type => $hooks) {
     $body = $strip_comments((string) file_get_contents($file));
 
     foreach ($hooks as $hook) {
-        $pattern = '/add_action\(\s*[\'"]' . preg_quote($hook, '/') . '[\'"]\s*,\s*(?:array\(|\[)\s*\$this\s*,\s*[\'"](\w+)[\'"]/';
+        // add_action OR add_filter: `related_post_terms`' sever captures are
+        // acf/update_value FILTERS (they must return the value they were handed),
+        // so an action-only pattern would report every one of them as
+        // unregistered and, worse, never reach the write check on its callback.
+        $pattern = '/add_(?:action|filter)\(\s*[\'"]' . preg_quote($hook, '/') . '[\'"]\s*,\s*(?:array\(|\[)\s*\$this\s*,\s*[\'"](\w+)[\'"]/';
         if (!preg_match($pattern, $body, $hm)) {
             $errors[] = sprintf(
                 '%s is allowed the capture hook %s but does not register it — an allow-list entry for a hook nobody registers hides the fact that the state it captured is no longer captured.',
@@ -657,6 +667,105 @@ foreach (($converted ?? []) as $type) {
     }
 }
 
+// --- 11. The capture queue reaches the dirty queue --------------------------
+// A capture names an entity that NOTHING else points at — that is the whole
+// reason it had to be captured rather than derived. If the dispatcher stops
+// asking for it, or a handler stops handing it over, the sever is recorded and
+// then silently never applied: the dependent keeps terms whose source is gone,
+// and every other path still works, so nothing looks broken.
+$base_file = $root . '/includes/handlers/class-unified-handler-base.php';
+if (is_file($base_file)) {
+    $base_src = $strip_comments((string) file_get_contents($base_file));
+    if (!preg_match('/public\s+function\s+drain_captures\s*\(\s*\)\s*:\s*array\s*\{/', $base_src)) {
+        $errors[] = 'drain_captures(): array is not declared on UnifiedHandlerBase — the dispatcher asks every converted handler for it unconditionally (#63).';
+    }
+}
+
+if (!preg_match('/function\s+enqueue_captures\s*\([^)]*\)\s*:\s*void\s*\{(.*?)\n    \}/s', $src, $cm2)) {
+    $errors[] = 'enqueue_captures(): void not found on the dispatcher — captured entities must land in the queue through one named site (#63).';
+} else {
+    $body = $cm2[1];
+    if (!preg_match('/->drain_captures\(/', $body)) {
+        $errors[] = 'enqueue_captures() does not ask handlers for their captured entities.';
+    }
+    if (!preg_match('/mark_dirty\(/', $body)) {
+        $errors[] = 'enqueue_captures() does not mark the captured entities dirty — a capture must ENQUEUE, exactly like a fan-out.';
+    }
+    foreach (['run_pass', 'apply'] as $executor) {
+        if (preg_match('/\b' . $executor . '\s*\(/', $body)) {
+            $errors[] = sprintf(
+                'enqueue_captures() calls %s() — it names entities; running them inline puts the captured entity back outside the queue and outside authored order.',
+                $executor
+            );
+        }
+    }
+}
+
+if (!preg_match('/function\s+drain\s*\(\s*\)\s*:\s*void\s*\{(.*?)\n    \}/s', $src, $dm2)) {
+    $errors[] = 'drain(): void not found — cannot verify the capture queue is drained.';
+} elseif (!preg_match('/enqueue_captures\(/', $dm2[1])) {
+    $errors[] = 'drain() never calls enqueue_captures() — captured severs would be recorded and never applied (#63).';
+}
+
+// A type on CAPTURE_QUEUE_TYPES must actually hand its entities over. Without
+// the override it inherits the base's empty default, which is not an error
+// anywhere else — propagation's capture is consumed by its own applier, so it
+// legitimately has none — and is a silent dead end here: the sever is recorded
+// and then never acted on, while every other path keeps working.
+$capture_queue = $const_list($src, 'CAPTURE_QUEUE_TYPES');
+if ($capture_queue === null) {
+    $errors[] = 'CAPTURE_QUEUE_TYPES constant not found — which captures name entities the queue must be TOLD about has to be enumerated, not inferred (#63).';
+}
+foreach (($capture_queue ?? []) as $type) {
+    if (!isset($capture[$type])) {
+        $errors[] = sprintf(
+            "CAPTURE_QUEUE_TYPES names '%s', which owns no capture hooks — a queueing capture with nothing capturing into it.",
+            $type
+        );
+        continue;
+    }
+    if (!isset($handler_files[$type])) {
+        continue; // already reported above
+    }
+    $file = $root . '/includes/handlers/' . $handler_files[$type];
+    if (!is_file($file)) {
+        continue;
+    }
+    if ($method_body($strip_comments((string) file_get_contents($file)), 'drain_captures') === null) {
+        $errors[] = sprintf(
+            '%s is on CAPTURE_QUEUE_TYPES but declares no drain_captures() — it would inherit the empty default, so every entity its captures name is recorded and then silently never passed over (#63).',
+            $handler_files[$type]
+        );
+    }
+}
+
+// And drain_captures() must not write, on ANY capture handler that has one: it
+// runs before any pass, so a write there is a rule executing with no lock held
+// and no order around it.
+foreach (($capture ?? []) as $type => $hooks) {
+    if (!isset($handler_files[$type])) {
+        continue; // already reported above
+    }
+    $file = $root . '/includes/handlers/' . $handler_files[$type];
+    if (!is_file($file)) {
+        continue;
+    }
+    $body    = $strip_comments((string) file_get_contents($file));
+    $drainer = $method_body($body, 'drain_captures');
+    if ($drainer === null) {
+        continue; // absence is checked above, for the types it matters on
+    }
+    foreach ($write_primitives as $effect) {
+        if (preg_match('/\b' . preg_quote($effect, '/') . '\s*\(/', $drainer)) {
+            $errors[] = sprintf(
+                '%s::drain_captures() calls %s() — it hands over entity IDs; the pass writes them (#63).',
+                $handler_files[$type],
+                $effect
+            );
+        }
+    }
+}
+
 if ($errors) {
     fwrite(STDERR, "DISPATCHER FAIL — term dispatcher invariants broken (#60):\n");
     foreach ($errors as $e) {
@@ -666,7 +775,7 @@ if ($errors) {
 }
 
 printf(
-    "DISPATCHER OK — trigger union mark-only, drain after AcfWriteQueue, pass lock (entity, kind), single apply_to_post call site, fan-out declared+enqueued; %d converted / %d still hooked / %d capture type(s) (#60, #62).\n",
+    "DISPATCHER OK — trigger union mark-only, drain after AcfWriteQueue, pass lock (entity, kind), single apply_to_post call site, fan-out + capture queue declared+enqueued; %d converted / %d still hooked / %d capture type(s) (#60, #62, #63).\n",
     count($converted ?? []),
     count($unconverted ?? []),
     count($capture ?? [])

@@ -73,11 +73,13 @@ if (!defined('ABSPATH')) {
  * conversion is partial; the first one goes away with the last unconverted
  * handler (#66).
  *
- * SIDE EFFECT WORTH KNOWING. RelatedPostTermsHandler::reapply_for_post routes
- * through its normal acf/save_post entry point, which also drains its pending
- * sever bookkeeping. The flush therefore closes that handler's separately
- * documented gap where a bare `update_field()` captured a sever that nothing
- * ever processed (PR#24 round 8 #2).
+ * SIDE EFFECT WORTH KNOWING. The bare-`update_field()` sever gap (PR#24 round 8
+ * #2) is closed through the SECOND contract now, not the first:
+ * RelatedPostTermsHandler was converted in #63 and has no `reapply_for_post`
+ * left, so this flush reaches it only by marking the post dirty. That is
+ * enough — the drain asks every converted handler for its captured entities
+ * before it starts (TermDispatcher::enqueue_captures), so the severed
+ * dependent gets a full ordered pass whether or not the flush named it.
  */
 class AcfWriteQueue {
 
