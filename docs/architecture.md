@@ -460,6 +460,64 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
     ACF-mirror-lag bounce *and* distinguishes a remove-then-re-add in the same
     request, which the pre-#62 blanket exclude list could not.
 
+18. **Cross-KIND order is derived, and it holds because one drain runs both
+    passes in sequence — not because of hook priorities (#64,
+    [ADR 0003](adr/0003-ordered-rule-list-and-dispatcher.md) decision 2).**
+    Within a kind the author orders the rules; between kinds the engine does,
+    because the edges are producer→consumer rather than collisions. `title_slug`
+    reads terms (`{term:TAX}`, `{terms:TAX}`) and writes none, so it is a sink:
+    terms must settle first.
+
+    Until #64 that order rested on two accidents — `TitleSlugHandler` registered
+    at `acf/save_post`/`save_post` priority **99**, above every term handler,
+    and `TaxonomyManager` constructed it **last**. Coalescing the term pass onto
+    a late drain (#60) would have inverted both, and the result is a title
+    computed from the *previous* save's terms: entirely plausible output, no
+    error, nothing to observe. Both accidents die here.
+
+    - **`Core\FormatDispatcher` owns the `format_rules` kind, and owns no
+      queue.** `TermDispatcher` keeps the triggers and the dirty set for both;
+      each drain step is `run_entity()` — the term pass, then the format pass,
+      for the same entity. Two queues would have to be kept in step with each
+      other for the derived order to mean anything, which is the coupling one
+      queue removes. H13 pins the sequence, both halves: that the format pass is
+      reached from the drain at all, and that it is reached *after* the term
+      pass.
+    - **The format applier seam is data-in/data-out**, not `apply_to_post`. A
+      term rule's effect is a set of term relationships, so its applier writes
+      and reports a boolean; a format rule's effect is the post ROW, and several
+      rules can land on one row. So `apply_to_data(array, int, array): ?array`
+      hands post data along the list and the *dispatcher* performs the single
+      `wp_update_post()` at the end — one save, one row update, however many
+      rules matched. It is also the shape the deferred two-phase split needs:
+      when `field_transformation` lands, a pre-write phase can feed
+      `wp_insert_post_data`'s own `$data` to the same seam. `null` means "this
+      rule does not apply here", which is distinct from returning the data
+      unchanged, and the difference is what decides first-match-wins.
+    - **The pre-write phase could not survive the conversion.** `title_slug` ran
+      half of itself on `wp_insert_post_data` so the editor saw final values
+      without a second update. That half runs *before* terms land, so a
+      `{term:TAX}` pattern there reads the previous save's terms — the exact
+      defect this invariant exists to remove. Every apply is post-write now, at
+      the cost of one extra `wp_update_post()` per save that changes something,
+      with the revision suppressed and the redirect's slug cache flushed (both
+      moved onto the dispatcher with the write they compensate for).
+    - **First match of a type wins, and the dispatcher enforces it.** A
+      title/slug rule set is a lookup table keyed by post type, not a set of
+      independently-scoped rules (#59), so once a rule of a type has claimed the
+      entity the rest of that type's rules are skipped. Keeping that decision in
+      the dispatcher is what lets the handler stay stateless; keying it per TYPE
+      rather than per pass is what leaves a second format rule type free to
+      compose with this one in list order.
+    - **The handler's whole request-scoped apparatus goes with the hooks.** Five
+      maps and four hooks became one method. `$is_updating_post` guarded
+      re-entry from a write the handler no longer makes; `$handled_pre_write` /
+      `$processed_in_request` separated two paths that are now one;
+      `$pending_submitted_titles` captured a value that, post-write, is simply
+      `post_title`. The idempotency meta is now written from the *resolved base*
+      rather than the submitted title, which is what makes a re-pass over an
+      unchanged post record the same pair back instead of compounding.
+
 ## Settings UI — WP Wireframe
 
 The settings UI is a React app provided by `tdrayson/wp-wireframe`. Config classes live under [includes/admin/config/](../includes/admin/config/), each exposing a `section()` method; the top-level composer assembles **three tabs** from them:

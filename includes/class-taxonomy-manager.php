@@ -19,6 +19,7 @@ use BWS\MetaConductor\Conversion\ConversionCli;
 use BWS\MetaConductor\Storage\StorageFactory;
 use BWS\MetaConductor\Core\AcfWriteQueue;
 use BWS\MetaConductor\Core\TermDispatcher;
+use BWS\MetaConductor\Core\FormatDispatcher;
 
 // Prevent direct access
 if (!defined('ABSPATH')) {
@@ -55,6 +56,13 @@ class TaxonomyManager {
      * @var TermDispatcher|null
      */
     private $term_dispatcher = null;
+
+    /**
+     * Format dispatcher — sole entry point to format-rule execution (#64).
+     *
+     * @var FormatDispatcher|null
+     */
+    private $format_dispatcher = null;
 
     /**
      * Get singleton instance
@@ -99,6 +107,20 @@ class TaxonomyManager {
      */
     public function get_term_dispatcher() {
         return $this->term_dispatcher;
+    }
+
+    /**
+     * Get the format dispatcher (#64).
+     *
+     * Exposed for the same reason as get_term_dispatcher(). Note that a sweep
+     * wanting the REAL sequence must drive the TERM dispatcher's drain — the
+     * format pass runs inside its per-entity step, and calling this one alone
+     * skips the term pass whose writes a `{term:TAX}` pattern reads.
+     *
+     * @return FormatDispatcher|null
+     */
+    public function get_format_dispatcher() {
+        return $this->format_dispatcher;
     }
 
     /**
@@ -171,18 +193,24 @@ class TaxonomyManager {
 			'title_slug' => new TitleSlugHandler(),
         );
 
-        // Term dispatcher (#60) — sole entry point to term-rule execution.
-        // Built BEFORE the ACF write queue because the queue marks entities
-        // dirty on it: a bare update_field() fires none of the dispatcher's
-        // triggers, so the queue is how that write reaches a pass.
+        // The two dispatchers (#60, #64) — the sole entry points to rule
+        // execution. Built BEFORE the ACF write queue because the queue marks
+        // entities dirty on the term one: a bare update_field() fires none of
+        // its triggers, so the queue is how that write reaches a pass.
         //
-        // Construction order carries no execution meaning any more, which is
-        // the point. The propagation-before-hierarchical dependency that used
-        // to live in the array above is DEAD (#62): both types are converted,
-        // the pass runs them in authored order, and propagation no longer
-        // writes the child a hierarchical hook would then expand out of band.
-        // Title-slug-last dies with the format dispatcher (#64/#66).
-        $this->term_dispatcher = new TermDispatcher($this->handlers);
+        // CONSTRUCTION ORDER NOW CARRIES NO EXECUTION MEANING AT ALL, which is
+        // the point. Two dependencies used to live in the handler array above
+        // and both are dead: propagation-before-hierarchical (#62 — both types
+        // are converted, the pass runs them in authored order, and propagation
+        // no longer writes a child that a hierarchical hook then expands out of
+        // band), and title-slug-LAST (#64 — the only thing that used to order
+        // term writes before title reads, now expressed by the term dispatcher
+        // running the format pass inside its own drain step). The format
+        // dispatcher is constructed first only because the term one takes it.
+        $this->format_dispatcher = new FormatDispatcher($this->handlers);
+        $this->format_dispatcher->register();
+
+        $this->term_dispatcher = new TermDispatcher($this->handlers, $this->format_dispatcher);
         $this->term_dispatcher->register();
 
         // Time-based's daily sweep (#61). It lives HERE rather than in

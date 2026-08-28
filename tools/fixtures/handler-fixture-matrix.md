@@ -133,13 +133,13 @@ Status (L1)          — second root: related/time-based targets live here so
 
 | Aspect | Need |
 |---|---|
-| Trigger | `wp_insert_post_data` filter p1 (non-meta patterns), `acf/save_post` p99 / `save_post` p99 (meta patterns, post-write), `redirect_post_location`. |
+| Trigger | **None since #64** — the handler registers nothing. `FormatDispatcher` runs it from `TermDispatcher`'s drain, after the term pass for the same entity; the dispatcher owns the write, the revision suppression and `redirect_post_location`. (Was `wp_insert_post_data` p1 + `acf/save_post`/`save_post` p99.) |
 | Schema | Single `post_type` per rule, **one rule per post type** (first-match-wins). Own CPT so shared titles never mutate: `mc_item`. Token sources: post meta (ACF date field `mc_event_date`), terms (`{term:mc_topic}`). |
 | Data | Posts with meta + terms feeding tokens; two posts colliding on generated slug (date_escalation ladder year→minute → `wp_unique_post_slug`). |
 | Rule config | `name`, `post_type: mc_item`, `title_pattern` / `slug_pattern` (tokens: `{default_title}`, `{meta:x}`, `{date_year:x}`, `{pub_*}`, `{term:tax}`, `{terms:tax}`), `slug_mode` (prefix/suffix/replace), `date_escalation` + `date_field`. |
 | Rules to seed | 1 (`mc_item`: slug_pattern with `{meta:...}` + `{term:mc_topic}`, escalation on). Pattern variants per-scenario (one-per-type limit blocks parallel rules). |
 | Mutates | `post_title`/`post_name` only; meta `_bws_raw_title`/`_bws_applied_title`; option `bws_title_slug_rule_status`. No taxonomy writes. |
-| Scenarios | Pre-write (non-meta pattern) vs deferred post-write (meta pattern); idempotent re-save; slug collision escalation. |
+| Scenarios | Same-pass `{term:TAX}` read (a term rule's write, not the previous save's); provocation-independence (editor save / ACF save / term write / bulk); idempotent re-pass; slug collision escalation. The pre-write vs post-write split is GONE (#64) — every apply is post-write. |
 | Shared reuse | None — a rule on `page`/`post`/`staff` would rename GBDTE fixture slugs and break every matrix URL. Hard no. |
 
 ---
@@ -154,7 +154,7 @@ Status (L1)          — second root: related/time-based targets live here so
 | propagation | p10 | p15 | p25 | |
 | related_post_terms | p15 | p25 | p30 | acf/update_value p5, before/deleted_post |
 | time_based | — | p20 | — | publish_post p10, cron daily |
-| title_slug | — | p99 (no-ACF only) | p99 | wp_insert_post_data p1 |
+| title_slug | — | — | — | **none (#64)** — run by `FormatDispatcher` from the shared drain |
 
 ## Sweep method (learned running §1 on the live testbed)
 
@@ -634,10 +634,12 @@ this is date-independent.)
 
 Seeded rule: `mc_item`, `slug_pattern = {default_slug}-{date_year:mc_event_date}`,
 mode replace, `date_escalation=true`, `date_field=mc_event_date`. It's a META
-pattern (`date_year:`) so it runs POST-write (`acf/save_post` p99), not the
-pre-write `wp_insert_post_data` path. Subjects: `item-alpha` (event 2030-03-15),
+pattern (`date_year:`). **As of #64 that distinction is gone** — the pre-write
+`wp_insert_post_data` path is deleted and every apply happens in the format pass,
+so §7a-§7c below hold for meta and non-meta patterns alike. Subjects: `item-alpha` (event 2030-03-15),
 `item-slug-a`/`item-slug-b` (both titled "Slug Probe", both event 2030-04-01 —
-a deliberate slug collision). Run title_slug isolated, `do_action('acf/save_post', id)`.
+a deliberate slug collision). Run title_slug isolated, `do_action('acf/save_post', id)`
+followed by a `drain()` — since #64 the apply is not synchronous with the trigger.
 
 - **§7a slug build** ✅ save `item-alpha` → `mc-item-alpha-2030` (default_slug +
   meta year, replace mode).
@@ -648,13 +650,65 @@ a deliberate slug collision). Run title_slug isolated, `do_action('acf/save_post
   slug unchanged — no drift, no further escalation.
 - Negative controls unchanged.
 
-**RESTORE GOTCHA (this handler only): it renames `post_name`.** Re-seed's
+**⚠️ RESTORE GOTCHA, WIDENED BY #64.** It used to be "this handler only, and
+only when a post is saved". The format pass now runs for **every entity the
+drain reaches**, and the drain reaches far more than saves — a propagation
+fan-out's children, a captured sever's dependent, anything the ACF write queue
+flushed. Observed on this fixture: `sweep-63-acf-reference.php restore` writes
+the holder's relationship field, which marks `item-alpha` dirty, which gives it
+a format pass, which applies the manifest's `{default_slug}-{date_year:...}`
+rule and renames it to `mc-item-alpha-2030`. Nothing about that is a bug — it is
+the behaviour the changelog calls out — but it means **any sweep that restores
+the manifest rules and then touches an `mc_item` can rename one**, not just a
+title_slug sweep. Check `wp post list --post_type=mc_item --fields=ID,post_name`
+after a restore, and repair with a `wp_update_post` under
+`add_filter('meta_conductor_acf_reapply_enabled','__return_false')` before
+re-seeding.
+
+**RESTORE GOTCHA (the original): it renames `post_name`.** Re-seed's
 `mc_fixture_find_post` addresses posts by `post_name`, so a renamed subject reads
 as missing and the seeder INSERTS a duplicate. Before re-seeding after a
 title_slug sweep you MUST first (a) empty the `title_slug_rules` array (so the
 rename doesn't re-fire) and (b) `wp_update_post` the subjects' `post_name` back to
 their manifest values. Then re-seed. Verified afterward: `mc_item` count = 8
 (6 fixtures + 2 solo), all unique names, rule live, no duplicates.
+
+#### §64 title_slug as a format applier (#64, 0.8.0) — results
+
+`sweep-64-format.php`, 13 assertions across `terms` / `provoke` / `bulk` /
+`idempotent` / `s1`+`s2`, all green. The rule is written by the sweep rather
+than seeded: the manifest rule is slug-only, and the cross-kind read under test
+is a TITLE token (`{default_title} {term:mc_topic}`, no slug pattern, so the
+slug derives).
+
+- **§64a/b/c — THE ticket.** Subject `item-solo-a`, `{Harbor}` assigned by hand.
+  With no term rule the title reads `MC Item Solo A Harbor`; with the fixture's
+  `ancestors`/`all` hierarchy rule live the SAME provocation yields `MC Item Solo
+  A Coastal`, because Harbor's ancestors land in the term pass and `{term:TAX}`
+  returns the first term by NAME. Both titles are plausible, which is why this
+  needs a sweep rather than a harness — the wrong one looks like a working rule.
+- **§64d — the derived slug** follows the computed title
+  (`mc-item-solo-a-coastal`), not the row's stored `post_name`.
+- **§64e/f/g — provocation independence.** Editor-shaped save, `acf/save_post`
+  and a bare term write all produce the same title. The format pass has no
+  trigger of its own; it rides the term dispatcher's queue.
+- **§64h — bulk apply** runs the format pass per post rather than looping the
+  handler's rules. Deliberately the format pass ALONE — the title/slug button
+  reconciles titles, the term list's own button reconciles terms — so the
+  subject is armed with its term state already settled. Bulk legitimately
+  reaches every `mc_item`, so the step snapshots and repairs the others.
+- **§64i/j/k — idempotence.** A second drain over an unchanged post leaves the
+  title alone, and `_bws_raw_title` still holds the BASE title rather than the
+  applied one. That is the compounding failure mode (`…Coastal Coastal`) the
+  #64 change of what gets recorded exists to prevent.
+- **§64l/m — the shutdown drain**, split across two evals: `s1` writes terms and
+  returns without draining, `s2` finds the title and slug rewritten. Nothing else
+  runs the format pass on a write involving no explicit drain.
+
+**RESTORE GOTCHA (in addition to §7's).** This sweep renames `post_name`, which
+is what `mc_pid()` looks a fixture post up by — so the subject's ID is cached in
+the `mc64_subject_id` option on first resolution and every later step reads that.
+`restore` renames the subject back from the manifest and drops the cache.
 
 ### §8 ordered term repeater (#57, 0.8.0) — results
 
@@ -745,7 +799,8 @@ gutted — the same answer §8c got on the term list.
 **§9c authored order decides the winner** (`sweep-59-behaviour.php`) ✅ Two
 rules on the SAME post type, pushed through the full save path (sanitize →
 `snapshot_format_rule_labels` → `fan_out_rule_lists`). Stored order, projected
-order and read-back order all agree; `find_matching_rule()` picks the top rule;
+order and read-back order all agree; the first matching rule wins
+(`rule_matches()` since #64, `find_matching_rule()` when this ran);
 **swapping the two rows swaps which rule applies**. A disabled top row still
 stores and drops out of the enabled set. This is the assertion the post-type
 field's new description promises, and the first time authored order in a

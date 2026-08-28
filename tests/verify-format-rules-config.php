@@ -171,7 +171,7 @@ foreach (['type', 'enabled', 'name', 'post_type', 'row_title'] as $shared) {
 }
 
 // `post_type` is SCALAR here, not the term list's `post_types` checkboxes —
-// TitleSlugHandler::find_matching_rule() reads one slug, first match wins.
+// TitleSlugHandler::rule_matches() reads one slug, first match wins.
 // Swapping in the shared checkbox builder would silently stop every rule
 // matching, since the handler compares the value to $post->post_type.
 $check('post_type is a single-value select, not the shared checkboxes gate',
@@ -247,7 +247,7 @@ foreach ($TYPES as $type) {
 
 // Stated separately from the set above, because the set can be edited to match
 // a regression while this list is the handler's actual read contract
-// (TitleSlugHandler::apply_to_post / find_matching_rule / escalation).
+// (TitleSlugHandler::apply_to_data / rule_matches / escalation).
 $handler_reads = ['enabled', 'post_type', 'title_pattern', 'slug_pattern',
                   'slug_mode', 'date_escalation', 'date_field'];
 $visible_title_slug = [];

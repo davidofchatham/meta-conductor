@@ -64,6 +64,7 @@ $classes = [
     'BWS\\MetaConductor\\Core\\RuleEngine',
     'BWS\\MetaConductor\\Core\\AcfWriteQueue',
     'BWS\\MetaConductor\\Core\\TermDispatcher',
+    'BWS\\MetaConductor\\Core\\FormatDispatcher',
     // Storage\
     'BWS\\MetaConductor\\Storage\\OptionRuleStorage',
     'BWS\\MetaConductor\\Storage\\StorageFactory',

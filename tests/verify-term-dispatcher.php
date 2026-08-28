@@ -49,6 +49,14 @@
  *      `enqueue_captures()` on the dispatcher and the call to it from `drain()`
  *      are the whole path a sever has. Break any link and the sever is recorded
  *      and then silently never applied (#63).
+ *  12. The FORMAT kind has its own dispatcher, driven from the SAME drain, and
+ *      the term pass runs first (#64). Cross-kind order is derived, not
+ *      authored: `title_slug` reads terms and writes none. Every failure here
+ *      produces a plausible title rather than a visible fault — the format pass
+ *      running before the term pass reads the PREVIOUS save's terms; a format
+ *      handler back on its own hook orders itself against the term pass by
+ *      priority again; an applier called outside a pass writes nothing at all,
+ *      which reads as an unconfigured rule.
  *
  * Run:  php tests/verify-term-dispatcher.php
  *
@@ -766,6 +774,298 @@ foreach (($capture ?? []) as $type => $hooks) {
     }
 }
 
+// --- 12. The FORMAT dispatcher and the derived cross-kind order (#64) ------
+// The order terms → title/slug is DERIVED, not authored (ADR 0003 decision 2):
+// `title_slug` reads terms and writes none. Until #64 that order rested on two
+// accidents — a priority-99 registration and a handler constructed last — and
+// BOTH would have inverted silently once the term pass moved onto a late drain.
+// A title computed from the previous save's terms is still a plausible title,
+// so there is nothing to observe. What replaces them is a sequence of two calls
+// inside one drain step, which is exactly the kind of thing a refactor reorders
+// without noticing. Hence every link in it is pinned here.
+$format_file = $root . '/includes/core/class-format-dispatcher.php';
+$fmt_converted = null;
+if (!is_file($format_file)) {
+    $errors[] = 'includes/core/class-format-dispatcher.php missing — the format kind has no dispatcher, so its rules run nowhere (#64).';
+} else {
+    $fsrc = $strip_comments((string) file_get_contents($format_file));
+
+    // 12a. It owns the FORMAT kind, and only that.
+    if (!preg_match('/const\s+KIND\s*=\s*OptionRuleStorage::KIND_FORMAT\s*;/', $fsrc)) {
+        $errors[] = 'FormatDispatcher::KIND is not OptionRuleStorage::KIND_FORMAT — the pass lock and the rule read would both address the wrong kind.';
+    }
+
+    // 12b. It owns NO triggers and NO drain. Two dispatchers with two queues
+    // would have to be kept in step for the derived order to mean anything;
+    // one queue is what makes the order a property of the code rather than of
+    // two hook priorities agreeing.
+    foreach (['set_object_terms', 'deleted_term_relationships', 'save_post', 'acf/save_post', 'shutdown', 'wp_after_insert_post'] as $owned) {
+        if (preg_match('/add_(?:action|filter)\(\s*[\'"]' . preg_quote($owned, '/') . '[\'"]/', $fsrc)) {
+            $errors[] = sprintf(
+                "FormatDispatcher registers '%s' — TermDispatcher owns the trigger union and the drain for BOTH kinds, and a second queue would order the two passes by hook priority again (#64).",
+                $owned
+            );
+        }
+    }
+
+    // 12c. The redirect fix survived the move off the handler. It compensates
+    // for a write that now always happens post-write, so losing it means the
+    // author's "View Post" link points at the pre-rule slug — a 404 seen once,
+    // on the one screen where nobody is looking for a bug.
+    if (!preg_match('/add_filter\(\s*[\'"]redirect_post_location[\'"]\s*,\s*\[\s*\$this\s*,\s*[\'"](\w+)[\'"]\s*\]/', $fsrc, $rfm)) {
+        $errors[] = 'FormatDispatcher does not register redirect_post_location — the post-save "View Post" link would keep reading the pre-rule slug (#64).';
+    } elseif (($rb = $method_body($fsrc, $rfm[1])) === null || strpos($rb, 'clean_post_cache') === false) {
+        $errors[] = sprintf('FormatDispatcher::%s() does not flush the post cache — the redirect fix is the flush, not the hook.', $rfm[1]);
+    }
+
+    // 12d. The pass: locked on its own kind, gated, released in `finally`.
+    if (!preg_match('/function\s+run_pass\s*\(\s*int\s+\$\w+\s*\)\s*:\s*int\s*\{(.*?)\n    \}/s', $fsrc, $frm)) {
+        $errors[] = 'FormatDispatcher::run_pass(int $post_id): int not found.';
+    } else {
+        $body = $frm[1];
+        if (!preg_match('/pass_active\(\s*\$\w+\s*,\s*self::KIND\s*\)/', $body)) {
+            $errors[] = 'FormatDispatcher::run_pass() does not check the pass lock for its OWN kind — passing self::KIND is what stops a format write re-entering a format pass while leaving the term marks it legitimately raises audible.';
+        }
+        if (!preg_match('/\$this->pass_enabled\(/', $body)) {
+            $errors[] = 'FormatDispatcher::run_pass() does not consult pass_enabled() — the disable gate must sit on the pass, for the same reason the term one does.';
+        }
+        if (!preg_match('/\}\s*finally\s*\{\s*TermDispatcher::release_pass\(/s', $body)) {
+            $errors[] = 'FormatDispatcher::run_pass() does not release the pass lock in a `finally` — a throwing applier would strand it and silence the entity for the rest of the request.';
+        }
+    }
+    if (!preg_match('/function\s+pass_enabled\s*\(\s*int\s+\$\w+\s*\)\s*:\s*bool\s*\{(.*?)\n    \}/s', $fsrc, $fpm)) {
+        $errors[] = 'FormatDispatcher::pass_enabled(int $post_id): bool not found — the format pass needs its own single decision site for "turn this off".';
+    } else {
+        foreach (
+            [
+                'WP_IMPORTING'                       => 'the import stand-down',
+                'meta_conductor_acf_reapply_enabled' => 'the established off switch (the seeder and conversion tool ride on it)',
+                'meta_conductor_format_pass_enabled' => 'the format-specific override',
+            ] as $needle => $what
+        ) {
+            if (strpos($fpm[1], $needle) === false) {
+                $errors[] = sprintf('FormatDispatcher::pass_enabled() does not consult %s — %s is missing.', $needle, $what);
+            }
+        }
+    }
+
+    // 12e. The dispatcher performs the write, and suppresses the revision it
+    // would otherwise create. The revision is OUR write, not the author's, and
+    // a history full of them is how a rule stops being invisible in the wrong
+    // way.
+    $write_body = $method_body($fsrc, 'write');
+    if ($write_body === null) {
+        $errors[] = 'FormatDispatcher::write() not found — the appliers return data, so exactly one place must persist it (#64).';
+    } else {
+        if (!preg_match('/wp_update_post\(/', $write_body)) {
+            $errors[] = 'FormatDispatcher::write() does not call wp_update_post() — the pass would compute a title and never store it.';
+        }
+        // The ADD, specifically: `remove_filter` on the same name lives two
+        // lines below, so a plain substring search still matches a write whose
+        // suppression has been deleted.
+        if (!preg_match('/add_filter\(\s*[\'"]wp_save_post_revision_post_has_changed[\'"]/', $write_body)) {
+            $errors[] = 'FormatDispatcher::write() does not suppress the revision its update creates — every save would leave an extra revision whose only difference is a rule\'s own output.';
+        }
+        if (!preg_match('/remove_filter\(\s*[\'"]wp_save_post_revision_post_has_changed[\'"]/', $write_body)) {
+            $errors[] = 'FormatDispatcher::write() suppresses the revision and never lifts the suppression — every later save in the request would silently stop creating revisions.';
+        }
+    }
+
+    // 12f. Converted/unconverted partition the FORMAT kind, exactly as groups
+    // 6/7/9 do for the term kind.
+    $fmt_converted   = $const_list($fsrc, 'CONVERTED_TYPES');
+    $fmt_unconverted = $const_list($fsrc, 'UNCONVERTED_TYPES');
+    if ($fmt_converted === null || $fmt_unconverted === null) {
+        $errors[] = 'FormatDispatcher is missing CONVERTED_TYPES / UNCONVERTED_TYPES — what a format pass runs, and what still owns hooks, must be enumerated.';
+    } elseif (is_file($storage_file)) {
+        $ssrc2 = $strip_comments((string) file_get_contents($storage_file));
+        $format_types = [];
+        if (preg_match('/self::KIND_FORMAT\s*=>\s*\[(.*?)\]/s', $ssrc2, $fm2)) {
+            preg_match_all('/[\'"]([^\'"]+)[\'"]/', $fm2[1], $fvals);
+            $format_types = $fvals[1];
+        }
+        if (empty($format_types)) {
+            $errors[] = 'Could not read KIND_TYPES[KIND_FORMAT] out of OptionRuleStorage — cannot verify the format dispatcher covers every format rule type.';
+        } else {
+            $fboth = array_intersect($fmt_converted, $fmt_unconverted);
+            if ($fboth) {
+                $errors[] = sprintf('Format rule types in BOTH lists (%s) — they would run twice.', implode(', ', $fboth));
+            }
+            $fcovered = array_merge($fmt_converted, $fmt_unconverted);
+            $fmissing = array_values(array_diff($format_types, $fcovered));
+            if ($fmissing) {
+                $errors[] = sprintf(
+                    'Format rule types in neither list (%s) — a type no dispatcher runs and that owns no hooks is silently retired.',
+                    implode(', ', $fmissing)
+                );
+            }
+            $fstray = array_values(array_diff($fcovered, $format_types));
+            if ($fstray) {
+                $errors[] = sprintf(
+                    'Types listed on the format dispatcher that are not in KIND_FORMAT (%s) — a term-kind rule belongs to the term dispatcher.',
+                    implode(', ', $fstray)
+                );
+            }
+        }
+    }
+
+    // 12g. A converted FORMAT handler registers nothing and carries no
+    // re-entrancy boolean — the same bright line group 6 holds for the term
+    // kind, and the one that kills the priority-99 registration for good.
+    $fmt_capture = [];
+    if (preg_match('/const\s+CAPTURE_HOOKS\s*=\s*(\[.*?\]\s*;)/s', $fsrc, $fcm)) {
+        if (preg_match_all('/[\'"]([^\'"]+)[\'"]\s*=>\s*\[([^\]]*)\]/', $fcm[1], $fentries, PREG_SET_ORDER)) {
+            foreach ($fentries as $entry) {
+                preg_match_all('/[\'"]([^\'"]+)[\'"]/', $entry[2], $fhooks);
+                $fmt_capture[$entry[1]] = $fhooks[1];
+            }
+        }
+    } else {
+        $errors[] = 'FormatDispatcher::CAPTURE_HOOKS not found — the allow-list must be declared even while it is empty, or "a converted handler registers nothing" has an implicit exception list.';
+    }
+
+    foreach (($fmt_converted ?? []) as $type) {
+        if (!isset($handler_files[$type])) {
+            $errors[] = sprintf("FormatDispatcher::CONVERTED_TYPES names '%s', which maps to no handler file this harness knows.", $type);
+            continue;
+        }
+        $file = $root . '/includes/handlers/' . $handler_files[$type];
+        if (!is_file($file)) {
+            $errors[] = sprintf('Handler file for %s missing (%s).', $type, $handler_files[$type]);
+            continue;
+        }
+        $body    = $strip_comments((string) file_get_contents($file));
+        $allowed = $fmt_capture[$type] ?? [];
+        foreach ($registered_hooks($body) as $hook) {
+            $name = substr($hook, 0, strrpos($hook, '@'));
+            if (!in_array($name, $allowed, true)) {
+                $errors[] = sprintf(
+                    '%s is CONVERTED but still registers %s — the dispatchers own every trigger, and a format handler on its own hook is back to ordering itself against the term pass by priority (#64).',
+                    $handler_files[$type],
+                    $hook
+                );
+            }
+        }
+        if (preg_match('/private\s+(?:bool\s+)?\$(?:processing|is_updating_post)\b/', $body)) {
+            $errors[] = sprintf(
+                '%s still declares a re-entrancy boolean — the pass lock is the only guard, and a handler that no longer writes has nothing to guard against.',
+                $handler_files[$type]
+            );
+        }
+    }
+}
+
+// --- 12h. apply_to_data has exactly ONE call site, in the format dispatcher -
+// The format kind's half of group 5, and the same invariant: anything else
+// calling the applier executes a format rule with no lock held and no order
+// around it. It also has a failure mode group 5's does not — an applier called
+// outside a pass writes nothing, so the rule simply has no effect, which reads
+// as "the rule is not configured" rather than as a bug.
+$base_file = $root . '/includes/handlers/class-unified-handler-base.php';
+if (is_file($base_file)) {
+    $base_src = $strip_comments((string) file_get_contents($base_file));
+    if (!preg_match('/public\s+function\s+apply_to_data\s*\(\s*array\s+\$\w+\s*,\s*int\s+\$\w+\s*,\s*array\s+\$\w+\s*\)\s*:\s*\?array\s*\{/', $base_src)) {
+        $errors[] = 'apply_to_data(array $data, int $post_id, array $rule): ?array is not declared on UnifiedHandlerBase — the format seam must be answerable by every handler, and its NULLABLE return is what distinguishes "not my rule" from "already in the target state" (#64).';
+    }
+}
+
+$data_sites = [];
+foreach ($php_files as $file) {
+    $body = $strip_comments((string) file_get_contents($file));
+    foreach (preg_split('/\R/', $body) as $n => $line) {
+        if (preg_match('/\bapply_to_data\s*\(/', $line)
+            && !preg_match('/function\s+apply_to_data/', $line)) {
+            $data_sites[] = str_replace($normalized_root, '', $file) . ':' . ($n + 1);
+        }
+    }
+}
+$expected_data_file = 'includes/core/class-format-dispatcher.php';
+$foreign_data = array_values(array_filter(
+    $data_sites,
+    static fn(string $site): bool => strpos($site, $expected_data_file) !== 0
+));
+if (empty($data_sites)) {
+    $errors[] = 'No apply_to_data() call site found at all — the format dispatcher must call the applier seam.';
+}
+if ($foreign_data) {
+    $errors[] = sprintf(
+        'apply_to_data() is called outside FormatDispatcher (%s) — every format execution must go through a pass (#64).',
+        implode(', ', $foreign_data)
+    );
+}
+if (count($data_sites) > 1 && !$foreign_data) {
+    $errors[] = sprintf(
+        'apply_to_data() has %d call sites inside the format dispatcher — it must have exactly one choke point (FormatDispatcher::apply()).',
+        count($data_sites)
+    );
+}
+
+// A format applier RETURNS data; it must not write the row itself. That is what
+// keeps one save to one row update however many rules matched, and what lets
+// the deferred pre-write phase reuse the seam on data that has no row yet.
+foreach (($fmt_converted ?? []) as $type) {
+    if (!isset($handler_files[$type])) {
+        continue; // already reported above
+    }
+    $file = $root . '/includes/handlers/' . $handler_files[$type];
+    if (!is_file($file)) {
+        continue;
+    }
+    $applier = $method_body($strip_comments((string) file_get_contents($file)), 'apply_to_data');
+    if ($applier === null) {
+        $errors[] = sprintf(
+            '%s is CONVERTED for the format kind but declares no apply_to_data() — it would inherit the base null, so every rule of its type reports "not mine" and silently never runs.',
+            $handler_files[$type]
+        );
+        continue;
+    }
+    foreach (['wp_update_post', 'wp_insert_post'] as $effect) {
+        if (preg_match('/\b' . preg_quote($effect, '/') . '\s*\(/', $applier)) {
+            $errors[] = sprintf(
+                '%s::apply_to_data() calls %s() — a format applier returns data and the dispatcher performs the single write (#64).',
+                $handler_files[$type],
+                $effect
+            );
+        }
+    }
+}
+
+// --- 12i. The drain step runs the term pass, THEN the format pass -----------
+// THE derived cross-kind order, as executable code. Both halves matter: the
+// format pass must be reached from the drain at all (or format rules only run
+// when something else happens to call them), and it must be reached AFTER the
+// term pass (or `{term:TAX}` resolves against the previous save's terms, which
+// is the defect the ticket exists to remove and which produces a perfectly
+// plausible title).
+if (!preg_match('/function\s+run_entity\s*\(\s*int\s+\$\w+\s*\)\s*:\s*int\s*\{(.*?)\n    \}/s', $src, $rem)) {
+    $errors[] = 'TermDispatcher::run_entity(int $post_id): int not found — the two kinds must be sequenced at ONE named site, not wherever a drain happens to call them (#64).';
+} else {
+    $body     = $rem[1];
+    $term_at  = strpos($body, '$this->run_pass(');
+    $fmt_at   = strpos($body, 'format->run_pass(');
+    if ($term_at === false) {
+        $errors[] = 'run_entity() does not run the TERM pass.';
+    }
+    if ($fmt_at === false) {
+        $errors[] = 'run_entity() does not run the FORMAT pass — format rules would execute only when something else happened to call them (#64).';
+    }
+    if ($term_at !== false && $fmt_at !== false && $fmt_at < $term_at) {
+        $errors[] = 'run_entity() runs the format pass BEFORE the term pass — a {term:TAX} pattern would resolve against the previous save\'s terms, and the resulting title looks entirely plausible (#64).';
+    }
+}
+foreach (['drain', 'drain_post'] as $entry) {
+    $pattern = '/function\s+' . $entry . '\s*\([^)]*\)\s*:\s*(?:void|int)\s*\{(.*?)\n    \}/s';
+    if (!preg_match($pattern, $src, $dem)) {
+        continue; // absence already reported by groups 4/11
+    }
+    if (strpos($dem[1], 'run_entity(') === false) {
+        $errors[] = sprintf(
+            '%s() does not go through run_entity() — it would run the term pass alone, so a post drained by that path keeps the previous save\'s title (#64).',
+            $entry
+        );
+    }
+}
+
 if ($errors) {
     fwrite(STDERR, "DISPATCHER FAIL — term dispatcher invariants broken (#60):\n");
     foreach ($errors as $e) {
@@ -775,9 +1075,10 @@ if ($errors) {
 }
 
 printf(
-    "DISPATCHER OK — trigger union mark-only, drain after AcfWriteQueue, pass lock (entity, kind), single apply_to_post call site, fan-out + capture queue declared+enqueued; %d converted / %d still hooked / %d capture type(s) (#60, #62, #63).\n",
+    "DISPATCHER OK — trigger union mark-only, drain after AcfWriteQueue, pass lock (entity, kind), single apply_to_post + apply_to_data call sites, fan-out + capture queue declared+enqueued, format pass driven from the shared drain AFTER the term pass; %d term converted / %d still hooked / %d capture type(s) / %d format converted (#60, #62, #63, #64).\n",
     count($converted ?? []),
     count($unconverted ?? []),
-    count($capture ?? [])
+    count($capture ?? []),
+    count($fmt_converted ?? [])
 );
 exit(0);

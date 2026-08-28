@@ -35,8 +35,8 @@
  * the next one.
  *
  * `post_type` is a SCALAR select here, not the shared `post_types` checkboxes
- * the term list uses, because `TitleSlugHandler::find_matching_rule()` is
- * first-match-wins on one post type — a rule set is a lookup table keyed by
+ * the term list uses, because the format pass is first-match-wins per rule type
+ * (`TitleSlugHandler::rule_matches()`, #64) on one post type — a rule set is a lookup table keyed by
  * post type, not a set of independently-scoped rules. Unifying the two gates
  * is a handler change, deliberately out of #59's scope (it is a move, and the
  * ticket asks that stored rules survive it intact).
@@ -269,9 +269,9 @@ class FormatRulesConfig {
             ],
             [
                 // Scalar, not the shared post_types checkboxes — see the file
-                // docblock. `TitleSlugHandler::find_matching_rule()` reads this
-                // key by name and takes the FIRST rule matching the post's
-                // type, so the value is a lookup key rather than a scope, and
+                // docblock. `TitleSlugHandler::rule_matches()` reads this key
+                // by name and the format pass stops at the FIRST rule of the
+                // type matching the post's type, so the value is a lookup key rather than a scope, and
                 // two rules on one post type means the lower one never runs.
                 'id'          => 'post_type',
                 'type'        => 'select',

@@ -98,6 +98,16 @@ if (!defined('ABSPATH')) {
  * be named on one side or the other. H13 (tests/verify-term-dispatcher.php)
  * reads both constants and fails if a handler's registrations disagree with the
  * side it is listed on.
+ *
+ * THE QUEUE IS SHARED, THE PASSES ARE NOT (#64). Cross-KIND order is derived,
+ * not authored (ADR 0003 decision 2): `title_slug` reads terms and writes none,
+ * so terms must settle before a title is computed from them. This class owns
+ * the triggers and the queue for BOTH kinds, and each drain step runs its own
+ * ordered pass and then `FormatDispatcher::run_pass()` for the same entity.
+ * Sequencing them inside one drain step is what makes the derived order hold by
+ * construction rather than by the two accidents that held it before — a handler
+ * registered at priority 99 and a handler constructed last, both of which a
+ * coalesced pass would have inverted silently.
  */
 class TermDispatcher {
 
@@ -313,14 +323,29 @@ class TermDispatcher {
     private static ?self $instance = null;
 
     /**
+     * The format dispatcher this drain also drives (#64).
+     *
+     * Nullable so the dispatcher can still be constructed standalone; when it
+     * is absent a drain simply runs term passes, which is what every caller
+     * predating #64 expected.
+     *
+     * @var FormatDispatcher|null
+     */
+    private ?FormatDispatcher $format;
+
+    /**
      * @param array<string,UnifiedHandlerBase> $handlers Handlers as built by
      *                                                   TaxonomyManager, keyed
      *                                                   by handler type.
+     * @param FormatDispatcher|null            $format   Format-kind dispatcher
+     *                                                   to run after each
+     *                                                   entity's term pass.
      */
-    public function __construct(array $handlers) {
+    public function __construct(array $handlers, ?FormatDispatcher $format = null) {
         foreach ($handlers as $handler) {
             $this->handlers[$handler->rule_type()] = $handler;
         }
+        $this->format = $format;
     }
 
     /**
@@ -498,7 +523,7 @@ class TermDispatcher {
                         continue;
                     }
                     $passes[$id] = ($passes[$id] ?? 0) + 1;
-                    $this->run_pass($id);
+                    $this->run_entity($id);
                 }
             }
         } finally {
@@ -527,10 +552,40 @@ class TermDispatcher {
 
         try {
             unset($this->dirty[$post_id]);
-            return $this->run_pass($post_id);
+            return $this->run_entity($post_id);
         } finally {
             $this->draining = false;
         }
+    }
+
+    /**
+     * One entity's whole drain step: the term pass, then the format pass (#64).
+     *
+     * THE DERIVED CROSS-KIND ORDER, AS ONE STATEMENT. `title_slug` reads terms
+     * and writes none, so terms must settle first; expressing that as two calls
+     * in sequence is what replaces the priority-99 registration and the
+     * constructed-last dependency that used to encode it. Both of those were
+     * invisible, and both would have inverted the moment the term pass moved to
+     * a late drain — the title would simply have been computed from the
+     * PREVIOUS save's terms, which looks like a working title.
+     *
+     * The format pass's own write raises `save_post`, which marks this entity
+     * dirty again. That is a real change to the post row, not the pass's echo —
+     * the lock it would have to be echoing off is keyed on the format kind — so
+     * it earns another drain iteration, which recomputes to the same state and
+     * writes nothing. `MAX_PASSES_PER_DRAIN` bounds it.
+     *
+     * @param int $post_id Entity to run both kinds over.
+     * @return int Rules that changed the entity, across both kinds.
+     */
+    private function run_entity(int $post_id): int {
+        $changed = $this->run_pass($post_id);
+
+        if ($this->format !== null) {
+            $changed += $this->format->run_pass($post_id);
+        }
+
+        return $changed;
     }
 
     // ------------------------------------------------------------------- pass
@@ -718,10 +773,13 @@ class TermDispatcher {
      * @return bool Whether the rule actually changed the entity.
      */
     public static function apply(int $post_id, array $rule, UnifiedHandlerBase $handler): bool {
-        // Key the lock on the handler's OWN kind, not this dispatcher's. Bulk
-        // apply routes every handler through here, format-kind ones included,
-        // and locking a title/slug apply under `term_rules` would suppress the
-        // term enqueues its write legitimately causes.
+        // Key the lock on the handler's OWN kind, not this dispatcher's. The
+        // base bulk path routes any handler through here, and locking a
+        // non-term apply under `term_rules` would suppress the term enqueues
+        // its write legitimately causes. `title_slug` no longer arrives this
+        // way — it overrides bulk onto `FormatDispatcher::run_pass()` (#64) —
+        // but the derivation stays, because it is the general statement and the
+        // next non-term kind would otherwise reintroduce the bug.
         $kind = StorageFactory::get_instance()->get_kind_for_type($handler->rule_type());
         $key  = self::pass_key($kind !== '' ? $kind : self::KIND, $post_id);
         $held = isset(self::$passes[$key]);
@@ -763,5 +821,33 @@ class TermDispatcher {
      */
     public static function pass_active(int $entity_id, string $kind = self::KIND): bool {
         return isset(self::$passes[self::pass_key($kind, $entity_id)]);
+    }
+
+    /**
+     * Take the pass lock for another kind's dispatcher (#64).
+     *
+     * The lock table is static and shared BY DESIGN — it is a property of the
+     * request, and `pass_key()` already carries the kind, so one table keyed
+     * (kind, entity) is the same mechanism ADR 0003 decision 4 settled, not a
+     * second one. `FormatDispatcher` reaches it through these two methods
+     * rather than owning a table of its own, so `mark_dirty()` keeps consulting
+     * ONE set of locks and a format write's term marks stay audible.
+     *
+     * @param string $kind      Effect kind taking the pass.
+     * @param int    $entity_id Entity under pass.
+     */
+    public static function take_pass(string $kind, int $entity_id): void {
+        self::$passes[self::pass_key($kind, $entity_id)] = true;
+    }
+
+    /**
+     * Release a lock taken by take_pass(). MUST be called from a `finally` —
+     * a stranded lock silences the entity for the rest of the request.
+     *
+     * @param string $kind      Effect kind releasing the pass.
+     * @param int    $entity_id Entity under pass.
+     */
+    public static function release_pass(string $kind, int $entity_id): void {
+        unset(self::$passes[self::pass_key($kind, $entity_id)]);
     }
 }

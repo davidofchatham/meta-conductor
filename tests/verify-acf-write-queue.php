@@ -11,10 +11,14 @@
  * guard (tests/verify-acp-gate.php).
  *
  * Guarded:
- *   1. CLAIM_PRIORITY sits ABOVE every handler's own registration. The latest
- *      is TitleSlugHandler at acf/save_post priority 99; claiming below that
- *      would drop the post from the pending set before the handlers ran, so
- *      neither the ordinary path NOR the flush would apply it.
+ *   1. CLAIM_PRIORITY sits ABOVE every OTHER `save_post` / `acf/save_post`
+ *      registration in the plugin. Claiming below one of them would drop the
+ *      post from the pending set before that callback ran, so neither the
+ *      ordinary path NOR the flush would apply it. The bound is DERIVED from
+ *      the source rather than written down: it used to be the literal 99 of
+ *      `TitleSlugHandler::acf/save_post`, which #64 deleted — a hard-coded
+ *      number outlives the registration it was pinned to and then guards
+ *      nothing.
  *   2. The WP_IMPORTING suppression gate is present. Without it an import
  *      triggers one full rule recompute per imported post.
  *   3. The target gate is a POSITIVE INTEGER post ID. ACF passes 'options',
@@ -44,14 +48,47 @@ if (!is_file($queue)) {
 }
 $src = (string) file_get_contents($queue);
 
-// --- 1. Claim priority above the latest handler (TitleSlugHandler, 99) ------
+// --- 1. Claim priority above every OTHER save-hook registration -------------
+// Derived, not written down: the number this used to be pinned to belonged to a
+// registration #64 deleted, and a stale literal guards nothing.
 if (!preg_match('/const\s+CLAIM_PRIORITY\s*=\s*(\d+)\s*;/', $src, $m)) {
     $errors[] = 'CLAIM_PRIORITY constant not found — the claim priority must be a named constant.';
-} elseif ((int) $m[1] <= 99) {
-    $errors[] = sprintf(
-        'CLAIM_PRIORITY is %d — must exceed 99 (TitleSlugHandler::acf/save_post), or the claim runs before the handlers.',
-        (int) $m[1]
-    );
+} else {
+    $claim_priority = (int) $m[1];
+    $highest        = 0;
+    $highest_where  = '';
+
+    $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root . '/includes'));
+    foreach ($it as $file) {
+        if (!$file->isFile() || $file->getExtension() !== 'php') {
+            continue;
+        }
+        $path = str_replace('\\', '/', $file->getPathname());
+        foreach (preg_split('/\R/', (string) file_get_contents($path)) as $n => $line) {
+            if (preg_match('/^\s*(?:\*|\/\/)/', $line)) {
+                continue;
+            }
+            if (!preg_match('/add_action\(\s*[\'"](save_post|acf\/save_post)[\'"][^)]*?,\s*(\d+)/', $line, $hm)) {
+                continue;
+            }
+            // The queue's own claim registrations use the constant, not a
+            // literal, so they never appear here.
+            $priority = (int) $hm[2];
+            if ($priority > $highest) {
+                $highest       = $priority;
+                $highest_where = str_replace(str_replace('\\', '/', $root) . '/', '', $path) . ':' . ($n + 1);
+            }
+        }
+    }
+
+    if ($claim_priority <= $highest) {
+        $errors[] = sprintf(
+            'CLAIM_PRIORITY is %d — must exceed %d (%s), or the claim drops the post from the pending set before that callback runs.',
+            $claim_priority,
+            $highest,
+            $highest_where
+        );
+    }
 }
 // Both claim registrations must actually USE the constant.
 foreach (['save_post', 'acf/save_post'] as $hook) {

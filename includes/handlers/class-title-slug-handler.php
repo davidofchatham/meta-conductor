@@ -4,22 +4,34 @@ namespace BWS\MetaConductor\Handlers;
 
 if (!defined('ABSPATH')) exit;
 
+/**
+ * Computes a post's title and slug from a pattern. A pure applier on the format
+ * seam since #64 — it owns no hooks and no request state.
+ *
+ * WHAT WENT AWAY, AND WHY NONE OF IT IS NEEDED. The handler used to be five
+ * request-scoped maps and four hooks straddling the DB write: a pre-write
+ * `wp_insert_post_data` filter for rules reading no meta, an `acf/save_post`
+ * p99 + `save_post` p99 pair for the rest, a `redirect_post_location` fix for
+ * the second path, and dedup flags so the two paths could not both fire.
+ * `FormatDispatcher` runs the whole thing once, after the term pass, so:
+ *
+ *   - the two paths collapse to one, and the flags that separated them
+ *     (`$handled_pre_write`, `$processed_in_request`) have nothing to separate;
+ *   - `$is_updating_post` guarded re-entry from our own `wp_update_post()`. The
+ *     handler no longer writes — the dispatcher does, under the pass lock;
+ *   - `$pending_submitted_titles` captured the submitted title BEFORE the row
+ *     was written, because the pre-write filter had no other way to see it.
+ *     Post-write it is simply `post_title`, which is what the pass reads;
+ *   - `$final_slugs` and the redirect fix moved onto the dispatcher, with the
+ *     write they exist to compensate for.
+ *
+ * THE PRE-WRITE PHASE COULD NOT SURVIVE. It ran before terms landed, so a
+ * `{term:TAX}` pattern resolved against the PREVIOUS save's terms — and the
+ * result is a plausible title, which is why nobody would have found it. The
+ * two-phase split returns when `field_transformation` lands (ADR 0003), by
+ * which point the pre-write half feeds this same data-in/data-out seam.
+ */
 class TitleSlugHandler extends UnifiedHandlerBase {
-
-    /** @var bool Prevents re-entry when we call wp_update_post() ourselves */
-    private bool $is_updating_post = false;
-
-    /** @var array<int,true> Post IDs processed in this request (prevents dual-hook double-run) */
-    private array $processed_in_request = [];
-
-    /** @var array<int,string> Submitted post_title captured before DB write, keyed by post ID */
-    private array $pending_submitted_titles = [];
-
-    /** @var array<int,true> Post IDs handled in wp_insert_post_data (skip post-write processing) */
-    private array $handled_pre_write = [];
-
-    /** @var array<int,string> Final slugs set during pre-write, for redirect_post_location fix */
-    private array $final_slugs = [];
 
     // -------------------------------------------------------------------------
     // Required abstracts
@@ -41,165 +53,66 @@ class TitleSlugHandler extends UnifiedHandlerBase {
         return !empty($rule['enabled']);
     }
 
-    // Title/slug rules use their own hook-based processing (on_insert_post_data,
-    // on_acf_save_post, on_save_post). The base class process_post routes through
-    // the generic rule engine which expects action/source_type keys we don't have.
+    // Title/slug rules run from the format dispatcher's ordered pass, on the
+    // apply_to_data() seam. The base class process_post routes through the
+    // generic rule engine which expects action/source_type keys we don't have.
     public function process_post($post_id, $post, $update) {}
 
     // -------------------------------------------------------------------------
     // Hook registration
     // -------------------------------------------------------------------------
 
-    protected function init_hooks(): void {
-        // Pre-write: capture submitted title and — for non-meta rules — compute
-        // final title+slug before WP writes, so the editor shows correct values.
-        add_filter('wp_insert_post_data', [$this, 'on_insert_post_data'], 1, 2);
-
-        // Post-write: handle meta-dependent rules after ACF saves fields.
-        add_action('acf/save_post', [$this, 'on_acf_save_post'], 99);
-
-        // Fallback for sites without ACF. Skipped if acf/save_post already ran.
-        add_action('save_post', [$this, 'on_save_post'], 99, 3);
-
-        // Fix admin "View Post" link for meta-dependent rules processed post-write.
-        add_filter('redirect_post_location', [$this, 'fix_post_redirect'], 10, 2);
-    }
+    /**
+     * Nothing. `FormatDispatcher` owns the pass and `TermDispatcher` owns the
+     * triggers that provoke it, so registering anything here would run this
+     * rule type twice — once out of authored order, and once from a hook whose
+     * priority is the very ordering accident #64 removed. H13 fails on any
+     * registration in this file.
+     */
+    protected function init_hooks(): void {}
 
     // -------------------------------------------------------------------------
-    // Hook callbacks
+    // The applier
     // -------------------------------------------------------------------------
-
-    public function on_insert_post_data(array $data, array $postarr): array {
-        if ($this->is_updating_post) {
-            return $data;
-        }
-
-        $post_id = (int) ($postarr['ID'] ?? 0);
-        if ($post_id <= 0) return $data;
-        if (in_array($data['post_status'] ?? '', ['auto-draft', 'trash'], true)) return $data;
-
-        $this->pending_submitted_titles[$post_id] = $data['post_title'];
-
-        $rules = $this->get_enabled_rules();
-        $mock_post = (object) array_merge($data, ['ID' => $post_id, 'post_date' => $data['post_date'] ?? current_time('mysql')]);
-        $rule = $this->find_matching_rule($mock_post, $rules);
-        if (!$rule || $this->rule_needs_postmeta($rule)) {
-            return $data;
-        }
-
-        // Non-meta rule: compute title+slug now, before WP writes.
-        $post = get_post($post_id);
-        $new_title = $data['post_title'];
-        if (!empty($rule['title_pattern'])) {
-            $default_title = $post ? $this->resolve_default_title($post_id, $post, $rule) : $data['post_title'];
-            $new_title = $this->resolve_pattern($rule['title_pattern'], $post_id, $mock_post, 'title', $default_title);
-            if ($new_title === '') $new_title = $data['post_title'];
-        }
-
-        $new_slug = null;
-        $default_slug = sanitize_title($new_title);
-        if (!empty($rule['slug_pattern'])) {
-            $built = $this->resolve_pattern($rule['slug_pattern'], $post_id, $mock_post, 'slug', $new_title);
-            $new_slug = $this->apply_slug_mode($built, $default_slug, $rule['slug_mode'] ?? 'prefix', $rule['slug_pattern'] ?? '');
-        } elseif (!empty($rule['title_pattern'])) {
-            $new_slug = $default_slug;
-        }
-
-        if ($new_slug !== null) {
-            $new_slug = $this->make_unique_slug($new_slug, $post_id, $mock_post, $rule);
-        }
-
-        $data['post_title'] = $new_title;
-        if ($new_slug !== null) {
-            $data['post_name'] = $new_slug;
-            $this->final_slugs[$post_id] = $new_slug;
-        }
-
-        // Store idempotency meta.
-        if (!empty($rule['title_pattern']) && $this->pattern_uses_default_title($rule['title_pattern'])) {
-            $raw_used = $this->pending_submitted_titles[$post_id] ?? $data['post_title'];
-            update_post_meta($post_id, '_bws_raw_title', $raw_used);
-            update_post_meta($post_id, '_bws_applied_title', $new_title);
-        }
-
-        $this->handled_pre_write[$post_id] = true;
-        $this->processed_in_request[$post_id] = true;
-
-        $rule_index = (int) ($rule['id'] ?? 0);
-        $this->write_rule_status($rule_index, $post_id, $new_title, $new_slug ?? $data['post_name'] ?? '', []);
-
-        return $data;
-    }
 
     /**
-     * AC v7 reapply seam (SPEC §V2/§V6). Delegates to the gated on_acf_save_post
-     * — the apply path AC v7's update_field() bypasses.
+     * Resolve this rule's title and slug patterns against the entity's live
+     * state and hand the result on. THE format applier seam (#64).
+     *
+     * Writes no post row: the dispatcher performs the single update at the end
+     * of the pass. It does write the two pieces of per-post state a title
+     * pattern needs to stay idempotent, plus the rule's status record, because
+     * both are consequences of THIS rule resolving and neither is post data.
+     *
+     * @param array $data    Post data as the previous rule left it.
+     * @param int   $post_id Entity being passed over.
+     * @param array $rule    One enabled title/slug rule.
+     * @return array|null Post data, or null when the rule names another post type.
      */
-    public function reapply_for_post(int $post_id): void {
-        $this->on_acf_save_post($post_id);
-    }
+    public function apply_to_data(array $data, int $post_id, array $rule): ?array {
+        $post_type = (string) ($data['post_type'] ?? '');
+        if (!$this->rule_matches($rule, $post_type)) {
+            return null;
+        }
 
-    public function on_acf_save_post($post_id): void {
-        $post_id = (int) $post_id;
-        if (isset($this->handled_pre_write[$post_id])) return;
-        $post = get_post($post_id);
-        if (!$post instanceof \WP_Post) return;
-        if ($this->should_skip($post_id, $post)) return;
-        $this->processed_in_request[$post_id] = true;
-        $this->process_for_post($post_id, $post);
-    }
-
-    public function on_save_post(int $post_id, \WP_Post $post, bool $update): void {
-        if (function_exists('acf')) return;
-        if (isset($this->handled_pre_write[$post_id])) return;
-        if ($this->should_skip($post_id, $post)) return;
-        if (isset($this->processed_in_request[$post_id])) return;
-        $this->processed_in_request[$post_id] = true;
-        $this->process_for_post($post_id, $post);
-    }
-
-    public function fix_post_redirect(string $location, int $post_id): string {
-        if (!isset($this->final_slugs[$post_id])) return $location;
-        // process_for_post updated the slug via wp_update_post() after the
-        // initial write. Flush the object cache so the "View Post" link on
-        // the redirect destination reads the final slug.
-        clean_post_cache($post_id);
-        return $location;
-    }
-
-    // -------------------------------------------------------------------------
-    // Guards
-    // -------------------------------------------------------------------------
-
-    private function should_skip(int $post_id, \WP_Post $post): bool {
-        if ($this->is_updating_post)                return true;
-        if (isset($this->processed_in_request[$post_id])) return true;
-        if (wp_is_post_autosave($post_id))          return true;
-        if (wp_is_post_revision($post_id))          return true;
-        if (in_array($post->post_status, ['auto-draft', 'trash'], true)) return true;
-        return false;
-    }
-
-    // -------------------------------------------------------------------------
-    // Core orchestration
-    // -------------------------------------------------------------------------
-
-    private function process_for_post(int $post_id, \WP_Post $post): void {
-        $rules = $this->get_enabled_rules();
-        $rule  = $this->find_matching_rule($post, $rules);
-        if (!$rule) return;
+        // A plain object over the SAME array the seam carries, so a token reads
+        // the title an earlier rule computed rather than the row's stored one.
+        $post          = (object) $data;
+        $current_title = (string) ($data['post_title'] ?? '');
+        $current_slug  = (string) ($data['post_name'] ?? '');
 
         // --- Title ---
-        $new_title = $post->post_title; // default: unchanged
+        $new_title     = $current_title; // default: unchanged
+        $default_title = $current_title;
         if (!empty($rule['title_pattern'])) {
             $default_title = $this->resolve_default_title($post_id, $post, $rule);
             $new_title = $this->resolve_pattern($rule['title_pattern'], $post_id, $post, 'title', $default_title);
-            if ($new_title === '') $new_title = $post->post_title; // never blank a title
+            if ($new_title === '') $new_title = $current_title; // never blank a title
         }
 
         // --- Slug ---
         // {default_slug} is always sanitize_title($new_title) in the current pass —
-        // NEVER read from $post->post_name. Slug idempotency derives from title idempotency.
+        // NEVER read from post_name. Slug idempotency derives from title idempotency.
         $new_slug = null;
         $default_slug = sanitize_title($new_title);
         if (!empty($rule['slug_pattern'])) {
@@ -213,64 +126,98 @@ class TitleSlugHandler extends UnifiedHandlerBase {
             $new_slug = $this->make_unique_slug($new_slug, $post_id, $post, $rule);
         }
 
-        // Early exit if nothing changed.
-        $title_changed = ($new_title !== $post->post_title);
-        $slug_changed  = ($new_slug !== null && $new_slug !== $post->post_name);
-        if (!$title_changed && !$slug_changed) return;
+        $changed = ($new_title !== $current_title)
+                   || ($new_slug !== null && $new_slug !== $current_slug);
 
-        // Write — suppress the extra revision our update would otherwise create.
-        $this->is_updating_post = true;
-        add_filter('wp_save_post_revision_post_has_changed', '__return_false');
-
-        $update_data = ['ID' => $post_id];
-        if ($title_changed) $update_data['post_title'] = $new_title;
-        if ($slug_changed) {
-            $update_data['post_name'] = $new_slug;
-            $this->final_slugs[$post_id] = $new_slug;
+        $data['post_title'] = $new_title;
+        if ($new_slug !== null) {
+            $data['post_name'] = $new_slug;
         }
-        wp_update_post($update_data);
 
-        remove_filter('wp_save_post_revision_post_has_changed', '__return_false');
-        $this->is_updating_post = false;
-
-        // Store idempotency meta (only needed when {default_title} is in pattern).
+        // Idempotency state, only when the pattern folds the existing title back
+        // into itself. Stored UNCONDITIONALLY — the pass re-runs whether or not
+        // anything moved, so what is recorded must be a function of this pass's
+        // own resolution rather than of whether it happened to change the row.
+        // Recording the *resolved base* rather than the submitted title is what
+        // makes the second pass over an unchanged post write the same pair back:
+        // the submitted title of a post this rule has already renamed IS the
+        // applied title, and storing that as the base would compound it.
+        //
+        // Both go through as_stored(), because the comparison they exist for is
+        // against a value read back OUT of the post row — see that method.
         if (!empty($rule['title_pattern']) && $this->pattern_uses_default_title($rule['title_pattern'])) {
-            $raw_used = $this->pending_submitted_titles[$post_id]
-                        ?? get_post_meta($post_id, '_bws_raw_title', true)
-                        ?? $post->post_title;
-            update_post_meta($post_id, '_bws_raw_title', $raw_used);
-            update_post_meta($post_id, '_bws_applied_title', $new_title);
+            update_post_meta($post_id, '_bws_raw_title', $this->as_stored($default_title, $post_id));
+            update_post_meta($post_id, '_bws_applied_title', $this->as_stored($new_title, $post_id));
         }
 
-        // Log status / warnings.
-        $rule_index = (int) ($rule['id'] ?? 0);
-        $this->write_rule_status($rule_index, $post_id, $new_title, $new_slug ?? $post->post_name, []);
+        // Status is a record of work done, so it is written only when the rule
+        // actually moved something — an idempotent re-pass is not an event.
+        if ($changed) {
+            $rule_index = (int) ($rule['id'] ?? 0);
+            $this->write_rule_status($rule_index, $post_id, $new_title, $new_slug ?? $current_slug, []);
+        }
+
+        return $data;
     }
 
     /**
-     * Returns the first rule whose post_type matches. First-match-wins is by
-     * design: only one title/slug rule applies per post type.
+     * Whether this rule governs the given post type.
+     *
+     * The dispatcher offers every rule in list order and stops at the first of
+     * this type that answers — which is how first-match-wins survives the move
+     * off `find_matching_rule()`. It is by design: a title/slug rule set is a
+     * lookup table keyed by post type, not a set of independently-scoped rules,
+     * so a second rule on one post type never runs (#59).
      *
      * TODO(UI): the config layer should warn when a user creates a second rule
      * for a post_type that already has one — silently ignored today. Add when
      * we next revisit the title/slug config screen.
+     *
+     * @param array  $rule      One rule.
+     * @param string $post_type Entity's post type.
+     * @return bool
      */
-    private function find_matching_rule(object $post, array $rules): ?array {
-        foreach ($rules as $rule) {
-            if (!empty($rule['post_type']) && $rule['post_type'] === $post->post_type) {
-                return $rule;
-            }
-        }
-        return null;
+    private function rule_matches(array $rule, string $post_type): bool {
+        return !empty($rule['post_type']) && $rule['post_type'] === $post_type;
     }
 
     private function pattern_uses_default_title(string $pattern): bool {
         return str_contains($pattern, '{default_title}');
     }
 
-    private function rule_needs_postmeta(array $rule): bool {
-        $patterns = ($rule['title_pattern'] ?? '') . ($rule['slug_pattern'] ?? '');
-        return (bool) preg_match('/\{(meta:|date_(?:year|month|day|hour|minute):)/', $patterns);
+    /**
+     * What the post row will actually hold for a title we are about to store.
+     *
+     * WHY THE IDEMPOTENCY META CANNOT RECORD THE COMPUTED VALUE. `_bws_raw_title`
+     * and `_bws_applied_title` exist to answer one question — did the author
+     * edit the title, or is this the same title the rule produced last time? —
+     * and the value they are compared against is read back OUT of the post row.
+     * `wp_insert_post()` runs `sanitize_post()` on the way in, which for a user
+     * without `unfiltered_html` (every WP-CLI and cron write included) puts the
+     * title through kses: `R&D` is stored as `R&amp;D`. Record the computed
+     * form and the comparison misses on the very next read, `try_inverse_strip()`
+     * cannot recover a base from a suffix that no longer matches, and the
+     * pattern applies a second time — `R&amp;D - x - x`.
+     *
+     * That was survivable while the two passes were separate requests. Since
+     * #64 the format write re-marks the entity and the drain passes it again in
+     * the SAME request, so the compounding is immediate. Predicting the stored
+     * form here is cheaper and more honest than reading the row back after the
+     * write, which would need a post-write seam on an applier defined to write
+     * nothing.
+     *
+     * Slashed in and unslashed out because that is the state `sanitize_post()`
+     * sees inside `wp_insert_post()`: the kses filters `stripslashes` their
+     * input and `addslashes` their output.
+     *
+     * @param string $title   Title as this pass computed it.
+     * @param int    $post_id Entity the title belongs to.
+     * @return string The same title as the row will hold it.
+     */
+    private function as_stored(string $title, int $post_id): string {
+        return (string) wp_unslash(
+            sanitize_post_field('post_title', wp_slash($title), $post_id, 'db')
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -465,16 +412,20 @@ class TitleSlugHandler extends UnifiedHandlerBase {
     // Idempotency: avoid double-application on re-save
     // -------------------------------------------------------------------------
 
-    protected function resolve_default_title(int $post_id, \WP_Post $post, array $rule): string {
+    protected function resolve_default_title(int $post_id, object $post, array $rule): string {
         $pattern = $rule['title_pattern'] ?? '';
 
         // Short-circuit: if pattern has no {default_title}, all tokens are external —
         // no compounding possible, no meta tracking needed.
         if (!$this->pattern_uses_default_title($pattern)) {
-            return $post->post_title;
+            return (string) $post->post_title;
         }
 
-        $submitted = $this->pending_submitted_titles[$post_id] ?? $post->post_title;
+        // The title the author last submitted. Under the pass this is simply
+        // what the row holds: the pass runs AFTER the row is written and before
+        // anything of ours has touched it, so the pre-write capture the
+        // `wp_insert_post_data` filter needed has nothing left to capture (#64).
+        $submitted = (string) $post->post_title;
         $applied   = (string) get_post_meta($post_id, '_bws_applied_title', true);
         $raw       = (string) get_post_meta($post_id, '_bws_raw_title', true);
 
@@ -494,7 +445,7 @@ class TitleSlugHandler extends UnifiedHandlerBase {
         return $submitted;
     }
 
-    private function try_inverse_strip(string $submitted, int $post_id, \WP_Post $post,
+    private function try_inverse_strip(string $submitted, int $post_id, object $post,
                                         array $rule): ?string {
         $pattern = $rule['title_pattern'] ?? '';
 
@@ -717,10 +668,25 @@ class TitleSlugHandler extends UnifiedHandlerBase {
         ];
     }
 
+    /**
+     * Bulk apply.
+     *
+     * Provokes a full ordered FORMAT pass per post rather than applying this
+     * handler's rules itself — the same inversion `UnifiedHandlerBase`'s bulk
+     * path took for converted term types (#60). Bulk is a provocation: it names
+     * posts, and what happens to them is the pass's job, so a bulk run and a
+     * save over the same rule set cannot diverge. It is also what keeps
+     * `apply_to_data()` to the single call site H13 checks.
+     *
+     * @param int $batch_size Posts per rule per batch.
+     * @param int $offset     Batch offset.
+     * @return array
+     */
     public function process_existing_posts($batch_size = 50, $offset = 0): array {
-        $rules     = $this->get_enabled_rules();
-        $processed = 0;
-        $errors    = [];
+        $rules      = $this->get_enabled_rules();
+        $dispatcher = \BWS\MetaConductor\Core\FormatDispatcher::instance();
+        $processed  = 0;
+        $errors     = [];
 
         foreach ($rules as $rule) {
             if (empty($rule['post_type'])) continue;
@@ -733,10 +699,17 @@ class TitleSlugHandler extends UnifiedHandlerBase {
                 'fields'         => 'all',
             ]);
 
+            // No dispatcher means no pass ran, so nothing was applied. Counting
+            // the post anyway is the "lying button" #31 removed: the caller
+            // reports "processed N of N, done" having written nothing.
+            if ($dispatcher === null) {
+                $errors[] = __('No format dispatcher is registered — nothing was applied.', 'meta-conductor');
+                break;
+            }
+
             foreach ($posts as $post) {
                 try {
-                    $this->process_for_post($post->ID, $post);
-                    $this->processed_in_request = []; // reset guard between posts
+                    $dispatcher->run_pass((int) $post->ID);
                     $processed++;
                 } catch (\Exception $e) {
                     $errors[] = "Post {$post->ID}: " . $e->getMessage();

@@ -655,6 +655,51 @@ abstract class UnifiedHandlerBase {
     }
 
     /**
+     * Apply ONE format rule to ONE entity's post data. THE format applier seam
+     * (#64).
+     *
+     * WHY IT IS NOT `apply_to_post()`. A term rule's effect is a set of term
+     * relationships: the applier can write them and report whether anything
+     * moved. A format rule's effect is the post ROW, and several rules can land
+     * on one row — so a format applier writes nothing and instead returns the
+     * data the next rule in the list receives. `FormatDispatcher` performs the
+     * single `wp_update_post()` at the end of the pass, which is what keeps one
+     * save to one row update however many rules matched.
+     *
+     * It is also the shape the deferred two-phase split needs (ADR 0003): when
+     * `field_transformation` lands and the format pass gains a pre-write half,
+     * that half can hand `wp_insert_post_data`'s own `$data` array to this same
+     * seam, because the seam never assumed the row existed.
+     *
+     * NULL MEANS "NOT MINE". Returning null says this rule does not apply to
+     * this entity at all — wrong post type, no pattern, nothing to say. It is
+     * distinct from returning the data UNCHANGED, which says the rule applied
+     * and the entity is already in the state it wants. The dispatcher needs
+     * both: first-match-of-a-type-wins is decided on the first non-null, and a
+     * no-op re-apply must not consume that slot's decision differently from the
+     * apply that produced it.
+     *
+     * An override MUST be idempotent and MUST be the handler's WHOLE apply, for
+     * the same reason `apply_to_post()`'s must: a pass runs every rule whether
+     * or not that rule's own trigger fired, because format rules have no
+     * triggers of their own any more.
+     *
+     * Null by default: a handler of another effect kind is in the same handler
+     * map and is asked nothing here.
+     *
+     * @param array $data    Post data as the previous rule left it. Keys: ID,
+     *                       post_title, post_name, post_type, post_status,
+     *                       post_date, post_parent. Only post_title and
+     *                       post_name are written back.
+     * @param int   $post_id Entity being passed over.
+     * @param array $rule    One enabled rule (canonical shape).
+     * @return array|null Post data, or null when the rule does not apply here.
+     */
+    public function apply_to_data(array $data, int $post_id, array $rule): ?array {
+        return null;
+    }
+
+    /**
      * The OTHER entities this rule's effect reaches from $post_id. THE declared
      * fan-out seam (#62).
      *

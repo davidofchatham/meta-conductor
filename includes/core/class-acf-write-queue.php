@@ -69,9 +69,12 @@ if (!defined('ABSPATH')) {
  * owns registers no hooks and overrides no reapply seam, so the loop above
  * reaches nothing for it. Those types are covered by marking the post dirty on
  * the dispatcher instead: the shutdown drain (priority 20, after this flush's
- * 10) runs one full ordered pass per post. Both contracts are live while the
- * conversion is partial; the first one goes away with the last unconverted
- * handler (#66).
+ * 10) runs one full ordered pass per post. As of #64 EVERY handler is converted
+ * — the reapply loop above reaches nothing at all and survives only as the
+ * declared seam #66 deletes. The one mark now covers both kinds, because the
+ * drain runs the format pass inside its own per-entity step: a bare
+ * `update_field()` that feeds a `{meta:}` title token reconciles the title on
+ * the same drain that reconciles the terms.
  *
  * SIDE EFFECT WORTH KNOWING. The bare-`update_field()` sever gap (PR#24 round 8
  * #2) is closed through the SECOND contract now, not the first:
@@ -84,10 +87,13 @@ if (!defined('ABSPATH')) {
 class AcfWriteQueue {
 
     /**
-     * Claim priority on save_post / acf/save_post. Must sit ABOVE every
-     * handler's own registration or the claim would remove the post before the
-     * handlers ran — the latest is TitleSlugHandler at acf/save_post 99.
-     * Guarded by tests/verify-acf-write-queue.php.
+     * Claim priority on save_post / acf/save_post. Must sit ABOVE every OTHER
+     * registration on those two hooks, or the claim would remove the post from
+     * the pending set before that callback ran. The tallest one used to be
+     * `TitleSlugHandler` at `acf/save_post` 99; #64 deleted it, and what is
+     * left is the dispatcher's own mark-only triggers at 10.
+     * H8 (tests/verify-acf-write-queue.php) DERIVES the bound from the source
+     * rather than restating a number, so this stays true as registrations move.
      */
     private const CLAIM_PRIORITY = 9999;
 
@@ -120,7 +126,9 @@ class AcfWriteQueue {
      * at all — so the loop below cannot reach it. This is how the ACF-only
      * write path still provokes a pass for those rule types: the flush marks
      * the post dirty and the dispatcher's own shutdown drain (priority 20, this
-     * flush is 10) runs the pass.
+     * flush is 10) runs the pass. Since #64 the mark reaches BOTH kinds: the
+     * term drain runs the format pass inside its per-entity step, so one
+     * `mark_dirty()` is the whole reconciliation.
      *
      * Nullable so the queue can still be constructed standalone.
      *

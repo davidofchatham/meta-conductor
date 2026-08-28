@@ -15,8 +15,10 @@
  *      option, exactly as a settings save would. The stored `format_rules`
  *      order and the projected `title_slug_rules` array are asserted, and the
  *      handler is asked which rule it would apply.
- *   2. **Reorder.** The two rows are swapped and re-saved. `find_matching_rule`
- *      is first-match-wins, so the winner must change — which is the sharpest
+ *   2. **Reorder.** The two rows are swapped and re-saved. The format pass is
+ *      first-match-wins per rule type (`rule_matches()`, #64 — it was
+ *      `find_matching_rule()` when this sweep was written), so the winner must
+ *      change — which is the sharpest
  *      available proof that the repeater's authored order reaches the handler,
  *      and the behaviour the post-type field's description now promises.
  *   3. **Tokens.** `{meta:}`, `{term:}`, `{terms:}` and `{pub_*}` are resolved
@@ -126,10 +128,20 @@ try {
     $handler = TaxonomyManager::get_instance()->get_handler('title_slug');
     $note('the title_slug handler is live', $handler instanceof TitleSlugHandler);
 
-    $match = new ReflectionMethod(TitleSlugHandler::class, 'find_matching_rule');
-    $winner = static fn(object $p) => $match->invoke(
-        $handler, $p, StorageFactory::get_instance()->get_rules('title_slug_rules')
-    );
+    // First-match-wins moved off `find_matching_rule()` in #64: the format
+    // dispatcher offers every rule in list order and stops at the first of a
+    // type whose `rule_matches()` answers. The winner is therefore the first
+    // enabled rule the handler claims — computed here the same way the pass
+    // computes it, and still without applying anything.
+    $matches = new ReflectionMethod(TitleSlugHandler::class, 'rule_matches');
+    $winner = static function (object $p) use ($handler, $matches): array {
+        foreach (StorageFactory::get_instance()->get_rules('title_slug_rules') as $rule) {
+            if ($matches->invoke($handler, $rule, $p->post_type)) {
+                return $rule;
+            }
+        }
+        return [];
+    };
 
     $note('first-match-wins picks the top authored rule',
         ($winner($post)['name'] ?? '') === 'Sweep 59 first');
