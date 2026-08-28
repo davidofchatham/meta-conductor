@@ -126,18 +126,23 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
    repeaters as of #59, so no config carries the old description-text
    workaround any more. (don't #3, SPEC §V11)
 
-10. **Parent↔child term sync fires on the CHILD's own `save_post`, honoring
-    `conflict_handling`.** A child inherits its parent's terms via
-    `inherit_terms_from_parent` (merge = additive, replace = overwrite, skip =
-    only-if-empty). This MUST trigger on the child's own `save_post` (post has
-    `post_parent > 0`), NOT the `wp_insert_post` `$update===false` path — that
-    fires at auto-draft creation before parent/terms exist and is skipped at the
-    real update save, so a new child never inherits until the parent is later
-    re-saved. `conflict_handling` defines the ongoing sync semantics: replace =
-    always-sync, skip = inherit-once, merge = additive. Downward (parent→children)
-    and upward (child←parent) are symmetric, both on `save_post`, both
-    conflict-aware; guard reentrancy (`$processing`) so the write's
-    `set_object_terms` cascade doesn't re-enter within one request (see #4).
+10. **Parent↔child term sync is reconciled on the CHILD, honoring
+    `conflict_handling`.** A child holds its parent's terms under the rule's
+    claim: merge = additive, replace = overwrite, skip = only-if-empty. The
+    invariant is about WHERE the reconcile happens, and it has survived two
+    rewrites of HOW. Originally it had to fire on the child's own `save_post`
+    (post has `post_parent > 0`) rather than the `wp_insert_post`
+    `$update===false` path, which fires at auto-draft creation before
+    parent/terms exist and is skipped at the real update save — so a new child
+    never inherited until the parent was re-saved. Since **#62** the child is
+    reconciled by its own full ordered pass (invariant #17): propagation's
+    applier PULLS from the parent and writes only the post it was handed, and
+    the parent's fan-out is what marks the child dirty. `conflict_handling`
+    still defines the ongoing semantics — replace = always-sync, skip =
+    inherit-once, merge = additive — and the direction is no longer symmetric
+    because there is only one: every post reads its own parent. The
+    `$processing` reentrancy guard is GONE with the hooks; the pass lock is the
+    only guard, and a second one silences the author's own chain.
     (propagation; was SPEC §V12/B3)
 
 11. **A base-class flip must port EVERY base method the handler still calls, not
@@ -334,8 +339,10 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
     only snapshots pre-write state into a request-scoped queue, because the
     state it reads does not survive the write (#12). Capture is not execution;
     the captured value is consumed by the applier during a pass. The allow-list
-    is `TermDispatcher::CAPTURE_HOOKS`, empty until `related_post_terms`
-    converts (#63).
+    is `TermDispatcher::CAPTURE_HOOKS`; `propagation_rules` is its first entry
+    (#62, see the cross-entity bullet below), and `related_post_terms` will be
+    its second (#63). H13 checks both halves — that the hook is registered, and
+    that its callback writes nothing.
 
     **A provocation names entities; the pass decides their fate (#61).** Not
     every entry point is one of the dispatcher's own hooks — bulk apply and
@@ -361,6 +368,47 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
     remaining conversion should expect to hit: the alternative, capturing the
     delta, buys exact parity at the cost of the rule no longer being a function
     of live state, which makes bulk and cron disagree with a save.
+
+    **A cross-entity rule PULLS, and DECLARES its reach; it does not write the
+    far entity (#62).** `apply_to_post` writes the entity it was handed and
+    nothing else, so an entity written from inside another entity's pass is
+    reconciled by ONE rule, out of authored order, with the rest of the list
+    then running against it from whatever hooks fire. That is exactly #35:
+    propagation walked its descendants and wrote them, the child's
+    `set_object_terms` woke hierarchical on its own hook, and the child gained
+    an expansion level nobody had authored. The split that dissolves it:
+
+    - The applier INVERTS to a pull. `apply_to_post(P, rule)` reconciles P by
+      READING the entities the rule points at — for propagation, P's parent.
+      Every post that needs reconciling therefore arrives as the subject of its
+      own full ordered pass.
+    - The handler separately DECLARES its reach through `fan_out(int, array):
+      array` on `UnifiedHandlerBase` (empty by default). The dispatcher marks
+      what it returns dirty, once per rule per pass, whether or not the apply
+      changed anything — the common case is a parent whose own terms a user
+      edited, where the applier correctly reports no change to the parent and
+      the children are precisely what must now be reconciled.
+    - Declare NEIGHBOURS, not closures. Returning the immediate children puts
+      the recursion in the queue, where the drain's one-pass-per-entity bound is
+      the termination argument; returning the whole subtree would re-enqueue the
+      same posts from every ancestor for the same result.
+
+    This also kills the propagation-before-hierarchical instantiation-order
+    dependency, which existed only because `TaxonomyManager` happened to
+    construct the two handlers in that sequence. Both orders are now authorable
+    and produce different, documented results (fixture matrix §62c/§62d).
+
+    **The one thing live state cannot answer is a removal, and that is what a
+    capture hook is for.** A term the parent HELD and then lost is, on the
+    child, indistinguishable from a term the child holds independently — no
+    provenance is recorded anywhere — yet under `merge` the two must be treated
+    differently. So propagation captures the removal as it happens
+    (`deleted_term_relationships`, the only hook that sees a
+    `wp_remove_object_terms`) into a request-scoped map, and each child's
+    applier subtracts what its parent lost. The capture is filtered to terms the
+    parent does not currently hold NATIVELY, which subsumes the #45
+    ACF-mirror-lag bounce *and* distinguishes a remove-then-re-add in the same
+    request, which the pre-#62 blanket exclude list could not.
 
 ## Settings UI — WP Wireframe
 

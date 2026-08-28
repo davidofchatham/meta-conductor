@@ -1,8 +1,9 @@
 <?php
 /**
  * BWS Taxonomy Manager Propagation Handler
- * Handles applying parent post terms to child posts
- * 
+ * Reconciles a post's terms against its PARENT's, and declares the descendants
+ * a change reaches.
+ *
  * @since 0.1.0
  */
 
@@ -13,40 +14,96 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+/**
+ * Propagation, inverted to PULL (#62).
+ *
+ * WHAT CHANGED AND WHY. Propagation is the first rule type whose effect is
+ * genuinely about a second entity, and until 0.8.0 it acted on that directly:
+ * a parent's save walked every descendant and wrote each one. The written child
+ * therefore never got an ordered pass — one rule reached it, out of band, and
+ * the rest of the list then ran against it from whatever hooks happened to
+ * fire. That is #35: the propagated terms landed on the child, the child's
+ * `set_object_terms` woke the hierarchical handler on its own hook, and the
+ * child ended up with a level of expansion nobody had asked any rule for. It is
+ * also where the propagation-before-hierarchical instantiation-order dependency
+ * lived — the two handlers ran in whatever sequence `TaxonomyManager` happened
+ * to construct them in, which is not an order an author can express.
+ *
+ * So the rule splits in two, along the seam ADR 0003 draws:
+ *
+ *   - `apply_to_post(P, rule)` reconciles P AND ONLY P, by READING P's parent.
+ *     Pull, not push. Every post that needs reconciling gets there as the
+ *     subject of its own full ordered pass, so propagation and hierarchical
+ *     compose in the author's order on the child exactly as they do on the
+ *     parent.
+ *   - `fan_out(P, rule)` DECLARES the entities P's own change reaches — its
+ *     immediate children. The dispatcher marks them dirty; each gets its own
+ *     pass, whose fan-out carries the effect the next step down. The recursion
+ *     lives in the queue, where `TermDispatcher::drain()`'s one-pass-per-entity
+ *     bound terminates it, rather than in a recursive descendant walk here.
+ *
+ * THE ONE THING PULL CANNOT SEE, AND THE CAPTURE HOOK THAT FIXES IT. Live state
+ * answers "what should this child hold, given its parent" for every claim
+ * except on removal. A term the parent HELD and then lost is, on the child,
+ * indistinguishable from a term the child holds independently: no provenance is
+ * recorded anywhere (ADR 0002 rejected per-rule provenance), and under `merge`
+ * the two must be treated differently — the first is removed from the child,
+ * the second is not. The old delta model got this from `set_object_terms`'s
+ * `$old_tt_ids`. A pass hands over rules, not deltas, and deliberately so.
+ *
+ * So the removal is CAPTURED as it happens. `deleted_term_relationships` is the
+ * only hook that sees it — `wp_remove_object_terms()` fires nothing else, and
+ * on the plain `wp_set_object_terms()` path WP drops terms through an internal
+ * `wp_remove_object_terms()` too — and it writes to a request-scoped map,
+ * applying nothing. Each child's applier subtracts what ITS parent lost. The
+ * child's own resulting write fires the same hook for the child, so the
+ * subtraction reaches the next level down through the same mechanism as
+ * everything else. This is the first entry on `TermDispatcher::CAPTURE_HOOKS`;
+ * capture is not execution, so the dispatcher stays the sole caller of
+ * `apply_to_post`.
+ */
 class PropagationHandler extends UnifiedHandlerBase {
 
     /**
-     * Reentrancy guard. An upward inherit or downward propagate writes terms,
-     * which fires set_object_terms again — without this the handler re-enters
-     * within one request. (V9/V12)
+     * Post statuses a fan-out considers a child at all.
+     *
+     * The reach the recursive descendant walk had before #62, kept verbatim so
+     * the conversion does not quietly widen or narrow which posts propagation
+     * touches. It is NOT the rule's own `post_status` gate: that is applied by
+     * `should_process_post()` inside the child's own apply, where a status the
+     * rule excludes stops the write rather than the enqueue. Enqueuing one post
+     * too many costs a no-op pass; missing one loses the propagation.
+     *
+     * @var string[]
      */
-    private $processing = false;
+    private const CHILD_STATUSES = ['publish', 'draft', 'private'];
 
     /**
-     * Per-request record of term_taxonomy IDs whose removal was already
-     * propagated by on_parent_terms_deleted (the deleted_term_relationships
-     * hook), keyed by "object_id:taxonomy".
+     * Terms removed from an object THIS REQUEST, keyed `"object_id:taxonomy"`.
      *
-     * wp_set_object_terms() removes dropped terms via an INTERNAL
-     * wp_remove_object_terms() call (taxonomy.php:2924), which fires
-     * deleted_term_relationships BEFORE the outer set_object_terms fires. So on
-     * the plain-set path both hooks see the same removal. This map lets
-     * on_parent_terms_set subtract the tt_ids the delete hook already handled,
-     * so the removal propagates exactly once (no redundant child walk / double
-     * debug log).
+     * Written by `capture_removed_terms()` (the capture hook), read by the
+     * appliers of that object's CHILDREN. Accumulates rather than being
+     * consumed: several children read the same parent's removal, so consuming
+     * on read would deliver it to whichever child happened to pass first.
      *
-     * Lifecycle: the delete hook OVERWRITES this object's key with the current
-     * removal (never appends); on_parent_terms_set CONSUMES it (subtract then
-     * unset). A bare wp_remove_object_terms with no following set leaves the key
-     * set for the rest of the request — harmless (per-request instance state,
-     * overwritten by the next removal on the same key), but a later plain-set in
-     * the SAME request that dropped DIFFERENT terms on this object+taxonomy could
-     * otherwise read a stale key, so the delete hook clears its own key on entry.
-     * (#47)
+     * Request-scoped by construction — it is instance state on a handler built
+     * per request, and a removal is only ever interesting to the pass that
+     * follows it.
      *
      * @var array<string,int[]>
      */
-    private $removals_handled = array();
+    private array $captured_removals = array();
+
+    /**
+     * Immediate children by `"post_id|post_types"`, for the request.
+     *
+     * The fan-out is asked once per RULE per pass, so two propagation rules
+     * over the same post types would otherwise run the same `post_parent` query
+     * twice per entity, on every entity in a chain.
+     *
+     * @var array<string,int[]>
+     */
+    private array $child_cache = array();
 
     public function get_handler_type(): string {
         return 'propagation';
@@ -57,458 +114,335 @@ class PropagationHandler extends UnifiedHandlerBase {
     }
 
     /**
-     * Initialize hooks
+     * Capture only — no apply hooks (#62).
+     *
+     * `save_post` p15, `set_object_terms` p10 and `acf/save_post` p25 lived
+     * here until 0.8.0. `TermDispatcher` owns the trigger union now, including
+     * `deleted_term_relationships`, so registering any of them here would run
+     * propagation twice — once out of authored order, once in it.
+     *
+     * `deleted_term_relationships` stays, and ONLY because what it reads stops
+     * existing after the write: it records the removal and applies nothing.
+     * `TermDispatcher::CAPTURE_HOOKS` is the allow-list that says so, and H13
+     * fails on any registration here that is not on it.
      */
     protected function init_hooks() {
-        add_action('save_post', array($this, 'on_parent_post_save'), 15, 3);
-        add_action('set_object_terms', array($this, 'on_parent_terms_set'), 10, 6);
-
-        // wp_remove_object_terms() fires deleted_term_relationships, NOT
-        // set_object_terms, so a term removed from a parent that way never
-        // reaches on_parent_terms_set. Hook it here so the removal still
-        // propagates down. On the plain wp_set_object_terms path this fires
-        // first (WP removes dropped terms via an internal wp_remove_object_terms
-        // at taxonomy.php:2924) and records the tt_ids in $removals_handled so
-        // on_parent_terms_set does not re-propagate them. (#47)
-        add_action('deleted_term_relationships', array($this, 'on_parent_terms_deleted'), 10, 3);
-
-        // Hook into ACF field updates
-        add_action('acf/save_post', array($this, 'on_acf_save_post'), 25);
+        add_action('deleted_term_relationships', array($this, 'capture_removed_terms'), 10, 3);
     }
 
-    // Intentional no-op (not a forgotten implementation). Propagation fires via
-    // its own save_post / set_object_terms / acf/save_post hooks (above), with
-    // new-child inherit folded into on_parent_post_save (B3); the base
-    // process_post routes through RuleEngine, which propagation does not use.
-    // (The redundant TaxonomyManager on_post_save loop that used to call this was
-    // removed in the Phase-3 teardown; process_existing_posts is the only
-    // remaining caller — see B1/#31.)
+    // Intentional no-op (not a forgotten implementation). apply_to_post() is
+    // the applier; the base process_post routes through RuleEngine, which
+    // propagation does not use.
     public function process_post($post_id, $post, $update) {}
 
     /**
-     * Bulk-apply primitive (#31). Runs the same per-rule down/up propagation
-     * on_parent_post_save does, for one rule + post, out of band. Guards
-     * $processing so the writes it fires don't re-enter this handler's own
-     * set_object_terms/save_post hooks.
+     * Apply ONE propagation rule to ONE post: reconcile this post against its
+     * parent's terms. Writes this post and nothing else.
      *
-     * Returns whether this apply changed ANY post in the affected set — the post
-     * itself (inherit-up) OR any descendant (propagate-down). A self-only measure
-     * would misreport: down-propagation writes the CHILDREN during the parent's
-     * call, so the change is invisible on the parent's own fingerprint. Measure
-     * self ∪ descendants so a real propagation is counted on the call that made
-     * it. Cross-call double counting is bounded — a subtree already settled by an
-     * ancestor's call is a no-op on the descendant's own call (#31 honest count).
+     * Reads the parent through `get_post_terms()` (native ∪ ACF), subtracts
+     * what the parent LOST this request, computes the end state for the rule's
+     * claim through the shared `compute_end_state()`, and writes only when that
+     * differs from what the post already holds.
+     *
+     * THE REMOVAL SUBTRACTION IS CLAIM-INDEPENDENT, and that is not an
+     * oversight: the pre-#62 `propagate_term_removals_to_children()` ignored
+     * `conflict_handling` too, so a `skip` rule removed from its children even
+     * though it would never have added to them. Preserved deliberately — the
+     * conversion is not the place to change what a claim means (that is #54).
+     *
+     * @param int   $post_id Post to reconcile.
+     * @param array $rule    One enabled propagation rule (canonical shape).
+     * @return bool Whether this post's terms actually changed.
      */
     public function apply_to_post(int $post_id, array $rule): bool {
         if (!$this->should_process_post($post_id, $rule)) {
             return false;
         }
+
         $post = get_post($post_id);
-        if (!$post) {
+        if (!$post || (int) $post->post_parent <= 0) {
             return false;
         }
-        $taxonomy = $rule['taxonomy'] ?? '';
+        $parent_id = (int) $post->post_parent;
 
-        // Affected set = this post + every descendant propagate_terms_to_children
-        // could write. Fingerprint the whole set before/after so a downward write
-        // is attributed to this call.
-        $affected = array_merge(
-            array($post_id),
-            $this->get_all_child_posts($post_id, $this->resolve_child_post_types($rule))
-        );
-        $before = $this->subtree_fingerprint($affected, $taxonomy);
-
-        $this->processing = true;
-        try {
-            if ($post->post_parent > 0) {
-                $this->inherit_terms_from_parent($post_id, $post, $rule);
-            }
-            $this->propagate_terms_to_children($post_id, $rule);
-        } finally {
-            $this->processing = false;
-        }
-        return $this->subtree_fingerprint($affected, $taxonomy) !== $before;
-    }
-
-    /**
-     * Combined term fingerprint over a set of posts, for propagation's
-     * self-∪-descendants change detection (#31).
-     *
-     * @param int[]  $post_ids
-     * @param string $taxonomy
-     * @return string
-     */
-    private function subtree_fingerprint(array $post_ids, string $taxonomy): string {
-        $parts = array();
-        foreach ($post_ids as $pid) {
-            $parts[] = $pid . ':' . $this->terms_fingerprint((int) $pid, $taxonomy);
-        }
-        sort($parts);
-        return implode('|', $parts);
-    }
-
-    /**
-     * Handle a post save: propagate DOWN to children, and (if the post itself
-     * has a parent) inherit UP from its parent. Both directions honor the rule's
-     * conflict_handling. Upward inherit lives here — on the child's own save —
-     * NOT on wp_insert_post, which fires at auto-draft creation and misses the
-     * real save (B3/V12).
-     */
-    public function on_parent_post_save($post_id, $post, $update) {
-        // Skip autosaves and revisions
-        if (wp_is_post_autosave($post_id) || wp_is_post_revision($post_id)) {
-            return;
+        // Gate on the PARENT as well as the child. In stock WP a post_parent is
+        // always the same post type as the child (the editor's parent dropdown
+        // is type-scoped), so the two gates agree and this is
+        // redundant-but-harmless. It only diverges under a cross-type
+        // post_parent (programmatic / non-stock) — if that ever becomes real,
+        // decide whether propagation scopes the source (parent), the target
+        // (child), or both. (0.6.0 review, carried through #62.)
+        if (!$this->should_process_post($parent_id, $rule)) {
+            return false;
         }
 
-        if ($this->processing) {
-            return;
+        $taxonomy = (string) ($rule['taxonomy'] ?? '');
+        if ($taxonomy === '') {
+            return false;
         }
-
-        $enabled_rules = $this->get_enabled_rules();
-
-        $this->processing = true;
-        try {
-            foreach ($enabled_rules as $rule) {
-                if (!$this->should_process_post($post_id, $rule)) {
-                    continue;
-                }
-
-                // Inherit UP from parent first (this post is a child), so a
-                // freshly created child gets its parent's terms on its own save.
-                if ($post->post_parent > 0) {
-                    $this->inherit_terms_from_parent($post_id, $post, $rule);
-                }
-
-                // Propagate DOWN to children (this post is a parent).
-                $this->propagate_terms_to_children($post_id, $rule);
-            }
-        } finally {
-            $this->processing = false;
-        }
-    }
-    
-    /**
-     * Handle when terms are set on a parent post
-     */
-    public function on_parent_terms_set($object_id, $terms, $tt_ids, $taxonomy, $append, $old_tt_ids) {
-        // No wp_is_post_autosave/revision guard here (unlike on_parent_post_save,
-        // which needs one because save_post genuinely fires for autosaves/revisions).
-        // set_object_terms does NOT fire for revision/autosave objects in normal WP
-        // operation — revisions don't get taxonomy relationships — and the
-        // should_process_post post-type gate below rejects post_type 'revision' for
-        // any normally-configured rule. So the guard would be dead weight. (0.6.0 review)
-        //
-        // Suppress re-entry while our own propagate/inherit write is firing
-        // set_object_terms (V9/V12). A user-initiated term set runs normally
-        // ($processing === false).
-        if ($this->processing) {
-            return;
-        }
-
-        $enabled_rules = $this->get_enabled_rules();
-
-        $this->processing = true;
-        try {
-            foreach ($enabled_rules as $rule) {
-                if ($rule['taxonomy'] !== $taxonomy) {
-                    continue;
-                }
-
-                $post = get_post($object_id);
-                if (!$post || !$this->should_process_post($object_id, $rule)) {
-                    continue;
-                }
-
-                // Calculate which terms were removed from parent (full set).
-                $removed_tt_ids = array_diff($old_tt_ids ?? array(), $tt_ids ?? array());
-
-                // Full removed term IDs — the #45 add-pass exclude list below
-                // MUST cover EVERY removed term (including ones the delete hook
-                // already propagated), or a just-removed term bounces back onto
-                // descendants via the lagging ACF mirror. Computed from the full
-                // set BEFORE the dedup subtraction.
-                $removed_term_ids = $this->convert_tt_ids_to_term_ids($removed_tt_ids, $taxonomy);
-
-                // Removal WALK dedup: drop tt_ids the deleted_term_relationships
-                // hook already propagated this request. On the plain
-                // wp_set_object_terms path WP removes dropped terms via an
-                // internal wp_remove_object_terms (taxonomy.php:2924) whose
-                // deleted_term_relationships fires BEFORE this set hook, so
-                // on_parent_terms_deleted has already walked the children for
-                // these tt_ids. Subtracting them keeps the removal WALK to one
-                // pass (no redundant walk / double debug log) WITHOUT shrinking
-                // the add-pass exclude list above. Consume-and-clear so a later
-                // independent set is unaffected. (#47)
-                $walk_tt_ids = $removed_tt_ids;
-                $handled_key = $this->removal_key($object_id, $taxonomy);
-                if (!empty($this->removals_handled[$handled_key])) {
-                    $walk_tt_ids = array_diff($removed_tt_ids, $this->removals_handled[$handled_key]);
-                    unset($this->removals_handled[$handled_key]);
-                }
-
-                // Propagate term removals to children FIRST (deduped walk).
-                if (!empty($walk_tt_ids)) {
-                    $this->propagate_term_removals_to_children($object_id, $rule, $walk_tt_ids);
-                }
-
-                // Then propagate new/current terms to children.
-                //
-                // get_post_terms reads native∪ACF. At set_object_terms time the
-                // native store already reflects this removal, but the parent's ACF
-                // MIRROR field is still PRE-removal (its acf/save_post write hasn't
-                // fired yet), so the union re-reads the just-removed term as still
-                // present and would RE-PUSH it onto every descendant the removal
-                // pass just cleaned — the term bounces back within one request (#45).
-                // Exclude the FULL same-pass removals from the add source to break
-                // that (not the deduped walk set — the ACF lag applies to every
-                // removed term regardless of which hook walked it).
-                $this->propagate_terms_to_children($object_id, $rule, $removed_term_ids);
-            }
-        } finally {
-            $this->processing = false;
-        }
-    }
-    
-    /**
-     * Handle an object-term relationship deletion on a parent post.
-     *
-     * Fires for wp_remove_object_terms($parent, $term, $tax) — which does NOT
-     * fire set_object_terms — so this is the ONLY entry point that propagates
-     * that removal down to descendants. It also fires (first) on the plain
-     * wp_set_object_terms path via WP's internal wp_remove_object_terms; in that
-     * case it records the handled tt_ids in $removals_handled so the following
-     * on_parent_terms_set does not double-propagate the same removal. (#47)
-     *
-     * @param int    $object_id Parent post ID.
-     * @param int[]  $tt_ids    Removed term_taxonomy IDs.
-     * @param string $taxonomy  Taxonomy slug.
-     */
-    public function on_parent_terms_deleted($object_id, $tt_ids, $taxonomy) {
-        // Record for on_parent_terms_set's dedup even when we ourselves are
-        // re-entrant or bail below — the plain-set path fires this hook first
-        // regardless, and set_object_terms must not re-propagate what a
-        // WP-internal removal already covered here. This OVERWRITES the key
-        // (empty tt_ids ⇒ empty record), so a stale entry left by an earlier
-        // bare wp_remove_object_terms on the same object+taxonomy can never
-        // survive into a later same-request set. (#47)
-        $this->removals_handled[$this->removal_key($object_id, $taxonomy)] = array_map('absint', (array) $tt_ids);
-
-        if ($this->processing) {
-            return;
-        }
-
-        if (empty($tt_ids)) {
-            return;
-        }
-
-        $enabled_rules = $this->get_enabled_rules();
-
-        $this->processing = true;
-        try {
-            foreach ($enabled_rules as $rule) {
-                if ($rule['taxonomy'] !== $taxonomy) {
-                    continue;
-                }
-
-                $post = get_post($object_id);
-                if (!$post || !$this->should_process_post($object_id, $rule)) {
-                    continue;
-                }
-
-                $this->propagate_term_removals_to_children($object_id, $rule, $tt_ids);
-            }
-        } finally {
-            $this->processing = false;
-        }
-    }
-
-    /**
-     * AC v7 reapply seam (SPEC §V2/§V6). Delegates to the gated on_acf_save_post
-     * — the apply path AC v7's update_field() bypasses.
-     */
-    public function reapply_for_post(int $post_id): void {
-        $this->on_acf_save_post($post_id);
-    }
-
-    /**
-     * Handle ACF field saves for propagation
-     */
-    public function on_acf_save_post($post_id) {
-        // Skip if not a real post ID
-        if (!is_numeric($post_id)) {
-            return;
-        }
-
-        if ($this->processing) {
-            return;
-        }
-
-        $post = get_post($post_id);
-        if (!$post) {
-            return;
-        }
-
-        $enabled_rules = $this->get_enabled_rules();
-
-        $this->processing = true;
-        try {
-            foreach ($enabled_rules as $rule) {
-                if (!$this->should_process_post($post_id, $rule)) {
-                    continue;
-                }
-
-                // Check for ACF taxonomy fields and propagate if necessary
-                $this->process_acf_propagation($post_id, $rule);
-            }
-        } finally {
-            $this->processing = false;
-        }
-    }
-    
-    /**
-     * Process ACF field propagation
-     */
-    private function process_acf_propagation($post_id, $rule) {
-        // Only propagate on an ACF save if this post actually carries an ACF
-        // taxonomy field for the rule's taxonomy. Value-independent discovery
-        // (not get_field_objects, which is FALSE for a post with no saved ACF
-        // values). (0.6.0 ACF B-sweep.)
-        if (empty($this->get_acf_taxonomy_fields($post_id, $rule['taxonomy']))) {
-            return;
-        }
-
-        $this->propagate_terms_to_children($post_id, $rule);
-    }
-    
-    // Removed: process_new_child_post() + the wp_insert_post path (B3). New-child
-    // inheritance now runs on the child's OWN save_post (on_parent_post_save,
-    // post_parent > 0 branch) — reliable across editors and conflict-aware,
-    // unlike the auto-draft-timed wp_insert_post hook it replaces.
-
-    /**
-     * Propagate terms from parent to all children
-     *
-     * @param int   $parent_id
-     * @param array $rule
-     * @param int[] $exclude_term_ids Term IDs to drop from the add source. Set by
-     *        on_parent_terms_set to the same-pass removals: get_post_terms reads
-     *        native∪ACF and the parent's ACF mirror lags native within one request,
-     *        so a just-removed term would otherwise re-propagate. (#45)
-     */
-    private function propagate_terms_to_children($parent_id, $rule, $exclude_term_ids = array()) {
-        $children = $this->get_all_child_posts($parent_id, $this->resolve_child_post_types($rule));
-
-        if (empty($children)) {
-            return;
-        }
-
-        $taxonomy = $rule['taxonomy'];
         $conflict_handling = $rule['conflict_handling'] ?? 'merge';
 
-        // Get parent terms (both native and ACF)
-        $parent_terms = $this->get_post_terms($parent_id, $taxonomy);
+        $removed = $this->parent_removals($parent_id, $taxonomy);
+        $source  = array_diff($this->get_post_terms($parent_id, $taxonomy), $removed);
 
-        if (!empty($exclude_term_ids)) {
-            $parent_terms = array_diff($parent_terms, array_map('absint', $exclude_term_ids));
+        $before = $this->terms_fingerprint($post_id, $taxonomy);
+
+        // ACF taxonomy mirror fields are a SEPARATE store from native terms and
+        // can drift out of sync independently (edited out-of-band, a
+        // save_terms-off field, a prior partial write). update_acf_fields_for_post
+        // self-guards (writes only when the ACF value actually differs), so run
+        // it unconditionally — the native short-circuit below must NOT gate it,
+        // or a native-correct/ACF-stale post never re-syncs.
+        $this->update_acf_fields_for_post($post_id, $taxonomy, $source, $conflict_handling, $removed);
+
+        $current = $this->current_term_ids($post_id, $taxonomy);
+        $target  = $this->target_term_ids($current, $source, $conflict_handling, $removed);
+
+        // No-change short-circuit. A pass runs every rule whether or not this
+        // one's trigger fired, and WP fires save_post more than once per editor
+        // save, so without this the same reconcile re-writes native terms and
+        // re-logs on every provocation.
+        //
+        // It still has to answer the CHANGED question honestly. The ACF write
+        // above lands before $current is read, and with the field's Load/Save
+        // Terms on it syncs the native store — so "the native write is
+        // unnecessary" and "this apply changed nothing" are different
+        // statements, and returning false for the first would under-report a
+        // real change to run_pass(), drain_post() and the bulk tool's count.
+        // $current is already the sorted id list terms_fingerprint() builds.
+        if ($target === $current) {
+            return implode(',', $current) !== $before;
         }
 
-        if (empty($parent_terms)) {
-            return;
-        }
+        wp_set_object_terms($post_id, $target, $taxonomy);
 
-        foreach ($children as $child_id) {
-            // ACF taxonomy mirror fields are a SEPARATE store from native terms
-            // and can drift out of sync independently (edited out-of-band, a
-            // save_terms-off field, a prior partial write). update_acf_fields_for_post
-            // self-guards (writes only when the ACF value actually differs), so
-            // run it unconditionally — the native-term short-circuit below must
-            // NOT gate it, or a native-correct/ACF-stale child never re-syncs.
-            $this->update_acf_fields_for_post($child_id, $taxonomy, $parent_terms, $conflict_handling);
+        $this->debug_log(
+            sprintf('Post %d reconciled against parent %d', $post_id, $parent_id),
+            array(
+                'taxonomy' => $taxonomy,
+                'parent_terms' => array_values($source),
+                'removed_from_parent' => array_values($removed),
+                'before' => $current,
+                'after' => $target,
+            )
+        );
 
-            // No-change short-circuit (symmetric with the upward inherit path):
-            // a no-op parent save would otherwise re-write NATIVE terms + log for
-            // every descendant even when they already hold the terms. Skip the
-            // native write for children already in the target state.
-            if (!$this->write_would_change_terms($child_id, $taxonomy, $parent_terms, $conflict_handling)) {
-                continue;
-            }
-
-            $this->apply_terms_to_post($child_id, $taxonomy, $parent_terms, $conflict_handling);
-
-            $this->debug_log(
-                sprintf('Propagated terms from parent %d to child %d', $parent_id, $child_id),
-                array('taxonomy' => $taxonomy, 'terms' => $parent_terms)
-            );
-        }
+        return $this->terms_fingerprint($post_id, $taxonomy) !== $before;
     }
 
     /**
-     * Propagate term removals from parent to all children
+     * The entities this post's change reaches: its IMMEDIATE children (#62).
      *
-     * When terms are removed from the parent post, remove those same terms from child posts
-     * (but only if the child has them - don't remove terms the child has independently)
+     * Not the whole subtree. Each child's own pass fans out to ITS children, so
+     * a chain of any depth is walked one level per pass, by the queue, with the
+     * drain's one-pass-per-entity bound as the termination argument. Returning
+     * the full descendant set would work too and would be strictly more
+     * expensive — the same posts, enqueued repeatedly by every ancestor.
      *
-     * @param int $parent_id Parent post ID
-     * @param array $rule Propagation rule configuration
-     * @param array $removed_tt_ids Term taxonomy IDs that were removed from parent
+     * Gated on the rule applying to THIS post, because that is what makes it a
+     * source: a rule that would not read this post's terms has no effect here
+     * to carry downward. The child's own eligibility is decided in its own
+     * apply.
+     *
+     * @param int   $post_id Post just passed over.
+     * @param array $rule    The propagation rule.
+     * @return int[] Immediate child post IDs.
      */
-    private function propagate_term_removals_to_children($parent_id, $rule, $removed_tt_ids) {
-        $children = $this->get_all_child_posts($parent_id, $this->resolve_child_post_types($rule));
-
-        if (empty($children)) {
-            return;
+    public function fan_out(int $post_id, array $rule): array {
+        if ((string) ($rule['taxonomy'] ?? '') === '') {
+            return array();
+        }
+        if (!$this->should_process_post($post_id, $rule)) {
+            return array();
         }
 
-        $taxonomy = $rule['taxonomy'];
-
-        // Convert term_taxonomy IDs to term IDs
-        $removed_term_ids = $this->convert_tt_ids_to_term_ids($removed_tt_ids, $taxonomy);
-
-        if (empty($removed_term_ids)) {
-            return;
+        $post_types = $this->resolve_child_post_types($rule);
+        if (empty($post_types)) {
+            return array();
         }
 
-        foreach ($children as $child_id) {
-            // Get current child terms
-            $child_terms = wp_get_object_terms($child_id, $taxonomy, array('fields' => 'ids'));
-
-            if (is_wp_error($child_terms) || empty($child_terms)) {
-                continue;
-            }
-
-            // Remove only the terms that were removed from parent
-            $updated_child_terms = array_diff($child_terms, $removed_term_ids);
-
-            // Only update if terms actually changed
-            if ($updated_child_terms !== $child_terms) {
-                wp_set_object_terms($child_id, $updated_child_terms, $taxonomy);
-
-                // Also update ACF fields if they exist
-                $this->remove_terms_from_acf_fields($child_id, $taxonomy, $removed_term_ids);
-
-                $this->debug_log(
-                    sprintf('Removed terms from child %d (removed from parent %d)', $child_id, $parent_id),
-                    array(
-                        'taxonomy' => $taxonomy,
-                        'removed_terms' => $removed_term_ids,
-                        'child_terms_before' => $child_terms,
-                        'child_terms_after' => $updated_child_terms
-                    )
-                );
-            }
+        // Memoized per (post, post-type set) for the request: a pass asks once
+        // per RULE, and two propagation rules scoped to the same post types
+        // declare the same children. The children of one post do not change
+        // within a request — nothing here writes `post_parent`.
+        $key = $post_id . '|' . implode(',', $post_types);
+        if (isset($this->child_cache[$key])) {
+            return $this->child_cache[$key];
         }
+
+        $children = get_posts(array(
+            'post_type'      => $post_types,
+            'post_parent'    => $post_id,
+            'post_status'    => self::CHILD_STATUSES,
+            'numberposts'    => -1,
+            'fields'         => 'ids',
+            'suppress_filters' => false,
+        ));
+
+        return $this->child_cache[$key] = array_map('intval', (array) $children);
     }
 
     /**
-     * Composite key into $removals_handled. Written by on_parent_terms_deleted,
-     * read+cleared by on_parent_terms_set — one place so the shape can't drift
-     * between the two sites. (#47)
+     * CAPTURE hook (not an apply): record which terms just left an object.
+     *
+     * Fires for `wp_remove_object_terms()` — which does NOT fire
+     * `set_object_terms` — and, on the plain `wp_set_object_terms()` path, for
+     * the terms WP drops through its own internal `wp_remove_object_terms()`
+     * (taxonomy.php:2924). Either way this is the last moment the information
+     * exists: afterwards the child's applier can see only that the parent does
+     * not have the term, which is also true of a term the parent never had.
+     *
+     * Records nothing when no enabled rule works in this taxonomy, so a site
+     * without propagation rules pays no tt_id lookup on every term removal.
+     *
+     * @param int    $object_id Object the terms were removed from.
+     * @param array  $tt_ids    Removed term_taxonomy IDs.
+     * @param string $taxonomy  Taxonomy slug.
+     */
+    public function capture_removed_terms($object_id, $tt_ids, $taxonomy): void {
+        if (empty($tt_ids) || !is_numeric($object_id)) {
+            return;
+        }
+
+        $taxonomy = (string) $taxonomy;
+        if (!$this->taxonomy_in_use($taxonomy)) {
+            return;
+        }
+
+        $term_ids = $this->convert_tt_ids_to_term_ids((array) $tt_ids, $taxonomy);
+        if (empty($term_ids)) {
+            return;
+        }
+
+        $key = $this->removal_key((int) $object_id, $taxonomy);
+
+        $this->captured_removals[$key] = array_values(array_unique(array_merge(
+            $this->captured_removals[$key] ?? array(),
+            $term_ids
+        )));
+    }
+
+    /**
+     * What a parent LOST this request and has not since regained.
+     *
+     * The intersection with "not currently on the parent" is what keeps the
+     * capture from over-subtracting, and it settles two cases at once:
+     *
+     *  - The #45 case. `get_post_terms()` reads native ∪ ACF, and within one
+     *    request the parent's ACF mirror lags its native store (the mirror's
+     *    own write has not fired yet), so the union re-reads a just-removed
+     *    term as still present. It is absent NATIVELY, so it stays in this set
+     *    and is subtracted from both the source and the child — the term cannot
+     *    bounce back down.
+     *  - Remove-then-re-add in one request. The term IS present natively again,
+     *    so it drops out of this set and the child keeps it. The pre-#62 delta
+     *    model could not distinguish this; it excluded every same-pass removal
+     *    from the add source unconditionally.
+     *
+     * @param int    $parent_id
+     * @param string $taxonomy
+     * @return int[] Term IDs to subtract.
+     */
+    private function parent_removals(int $parent_id, string $taxonomy): array {
+        $captured = $this->captured_removals[$this->removal_key($parent_id, $taxonomy)] ?? array();
+        if (empty($captured)) {
+            return array();
+        }
+
+        return array_values(array_diff(
+            $captured,
+            $this->current_term_ids($parent_id, $taxonomy)
+        ));
+    }
+
+    /**
+     * Whether any enabled rule of this handler works in a taxonomy — the
+     * capture hook's cheap gate.
+     *
+     * @param string $taxonomy
+     * @return bool
+     */
+    private function taxonomy_in_use(string $taxonomy): bool {
+        if ($taxonomy === '') {
+            return false;
+        }
+        foreach ($this->get_enabled_rules() as $rule) {
+            if (($rule['taxonomy'] ?? '') === $taxonomy) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * The post's current NATIVE term IDs, sorted — one side of every
+     * comparison in this handler.
+     *
+     * @param int    $post_id
+     * @param string $taxonomy
+     * @return int[]
+     */
+    private function current_term_ids(int $post_id, string $taxonomy): array {
+        $ids = wp_get_object_terms($post_id, $taxonomy, array('fields' => 'ids'));
+        if (is_wp_error($ids)) {
+            return array();
+        }
+
+        return $this->normalize_term_ids((array) $ids);
+    }
+
+    /**
+     * The term set this post should end up holding: the claim's end state,
+     * minus what the parent lost.
+     *
+     * The claim half is `compute_end_state()` on the base — the SAME function
+     * `apply_terms_to_post()` writes through, which is what stops the
+     * merge/replace/skip semantics being encoded twice and drifting (#38
+     * cluster 2). The subtraction is propagation's own, and applies in every
+     * claim (see apply_to_post()).
+     *
+     * @param int[]  $current           Current term IDs (sorted).
+     * @param int[]  $source            Parent's terms, removals already excluded.
+     * @param string $conflict_handling merge|replace|skip.
+     * @param int[]  $removed           Terms the parent lost this request.
+     * @return int[] Sorted target term IDs.
+     */
+    private function target_term_ids(array $current, array $source, string $conflict_handling, array $removed): array {
+        // A SOURCE WITH NOTHING IN IT IS NOT AN INSTRUCTION TO EMPTY THE TARGET.
+        // Both pre-#62 push paths returned early on `empty($parent_terms)`, and
+        // that early return was load-bearing under the `replace` claim: a parent
+        // holding no terms in this taxonomy would otherwise compute an end state
+        // of [] and strip the child's own terms. It is not a real reconcile
+        // either — a rule whose source has nothing to say has nothing to say.
+        // The parent's REMOVALS still apply, because those are a statement about
+        // specific terms rather than about the source set, and that is the case
+        // the old code reached through its separate removal walk.
+        if (empty($source)) {
+            return empty($removed)
+                ? $this->normalize_term_ids($current)
+                : array_values(array_diff($this->normalize_term_ids($current), $this->normalize_term_ids($removed)));
+        }
+
+        $target = $this->compute_end_state($current, $source, $conflict_handling);
+
+        if (!empty($removed)) {
+            $target = array_values(array_diff($target, $this->normalize_term_ids($removed)));
+            sort($target);
+        }
+
+        return $target;
+    }
+
+    /**
+     * Composite key into $captured_removals. One place so the shape cannot
+     * drift between writer and reader.
      *
      * @param int    $object_id
      * @param string $taxonomy
      * @return string
      */
-    private function removal_key($object_id, $taxonomy): string {
+    private function removal_key(int $object_id, string $taxonomy): string {
         return $object_id . ':' . $taxonomy;
     }
 
@@ -539,134 +473,17 @@ class PropagationHandler extends UnifiedHandlerBase {
     }
 
     /**
-     * Remove specific terms from ACF taxonomy fields
-     *
-     * @param int $post_id Post ID
-     * @param string $taxonomy Taxonomy name
-     * @param array $terms_to_remove Term IDs to remove
-     */
-    private function remove_terms_from_acf_fields($post_id, $taxonomy, $terms_to_remove) {
-        // Value-independent discovery (not get_field_objects — FALSE on empty).
-        // (0.6.0 ACF B-sweep.) Removing from an already-empty field is a no-op.
-        foreach ($this->get_acf_taxonomy_fields($post_id, $taxonomy) as $field) {
-            $current_terms = $this->get_acf_taxonomy_value($post_id, $field['name'], $taxonomy);
-
-            // Remove the specified terms
-            $updated_terms = array_diff($current_terms, $terms_to_remove);
-
-            if ($updated_terms !== $current_terms) {
-                $this->set_acf_taxonomy_value($post_id, $field['key'], $updated_terms);
-            }
-        }
-    }
-    
-    /**
-     * Inherit terms from parent to child
-     */
-    private function inherit_terms_from_parent($child_id, $child_post, $rule) {
-        $parent_id = $child_post->post_parent;
-        $parent_post = get_post($parent_id);
-
-        // Gate on the PARENT here; on_parent_post_save already gated the child.
-        // In stock WP a post_parent is always the same post type as the child
-        // (the editor's parent dropdown is type-scoped), so the two gates always
-        // agree and this double-gate is redundant-but-harmless. It only diverges
-        // under a cross-type post_parent (programmatic / non-stock) — if that
-        // ever becomes real, decide whether propagation scopes the source
-        // (parent), the target (child), or both. (0.6.0 review)
-        if (!$parent_post || !$this->should_process_post($parent_id, $rule)) {
-            return;
-        }
-
-        $taxonomy = $rule['taxonomy'];
-        $conflict_handling = $rule['conflict_handling'] ?? 'merge';
-
-        // Get parent terms
-        $parent_terms = $this->get_post_terms($parent_id, $taxonomy);
-
-        if (empty($parent_terms)) {
-            return;
-        }
-
-        // ACF taxonomy mirror fields are a SEPARATE store from native terms and
-        // can drift independently, so re-sync unconditionally — it self-guards
-        // against redundant writes. The native-term short-circuit below must NOT
-        // gate it (symmetric with propagate_terms_to_children), else a
-        // native-correct/ACF-stale child never gets its ACF field repaired.
-        $this->update_acf_fields_for_post($child_id, $taxonomy, $parent_terms, $conflict_handling);
-
-        // No-change short-circuit. WP fires save_post more than once per editor
-        // save (and a create is often two requests), so without this the same
-        // inherit re-runs — redundant NATIVE write + duplicate debug log. Compute
-        // the would-be end state for this conflict mode and skip the native write
-        // if the child is already there. Cause-agnostic (covers both intra-request
-        // double-fire and cross-request re-save). (V12)
-        if (!$this->write_would_change_terms($child_id, $taxonomy, $parent_terms, $conflict_handling)) {
-            return;
-        }
-
-        $this->apply_terms_to_post($child_id, $taxonomy, $parent_terms, $conflict_handling);
-
-        $this->debug_log(
-            sprintf('Child %d inherited terms from parent %d', $child_id, $parent_id),
-            array('taxonomy' => $taxonomy, 'terms' => $parent_terms)
-        );
-    }
-
-    /**
-     * Whether applying $terms to $post_id under $conflict_handling would actually
-     * change the post's current terms. False ⇒ already in the target state, skip
-     * the write (and the log). Mirrors apply_terms_to_post's per-mode end state.
-     * Shared by BOTH directions — upward inherit and downward propagate — so the
-     * no-change short-circuit and the conflict-mode semantics live in one place.
-     * (V12)
-     *
-     * @param int      $post_id
-     * @param string   $taxonomy
-     * @param int[]    $terms             Term IDs to apply.
-     * @param string   $conflict_handling merge|replace|skip.
-     * @return bool
-     */
-    private function write_would_change_terms($post_id, $taxonomy, $terms, $conflict_handling): bool {
-        $current = wp_get_object_terms($post_id, $taxonomy, array('fields' => 'ids'));
-        if (is_wp_error($current)) {
-            return true; // can't tell — let the write proceed
-        }
-
-        $current = array_map('absint', $current);
-        $incoming = array_map('absint', $terms);
-        sort($current);
-
-        switch ($conflict_handling) {
-            case 'replace':
-                // Skip only if the post already equals the incoming set exactly.
-                $target = $incoming;
-                sort($target);
-                return $current !== $target;
-
-            case 'skip':
-                // skip mode writes only when the post has no terms yet.
-                return empty($current);
-
-            case 'merge':
-            default:
-                // Skip if the incoming set is already a subset of the current.
-                return !empty(array_diff($incoming, $current));
-        }
-    }
-
-    /**
      * Resolve the rule's `post_types` checkboxes to a concrete slug list for
-     * the child-post query.
+     * the child query.
      *
      * The post-type GATE (should_process_post) treats empty as "all" and never
-     * needs concrete slugs; the child WALK does — get_posts needs real post
-     * types to query by post_parent. So empty `post_types` ⇒ every HIERARCHICAL
+     * needs concrete slugs; the fan-out does — get_posts needs real post types
+     * to query by post_parent. So empty `post_types` ⇒ every HIERARCHICAL
      * public post type (propagation only acts on parent/child trees; V5). A
      * non-empty checkbox map/list is flattened via the canonical extractor.
      *
      * @param array $rule Rule config.
-     * @return string[] Post-type slugs to walk for children.
+     * @return string[] Post-type slugs to query for children.
      */
     private function resolve_child_post_types($rule): array {
         $slugs = \BWS\MetaConductor\Admin\Config\ConfigHelpers::selected_checkbox_slugs(
@@ -681,62 +498,33 @@ class PropagationHandler extends UnifiedHandlerBase {
     }
 
     /**
-     * Get all child posts recursively
-     *
-     * @param int      $parent_id  Parent post ID.
-     * @param string[] $post_types Post-type slugs to query (get_posts accepts an array).
-     * @return int[] Child post IDs (recursive).
-     */
-    private function get_all_child_posts($parent_id, array $post_types) {
-        if (empty($post_types)) {
-            return array();
-        }
-
-        $children = array();
-
-        $child_posts = get_posts(array(
-            'post_type' => $post_types,
-            'post_parent' => $parent_id,
-            'post_status' => array('publish', 'draft', 'private'),
-            'numberposts' => -1,
-            'fields' => 'ids'
-        ));
-
-        foreach ($child_posts as $child_id) {
-            $children[] = $child_id;
-
-            // Recursively get children of children
-            $grandchildren = $this->get_all_child_posts($child_id, $post_types);
-            $children = array_merge($children, $grandchildren);
-        }
-
-        return $children;
-    }
-    
-    /**
      * Get post terms as the UNION of the native taxonomy and any ACF taxonomy
      * field(s) for $taxonomy.
      *
      * Propagation treats "the source's terms" as one merged set and mirrors it
-     * into BOTH stores on the targets (native via apply_terms_to_post, ACF via
+     * into BOTH stores on the target (native via wp_set_object_terms, ACF via
      * update_acf_fields_for_post). With the ACF field's Load/Save Terms ON (the
      * normal case) native == ACF, so the union is a no-op and the two stores stay
      * in lockstep. With Load/Save Terms OFF the two stores are intentionally
-     * independent — and this union collapses that separation on the targets: a
+     * independent — and this union collapses that separation on the target: a
      * parent's native-only term lands in the child's ACF field and vice-versa.
      * That is accepted behavior (0.6.0); propagation is not channel-preserving.
      * If a "keep native and ACF separate" model is ever needed, this method and
      * the two writers must track native→native / ACF→ACF as distinct channels.
+     *
+     * @param int    $post_id
+     * @param string $taxonomy
+     * @return int[]
      */
     private function get_post_terms($post_id, $taxonomy) {
         $terms = array();
-        
+
         // Get native taxonomy terms
         $native_terms = wp_get_object_terms($post_id, $taxonomy, array('fields' => 'ids'));
         if (!is_wp_error($native_terms)) {
-            $terms = array_merge($terms, $native_terms);
+            $terms = array_merge($terms, (array) $native_terms);
         }
-        
+
         // Get ACF taxonomy field terms. Value-independent discovery (not
         // get_field_objects, which returns FALSE for a post with no saved ACF
         // values) so an ACF-only source whose field is attached-but-empty still
@@ -746,13 +534,24 @@ class PropagationHandler extends UnifiedHandlerBase {
             $terms = array_merge($terms, $acf_terms);
         }
 
-        return array_unique(array_filter($terms));
+        return $this->normalize_term_ids($terms);
     }
-    
+
     /**
-     * Update ACF fields for a post with new terms
+     * Mirror the reconciled set into this post's ACF taxonomy field(s).
+     *
+     * Same end state as the native write — the shared `compute_end_state()`
+     * plus the parent's removals — computed against the FIELD's current value
+     * rather than the native one, because the two stores can legitimately
+     * differ (see get_post_terms()).
+     *
+     * @param int    $post_id
+     * @param string $taxonomy
+     * @param int[]  $source            Parent's terms, removals already excluded.
+     * @param string $conflict_handling merge|replace|skip.
+     * @param int[]  $removed           Terms the parent lost this request.
      */
-    private function update_acf_fields_for_post($post_id, $taxonomy, $terms, $conflict_handling) {
+    private function update_acf_fields_for_post($post_id, $taxonomy, $source, $conflict_handling, $removed = array()) {
         // Value-independent field discovery: get_field_objects() returns FALSE for
         // a post with no saved ACF values, so a never-populated child could never
         // get its first ACF write. get_acf_taxonomy_fields resolves by location
@@ -760,32 +559,14 @@ class PropagationHandler extends UnifiedHandlerBase {
         foreach ($this->get_acf_taxonomy_fields($post_id, $taxonomy) as $field) {
             // Read current value by name (get_field), write by KEY (first-write
             // reference-row registration — see set_acf_taxonomy_value).
-            $current_terms = $this->get_acf_taxonomy_value($post_id, $field['name'], $taxonomy);
-            $new_terms = $this->merge_terms_based_on_conflict_handling($current_terms, $terms, $conflict_handling);
+            $current_terms = $this->normalize_term_ids(
+                $this->get_acf_taxonomy_value($post_id, $field['name'], $taxonomy)
+            );
+            $new_terms = $this->target_term_ids($current_terms, $source, $conflict_handling, $removed);
 
             if ($new_terms !== $current_terms) {
                 $this->set_acf_taxonomy_value($post_id, $field['key'], $new_terms);
             }
         }
     }
-    
-    /**
-     * Merge terms based on conflict handling
-     */
-    private function merge_terms_based_on_conflict_handling($current_terms, $new_terms, $conflict_handling) {
-        switch ($conflict_handling) {
-            case 'replace':
-                return $new_terms;
-                
-            case 'merge':
-                return array_unique(array_merge($current_terms, $new_terms));
-                
-            case 'skip':
-                return empty($current_terms) ? $new_terms : $current_terms;
-                
-            default:
-                return $current_terms;
-        }
-    }
-    
 }

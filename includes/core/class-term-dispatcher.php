@@ -74,6 +74,15 @@ if (!defined('ABSPATH')) {
  * to name entities; what happens to them is the pass's, which is what makes
  * "the same pass however provoked" true of cron as well as of a save.
  *
+ * A CROSS-ENTITY RULE DECLARES, IT DOES NOT REACH. `apply_to_post()` writes the
+ * entity it was handed; a rule whose effect lands on OTHER entities returns them
+ * from `fan_out()` and the dispatcher marks them dirty (#62). Each then gets its
+ * own full ordered pass, which is what stops the far entity being reconciled by
+ * one rule out of authored order while the rest of the list runs against it from
+ * whatever hooks fire — the shape of #35. Declaring neighbours rather than
+ * closures keeps the recursion in the queue, where the drain's one-pass-per-
+ * entity bound terminates it.
+ *
  * CONVERSION IS INCREMENTAL. `CONVERTED_TYPES` is what a pass runs;
  * `UNCONVERTED_TYPES` still own their hooks and are named here so each
  * conversion ticket shrinks a visible list. H13
@@ -120,6 +129,27 @@ class TermDispatcher {
     private const SAVE_DRAIN_PRIORITY = 999;
 
     /**
+     * Passes one entity may get in a single drain.
+     *
+     * A TERMINATION BOUND, NOT A CORRECTNESS PROPERTY. Appliers are idempotent
+     * and recompute from live state, so a re-pass over an entity nothing has
+     * changed costs reads and writes nothing — but the queue is a fixpoint
+     * iteration and something has to stop it. Two things could otherwise run
+     * away: a declared fan-out is collected once per rule per pass whether or
+     * not the apply changed anything (see enqueue_fan_out()), and an
+     * unconverted handler still writing another post from its own hooks can
+     * mark an entity that then marks it back.
+     *
+     * The common shapes need exactly one pass each — nothing fans UPWARD, so a
+     * tree drained from its root passes every node once and this cap never
+     * binds. It binds only when marks arrive out of dependency order, which
+     * needs one extra pass per level that was drained early; three covers the
+     * realistic case (a bulk edit touching a parent and its child) with room,
+     * and bounds the total at 3× the entities in the queue.
+     */
+    private const MAX_PASSES_PER_DRAIN = 3;
+
+    /**
      * Rule types the dispatcher executes, as pure appliers.
      *
      * A type here MUST register no apply hooks of its own; a type in
@@ -133,6 +163,7 @@ class TermDispatcher {
         'hierarchical_level_restriction_rules',
         'time_based_rules',
         'related_rules',
+        'propagation_rules',
     ];
 
     /**
@@ -145,7 +176,6 @@ class TermDispatcher {
      * @var string[]
      */
     private const UNCONVERTED_TYPES = [
-        'propagation_rules',
         'related_post_terms_rules',
     ];
 
@@ -158,8 +188,19 @@ class TermDispatcher {
      * handler's applier during a pass, so the dispatcher stays the sole caller
      * of `apply_to_post`.
      *
-     * Empty today — neither converted type reads pre-write state.
-     * `related_post_terms` is the type that will need entries here
+     * `propagation_rules` is the first entry (#62). Its pull applier answers
+     * "what should this child hold, given its parent" from live state, and
+     * live state cannot answer the one question that needs history: a term the
+     * parent HELD and then lost is, on the child, indistinguishable from a term
+     * the child holds independently. Nothing on either post records which. So
+     * the removal itself is captured as it happens — `deleted_term_relationships`
+     * is the only hook that sees it, including on the plain
+     * `wp_set_object_terms` path where WP drops terms through an internal
+     * `wp_remove_object_terms` — and each child's applier subtracts what its
+     * parent lost. The capture writes to a request-scoped map and applies
+     * nothing.
+     *
+     * `related_post_terms` is the type that will need the next entries
      * (`capture_removed_dependents` on `acf/update_value/type=relationship`
      * and `.../type=post_object`, which read the dependent end of a
      * relationship before ACF overwrites it); it is unconverted, so every hook
@@ -167,7 +208,9 @@ class TermDispatcher {
      *
      * @var array<string,string[]>
      */
-    private const CAPTURE_HOOKS = [];
+    private const CAPTURE_HOOKS = [
+        'propagation_rules' => ['deleted_term_relationships'],
+    ];
 
     /**
      * Handlers keyed by RULE type (`hierarchical_rules`), not handler type.
@@ -253,15 +296,21 @@ class TermDispatcher {
      * Every registration here is mark-only, so priority carries no meaning on
      * any of them — the pass happens at the drain. `set_object_terms` covers
      * both native term writes and anything that routes through
-     * `wp_set_object_terms`; `save_post` covers a save that touched no terms
-     * at all (a rule can key off post fields); `acf/save_post` covers the ACF
-     * editor path. Bare `update_field()` writes fire none of these and reach
-     * the queue through `AcfWriteQueue`, which marks them dirty as it flushes.
+     * `wp_set_object_terms`; `deleted_term_relationships` covers the one term
+     * write that does NOT — `wp_remove_object_terms()` fires it and nothing
+     * else, so without it a term taken off a post by that route provokes no
+     * pass at all (#62; propagation hooked it privately for this reason since
+     * #47, and the gap was never propagation's alone); `save_post` covers a
+     * save that touched no terms at all (a rule can key off post fields);
+     * `acf/save_post` covers the ACF editor path. Bare `update_field()` writes
+     * fire none of these and reach the queue through `AcfWriteQueue`, which
+     * marks them dirty as it flushes.
      */
     public function register(): void {
         self::$instance = $this;
 
         add_action('set_object_terms', [$this, 'on_terms_set'], 10, 6);
+        add_action('deleted_term_relationships', [$this, 'on_terms_deleted'], 10, 3);
         add_action('save_post', [$this, 'on_save_post'], 10, 1);
         add_action('acf/save_post', [$this, 'on_acf_save_post'], 10, 1);
 
@@ -284,6 +333,23 @@ class TermDispatcher {
      * @param mixed  $old_tt_ids Unused.
      */
     public function on_terms_set($object_id, $terms = null, $tt_ids = null, $taxonomy = '', $append = false, $old_tt_ids = null): void {
+        $this->mark_dirty($object_id);
+    }
+
+    /**
+     * Trigger: a term relationship was deleted. Marks only — see register().
+     *
+     * `wp_remove_object_terms()` fires this and NOT `set_object_terms`, so it
+     * is a distinct entry point rather than a duplicate of one; on the plain
+     * `wp_set_object_terms()` path it also fires first, for the terms WP drops
+     * internally, and the mark it makes there simply coalesces with the one the
+     * following `set_object_terms` makes.
+     *
+     * @param int    $object_id Object the terms were removed from.
+     * @param mixed  $tt_ids    Unused — a pass is not scoped to a term.
+     * @param string $taxonomy  Unused — a pass is not scoped to a taxonomy.
+     */
+    public function on_terms_deleted($object_id, $tt_ids = null, $taxonomy = ''): void {
         $this->mark_dirty($object_id);
     }
 
@@ -347,9 +413,18 @@ class TermDispatcher {
      * late, is what makes the pass count one-per-entity rather than
      * one-per-trigger.
      *
-     * A pass can enqueue further entities (a rule writing a child post), so
-     * this drains until empty; `$seen` bounds the loop at one pass per entity
-     * per drain, the same bound `AcfWriteQueue::flush` uses.
+     * A pass can enqueue further entities (a rule writing a child post, or a
+     * declared fan-out), so this drains until empty; `$passes` bounds the loop
+     * at `MAX_PASSES_PER_DRAIN` per entity.
+     *
+     * WHY THE BOUND IS NOT ONE (#62). It was, and one is not enough once a rule
+     * declares a fan-out: nothing orders the queue, so an entity can be drained
+     * BEFORE the entity it depends on. Two posts of one tree marked by the same
+     * request — a bulk edit, an ACF flush — can arrive child-first; the child's
+     * pass then reconciles against a parent that has not been passed yet, and
+     * the parent's fan-out re-mark would be silently discarded as "already
+     * seen", leaving the child settled against pre-pass state. Allowing a
+     * re-pass is a fixpoint iteration, and the cap is what makes it terminate.
      */
     public function drain(): void {
         if ($this->draining) {
@@ -358,16 +433,16 @@ class TermDispatcher {
         $this->draining = true;
 
         try {
-            $seen = [];
+            $passes = [];
             while (!empty($this->dirty)) {
                 $ids         = array_keys($this->dirty);
                 $this->dirty = [];
 
                 foreach ($ids as $id) {
-                    if (isset($seen[$id])) {
+                    if (($passes[$id] ?? 0) >= self::MAX_PASSES_PER_DRAIN) {
                         continue;
                     }
-                    $seen[$id] = true;
+                    $passes[$id] = ($passes[$id] ?? 0) + 1;
                     $this->run_pass($id);
                 }
             }
@@ -447,12 +522,44 @@ class TermDispatcher {
                 if (self::apply($post_id, $rule, $handler)) {
                     $changed++;
                 }
+
+                $this->enqueue_fan_out($post_id, $rule, $handler);
             }
         } finally {
             unset(self::$passes[self::pass_key(self::KIND, $post_id)]);
         }
 
         return $changed;
+    }
+
+    /**
+     * Mark the entities a rule's effect reaches from this one (#62).
+     *
+     * A cross-entity rule does not write the far entity — it declares it, and
+     * that entity gets its OWN full ordered pass. Which is the whole point:
+     * a post written from inside another post's pass is reconciled by one rule
+     * out of authored order, and the rest of the list then runs against it on
+     * whatever hooks happen to fire. That is #35, and the queue is what
+     * dissolves it.
+     *
+     * Called AFTER the apply and regardless of its result — the parent whose
+     * terms a user just edited is precisely the case where the applier reports
+     * no change to the parent and the children are what must be reconciled.
+     *
+     * Marking, not passing: `mark_dirty()` drops anything under its own pass
+     * lock, so a parent/child cycle cannot nest, and `drain()` bounds the
+     * queue at one pass per entity per drain, so a chain of any depth
+     * terminates. The far entity may equally be marked by something else in
+     * the same request; the queue coalesces that to one pass either way.
+     *
+     * @param int                $post_id Entity just passed over by this rule.
+     * @param array              $rule    The rule.
+     * @param UnifiedHandlerBase $handler Its handler.
+     */
+    private function enqueue_fan_out(int $post_id, array $rule, UnifiedHandlerBase $handler): void {
+        foreach ($handler->fan_out($post_id, $rule) as $entity_id) {
+            $this->mark_dirty($entity_id);
+        }
     }
 
     /**

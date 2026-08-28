@@ -5,8 +5,8 @@
  * Native WP taxonomy-term primitives shared by handlers on UnifiedHandlerBase:
  * apply / remove terms honoring conflict handling, membership test, and a
  * change-detection fingerprint. Stateless — every method operates purely on its
- * arguments plus WP core functions (no $this member access), so composition
- * into the base is behavior-identical to inline declaration.
+ * arguments, WP core functions and its trait siblings (no handler member state),
+ * so composition into the base is behavior-identical to inline declaration.
  *
  * Composed into UnifiedHandlerBase (see its `use`). Kept as a trait so the base
  * file stays agent-navigable; call sites resolve unchanged via $this->.
@@ -28,7 +28,8 @@ trait TermOperations {
      * Apply terms to a post honoring conflict handling.
      *
      * Ported from legacy HandlerBase (V10) so handlers migrated onto this
-     * base inherit it. Behavior identical: merge/replace/skip.
+     * base inherit it. The merge/replace/skip semantics live in
+     * compute_end_state() below — this is the write half of that pair (#38).
      *
      * @param int    $post_id           Post ID
      * @param string $taxonomy          Taxonomy
@@ -41,51 +42,101 @@ trait TermOperations {
             return false;
         }
 
-        // Ensure terms are term IDs
-        $term_ids = array();
-        foreach ($terms as $term) {
-            if (is_object($term)) {
-                $term_ids[] = $term->term_id;
-            } elseif (is_array($term)) {
-                $term_ids[] = $term['term_id'];
-            } else {
-                $term_ids[] = absint($term);
-            }
-        }
-
-        $term_ids = array_unique(array_filter($term_ids));
+        $term_ids = $this->normalize_term_ids($terms);
 
         if (empty($term_ids)) {
             return false;
         }
 
+        $existing = \wp_get_object_terms($post_id, $taxonomy, array('fields' => 'ids'));
+        if (\is_wp_error($existing)) {
+            $existing = array();
+        }
+        $current = $this->normalize_term_ids($existing);
+        $target  = $this->compute_end_state($current, $term_ids, $conflict_handling);
+
+        // Equality is the no-op test for EVERY mode, which is what makes `skip`
+        // stop being a special case: on an occupied taxonomy its end state IS
+        // the current set, so it falls out of the same comparison that skips a
+        // redundant merge or replace. Both sides come out of
+        // normalize_term_ids/compute_end_state sorted, so === is a set test.
+        if ($target === $current) {
+            return false;
+        }
+
+        return \wp_set_object_terms($post_id, $target, $taxonomy);
+    }
+
+    /**
+     * The term set a post would END UP with, given what it holds now, what is
+     * being applied, and the rule's claim.
+     *
+     * THE single source for the claim semantics (#38 cluster 2). It used to be
+     * encoded twice — once as the switch inside `apply_terms_to_post` above,
+     * once as `PropagationHandler::write_would_change_terms`'s parallel switch
+     * deciding whether that write was worth making. Two coupled switches with
+     * no shared source: a change to one silently made the other's answer wrong,
+     * and the failure is invisible in both directions (a skipped write that
+     * WOULD have changed terms looks like propagation quietly not happening; a
+     * write that changes nothing looks like nothing at all). Predicate and
+     * apply path now ask the same function, so "would this write change
+     * anything" is `compute_end_state(...) !== $current` by construction rather
+     * than by maintenance.
+     *
+     * The `default` arm returns the current set — i.e. an unrecognised claim
+     * writes nothing, matching the old switch's `default: return false`.
+     *
+     * @param array  $current           Term IDs the post holds now.
+     * @param array  $incoming          Term IDs being applied.
+     * @param string $conflict_handling merge|replace|skip.
+     * @return int[] Sorted, unique term IDs.
+     */
+    protected function compute_end_state(array $current, array $incoming, string $conflict_handling): array {
+        $current  = $this->normalize_term_ids($current);
+        $incoming = $this->normalize_term_ids($incoming);
+
         switch ($conflict_handling) {
             case 'replace':
-                return \wp_set_object_terms($post_id, $term_ids, $taxonomy);
+                return $incoming;
 
             case 'merge':
-                $existing_terms = \wp_get_object_terms($post_id, $taxonomy, array('fields' => 'ids'));
-                if (\is_wp_error($existing_terms)) {
-                    $existing_terms = array();
-                }
-                $merged_terms = array_unique(array_merge($existing_terms, $term_ids));
-                return \wp_set_object_terms($post_id, $merged_terms, $taxonomy);
+                $merged = array_unique(array_merge($current, $incoming));
+                sort($merged);
+                return array_values($merged);
 
             case 'skip':
-                $existing_terms = \wp_get_object_terms($post_id, $taxonomy, array('fields' => 'ids'));
-                if (\is_wp_error($existing_terms)) {
-                    $existing_terms = array();
-                }
-
-                // Only apply if no existing terms
-                if (empty($existing_terms)) {
-                    return \wp_set_object_terms($post_id, $term_ids, $taxonomy);
-                }
-                return false;
+                // Deferring, not contributing (ADR 0004): writes only into an
+                // empty taxonomy.
+                return empty($current) ? $incoming : $current;
 
             default:
-                return false;
+                return $current;
         }
+    }
+
+    /**
+     * Coerce a mixed term list (IDs, `WP_Term`s, term arrays) to sorted unique
+     * positive term IDs, so every comparison in this trait is a set comparison.
+     *
+     * @param array $terms Term IDs, objects, or arrays.
+     * @return int[]
+     */
+    protected function normalize_term_ids(array $terms): array {
+        $ids = array();
+        foreach ($terms as $term) {
+            if (is_object($term)) {
+                $ids[] = (int) $term->term_id;
+            } elseif (is_array($term)) {
+                $ids[] = (int) ($term['term_id'] ?? 0);
+            } else {
+                $ids[] = absint($term);
+            }
+        }
+
+        $ids = array_unique(array_filter($ids));
+        sort($ids);
+
+        return array_values($ids);
     }
 
     /**
@@ -108,19 +159,9 @@ trait TermOperations {
             return false;
         }
 
-        // Ensure terms are term IDs
-        $term_ids_to_remove = array();
-        foreach ($terms as $term) {
-            if (is_object($term)) {
-                $term_ids_to_remove[] = $term->term_id;
-            } elseif (is_array($term)) {
-                $term_ids_to_remove[] = $term['term_id'];
-            } else {
-                $term_ids_to_remove[] = absint($term);
-            }
-        }
+        $term_ids_to_remove = $this->normalize_term_ids($terms);
 
-        $remaining_terms = array_diff($existing_terms, $term_ids_to_remove);
+        $remaining_terms = array_diff($this->normalize_term_ids($existing_terms), $term_ids_to_remove);
 
         return \wp_set_object_terms($post_id, $remaining_terms, $taxonomy);
     }

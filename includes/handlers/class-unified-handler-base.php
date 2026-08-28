@@ -655,6 +655,50 @@ abstract class UnifiedHandlerBase {
     }
 
     /**
+     * The OTHER entities this rule's effect reaches from $post_id. THE declared
+     * fan-out seam (#62).
+     *
+     * WHY A DECLARATION RATHER THAN A WALK. `apply_to_post()` writes the entity
+     * it was handed and nothing else — that is what makes a pass the unit of
+     * execution, because an entity written from inside another entity's pass
+     * never gets an ordered pass of its own. Propagation is the first rule type
+     * whose effect is genuinely about a second entity, and it was writing its
+     * descendants directly: the child was reconciled by ONE rule, out of band,
+     * and hierarchical then expanded that write on its own hook — one extra
+     * level of terms, which is #35.
+     *
+     * So a cross-entity rule INVERTS. Its applier pulls: it reconciles the post
+     * it is given by reading the entities the rule points at. And separately it
+     * declares, here, which entities its own change reaches. The dispatcher
+     * marks those dirty; each gets its OWN full ordered pass, so every rule in
+     * the list sees the child in list order instead of one rule reaching it
+     * first.
+     *
+     * DECLARE NEIGHBOURS, NOT CLOSURES. Return the entities one step away — the
+     * post's immediate children, not every descendant. Each of those gets a
+     * pass, and its own fan-out carries the effect the next step, so the queue
+     * performs the recursion. `TermDispatcher::drain()` bounds it at one pass
+     * per entity per drain, which is what makes a parent/child cycle terminate.
+     *
+     * Empty by default: a rule whose effect stops at the entity it was applied
+     * to declares nothing, and the dispatcher enqueues nothing extra for it.
+     *
+     * Called ONCE PER RULE PER PASS, whether or not the apply changed anything.
+     * That is deliberate: the common case is a parent whose OWN terms a user
+     * edited, where propagation's applier on the parent correctly reports "no
+     * change to the parent" while the children are exactly what must now be
+     * reconciled. Gate it on the rule being applicable to $post_id, not on the
+     * apply's result.
+     *
+     * @param int   $post_id Entity the rule was just applied to.
+     * @param array $rule    The same rule, canonical shape.
+     * @return int[] Entity IDs to mark dirty. Empty for a same-entity rule.
+     */
+    public function fan_out(int $post_id, array $rule): array {
+        return [];
+    }
+
+    /**
      * Reapply this handler's term-sync to a single post after an out-of-band
      * write that fired NO save_post-family hook.
      *

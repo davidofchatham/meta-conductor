@@ -27,7 +27,8 @@
  *   5. `apply_to_post` has exactly ONE call site in the whole plugin, in the
  *      dispatcher. This is the invariant the whole ticket rests on.
  *   6. CONVERTED handlers register NOTHING outside the capture-hook allow-list,
- *      and carry no re-entrancy boolean.
+ *      and carry no re-entrancy boolean. A hook on that allow-list must be a
+ *      CAPTURE — its callback may record and must not apply.
  *   7. UNCONVERTED handlers are enumerated, and the enumeration matches which
  *      handlers still register hooks — so each conversion ticket shrinks a list
  *      that is visible in its diff, and cannot shrink it without doing the work.
@@ -36,6 +37,12 @@
  *      terms itself: a provocation names entities, a pass decides their fate.
  *   9. CONVERTED and UNCONVERTED partition the storage layer's rule types: no
  *      type is in both (double-apply) and none is in neither (silently retired).
+ *  10. Cross-entity rules DECLARE their reach and the pass enqueues it: the
+ *      `fan_out()` seam exists on the base, the pass marks what it returns
+ *      dirty, and a converted handler that overrides it writes only the post it
+ *      was handed. A handler that reached the far entity directly would
+ *      reconcile it by one rule, out of authored order — which is #35, the
+ *      defect #62 exists to remove, and it looks like working code.
  *
  * Run:  php tests/verify-term-dispatcher.php
  *
@@ -101,7 +108,10 @@ $const_list = static function (string $src, string $name): ?array {
 // --- 1. Trigger union + drain ordering -------------------------------------
 // Mark-only registrations, so priority is meaningless on them; the drain's
 // priority is not, and it is the one pinned.
-$triggers = ['set_object_terms', 'save_post', 'acf/save_post'];
+// `deleted_term_relationships` is the one term write `set_object_terms` does
+// NOT cover: wp_remove_object_terms() fires it and nothing else, so without it
+// a term taken off a post that way provokes no pass at all (#62).
+$triggers = ['set_object_terms', 'deleted_term_relationships', 'save_post', 'acf/save_post'];
 foreach ($triggers as $hook) {
     $pattern = '/add_action\(\s*[\'"]' . preg_quote($hook, '/') . '[\'"]\s*,\s*\[\s*\$this\s*,\s*[\'"](\w+)[\'"]\s*\]/';
     if (!preg_match($pattern, $src)) {
@@ -179,7 +189,7 @@ if (!preg_match('/function\s+pass_enabled\s*\(\s*int\s+\$\w+\s*\)\s*:\s*bool\s*\
 // Each trigger callback's body may call mark_dirty and nothing else. A trigger
 // that ran a pass would restore one-pass-per-trigger, which is the defect the
 // queue exists to remove.
-foreach (['on_terms_set', 'on_save_post', 'on_acf_save_post'] as $cb) {
+foreach (['on_terms_set', 'on_terms_deleted', 'on_save_post', 'on_acf_save_post'] as $cb) {
     if (!preg_match('/function\s+' . $cb . '\s*\([^)]*\)\s*:\s*void\s*\{(.*?)\n    \}/s', $src, $bm)) {
         $errors[] = sprintf('Trigger callback %s() not found (or not `: void`).', $cb);
         continue;
@@ -295,9 +305,19 @@ if (count($call_sites) > 1 && !$foreign) {
 $converted   = $const_list($src, 'CONVERTED_TYPES');
 $unconverted = $const_list($src, 'UNCONVERTED_TYPES');
 $capture     = null;
-if (preg_match('/const\s+CAPTURE_HOOKS\s*=\s*(\[.*?\]);/s', $src, $cm)) {
-    preg_match_all('/[\'"]([^\'"]+)[\'"]/', $cm[1], $cvals);
-    $capture = $cvals[1];
+if (preg_match('/const\s+CAPTURE_HOOKS\s*=\s*(\[.*?\]\s*;)/s', $src, $cm)) {
+    // Parse the MAP, not every quoted string inside it. A flat value list makes
+    // the `$capture[$rule_type]` lookup below miss for every type, so the
+    // allow-list silently reads as empty and a legitimate capture hook is
+    // rejected — which is exactly what happened the moment CAPTURE_HOOKS
+    // stopped being `[]` (#62).
+    $capture = [];
+    if (preg_match_all('/[\'"]([^\'"]+)[\'"]\s*=>\s*\[([^\]]*)\]/', $cm[1], $entries, PREG_SET_ORDER)) {
+        foreach ($entries as $entry) {
+            preg_match_all('/[\'"]([^\'"]+)[\'"]/', $entry[2], $hooks);
+            $capture[$entry[1]] = $hooks[1];
+        }
+    }
 }
 
 if ($converted === null) {
@@ -492,6 +512,151 @@ if (!is_file($storage_file)) {
     }
 }
 
+// --- 6b. An allow-listed hook must actually be a CAPTURE -------------------
+// The allow-list names hooks, not behaviour. A handler that put its apply back
+// on a hook it is already allowed to register would pass group 6 unnoticed —
+// the registration is legal, the callback is not. A capture may READ and
+// RECORD; the moment it writes, that rule type is executing outside a pass and
+// out of authored order again, for exactly the entry point the allow-list
+// exists to permit.
+$write_primitives = [
+    'apply_to_post',
+    'apply_terms_to_post',
+    'remove_terms_from_post',
+    'wp_set_object_terms',
+    'wp_remove_object_terms',
+    'set_acf_taxonomy_value',
+];
+
+/**
+ * One method body out of a handler source, or null.
+ *
+ * @param string $body Handler source (comments already blanked).
+ * @param string $name Method name.
+ * @return string|null
+ */
+$method_body = static function (string $body, string $name): ?string {
+    $pattern = '/function\s+' . preg_quote($name, '/') . '\s*\([^)]*\)[^{]*\{(.*?)\n    \}/s';
+
+    return preg_match($pattern, $body, $m) ? $m[1] : null;
+};
+
+foreach (($capture ?? []) as $type => $hooks) {
+    if (!isset($handler_files[$type])) {
+        $errors[] = sprintf("CAPTURE_HOOKS names '%s', which maps to no handler file this harness knows.", $type);
+        continue;
+    }
+    if (!in_array($type, $converted ?? [], true)) {
+        $errors[] = sprintf(
+            "CAPTURE_HOOKS names '%s', which is not CONVERTED — an unconverted handler owns all its hooks, so an allow-list entry for it means nothing.",
+            $type
+        );
+        continue;
+    }
+    $file = $root . '/includes/handlers/' . $handler_files[$type];
+    if (!is_file($file)) {
+        continue; // already reported by group 6
+    }
+    $body = $strip_comments((string) file_get_contents($file));
+
+    foreach ($hooks as $hook) {
+        $pattern = '/add_action\(\s*[\'"]' . preg_quote($hook, '/') . '[\'"]\s*,\s*(?:array\(|\[)\s*\$this\s*,\s*[\'"](\w+)[\'"]/';
+        if (!preg_match($pattern, $body, $hm)) {
+            $errors[] = sprintf(
+                '%s is allowed the capture hook %s but does not register it — an allow-list entry for a hook nobody registers hides the fact that the state it captured is no longer captured.',
+                $handler_files[$type],
+                $hook
+            );
+            continue;
+        }
+        $callback = $hm[1];
+        $cb_body  = $method_body($body, $callback);
+        if ($cb_body === null) {
+            $errors[] = sprintf('%s registers %s => %s(), which is not declared in that file.', $handler_files[$type], $hook, $callback);
+            continue;
+        }
+        foreach ($write_primitives as $effect) {
+            if (preg_match('/\b' . preg_quote($effect, '/') . '\s*\(/', $cb_body)) {
+                $errors[] = sprintf(
+                    '%s::%s() is a CAPTURE hook but calls %s() — capture records, it does not apply; a write here executes that rule type outside any pass (#62).',
+                    $handler_files[$type],
+                    $callback,
+                    $effect
+                );
+            }
+        }
+    }
+}
+
+// --- 10. The declared fan-out ----------------------------------------------
+// A cross-entity rule must DECLARE the entities its effect reaches and let the
+// dispatcher enqueue them, so each gets its own full ordered pass. Writing them
+// from inside the applier instead reconciles the far entity by ONE rule, out of
+// authored order, and the rest of the list then runs against it from whatever
+// hooks fire — that is #35, and it looks exactly like working code because the
+// far entity does end up with the terms.
+$base_file = $root . '/includes/handlers/class-unified-handler-base.php';
+if (!is_file($base_file)) {
+    $errors[] = 'includes/handlers/class-unified-handler-base.php missing — cannot verify the fan-out seam.';
+} else {
+    $base_src = $strip_comments((string) file_get_contents($base_file));
+    if (!preg_match('/public\s+function\s+fan_out\s*\(\s*int\s+\$\w+\s*,\s*array\s+\$\w+\s*\)\s*:\s*array\s*\{/', $base_src)) {
+        $errors[] = 'fan_out(int $post_id, array $rule): array is not declared on UnifiedHandlerBase — every handler must answer the question, so the dispatcher can ask it unconditionally.';
+    }
+}
+
+if (!preg_match('/function\s+run_pass\s*\(\s*int\s+\$\w+\s*\)\s*:\s*int\s*\{(.*?)\n    \}/s', $src, $fm)) {
+    // Already reported by group 3.
+} elseif (!preg_match('/fan_out\(/', $fm[1])) {
+    $errors[] = 'run_pass() never collects the declared fan-out — a cross-entity rule would reach the far entity itself or not at all (#62).';
+}
+
+if (!preg_match('/function\s+enqueue_fan_out\s*\([^)]*\)\s*:\s*void\s*\{(.*?)\n    \}/s', $src, $em)) {
+    $errors[] = 'enqueue_fan_out(): void not found — the fan-out must land in the queue through one named site.';
+} else {
+    $body = $em[1];
+    if (!preg_match('/->fan_out\(/', $body)) {
+        $errors[] = 'enqueue_fan_out() does not ask the handler for its fan-out.';
+    }
+    if (!preg_match('/mark_dirty\(/', $body)) {
+        $errors[] = 'enqueue_fan_out() does not mark the declared entities dirty — the fan-out must ENQUEUE.';
+    }
+    foreach (['run_pass', 'drain', 'apply'] as $executor) {
+        if (preg_match('/\b' . $executor . '\s*\(/', $body)) {
+            $errors[] = sprintf(
+                'enqueue_fan_out() calls %s() — the fan-out names entities; running them inline nests a pass inside a pass and puts the far entity back outside the queue.',
+                $executor
+            );
+        }
+    }
+}
+
+// A converted handler's fan_out() may SELECT; it must not write. The write is
+// what the declaration exists to avoid.
+foreach (($converted ?? []) as $type) {
+    if (!isset($handler_files[$type])) {
+        continue; // already reported by group 6
+    }
+    $file = $root . '/includes/handlers/' . $handler_files[$type];
+    if (!is_file($file)) {
+        continue;
+    }
+    $body = $strip_comments((string) file_get_contents($file));
+    $fan  = $method_body($body, 'fan_out');
+    if ($fan === null) {
+        continue; // inherits the empty default — nothing to check
+    }
+    foreach ($write_primitives as $effect) {
+        if (preg_match('/\b' . preg_quote($effect, '/') . '\s*\(/', $fan)) {
+            $errors[] = sprintf(
+                '%s::fan_out() calls %s() — a fan-out DECLARES entities for their own passes; writing them there is the push model #62 removed.',
+                $handler_files[$type],
+                $effect
+            );
+        }
+    }
+}
+
 if ($errors) {
     fwrite(STDERR, "DISPATCHER FAIL — term dispatcher invariants broken (#60):\n");
     foreach ($errors as $e) {
@@ -501,8 +666,9 @@ if ($errors) {
 }
 
 printf(
-    "DISPATCHER OK — trigger union mark-only, drain after AcfWriteQueue, pass lock (entity, kind), single apply_to_post call site; %d converted / %d still hooked (#60).\n",
+    "DISPATCHER OK — trigger union mark-only, drain after AcfWriteQueue, pass lock (entity, kind), single apply_to_post call site, fan-out declared+enqueued; %d converted / %d still hooked / %d capture type(s) (#60, #62).\n",
     count($converted ?? []),
-    count($unconverted ?? [])
+    count($unconverted ?? []),
+    count($capture ?? [])
 );
 exit(0);

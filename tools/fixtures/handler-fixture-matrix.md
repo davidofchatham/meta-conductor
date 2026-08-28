@@ -389,6 +389,54 @@ H7 extended to validate `{TERM:}` tokens in `post_fields`.
 - Negative controls unchanged. Restore = re-seed (reverts conflict_handling to
   merge, resets the chain).
 
+**Converted to a pull applier + declared fan-out by #62** (`sweep-62-propagation.php`).
+The handler registers nothing except its `deleted_term_relationships` CAPTURE hook,
+and every result above still holds — by a different route. What changed:
+
+- **The direction.** `apply_to_post(P, rule)` reconciles P against P's PARENT and
+  writes P only; `fan_out(P, rule)` returns P's IMMEDIATE children and the
+  dispatcher marks them dirty, so each descendant gets its own full ordered pass.
+  `get_all_child_posts`, `propagate_terms_to_children`,
+  `propagate_term_removals_to_children`, `inherit_terms_from_parent` and the four
+  hook callbacks are all gone; the recursion the first of those did now lives in
+  the queue.
+- **§5a/§5c** are the same statement about the same posts — §62a asserts the whole
+  chain (publish + draft) reaches the term, and adds what the push model could not
+  state: **one pass per chain member**, read off the `meta_conductor_term_pass_enabled`
+  filter, which is the termination proof for the fan-out.
+- **§5b/§5e removal** survive as **§62b**, but the mechanism inverted. There is no
+  removal WALK and no `$removals_handled` dedup any more: `deleted_term_relationships`
+  CAPTURES the removed term ids into a request-scoped map (the only hook that sees
+  a `wp_remove_object_terms`, and the one that fires first on the plain-set path),
+  and each child's applier subtracts what its parent lost. The #45 ACF-mirror-lag
+  bounce is subsumed rather than special-cased: the capture is filtered to terms
+  the parent does NOT currently hold NATIVELY, so a lagging mirror stays excluded
+  and a remove-then-re-add in one request is *not* — which the old blanket
+  exclude-list got wrong. The Load/Save-Terms-OFF caveat above is unchanged.
+- **§62e (new) — the claim, and the empty-parent trap.** `claim` proves `owning`
+  (`replace`) does NOT strip a child's own terms when the parent holds nothing in
+  the taxonomy (both pre-#62 push paths bailed on `empty($parent_terms)`; the
+  pull rewrite has to bail in `target_term_ids()` instead), that it replaces the
+  whole taxonomy once the parent does have a source, and that `contributing`
+  keeps the child's independent term — §5d restated against the applier.
+  **Setup gotcha, and it is the fixture's own v3→v4 lesson:** the independent
+  term must be written to BOTH stores (`mc62_set_own_terms` → `update_field`),
+  because propagation writes the `mc_topics` mirror before it reads native and
+  the save_terms sync then overwrites native with the merge result. A
+  native-only term opposite an empty mirror is destroyed before the claim sees
+  it, which reads as `merge` behaving like `replace`. `mc62_clean_chain()` clears
+  both for the same reason.
+- **§62c/§62d (new) — the #35 interaction, settled.** `order` / `order-swap` run
+  propagation and a `descendants_always`/`immediate` hierarchical rule over the
+  same chain in both list orders. Propagation first: the child pulls
+  `[east,coastal,inland]` and hierarchical then expands it **once**, adding
+  `harbor` — exactly one extra level, and the grandchild settles at the same set
+  instead of gaining a level per generation. Hierarchical first: the child
+  inherits `[east,coastal,inland]` with **no** expansion, because hierarchical ran
+  before the terms arrived. Two different, documented outcomes from one edit —
+  which is the point: the outcome is the author's order, not handler construction
+  order.
+
 ### §6 time_based — results
 
 3 seeded rules (dates relative to seed day): [0] in-range `{TODAY-1}..{TODAY+7}`

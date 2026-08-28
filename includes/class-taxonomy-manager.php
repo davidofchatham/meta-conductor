@@ -177,9 +177,11 @@ class TaxonomyManager {
         // triggers, so the queue is how that write reaches a pass.
         //
         // Construction order carries no execution meaning any more, which is
-        // the point. The propagation-before-hierarchical and title-slug-last
-        // dependencies that used to live in the array above are dead for the
-        // converted types and die entirely at #66.
+        // the point. The propagation-before-hierarchical dependency that used
+        // to live in the array above is DEAD (#62): both types are converted,
+        // the pass runs them in authored order, and propagation no longer
+        // writes the child a hierarchical hook would then expand out of band.
+        // Title-slug-last dies with the format dispatcher (#64/#66).
         $this->term_dispatcher = new TermDispatcher($this->handlers);
         $this->term_dispatcher->register();
 
