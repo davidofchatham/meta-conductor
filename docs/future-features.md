@@ -169,6 +169,26 @@ A sub-scope field ("governs levels 3–4 only", or "only under branch X") would 
 
 Deferred from the cross-rule composition work — see [ADR 0002](adr/0002-cross-rule-composition.md).
 
+### Scoping which provocations a format rule answers (#64 follow-up)
+
+**Status** — `idea`. **Phase** — unassigned; naturally sits with the `field_transformation` work, when the format pass splits in two (ADR 0003) and its provocation set is being reasoned about anyway.
+
+**Motivation.** #64 put `format_rules` on the term dispatcher's queue, so the format pass now runs for **every entity the drain reaches** — a propagation fan-out's children, a captured sever's dependent, anything the ACF write queue flushed — not only for posts that were saved. That is the correct reading of a rule that consumes terms, and it fixed a real staleness: before #64 a post whose terms were rewritten by *another* post's rule kept its old `{term:...}` title until somebody re-saved it.
+
+It also has a cost the ticket accepted deliberately rather than solved. A term edit on a parent can now rename a published child's `post_name`, **and WordPress leaves no redirect behind when a slug changes** — so an indexed URL 404s, from an edit made on a different post. The reach is wider than it looks: on the mc-rules testbed, `sweep-63-acf-reference.php restore` writes a relationship field on the holder, which marks the referenced item dirty, which gives it a format pass, which renames it. Nothing there is a save.
+
+Two independent halves, and they are worth separating:
+
+- **Scope.** A format rule has no way to say *which* provocations it answers. Everything or nothing.
+- **Slug safety.** A rule-driven `post_name` change has no redirect and no audit trail, whoever provoked it.
+
+**Sketch.**
+
+- *Scope.* The honest shape is not a per-rule "only on save" toggle — that recreates exactly the provocation-dependent behaviour the dispatcher exists to remove (a rule that reconciles on some paths and not others, CONTEXT.md → **Pass**). More promising: make the **effect** conditional rather than the pass. A rule already recomputes from live state on every pass; what it could gain is a declared *stability* — e.g. "compute the slug once, then leave it" (`slug_locked_after_publish`), which is a property of the rule's meaning rather than of how it was provoked, and composes with any provocation set. Title and slug want different answers here: a title is cheap to change, a published slug is not.
+- *Slug safety.* Write a `301` when a rule changes a published post's `post_name` — either into a redirect plugin's store where one is present, or a small owned table. Also worth a **dry-run**: the diagnostics page could list what the current rule set *would* rename, which is the thing an author actually wants before enabling a slug pattern on a live site.
+
+**Why it is not a bug.** Both behaviours are documented in [CHANGELOG.md](../CHANGELOG.md) under the live-rule-type policy, and the alternative — gating the format pass to save-shaped provocations — reintroduces the staleness #64 removed. This is a feature the model now has room for, not a regression to undo. Related: CLAUDE.md don't 6f(e), [docs/architecture.md](architecture.md) invariant 18, fixture matrix §7 restore gotcha.
+
 ### Rule-type renaming on the domain axes
 
 Current rule-type names conflate **basis**, **effect target** and **claim** into one string, which is why `hierarchical` (term graph) and `propagation` (post graph) read as near-synonyms — as do `related` (term↔term) and `related_post_terms` (post↔post). Names should be composed from the axes once they have settled, i.e. once the Effect axis carries non-term values (field, title, body class, field editability). Renaming before then means minting names twice.
