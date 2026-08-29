@@ -53,6 +53,7 @@
 
 namespace BWS\MetaConductor\Admin\Config;
 
+use BWS\MetaConductor\Admin\CollisionDetector;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 
 if (!defined('ABSPATH')) {
@@ -144,6 +145,12 @@ class TermRulesConfig {
             'id'       => 'auto-set',
             'title'    => __('Auto-Set & Restrict', 'meta-conductor'),
             'sections' => [
+                // The collision advisory leads the tab (#65) — a warning about
+                // the list is useless below the list. It is its own SECTION,
+                // not a field prepended to the rule section, so `section()`
+                // stays "the ordered list and nothing else" for H11 and for
+                // the reader.
+                CollisionDetector::section(OptionRuleStorage::KIND_TERM),
                 self::section(),
             ],
         ];

@@ -87,6 +87,9 @@ $classes = [
     // Admin\
     'BWS\\MetaConductor\\Admin\\Diagnostics',
     'BWS\\MetaConductor\\Admin\\WireframeBootstrap',
+    // The collision advisory (#65). Admin\, not Core\ — it is computed at
+    // authoring time and read by nothing at runtime.
+    'BWS\\MetaConductor\\Admin\\CollisionDetector',
     // Admin\Config\
     'BWS\\MetaConductor\\Admin\\Config\\ConfigHelpers',
     'BWS\\MetaConductor\\Admin\\Config\\GeneralConfig',

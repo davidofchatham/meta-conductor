@@ -55,6 +55,7 @@
 
 namespace BWS\MetaConductor\Admin\Config;
 
+use BWS\MetaConductor\Admin\CollisionDetector;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 
 if (!defined('ABSPATH')) {
@@ -142,6 +143,11 @@ class FormatRulesConfig {
             'id'       => 'format-transform',
             'title'    => __('Format & Transform', 'meta-conductor'),
             'sections' => [
+                // Same collision advisory the term tab leads with (#65), from
+                // the same builder. On this kind it reports the one thing the
+                // `post_type` description already warns about in prose: two
+                // rules on one post type, where the lower never runs.
+                CollisionDetector::section(OptionRuleStorage::KIND_FORMAT),
                 self::section(),
             ],
         ];

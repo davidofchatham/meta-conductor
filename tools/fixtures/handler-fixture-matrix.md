@@ -819,6 +819,72 @@ number in slug); `{default_slug}` from the computed title.
 option is snapshotted up front and restored in a `finally`, and the sweep
 asserts the restore.
 
+### §10 collision advisory (#65, 0.8.0) — results
+
+Run 2026-08-28 on the docker testbed, seeded mc-rules fixture.
+`sweep-65-collisions.php`, 35 assertions across `seeded` / `config` /
+`surfaces`, all green. The static half is H14
+(`tests/verify-collision-detector.php`, 81 assertions, negative-tested against
+24 mutations).
+
+**§10a the seeded set is a torture set, and the expected finding list is
+spelled out in full** ✅ Eight collisions over the ten-row term list, pinned by
+list POSITION rather than counted — position is what the warning quotes and
+what the author reorders, so a detector that agreed on the pairs and disagreed
+on the numbering would still be wrong. The list also proves the detector reads
+through `get_authored_kind_rules()` → `authored_kind_list()`: after a
+`mc_restore()` the stored kind list is rebuilt in `KIND_TYPES` order, and the
+positions asserted are that order.
+
+The eight, and why each is real: propagation × ACF-reference and ACF-reference ×
+{hierarchy, level restriction} all share `mc_topic` (the ACF-reference rows are
+`holder_role=source`, so their DEPENDENT end is unconstrained and overlaps
+everything); the date window on `topic-featured` contends with both `related`
+rules, which target the same term; the two `related` rules contend with each
+other; `time_based[1]` × `[2]` is #69; hierarchy × level restriction is #51. The
+one seeded format rule collides with nothing.
+
+**§10b the two ready-made cases, NAMED** ✅ #51 is reported as
+`ancestors_stripped`, not as a generic collision: *"adds ancestor terms in MC
+Topics"* / *"does not keep them"*, plus the order sentence. #69 is reported as
+`shared_term_cancels` and names the shared **term** (`MC Topics: Archived`),
+which is the whole reason the two term-pairing types key on `target_term_id` —
+neither has a `taxonomy` subfield to read, and keying on the term's taxonomy
+would warn on every pair of date rules in a taxonomy.
+
+**§10c the #39 configuration, and both clears** ✅ Propagation + level
+restriction on one taxonomy with overlapping post types warns, naming both rules
+and the shared post types. Moving one to a disjoint post type clears it; so does
+moving one to a disjoint taxonomy. Either conjunct being disjoint makes the
+rules independent, which is the predicate stated as behaviour.
+
+**§10d contention, not currency** ✅ Sliding a date rule's window — including
+out of every other rule's window — does NOT clear its warning. Re-targeting it
+does, and so does disabling it. A collision is about whether two rules can
+contend, not about whether both happen to be active today.
+
+**§10e the passive surface** ✅ The REAL `bws-meta-conductor/settings_saved`
+action recomputes and persists findings for both kinds, and the section the tab
+renders on the next load leads with a `warning` notice built from them, the
+re-check button below it. Nothing static can prove that hook is wired.
+
+**§10f the on-demand surface** ✅ The REAL Wireframe filter
+`bws-meta-conductor/action/settings/term_rules_collision_check/run` answers over
+IN-FLIGHT rows — two unsaved date rules on one term produce *"1 collision
+found."* while storage still holds the seeded eight — and answering it
+**persists nothing**, which is the assertion that matters: an unsaved row must
+never end up in the notice describing the saved rule set. Unsaved rows carry no
+`row_title`, so the path bakes one through the save path's own snapshot rather
+than falling back to a position number.
+
+**§10g the notice is not sticky** ✅ Authoring a collision-free list and firing
+the save hook empties the stored findings and removes the notice field from the
+section.
+
+**§10h NON-MUTATING.** The advisory writes no term, saves no post and provokes
+no pass — asserted directly, and it is why the §7 rename trap does not apply
+here even though the sweep restores the manifest rules.
+
 ## Cross-handler interaction scenarios (later phase, own snapshot each)
 
 - level_restriction (p5) + hierarchical (p10) same taxonomy — prune-then-expand
@@ -858,6 +924,14 @@ asserts the restore.
 
 ## Harnesses
 
+- **H14 — `tests/verify-collision-detector.php`** (static, no WP): the collision
+  advisory's predicate (#65). Asserts BOTH directions — every pair that must
+  warn and every near-miss that must not — because an advisory that fires on
+  independent rules gets ignored and one that misses its own headline pair is
+  worse than none. First assertion is a PARTITION check: the three
+  target-resolution lists together cover every rule type storage knows, read by
+  reflection, so a type added to storage and nowhere else fails here rather than
+  being silently skipped by the detector.
 - **H12 — `tests/verify-format-rules-config.php`** (static, no WP): the format
   repeater's shape (#59). H11's twin, and the dangerous direction inverts — with
   one rule type a gate that should not exist deletes its field outright rather

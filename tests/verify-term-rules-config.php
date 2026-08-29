@@ -43,6 +43,12 @@ if (!function_exists('esc_html__')) { function esc_html__($t, $d = 'default') { 
 if (!function_exists('esc_attr__')) { function esc_attr__($t, $d = 'default') { return $t; } }
 if (!function_exists('add_action')) { function add_action() {} }
 if (!function_exists('add_filter')) { function add_filter() {} }
+if (!function_exists('_n'))         { function _n($s, $p, $n, $d = 'default') { return $n === 1 ? $s : $p; } }
+// The collision section (#65) reads its findings from an option of its own.
+// Absent here, which is the "never saved" state — the section renders the
+// re-check button and no notice.
+if (!function_exists('get_option'))    { function get_option($name, $default = false) { return $default; } }
+if (!function_exists('update_option')) { function update_option($name, $value, $autoload = null) { return true; } }
 if (!function_exists('is_wp_error')) { function is_wp_error($t) { return false; } }
 
 if (!function_exists('get_post_types')) {
@@ -560,6 +566,14 @@ $check('tabs are auto-set / format-transform / general',
     $tab_ids === ['auto-set', 'format-transform', 'general']);
 $check('Personalize tab is gone', !in_array('personalize', $tab_ids, true));
 $check('Restrict is no longer its own tab', !in_array('restrict', $tab_ids, true));
+
+// The collision advisory LEADS the tab (#65). Order is the assertion: a warning
+// about the list rendered below the list is a warning the author scrolls past.
+$auto_set = WireframeConfig::build()['tabs'][0];
+$check('the collision advisory leads the term tab (#65)',
+    $auto_set['sections'][0]['id'] === $KIND . '_collisions');
+$check('and the ordered term list follows it',
+    $auto_set['sections'][1]['fields'][0]['id'] === $KIND);
 
 // --- Report. ----------------------------------------------------------------
 

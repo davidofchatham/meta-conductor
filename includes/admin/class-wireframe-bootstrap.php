@@ -59,6 +59,12 @@ class WireframeBootstrap {
         // still read. Priority 20: strictly AFTER the snapshots above, so the
         // row titles they bake are part of what gets projected.
         add_filter('wp-wireframe/save/payload', [self::class, 'fan_out_rule_lists'], 20, 1);
+
+        // The collision advisory's two surfaces (#65): recompute-and-persist on
+        // `settings_saved`, and the on-demand ActionField re-check. Registered
+        // from the detector itself rather than here — they are its hooks, and
+        // both fire on requests that never reach `boot()`'s admin gate.
+        CollisionDetector::init();
     }
 
     /**
@@ -1102,6 +1108,13 @@ class WireframeBootstrap {
         // BEFORE Wireframe reads the option raw. Runs after the sync so it
         // works on the list the admin is about to see. (#57)
         self::repair_stored_rules($storage);
+
+        // First collision scan for a rule set that never passed through a save
+        // on this page — an upgrade, a seeded fixture, a CLI import. Runs AFTER
+        // the repair so it reads the shapes the repeater is about to render,
+        // and BEFORE the config is built, which is what reads the findings.
+        // At most one write per site (#65).
+        CollisionDetector::maybe_prime();
 
         // WireframeConfig autoloads via PSR-4 (autoload.php) — no manual require (Phase 2a).
 

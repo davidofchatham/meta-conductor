@@ -518,14 +518,86 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
       rather than the submitted title, which is what makes a re-pass over an
       unchanged post record the same pair back instead of compounding.
 
+19. **A collision is DETECTED and named, never resolved (#65,
+    [ADR 0002](adr/0002-cross-rule-composition.md) decision 2,
+    [ADR 0004](adr/0004-claim-axis-and-jurisdiction.md)).** Two rules contend
+    when they write the same **effect target** on posts that can be the same
+    posts. [`Admin\CollisionDetector`](../includes/admin/class-collision-detector.php)
+    says so and does nothing else: advisory at authoring time, never consulted
+    at runtime, never blocking a save. That is not a limitation — a collision
+    means the combined result depends on **order**, which the author now
+    controls, and picking a winner silently is the behaviour the ordered list
+    exists to replace.
+
+    - **The detector resolves each rule's effect target, not one field name.**
+      The obvious predicate — shared `taxonomy` plus overlapping post types —
+      reads four of the six term types and is *blind* to the other two:
+      `time_based_rules` and `related_rules` have no `taxonomy` subfield at all
+      (H11's expected-visible map is the proof) and name their target by
+      `target_term_id`. So the target key is a taxonomy for the four that
+      declare one, a **term** for the two term-pairing types, and the
+      title/slug fields for the format kind. Keying the term-pairing types on
+      the term rather than on the term's taxonomy is deliberate: two date rules
+      in one taxonomy with different targets need not contend, and taxonomy
+      keying would warn on every pair of them. An advisory that fires that
+      often gets ignored, which is worse than none.
+    - **The post types are the ones a rule WRITES.** Two rule types do not
+      answer that with `post_types`: the format types name one in a scalar
+      `post_type`, and the ACF-reference rule has no `post_types` subfield (#58)
+      and writes its *dependent* end — unconstrained under `holder_role=source`,
+      exactly as `dependent_post_type()` reports it. Empty means every post
+      type, so the test over-reports and never under-reports.
+    - **Targets must be EQUAL, not nested.** A taxonomy-wide rule is not paired
+      with a term rule whose term lives in that taxonomy, and the claim axis is
+      not consulted at all. Both pairings are real, and both belong to the
+      deferred reach/component detector, which takes ADR 0004's second conjunct
+      — reaches intersect **and** jurisdictions overlap. Nothing here should be
+      read as "shared reach alone implies contention". H14 asserts the
+      non-pairing so the boundary is a decision on the record.
+    - **Where a pair is precisely diagnosable, the warning names the
+      contradiction.** A hierarchy rule that adds a lineage beside a level
+      restriction that does not undertake to keep it (#51) reads *"adds ancestor
+      terms … does not keep them"*, not "these two collide". Two rules over one
+      term that each remove it (#69, the mutual annihilation ADR 0001 names as
+      the cost of retroactive ownership) say so. Two format rules on one post
+      type say the lower one never runs.
+    - **Two surfaces, one detector.** `settings_saved` — and `settings_reset`,
+      which wipes the very rules a stored finding names — recompute from storage
+      and persist into the detector's own option, rendered as the notice leading
+      the relevant tab on the next load. That is the passive half, for an author
+      who never thinks to check. An `ActionField` button re-runs the same
+      `detect()` over the **in-flight** form values and answers the open UI,
+      persisting nothing: the rows it read were never saved, and writing them
+      into the notice would make the passive surface describe a rule set that
+      does not exist.
+    - **A named contradiction is asymmetric, so its pair is ROLE-ordered.** The
+      message puts the rule that *adds* a lineage first and the one that does
+      not keep it second; ordering the pair by list position instead would make
+      the notice say the restriction rule adds ancestors whenever it happens to
+      be authored above. Each side still carries its own list index, which is
+      what the position numbers and the "lower in the list acts last" sentence
+      refer to. Two smaller asymmetries in the same area: `row_title` is stored
+      *already* `esc_html()`-ed (the repeater's `title_template` renders raw),
+      so the detector decodes it and escapes once at the end; and the hierarchy
+      outcome comes from `HierarchicalHandler::behavior_key()` rather than a
+      second reading of the legacy `hierarchy_direction`/`expansion_behavior`
+      pair, which is the re-derived-switch drift invariant 17's cousins warn
+      about.
+
+    H14 (`tests/verify-collision-detector.php`) pins the predicate in both
+    directions, opening with a partition check that every rule type storage
+    knows resolves to a target scheme — a type added to storage and nowhere else
+    fails there rather than being silently skipped. `sweep-65-collisions.php`
+    runs it over the real fixture and through both real hooks.
+
 ## Settings UI — WP Wireframe
 
 The settings UI is a React app provided by `tdrayson/wp-wireframe`. Config classes live under [includes/admin/config/](../includes/admin/config/), each exposing a `section()` method; the top-level composer assembles **three tabs** from them:
 
 | Tab | Sections |
 |---|---|
-| Auto-Set & Restrict | **The ordered term-rule list** ([TermRulesConfig](../includes/admin/config/class-term-rules-config.php)) — all six term rule types (#57, #58) |
-| Format & Transform | **The ordered format-rule list** ([FormatRulesConfig](../includes/admin/config/class-format-rules-config.php)) — `title_slug` today (#59). Future: date / name / phone field transforms |
+| Auto-Set & Restrict | The collision advisory (#65), then **the ordered term-rule list** ([TermRulesConfig](../includes/admin/config/class-term-rules-config.php)) — all six term rule types (#57, #58) |
+| Format & Transform | The collision advisory (#65), then **the ordered format-rule list** ([FormatRulesConfig](../includes/admin/config/class-format-rules-config.php)) — `title_slug` today (#59). Future: date / name / phone field transforms |
 | General | Per-taxonomy claim overrides, manual processing toggle |
 
 Boot path: [class-wireframe-bootstrap.php](../includes/admin/class-wireframe-bootstrap.php) calls `\Wireframe\App::boot()` on `init` priority 10 with the assembled config.
@@ -541,6 +613,8 @@ Two Wireframe constraints drive the shape, both verified against the vendored 1.
 - A wrong gate is silent **data loss**, not a rendering bug. Nothing errors; the value just stops persisting.
 - Two subfields sharing an `id` let one overwrite the other, last-write-wins, invisibly.
 - Changing a row's `type` **discards its type-specific values** — which is the correct behaviour and how the design works, but it is silent, so the `type` select's description says so.
+
+Both rule tabs are LED by the collision advisory's section (#65, invariant 19) — one section builder serving both, with the persisted notice when there is one and the on-demand re-check button always. It is its own section rather than a field prepended to the rule section, so each `section()` stays "the ordered list and nothing else".
 
 H11 (`tests/verify-term-rules-config.php`) and H12 (`tests/verify-format-rules-config.php`) run Wireframe's own `Conditions::evaluate()` over each config and assert the exact visible subfield set per rule type, plus id uniqueness, that shared subfields carry no gate, and that claim comes through `ConfigHelpers::claim_field()` rather than being re-authored inline. Every show/hide combination is additionally swept on the testbed (`sweep-58-roundtrip.php`, `sweep-59-roundtrip.php`) — the harness proves the config's shape, only a real save proves the round-trip.
 

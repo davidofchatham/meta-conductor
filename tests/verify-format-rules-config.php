@@ -40,6 +40,12 @@ if (!function_exists('esc_html__')) { function esc_html__($t, $d = 'default') { 
 if (!function_exists('esc_attr__')) { function esc_attr__($t, $d = 'default') { return $t; } }
 if (!function_exists('add_action')) { function add_action() {} }
 if (!function_exists('add_filter')) { function add_filter() {} }
+if (!function_exists('_n'))         { function _n($s, $p, $n, $d = 'default') { return $n === 1 ? $s : $p; } }
+// The collision section (#65) reads its findings from an option of its own.
+// Absent here, which is the "never saved" state — the section renders the
+// re-check button and no notice.
+if (!function_exists('get_option'))    { function get_option($name, $default = false) { return $default; } }
+if (!function_exists('update_option')) { function update_option($name, $value, $autoload = null) { return true; } }
 if (!function_exists('is_wp_error')) { function is_wp_error($t) { return false; } }
 
 // `attachment` is registered here deliberately — the post-type select is
@@ -386,10 +392,15 @@ $tabs = WireframeConfig::build()['tabs'];
 $tab_ids = array_map(fn($t) => $t['id'], $tabs);
 $check('still exactly three tabs', $tab_ids === ['auto-set', 'format-transform', 'general']);
 
+// Two sections since #65: the collision advisory LEADS, then the ordered list.
+// The order is the assertion — a warning about the list rendered below the list
+// is a warning the author scrolls past.
 $fmt_tab = $tabs[1];
-$check('the format tab holds one section', count($fmt_tab['sections']) === 1);
-$check('and that section is the ordered format list',
-    $fmt_tab['sections'][0]['fields'][0]['id'] === $KIND);
+$check('the format tab holds the advisory and the list', count($fmt_tab['sections']) === 2);
+$check('the collision advisory leads the tab (#65)',
+    $fmt_tab['sections'][0]['id'] === $KIND . '_collisions');
+$check('and the ordered format list follows it',
+    $fmt_tab['sections'][1]['fields'][0]['id'] === $KIND);
 // The Preview/Apply note survived the collapse — it is the only thing telling
 // an author those buttons are coming rather than missing.
 $check('the deferred Preview/Apply note is still on the tab',
