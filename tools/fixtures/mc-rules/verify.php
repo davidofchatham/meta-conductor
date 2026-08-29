@@ -237,10 +237,18 @@ if ( ! $mc_a7_solo || ! $mc_a7_arch || ! $mc_a7_feat || ! class_exists( '\\BWS\\
 		return $terms;
 	};
 
-	/** Write one rule set and re-read it through the handlers' storage instance. */
+	/**
+	 * Write one rule set and re-read it through the handlers' storage instance.
+	 *
+	 * Rules live in the ordered kind lists since #66, so a type-keyed write
+	 * would silence nothing and install nothing.
+	 */
 	$mc_a7_set_rules = function ( array $rules ) use ( $mc_a7_opt ) {
-		$settings                     = get_option( $mc_a7_opt, array() );
-		$settings['time_based_rules'] = $rules;
+		$settings = get_option( $mc_a7_opt, array() );
+		$settings[ \BWS\MetaConductor\Storage\OptionRuleStorage::KIND_TERM ] =
+			\BWS\MetaConductor\Storage\OptionRuleStorage::fan_in(
+				array( 'time_based_rules' => $rules )
+			)[ \BWS\MetaConductor\Storage\OptionRuleStorage::KIND_TERM ];
 		update_option( $mc_a7_opt, $settings );
 		\BWS\MetaConductor\Storage\StorageFactory::get_instance()->clear_cache();
 	};
@@ -265,17 +273,23 @@ if ( ! $mc_a7_solo || ! $mc_a7_arch || ! $mc_a7_feat || ! class_exists( '\\BWS\\
 	// hierarchical / related / level-restriction rules, all of which fire on an
 	// mc_topic write and would bury the subject in ancestors + Featured.
 	$mc_a7_isolated = $mc_a7_snapshot;
-	foreach ( array_keys( $mc_manifest['mc_rules'] ) as $mc_a7_type ) {
-		if ( 'time_based_rules' !== $mc_a7_type ) {
-			$mc_a7_isolated[ $mc_a7_type ] = array();
+	$mc_a7_kind     = \BWS\MetaConductor\Storage\OptionRuleStorage::KIND_TERM;
+	$mc_a7_isolated[ $mc_a7_kind ] = array_values( array_filter(
+		(array) ( $mc_a7_snapshot[ $mc_a7_kind ] ?? array() ),
+		static function ( $row ) {
+			return is_array( $row ) && 'time_based_rules' === ( $row['type'] ?? '' );
 		}
-	}
+	) );
+	$mc_a7_isolated[ \BWS\MetaConductor\Storage\OptionRuleStorage::KIND_FORMAT ] = array();
 	update_option( $mc_a7_opt, $mc_a7_isolated );
 	\BWS\MetaConductor\Storage\StorageFactory::get_instance()->clear_cache();
 
 	// Find the seeded expired-Archived rule by its shape, not its index.
 	$mc_a7_expired = null;
-	foreach ( (array) ( $mc_a7_snapshot['time_based_rules'] ?? array() ) as $mc_a7_rule ) {
+	foreach ( (array) ( $mc_a7_snapshot[ $mc_a7_kind ] ?? array() ) as $mc_a7_rule ) {
+		if ( ! is_array( $mc_a7_rule ) || 'time_based_rules' !== ( $mc_a7_rule['type'] ?? '' ) ) {
+			continue;
+		}
 		if ( (int) ( $mc_a7_rule['target_term_id'] ?? 0 ) === $mc_a7_arch
 			&& ! empty( $mc_a7_rule['end_date'] )
 			&& $mc_a7_rule['end_date'] < $mc_a7_today ) {

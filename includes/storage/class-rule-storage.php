@@ -26,7 +26,11 @@ if (!defined('ABSPATH')) {
 interface RuleStorage {
 
     /**
-     * Get all rules of a specific type
+     * Get all rules of a specific type, in authored order.
+     *
+     * One type's slice of its kind list — since #66 the kind lists are the only
+     * stored shape, so this is a view over get_kind_rules(), not a separate
+     * read path.
      *
      * @since 0.2.0
      * @param string $type Rule type (hierarchical_rules, propagation_rules, etc.)
@@ -59,43 +63,21 @@ interface RuleStorage {
     public function get_raw_settings(): array;
 
     /**
-     * Get all rules in one effect-kind list, grouped by type.
+     * Get all rules in one effect-kind list, in AUTHORED order.
      *
      * The kind lists (`term_rules`, `format_rules`) are the ordered rule model
-     * of ADR 0003: every row carries its own `type`, and order is array
-     * position. Filtering on `['type' => X]` yields a result element-for-element
-     * equal to `get_rules(X, ...)`, which is what lets handlers move onto the
-     * kind list without behaviour change.
-     *
-     * This read DERIVES the list from the type-keyed arrays, so rows come out
-     * grouped by type rather than in the order their author sequenced them.
-     * That is the right trade for a per-type consumer — it cannot go stale
-     * against an admin save. A consumer that needs cross-type order wants
-     * get_authored_kind_rules() instead.
+     * of ADR 0003 and, since #66, the only stored shape: every row carries its
+     * own `type`, and order is array position. Order is the composition
+     * semantics a dispatcher pass executes in, so this read never regroups or
+     * re-sorts. Filtering on `['type' => X]` is what `get_rules(X, ...)` is.
      *
      * @since 0.8.0
      * @param string $kind    Kind list key (see get_kind_for_type()).
      * @param array  $filters Same filters as get_rules(), plus:
      *                        - 'type' (string): keep only rows of this rule type
-     * @return array Array of rules; empty if the kind is unknown.
-     */
-    public function get_kind_rules(string $kind, array $filters = []): array;
-
-    /**
-     * Get all rules in one effect-kind list, in AUTHORED order.
-     *
-     * The dispatcher's read path (#60): a pass evaluates every rule of a kind
-     * in the order its author sequenced them, across types, so it needs the
-     * persisted list rather than the type-grouped derivation get_kind_rules()
-     * returns. Membership still reconciles against the type-keyed arrays — see
-     * the implementation's docblock for which half is authoritative for what.
-     *
-     * @since 0.8.0
-     * @param string $kind    Kind list key (see get_kind_for_type()).
-     * @param array  $filters Same filters as get_kind_rules().
      * @return array Array of rules in authored order; empty if the kind is unknown.
      */
-    public function get_authored_kind_rules(string $kind, array $filters = []): array;
+    public function get_kind_rules(string $kind, array $filters = []): array;
 
     /**
      * Resolve which kind list a rule type lives in.

@@ -317,49 +317,30 @@ $check('a payload without the format list is returned untouched',
     WireframeBootstrap::snapshot_format_rule_labels(['manual_processing_enabled' => true])
         === ['manual_processing_enabled' => true]);
 
-// --- The save path: repeater rows land back in title_slug_rules. -----------
+// --- The save path: the repeater's list IS the stored shape (#66). ---------
 //
-// The repeater writes `format_rules`, but TitleSlugHandler still reads rules
-// derived from `title_slug_rules` until #66. Without this projection a rule
-// authored here would save, render back correctly, and never fire.
+// Until #66 these rows had to be projected back onto `title_slug_rules` on the
+// same save, because that was what TitleSlugHandler read. The contract ticket
+// deleted the projection along with the array: `format_rules` is what storage
+// holds and what the format pass reads.
 
-$payload = WireframeBootstrap::fan_out_rule_lists([
+$check('the type-keyed save projection is gone (#66)',
+    !method_exists(WireframeBootstrap::class, 'fan_out_rule_lists'));
+
+$ordered = WireframeBootstrap::snapshot_format_rule_labels([
     $KIND => [
-        ['type' => 'title_slug_rules', 'post_type' => 'mc_item', 'row_title' => 'first'],
-        ['type' => 'title_slug_rules', 'post_type' => 'page'],
+        ['type' => 'title_slug_rules', 'enabled' => false,
+         'name' => 'MC item slug', 'post_type' => 'mc_item'],
+        ['type' => 'title_slug_rules', 'name' => 'Page slug', 'post_type' => 'page'],
     ],
 ]);
-$check('fan-out writes title_slug_rules in the authored order',
-    $payload['title_slug_rules'] === [
-        ['post_type' => 'mc_item', 'row_title' => 'first'],
-        ['post_type' => 'page'],
-    ]);
-$check('fan-out strips the grouping key',
-    !array_key_exists('type', $payload['title_slug_rules'][0]));
-$check('fan-out leaves the term kind alone when only the format list is posted',
-    !array_key_exists('propagation_rules', $payload));
-
-// An emptied repeater must CLEAR the legacy array — `array_merge($saved,
-// $clean)` only replaces keys the payload carries.
-$check('deleting every row clears title_slug_rules',
-    WireframeBootstrap::fan_out_rule_lists([$KIND => []])['title_slug_rules'] === []);
-
-// A save from another tab carries no format list — not "delete everything".
-$check('a payload without the format list writes no rule array',
-    WireframeBootstrap::fan_out_rule_lists(['manual_processing_enabled' => true])
-        === ['manual_processing_enabled' => true]);
-
-// Hook order: titled at priority 10, projected at 20, so the copy in the
-// legacy array carries the title too.
-$ordered = WireframeBootstrap::fan_out_rule_lists(
-    WireframeBootstrap::snapshot_format_rule_labels([
-        $KIND => [['type' => 'title_slug_rules', 'enabled' => false,
-                   'name' => 'MC item slug', 'post_type' => 'mc_item']],
-    ])
-);
-$check('the snapshot runs before the projection',
-    ($ordered['title_slug_rules'][0]['row_title'] ?? '')
-        === '[Disabled] MC item slug (MC Items)');
+$check('a format-tab save payload carries the kind list and no type-keyed copy',
+    array_keys($ordered) === [$KIND]);
+$check('the snapshot keeps the authored order, still typed',
+    array_column($ordered[$KIND], 'post_type') === ['mc_item', 'page']
+    && array_column($ordered[$KIND], 'type') === ['title_slug_rules', 'title_slug_rules']);
+$check('the snapshot bakes the row title onto the list rows',
+    ($ordered[$KIND][0]['row_title'] ?? '') === '[Disabled] MC item slug (MC Items)');
 
 // --- The admin-load repair: a title backfill and nothing else. --------------
 //

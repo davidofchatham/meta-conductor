@@ -44,7 +44,7 @@ $storage = StorageFactory::get_instance();
 // What the handler sees BEFORE any of this runs. The move must not change it.
 $before = $storage->get_rules('title_slug_rules');
 
-$storage->sync_kind_lists();
+$storage->maybe_migrate_kind_lists();
 
 $repair = new ReflectionMethod(WireframeBootstrap::class, 'repair_stored_rules');
 $repair->invoke(null, $storage);
@@ -55,8 +55,8 @@ $rows     = $settings[OptionRuleStorage::KIND_FORMAT] ?? [];
 $note('format_rules is populated', !empty($rows));
 $note('every format row is a title/slug rule',
     array_values(array_unique(array_column($rows, 'type'))) === ['title_slug_rules']);
-$note('format_rules matches the title_slug_rules array row-for-row',
-    count($rows) === count($settings['title_slug_rules'] ?? []));
+$note('the legacy title_slug_rules array is gone from storage (#66)',
+    !array_key_exists('title_slug_rules', $settings));
 
 $titled = array_filter($rows, static fn($r) => ($r['row_title'] ?? '') !== '');
 $note('every row carries a repaired row_title', count($titled) === count($rows));
@@ -103,16 +103,11 @@ foreach ($rows as $i => $row) {
     }
 }
 
-// The full-list re-projection must still agree with the legacy array after a
-// simulated save (fan-out on the sanitized payload).
-$projected = WireframeBootstrap::fan_out_rule_lists([
-    OptionRuleStorage::KIND_FORMAT => $sanitized,
-]);
-$note('sanitized fan-out reproduces title_slug_rules row-for-row',
-    count($projected['title_slug_rules'] ?? []) === count($rows));
-$note('the projection strips the grouping key',
-    empty(array_filter($projected['title_slug_rules'] ?? [],
-        static fn($r) => array_key_exists('type', $r))));
+// What the sanitize produced IS what gets stored (#66 — there is no projection
+// onto title_slug_rules any more), so the list has to survive it in place.
+$note('the sanitized list keeps every row', count($sanitized) === count($rows));
+$note('every sanitized row is still typed',
+    array_values(array_unique(array_column($sanitized, 'type'))) === ['title_slug_rules']);
 
 echo $fail ? "\nSWEEP-59 FAIL: " . count($fail) . " failed\n" : "\nSWEEP-59 OK\n";
 exit($fail ? 1 : 0);

@@ -405,6 +405,6 @@ class FormatDispatcher {
      */
     private function ordered_rules(): array {
         return StorageFactory::get_instance()
-            ->get_authored_kind_rules(self::KIND, ['enabled' => true]);
+            ->get_kind_rules(self::KIND, ['enabled' => true]);
     }
 }

@@ -64,34 +64,18 @@ function mc62_dispatcher() {
 }
 
 /**
- * Author an explicit ordered rule list, type arrays and kind list together.
+ * Author an explicit ordered rule list.
  *
- * Both halves are written because `authored_kind_list()` keeps the stored list
- * only while it still agrees, per type, with the type-keyed arrays — writing
- * the list alone would be discarded and rebuilt in KIND_TYPES order, silently
- * defeating the order §62c/d are asserting.
+ * The list IS the storage shape since #66, so the order written here is the
+ * order a pass executes in — which is what §62c/d assert. (Before that the
+ * type-keyed arrays had to be written alongside it or the order was discarded
+ * and rebuilt in KIND_TYPES order.)
  *
  * @param array[] $rows Rules in authored order, each carrying a `type` key.
  * @return int Rows written.
  */
 function mc62_author( array $rows ) {
-	$opt      = mc_sweep_option();
-	$settings = get_option( $opt, array() );
-	$manifest = mc_sweep_manifest();
-
-	foreach ( array_keys( $manifest['mc_rules'] ) as $type ) {
-		$settings[ $type ] = array();
-	}
-	foreach ( $rows as $row ) {
-		$type                = $row['type'];
-		$settings[ $type ][] = $row;
-	}
-
-	$settings[ OptionRuleStorage::KIND_TERM ] = $rows;
-	update_option( $opt, $settings );
-	mc_sweep_clear_cache();
-
-	return count( $rows );
+	return mc_write_ordered_rules( $rows, OptionRuleStorage::KIND_TERM );
 }
 
 /**

@@ -70,7 +70,7 @@ class CollisionDetector {
      * Where the computed findings live.
      *
      * Its OWN option, not a key inside `bws_meta_conductor_settings`. The
-     * settings option is what Wireframe reads raw and what `fan_out_rule_lists`
+     * settings option is what Wireframe reads raw and what the save payload
      * rewrites wholesale on every save; a derived, non-authored value sitting
      * in there would be one more thing those paths have to agree not to touch.
      * Not autoloaded — only the settings page and its save hook read it.
@@ -725,7 +725,7 @@ class CollisionDetector {
 
         $found = [];
         foreach (self::kinds() as $kind) {
-            $found[$kind] = self::detect($kind, $storage->get_authored_kind_rules($kind));
+            $found[$kind] = self::detect($kind, $storage->get_kind_rules($kind));
         }
 
         update_option(self::OPTION_NAME, $found, false);
@@ -788,7 +788,7 @@ class CollisionDetector {
         } else {
             // The list was not posted. Fall back to what is stored rather than
             // reporting "no collisions" about rules we were never shown.
-            $rows = StorageFactory::get_instance()->get_authored_kind_rules($kind);
+            $rows = StorageFactory::get_instance()->get_kind_rules($kind);
         }
 
         $found = self::detect($kind, $rows);

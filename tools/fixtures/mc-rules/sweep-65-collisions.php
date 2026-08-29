@@ -6,10 +6,10 @@
  * everything between the predicate and the author:
  *
  *   §65a  The detector run over the REAL seeded rule set, read the way the
- *         save path reads it — `get_authored_kind_rules()` through
- *         `authored_kind_list()`, whose reconciliation decides the list ORDER
- *         the warning's position numbers refer to. A harness that builds its
- *         own rows can agree with a detector that disagrees with storage.
+ *         save path reads it — `get_kind_rules()`, which serves the stored
+ *         list verbatim, and that list's ORDER is what the warning's position
+ *         numbers refer to. A harness that builds its own rows can agree with
+ *         a detector that disagrees with storage.
  *   §65b  The fixture's two ready-made cases actually land: the #51 pair
  *         (hierarchy `ancestors` + level restriction `one_per_level`,
  *         ancestors off, one taxonomy, overlapping post types) is flagged with
@@ -64,34 +64,16 @@ $a = function ( $label, $got, $want ) use ( &$pass, &$fail ) {
 };
 
 /**
- * Write an explicit ordered rule list — type arrays AND kind list together.
+ * Write an explicit ordered rule list.
  *
- * Both halves, for the reason `mc61_author()` gives: `authored_kind_list()`
- * keeps a stored list only while it still agrees, per type, with the type-keyed
- * arrays, so writing the list alone is discarded and rebuilt in KIND_TYPES
- * order — silently defeating the order the position numbers refer to.
+ * The list IS the storage shape since #66, so what is written here is what the
+ * detector reads — including the order the position numbers below refer to.
  *
  * @param array[] $rows Rules in authored order, each carrying a `type` key.
  * @return void
  */
 function mc65_author( array $rows ) {
-	$opt      = mc_sweep_option();
-	$manifest = mc_sweep_manifest();
-	$settings = get_option( $opt, array() );
-	if ( ! is_array( $settings ) ) {
-		$settings = array();
-	}
-
-	foreach ( array_keys( $manifest['mc_rules'] ) as $type ) {
-		$settings[ $type ] = array();
-	}
-	foreach ( $rows as $row ) {
-		$settings[ $row['type'] ][] = $row;
-	}
-
-	$settings[ OptionRuleStorage::KIND_TERM ] = $rows;
-	update_option( $opt, $settings );
-	mc_sweep_clear_cache();
+	mc_write_ordered_rules( $rows, OptionRuleStorage::KIND_TERM );
 }
 
 /** The term-kind findings for whatever is in storage right now. */
@@ -101,7 +83,7 @@ function mc65_scan( $kind = null ) {
 
 	return CollisionDetector::detect(
 		$kind,
-		StorageFactory::get_instance()->get_authored_kind_rules( $kind )
+		StorageFactory::get_instance()->get_kind_rules( $kind )
 	);
 }
 

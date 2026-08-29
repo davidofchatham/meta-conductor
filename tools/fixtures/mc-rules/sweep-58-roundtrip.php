@@ -38,7 +38,7 @@ $note = static function (string $label, bool $ok) use (&$fail): void {
 
 $storage = StorageFactory::get_instance();
 $storage->maybe_migrate_acf_ref_storage();
-$storage->sync_kind_lists();
+$storage->maybe_migrate_kind_lists();
 
 $repair = new ReflectionMethod(WireframeBootstrap::class, 'repair_stored_rules');
 $repair->invoke(null, $storage);
@@ -112,14 +112,18 @@ foreach ($rows as $i => $row) {
     }
 }
 
-// The full-list re-projection must still agree with the legacy arrays after a
-// simulated save (fan-out on the sanitized payload).
-$projected = WireframeBootstrap::fan_out_rule_lists([
-    OptionRuleStorage::KIND_TERM => $sanitized,
-]);
-$note('sanitized fan-out reproduces both live types row-for-row (count)',
-    count($projected['related_rules']) === 2
-    && count($projected['related_post_terms_rules']) === 2);
+// What the sanitize produced IS what gets stored (#66 — there is no projection
+// onto type-keyed arrays any more), so the live types have to survive it in the
+// list itself, in place.
+$sanitized_types = [];
+foreach ($sanitized as $row) {
+    $sanitized_types[$row['type'] ?? ''][] = $row;
+}
+$note('the sanitized list still carries both live types row-for-row',
+    count($sanitized_types['related_rules'] ?? []) === 2
+    && count($sanitized_types['related_post_terms_rules'] ?? []) === 2);
+$note('the sanitized list keeps every row, in order',
+    array_column($sanitized, 'type') === array_column($rows, 'type'));
 
 echo $fail ? "\nSWEEP-58 FAIL: " . count($fail) . " failed\n" : "\nSWEEP-58 OK\n";
 exit($fail ? 1 : 0);

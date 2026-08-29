@@ -174,18 +174,19 @@ abstract class UnifiedHandlerBase {
      * Uses the storage abstraction layer to retrieve rules.
      *
      * Reads the handler's rules out of its EFFECT-KIND list (ADR 0003 —
-     * `term_rules` / `format_rules`), filtering on each row's own `type`,
-     * rather than out of the type-keyed array. The two are element-for-element
-     * equal by construction (storage derives the kind list from the type-keyed
-     * arrays and keeps `id` per-type), so no handler changed for this — the
-     * point is that every handler now consumes rules through the ordered
-     * model the dispatcher will iterate.
+     * `term_rules` / `format_rules`), filtering on each row's own `type`. Since
+     * #66 that is the only shape there is: the kind list is what storage holds,
+     * and a type filter over it is what "this handler's rules" means.
      *
-     * Every rule type maps to a kind — H10 asserts the kind map and the storage
-     * layer's valid-type list are the same set, so a type added to one and not
-     * the other is a harness failure rather than a runtime read of zero rules.
-     * That is why there is no type-keyed fallback here: a fallback would turn
-     * that harness failure back into a silent one.
+     * The filter stays because the list is CROSS-TYPE — a term pass reads six
+     * rule types out of one array, and a handler must see only its own. What
+     * went in #66 is the second read path it used to be a compatibility shim
+     * for, not the filter.
+     *
+     * Every rule type maps to a kind, and the kind map IS storage's enumeration
+     * of the types (`OptionRuleStorage::all_types()` flattens it), so a type
+     * cannot fall out of one list and stay in the other. That is why there is
+     * no fallback here: there is nothing left to fall back to.
      *
      * @since 0.2.0 Updated to use storage abstraction
      * @since 0.8.0 Reads the kind list, filtered on row `type`.

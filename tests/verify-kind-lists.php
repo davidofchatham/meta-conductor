@@ -1,29 +1,35 @@
 <?php
 /**
- * H10 — Kind-list fan-in harness (#56, Phase 4 Gate 1).
+ * H10 — Kind-list storage harness (#56 expand → #66 contract, Phase 4 Gate 1).
  *
- * Locks the 7-type-keyed-arrays → 2-kind-keyed-ordered-lists regroup that
- * ADR 0003 decision 1 calls for: `OptionRuleStorage::fan_in()`, its inverse
- * `fan_out()`, and the two read-time projections that must agree
- * (`project_kind_rules()` vs `project_type_rules()`).
+ * The kind lists (`term_rules`, `format_rules`) are the ONLY stored rule shape
+ * since #66. This harness covers the three things that has to mean:
  *
- * Why a harness and not a behaviour sweep: `related` and `related_post_terms`
- * are LIVE on a real site, so this is a breaking schema change under the
- * CLAUDE.md live-rule-type rule. What has to be true before that data is
- * touched is a property of the transform, not of any one rule firing —
- * fan-in must be **idempotent**, **lossless**, and every legacy rule shape
- * must **round-trip**. A sweep can only show that the rules it happens to
- * exercise still fire; these assertions show the transform cannot lose a row
- * or a key it was never told about.
+ * 1. **The migration off the seven type-keyed arrays is lossless.** `fan_in()`
+ *    survives as migration code, and `fan_out()` survives with it because
+ *    "lossless" is only checkable against an inverse. `related` and
+ *    `related_post_terms` are LIVE on a real site, so this is the assertion
+ *    that has to hold before that data is touched — a property of the
+ *    transform, not of any one rule firing.
+ * 2. **The upgrade cannot be missed and cannot clobber.** It runs on READ, so
+ *    a front-end or cron request on a site whose admin has never been loaded
+ *    still sees its rules; and a kind list that already exists wins over the
+ *    legacy arrays, because re-deriving one would discard the author's
+ *    cross-type order.
+ * 3. **Every storage entry point operates on the kind list.** `get_rules()`
+ *    and friends still speak in rule TYPES, but a type is a filter over a kind
+ *    list now, and `$rule_id` is a per-type index into a cross-type array —
+ *    the one number every mutator has to translate. Per-type `id` is
+ *    load-bearing: `TitleSlugHandler::write_rule_status()` persists per-rule
+ *    state against it, so re-basing it onto the kind-list position would
+ *    silently repoint every stored status.
  *
- * The equivalence block is the load-bearing one. `get_enabled_rules()` moved
- * off the type-keyed read onto the kind list with no handler edits, which is
- * only safe while the kind path reproduces the type path element for element —
- * including the per-type `id`, which `TitleSlugHandler::write_rule_status()`
- * persists per-rule state against.
+ * Plus the #27 boundary: `update_option()` returns false both for a genuine
+ * failure and for a write that was not needed, and the mutators must not
+ * report the second as the first.
  *
- * Runs WITHOUT booting WordPress: every method under test is a pure function of
- * its input, and the class file only DECLARES at load.
+ * Runs WITHOUT booting WordPress — the option store below is a plain array, so
+ * the mutators are exercised as pure state transitions.
  *
  * Run:  php tests/verify-kind-lists.php   (local PHP CLI, no WP needed)
  *
@@ -34,7 +40,56 @@ if (!defined('ABSPATH')) {
     define('ABSPATH', __DIR__ . '/');
 }
 
-// --- Load the class under test (declare-only, no WP at load). ----------------
+// --- Minimal WP option shims. ------------------------------------------------
+//
+// `update_option` is modelled the way WordPress behaves, because that behaviour
+// IS the subject of the #27 assertions: it returns FALSE when the new value
+// equals the stored one, which is indistinguishable at the call site from a
+// genuine write failure. Two switches let both be provoked:
+//
+//   $GLOBALS['mc_write_fails'] — the write does not happen and reports false.
+//   $GLOBALS['mc_write_quiet'] — the write happens and reports false anyway.
+
+$GLOBALS['mc_options']     = [];
+$GLOBALS['mc_write_fails'] = false;
+$GLOBALS['mc_write_quiet'] = false;
+
+function get_option(string $name, $default = false) {
+    return array_key_exists($name, $GLOBALS['mc_options'])
+        ? $GLOBALS['mc_options'][$name]
+        : $default;
+}
+
+function update_option(string $name, $value, $autoload = null): bool {
+    if ($GLOBALS['mc_write_fails']) {
+        return false;
+    }
+
+    $unchanged = array_key_exists($name, $GLOBALS['mc_options'])
+        && $GLOBALS['mc_options'][$name] === $value;
+
+    $GLOBALS['mc_options'][$name] = $value;
+
+    return !$unchanged && !$GLOBALS['mc_write_quiet'];
+}
+
+function wp_cache_delete($key, $group = ''): bool {
+    return true;
+}
+
+function current_time(string $type, $gmt = 0): string {
+    return '2026-01-01 00:00:00';
+}
+
+function taxonomy_exists(string $taxonomy): bool {
+    return in_array($taxonomy, ['category', 'post_tag', 'sport'], true);
+}
+
+function post_type_exists(string $post_type): bool {
+    return in_array($post_type, ['post', 'page', 'event', 'mc_item'], true);
+}
+
+// --- Load the class under test. ----------------------------------------------
 
 require dirname(__DIR__) . '/includes/storage/class-rule-storage.php';
 require dirname(__DIR__) . '/includes/storage/class-option-rule-storage.php';
@@ -58,10 +113,22 @@ $of_type = static function (array $rules, string $type): array {
     ));
 };
 
-// --- Fixture: one settings option carrying every rule type, with the two -----
-// live types in their LEGACY shapes (pre-rename keys, combined acf_field_name,
-// scalar trigger_term_id, [N] single-term arrays) — the shapes the existing
-// read-time migration already handles and which must survive the fan-in
+/** Seed the option store and hand back a storage instance reading it. */
+$storage_over = static function (array $option): OptionRuleStorage {
+    $GLOBALS['mc_options']     = [OptionRuleStorage::OPTION_NAME => $option];
+    $GLOBALS['mc_write_fails'] = false;
+    $GLOBALS['mc_write_quiet'] = false;
+
+    return new OptionRuleStorage();
+};
+
+/** What is actually in the option right now. */
+$stored = static fn(): array => $GLOBALS['mc_options'][OptionRuleStorage::OPTION_NAME] ?? [];
+
+// --- Fixture: one PRE-#56 settings option carrying every rule type, with the -
+// two live types in their LEGACY shapes (pre-rename keys, combined
+// acf_field_name, scalar trigger_term_id, [N] single-term arrays) — the shapes
+// the read-time migration already handles and which must survive the fan-in
 // untouched.
 
 $settings = [
@@ -116,6 +183,10 @@ $all_types = [
 ];
 
 $lists = OptionRuleStorage::fan_in($settings);
+
+// =============================================================================
+// 1. THE MIGRATION — fan_in / fan_out.
+// =============================================================================
 
 // --- Shape: both kinds always present, every row typed. ----------------------
 
@@ -172,6 +243,15 @@ foreach ($all_types as $type) {
     }
 }
 $check('every legacy rule shape round-trips byte-for-byte', $round_trips);
+$check('fan_out strips the grouping key',
+    !array_key_exists('type', $back['propagation_rules'][0]));
+$check('fan_out names every type, even the empty ones',
+    OptionRuleStorage::fan_out(['term_rules' => [], 'format_rules' => []])
+        === array_fill_keys(array_keys($back), []));
+$check('fan_out drops untyped and non-array rows',
+    OptionRuleStorage::fan_out([
+        'term_rules' => ['garbage', ['taxonomy' => 'x'], ['type' => 'nope', 'taxonomy' => 'y']],
+    ]) === array_fill_keys(array_keys($back), []));
 
 // The regroup must not COERCE. Every key the legacy shapes carry has to arrive
 // on the far side untouched — normalize_rule_shape() would have renamed four of
@@ -194,11 +274,11 @@ $check('non-rule global keys are not swept into a kind list',
 $check('fan_in is idempotent on its own output',
     OptionRuleStorage::fan_in($settings + $lists) === $lists);
 
-$migrated = array_merge($settings, $lists);
+$twice = array_merge($settings, $lists);
 $check('a second migration pass finds nothing to change',
-    OptionRuleStorage::fan_in($migrated) === [
-        'term_rules'   => $migrated['term_rules'],
-        'format_rules' => $migrated['format_rules'],
+    OptionRuleStorage::fan_in($twice) === [
+        'term_rules'   => $twice['term_rules'],
+        'format_rules' => $twice['format_rules'],
     ]);
 
 // A row round-tripped back through save_rule() would carry a stale `type`. The
@@ -219,93 +299,70 @@ $junk = OptionRuleStorage::fan_in([
 $check('non-array rows and non-array type buckets are dropped',
     count($junk['term_rules']) === 1 && $junk['term_rules'][0]['name'] === 'ok');
 
-// --- Equivalence: the kind read path reproduces the type read path. ----------
-// This is what lets get_enabled_rules() move onto the kind list with no handler
-// edits. It must hold AFTER normalization, per type, including `id`.
+// =============================================================================
+// 2. THE UPGRADE ON READ — a pre-#56 option must still fire, and a kind list
+//    that already exists must never be re-derived over.
+// =============================================================================
 
-$projected = array_merge(
-    OptionRuleStorage::project_kind_rules($lists['term_rules']),
-    OptionRuleStorage::project_kind_rules($lists['format_rules'])
-);
+$legacy_storage = $storage_over($settings);
 
-$equivalent = [];
-foreach ($all_types as $type) {
-    $via_kind = $of_type($projected, $type);
-    $via_type = array_values(OptionRuleStorage::project_type_rules($type, $settings[$type]));
+$check('a pre-#56 option reads as rules without any admin load having run',
+    array_column($legacy_storage->get_kind_rules(OptionRuleStorage::KIND_TERM), 'name')
+        === ['P1', 'A1', 'A2', 'T1', 'R1', 'R2', 'H1', 'H2', 'L1']);
+$check('the upgrade seeds the format kind too',
+    array_column($legacy_storage->get_kind_rules(OptionRuleStorage::KIND_FORMAT), 'name')
+        === ['S1']);
+$check('a read alone persists nothing — the option is untouched',
+    $stored() === $settings);
+$check('non-rule globals survive the upgrade',
+    $legacy_storage->get_raw_settings()['manual_processing_enabled'] === true);
+$check('the legacy type-keyed keys are gone from what the layer serves',
+    array_intersect($all_types, array_keys($legacy_storage->get_raw_settings())) === []);
 
-    // The kind path adds `type`; that is the only permitted difference.
-    $stripped = array_map(static function (array $r): array {
-        unset($r['type']);
-        return $r;
-    }, $via_kind);
+// An ALREADY-authored kind list is authority. Re-deriving it from the legacy
+// arrays would group by type and so discard the cross-type order the author
+// dragged into place — the clobber #66 exists to make impossible.
+$authored = [
+    ['type' => 'hierarchical_rules', 'taxonomy' => 'category', 'name' => 'second'],
+    ['type' => 'propagation_rules',  'taxonomy' => 'category', 'name' => 'first'],
+];
+$mixed_storage = $storage_over([
+    // Legacy arrays that DISAGREE with the stored list, in every way that used
+    // to force a rebuild: different order, an extra rule, a missing one.
+    'propagation_rules'  => [['taxonomy' => 'category', 'name' => 'first']],
+    'hierarchical_rules' => [['taxonomy' => 'category', 'name' => 'second'], ['taxonomy' => 'post_tag', 'name' => 'ghost']],
+    OptionRuleStorage::KIND_TERM   => $authored,
+    OptionRuleStorage::KIND_FORMAT => [],
+]);
+$check('a stored kind list wins over the legacy arrays, order and membership',
+    array_column($mixed_storage->get_kind_rules(OptionRuleStorage::KIND_TERM), 'name')
+        === ['second', 'first']);
 
-    if ($stripped !== $via_type) {
-        $equivalent[] = $type;
-    }
-}
-$check('kind read == type read for every rule type, post-normalization',
-    $equivalent === []);
+// The prune is a consequence of the next WRITE, never of the read that decided
+// which shape to trust.
+$mixed_storage->save_rule('propagation_rules', -1, ['taxonomy' => 'post_tag', 'name' => 'added']);
+$check('the next write prunes the legacy arrays out of storage',
+    array_intersect($all_types, array_keys($stored())) === []);
+$check('the write appended to the END of the authored list',
+    array_column($stored()[OptionRuleStorage::KIND_TERM], 'name')
+        === ['second', 'first', 'added']);
 
-// Spot-check that normalization actually ran on the kind path — an equivalence
-// that held because BOTH paths skipped it would be worthless.
-$acf = $of_type($projected, 'related_post_terms_rules')[0];
-$check('kind path normalizes: legacy acf-ref keys are migrated at read time',
-    $acf['taxonomy'] === 'sport'
-    && $acf['keep_in_sync'] === true
-    && $acf['post_type'] === 'event'
-    && $acf['acf_field_name'] === 'related_team'
-    && $acf['reverse_acf_field_name'] === 'related_events'
-    && $acf['holder_role'] === 'target');
-$check('kind path normalizes: conflict_handling=skip is flagged for review',
-    ($of_type($projected, 'related_post_terms_rules')[1]['_migration_flag'] ?? '')
-        === 'conflict_handling=skip dropped');
-$check('kind path normalizes: related term ids are canonicalized',
-    $of_type($projected, 'related_rules')[0]['trigger_term_id'] === [12]
-    && $of_type($projected, 'related_rules')[0]['target_term_id'] === 34
-    && $of_type($projected, 'related_rules')[1]['trigger_term_id'] === [5, 7]
-    && $of_type($projected, 'related_rules')[1]['target_term_id'] === 9);
-$check('kind path normalizes: time_based single-term array collapses to int',
-    $of_type($projected, 'time_based_rules')[0]['target_term_id'] === 21);
+// =============================================================================
+// 3. TYPE COVERAGE — the kind map IS the enumeration now.
+// =============================================================================
 
-// `id` is PER TYPE, not the kind-list position. TitleSlugHandler persists
-// per-rule status keyed on this number, so re-basing it onto the kind list
-// would silently repoint every stored status. H2 in the term list sits at kind
-// position 7 but must still report id 1; the sole title_slug rule must be 0.
-$check('id is the per-type index, not the kind-list position',
-    array_column($of_type($projected, 'hierarchical_rules'), 'id') === [0, 1]
-    && array_column($of_type($projected, 'related_rules'), 'id') === [0, 1]
-    && $of_type($projected, 'hierarchical_level_restriction_rules')[0]['id'] === 0
-    && $of_type($projected, 'title_slug_rules')[0]['id'] === 0);
+$storage = $storage_over([]);
 
-// …and the two paths must still agree when the stored array is SPARSE. Nothing
-// the plugin writes produces holes (save_rule appends, delete_rule reindexes,
-// Wireframe stores lists), but the kind list has no keys to preserve — fan_in
-// reindexes — so a key-based id on the type side would diverge here silently,
-// and the equivalence is the whole basis for "no handler file changes".
-$sparse       = [3 => ['name' => 'S1'], 9 => ['name' => 'S2']];
-$sparse_type  = array_values(OptionRuleStorage::project_type_rules('hierarchical_rules', $sparse));
-$sparse_kind  = OptionRuleStorage::project_kind_rules(
-    OptionRuleStorage::fan_in(['hierarchical_rules' => $sparse])['term_rules']
-);
-$check('sparse stored arrays: both paths agree on id',
-    array_column($sparse_type, 'id') === [0, 1]
-    && array_column($sparse_kind, 'id') === [0, 1]);
+$flat = OptionRuleStorage::all_types();
+sort($flat);
+$sorted_all = $all_types;
+sort($sorted_all);
+$check('all_types() is exactly the seven rule types', $flat === $sorted_all);
 
-// --- Type ⇒ kind mapping (the lookup get_enabled_rules() routes through). ----
-
-$storage = new OptionRuleStorage();
-
-// The kind map and the storage layer's valid-type list must be the SAME SET.
-// This is what lets get_enabled_rules() drop its type-keyed fallback: a type
-// added to one list and not the other fails here instead of silently reading
-// zero rules at runtime. $valid_types is private, so read it reflectively —
-// the coupling is the point of the assertion.
-$vt    = new ReflectionProperty(OptionRuleStorage::class, 'valid_types');
-$valid = $vt->getValue($storage);
-sort($valid);
-$mapped = $all_types;
-sort($mapped);
-$check('KIND_TYPES covers exactly the storage layer\'s valid rule types', $valid === $mapped);
+$reported = $storage->get_rule_types();
+sort($reported);
+$check('get_rule_types() reports the same set — there is no second list',
+    $reported === $sorted_all);
 
 $check('every rule type maps to its kind', array_map(
     static fn(string $t): string => $storage->get_kind_for_type($t),
@@ -321,21 +378,22 @@ $check('every rule type maps to its kind', array_map(
 ]);
 $check('an unknown type maps to no kind', $storage->get_kind_for_type('nope_rules') === '');
 $check('an unknown kind reads as empty, not a fatal', $storage->get_kind_rules('nope') === []);
+$check('an unknown type reads as empty', $storage->get_rules('nope_rules') === []);
+$check('an unknown type cannot be saved', $storage->save_rule('nope_rules', -1, ['a' => 1]) === -1);
+$check('an unknown type cannot be validated into existence',
+    $storage->validate_rule('nope_rules', [])['valid'] === false);
 
-// --- The AUTHORED list (0.8.0, #57). ----------------------------------------
-//
-// Once a repeater writes `term_rules` directly, a plain fan-in is no longer a
-// refresh of that key — it is a CLOBBER, because the fan-in groups by type and
-// so cannot reproduce the cross-type order the author just dragged into place.
-// authored_kind_list() draws that line: keep the stored list while it still
-// agrees with the type-keyed arrays, rebuild only when something wrote behind
-// the repeater's back. These assertions are what stop a well-meaning
-// "simplify this back to fan_in()" from silently discarding rule order on the
-// next admin load.
-
-$migrated = OptionRuleStorage::migrated_types_for_kind(OptionRuleStorage::KIND_TERM);
+// A type may be declared in KIND_TYPES before its repeater subfields exist —
+// that is what CONFIG_MIGRATED_TYPES is for — but never the other way round: a
+// migrated type with no kind would be authored into a list nothing reads.
+$migrated = array_merge(
+    OptionRuleStorage::migrated_types_for_kind(OptionRuleStorage::KIND_TERM),
+    OptionRuleStorage::migrated_types_for_kind(OptionRuleStorage::KIND_FORMAT)
+);
+$check('every config-migrated type is a known type',
+    array_diff($migrated, $all_types) === []);
 $check('the term kind reports its migrated types — all six as of #58',
-    $migrated === [
+    OptionRuleStorage::migrated_types_for_kind(OptionRuleStorage::KIND_TERM) === [
         'propagation_rules',
         'related_post_terms_rules',
         'time_based_rules',
@@ -347,140 +405,284 @@ $check('the format kind reports its migrated type (#59)',
     OptionRuleStorage::migrated_types_for_kind(OptionRuleStorage::KIND_FORMAT)
         === ['title_slug_rules']);
 
-// fan_out_types: the save path's projection back onto the legacy arrays.
-$rows = [
-    ['type' => 'hierarchical_rules', 'taxonomy' => 'a'],
-    ['type' => 'propagation_rules',  'taxonomy' => 'b'],
-    ['type' => 'title_slug_rules',   'post_type' => 'c'],   // wrong kind, not requested
-    ['type' => 'hierarchical_rules', 'taxonomy' => 'd'],
-    'not-an-array',
-    ['taxonomy' => 'e'],                                    // no type at all
-];
-$out = OptionRuleStorage::fan_out_types($rows, $migrated);
-$check('fan_out_types keeps per-type order',
-    $out['hierarchical_rules'] === [['taxonomy' => 'a'], ['taxonomy' => 'd']]);
-$check('fan_out_types strips the grouping key',
-    !array_key_exists('type', $out['propagation_rules'][0]));
-$check('fan_out_types drops rows of unrequested types',
-    !array_key_exists('title_slug_rules', $out));
-$check('fan_out_types drops untyped and non-array rows',
-    array_sum(array_map('count', $out)) === 3);
-$check('fan_out_types always names every requested type',
-    array_keys($out) === $migrated);
-// An emptied repeater must CLEAR the legacy arrays, not leave orphans behind.
-$check('fan_out_types on an empty list clears every requested type',
-    OptionRuleStorage::fan_out_types([], $migrated)
-        === array_fill_keys($migrated, []));
+// =============================================================================
+// 4. THE READ — projection, normalization, and the per-type `id`.
+// =============================================================================
 
-// authored_kind_list: keep authored order when the two shapes still agree.
-// The live related row rides in the authored list like everything else now —
-// #58 gave it repeater subfields, so the sanitize-gutting hazard that used to
-// exclude it is gone.
-$authored = [
-    ['type' => 'hierarchical_rules', 'taxonomy' => 'h1'],
-    ['type' => 'related_rules',      'taxonomy' => 'r1'],   // interleaved:
-    ['type' => 'propagation_rules',  'taxonomy' => 'p1'],   // fan_in can't
-    ['type' => 'hierarchical_rules', 'taxonomy' => 'h2'],   // reproduce this
-];
-$settings = [
-    'propagation_rules'  => [['taxonomy' => 'p1']],
-    'hierarchical_rules' => [['taxonomy' => 'h1'], ['taxonomy' => 'h2']],
-    'related_rules'      => [['taxonomy' => 'r1']],
-    OptionRuleStorage::KIND_TERM => $authored,
-];
-$check('authored order survives when the legacy arrays agree',
-    OptionRuleStorage::authored_kind_list(OptionRuleStorage::KIND_TERM, $settings) === $authored);
-// (The drop-a-non-migrated-row branch is unreachable for the term kind since
-// #58 — every term type is migrated — but stays in the code: it is what makes
-// adding a future type to KIND_TYPES before CONFIG_MIGRATED_TYPES safe.)
+$projected = array_merge(
+    OptionRuleStorage::project_kind_rules($lists['term_rules']),
+    OptionRuleStorage::project_kind_rules($lists['format_rules'])
+);
 
-// A row naming NO type is different in kind: nothing else holds it, so it
-// cannot be quietly filtered out of a list we then declare trustworthy. It
-// must force the rebuild, so the stored shape is recomputed from the arrays
-// that ARE authoritative rather than silently shedding a row.
-// What a rebuild produces: the fan-in restricted to migrated types, which is
-// also what an absent stored list seeds (asserted below).
-$no_stored = $settings;
-unset($no_stored[OptionRuleStorage::KIND_TERM]);
-$rebuild_result = OptionRuleStorage::authored_kind_list(OptionRuleStorage::KIND_TERM, $no_stored);
+$acf = $of_type($projected, 'related_post_terms_rules')[0];
+$check('the read normalizes: legacy acf-ref keys are migrated at read time',
+    $acf['taxonomy'] === 'sport'
+    && $acf['keep_in_sync'] === true
+    && $acf['post_type'] === 'event'
+    && $acf['acf_field_name'] === 'related_team'
+    && $acf['reverse_acf_field_name'] === 'related_events'
+    && $acf['holder_role'] === 'target');
+$check('the read normalizes: conflict_handling=skip is flagged for review',
+    ($of_type($projected, 'related_post_terms_rules')[1]['_migration_flag'] ?? '')
+        === 'conflict_handling=skip dropped');
+$check('the read normalizes: related term ids are canonicalized',
+    $of_type($projected, 'related_rules')[0]['trigger_term_id'] === [12]
+    && $of_type($projected, 'related_rules')[0]['target_term_id'] === 34
+    && $of_type($projected, 'related_rules')[1]['trigger_term_id'] === [5, 7]
+    && $of_type($projected, 'related_rules')[1]['target_term_id'] === 9);
+$check('the read normalizes: time_based single-term array collapses to int',
+    $of_type($projected, 'time_based_rules')[0]['target_term_id'] === 21);
 
-foreach ([
-    'untyped row'       => ['taxonomy' => 'x'],
-    'unknown-type row'  => ['type' => 'not_a_rule_type', 'taxonomy' => 'x'],
-    'non-array row'     => 'garbage',
-] as $label => $bad) {
-    $corrupt = $settings;
-    $corrupt[OptionRuleStorage::KIND_TERM][] = $bad;
-    $check("an $label forces a rebuild rather than a silent drop",
-        OptionRuleStorage::authored_kind_list(OptionRuleStorage::KIND_TERM, $corrupt) === $rebuild_result);
-}
+// `id` is PER TYPE, not the kind-list position. TitleSlugHandler persists
+// per-rule status keyed on this number, so re-basing it onto the kind list
+// would silently repoint every stored status. H2 in the term list sits at kind
+// position 7 but must still report id 1; the sole title_slug rule must be 0.
+$check('id is the per-type index, not the kind-list position',
+    array_column($of_type($projected, 'hierarchical_rules'), 'id') === [0, 1]
+    && array_column($of_type($projected, 'related_rules'), 'id') === [0, 1]
+    && $of_type($projected, 'hierarchical_level_restriction_rules')[0]['id'] === 0
+    && $of_type($projected, 'title_slug_rules')[0]['id'] === 0);
 
-// Something wrote a legacy array behind the repeater's back (CLI save_rule, a
-// seeded fixture, an import): rebuild, so the new rule is visible rather than
-// hidden behind a stale authored copy.
-$behind_back = $settings;
-$behind_back['propagation_rules'][] = ['taxonomy' => 'p2'];
-$rebuilt = OptionRuleStorage::authored_kind_list(OptionRuleStorage::KIND_TERM, $behind_back);
-$check('a write behind the repeater\'s back rebuilds the list',
-    count($rebuilt) === 5);
-// fan_in() APPENDS `type` to each row, so the key order differs from the
-// authored rows above — compare on content, not on array identity.
-$check('the rebuild carries the new rule',
-    in_array(['taxonomy' => 'p2', 'type' => 'propagation_rules'], $rebuilt, true));
-$check('the rebuild carries the live types too (#58)',
-    in_array(['taxonomy' => 'r1', 'type' => 'related_rules'], $rebuilt, true));
+// An `id` already on the row is left alone — it is the caller's, not ours.
+$check('a row carrying its own id keeps it',
+    OptionRuleStorage::project_kind_rules([
+        ['type' => 'hierarchical_rules', 'id' => 7],
+    ])[0]['id'] === 7);
 
-// Idempotent: feeding the result back in must not change it again.
-$behind_back[OptionRuleStorage::KIND_TERM] = $rebuilt;
-$check('authored_kind_list is idempotent',
-    OptionRuleStorage::authored_kind_list(OptionRuleStorage::KIND_TERM, $behind_back) === $rebuilt);
-
-// The format kind is authored too since #59, so it gets the same two
-// decisions the term kind does: keep the author's order while the legacy
-// array still agrees, rebuild when something wrote behind the repeater's back.
-// (The "no migrated types" branch of authored_kind_list is now unreachable for
-// both kinds; it stays in the code as what makes declaring a future type in
-// KIND_TYPES safe a change before its subfields exist.)
-// `type` written LAST, matching where fan_in() appends it — the seed
-// assertion below compares with ===, which is key-order sensitive.
-$fmt_authored = [
-    ['post_type' => 'page', 'name' => 'B', 'type' => 'title_slug_rules'],
-    ['post_type' => 'post', 'name' => 'A', 'type' => 'title_slug_rules'],
-];
-$fmt = [
-    'title_slug_rules' => [
-        ['post_type' => 'page', 'name' => 'B'],
-        ['post_type' => 'post', 'name' => 'A'],
+// Rows are read in AUTHORED order. Nothing may regroup them by type: order is
+// the composition semantics a dispatcher pass executes in (ADR 0003 dec. 3).
+$interleaved = $storage_over([
+    OptionRuleStorage::KIND_TERM => [
+        ['type' => 'hierarchical_rules', 'name' => 'a'],
+        ['type' => 'propagation_rules',  'name' => 'b'],
+        ['type' => 'hierarchical_rules', 'name' => 'c'],
     ],
-    OptionRuleStorage::KIND_FORMAT => $fmt_authored,
+    OptionRuleStorage::KIND_FORMAT => [],
+]);
+$check('the kind read preserves interleaved authored order',
+    array_column($interleaved->get_kind_rules(OptionRuleStorage::KIND_TERM), 'name')
+        === ['a', 'b', 'c']);
+$check('a type read is that list filtered, still in authored order',
+    array_column($interleaved->get_rules('hierarchical_rules'), 'name') === ['a', 'c']);
+$check('a type read numbers ids within its own type',
+    array_column($interleaved->get_rules('hierarchical_rules'), 'id') === [0, 1]);
+$check('a caller-supplied type filter cannot widen a type read',
+    $interleaved->get_rules('propagation_rules', ['type' => 'hierarchical_rules'])
+        === $interleaved->get_rules('propagation_rules'));
+
+// =============================================================================
+// 5. THE MUTATORS — every entry point operates on the kind list, and the
+//    per-type $rule_id has to be translated to a list POSITION to do it.
+// =============================================================================
+
+$seed = static fn(): array => [
+    OptionRuleStorage::KIND_TERM => [
+        ['type' => 'hierarchical_rules', 'name' => 'h0', 'enabled' => true],
+        ['type' => 'propagation_rules',  'name' => 'p0', 'enabled' => true],
+        ['type' => 'hierarchical_rules', 'name' => 'h1', 'enabled' => false],
+    ],
+    OptionRuleStorage::KIND_FORMAT => [
+        ['type' => 'title_slug_rules', 'name' => 's0', 'enabled' => true],
+    ],
 ];
-$check('the format kind keeps its authored order when the legacy array agrees',
-    OptionRuleStorage::authored_kind_list(OptionRuleStorage::KIND_FORMAT, $fmt)
-        === $fmt_authored);
 
-$fmt_behind = $fmt;
-$fmt_behind['title_slug_rules'][] = ['post_type' => 'mc_item', 'name' => 'C'];
-$check('a title/slug rule written behind the repeater\'s back rebuilds the format list',
-    count(OptionRuleStorage::authored_kind_list(OptionRuleStorage::KIND_FORMAT, $fmt_behind)) === 3);
+// get_rule() indexes by the per-type id, across a cross-type list.
+$s = $storage_over($seed());
+$check('get_rule reads the type\'s Nth rule, not the list\'s Nth',
+    ($s->get_rule('hierarchical_rules', 1)['name'] ?? '') === 'h1');
+$check('get_rule past the end of a type is null',
+    $s->get_rule('hierarchical_rules', 2) === null);
+$check('get_rule rejects a negative id', $s->get_rule('hierarchical_rules', -1) === null);
+$check('rule_exists agrees with get_rule',
+    $s->rule_exists('propagation_rules', 0) && !$s->rule_exists('propagation_rules', 1));
+$check('count_rules counts one type\'s slice',
+    $s->count_rules('hierarchical_rules') === 2 && $s->count_rules('title_slug_rules') === 1);
 
-// A first upgrade has no stored format list — seed from the legacy array, in
-// the array's own order.
-$fmt_unseeded = $fmt;
-unset($fmt_unseeded[OptionRuleStorage::KIND_FORMAT]);
-$check('an absent format list seeds from title_slug_rules',
-    OptionRuleStorage::authored_kind_list(OptionRuleStorage::KIND_FORMAT, $fmt_unseeded)
-        === $fmt_authored);
+// save_rule, update: the row at the type's Nth position, in place.
+$s = $storage_over($seed());
+$check('save_rule updates the type\'s Nth rule in place',
+    $s->save_rule('hierarchical_rules', 1, ['name' => 'h1-edited']) === 1);
+$check('the update landed on the right list position, order intact',
+    array_column($stored()[OptionRuleStorage::KIND_TERM], 'name') === ['h0', 'p0', 'h1-edited']);
+$check('the update kept the row typed',
+    (($stored()[OptionRuleStorage::KIND_TERM][2] ?? [])['type'] ?? '') === 'hierarchical_rules');
+$check('save_rule rejects an id the type does not have',
+    $s->save_rule('hierarchical_rules', 5, ['name' => 'nope']) === -1);
+$check('save_rule rejects a negative id that is not the create sentinel',
+    $s->save_rule('hierarchical_rules', -2, ['name' => 'nope']) === -1);
 
-// A first upgrade has no stored list at all — seed from the legacy arrays.
-$unseeded = $settings;
-unset($unseeded[OptionRuleStorage::KIND_TERM]);
-$check('an absent stored list seeds from the legacy arrays',
-    OptionRuleStorage::authored_kind_list(OptionRuleStorage::KIND_TERM, $unseeded) === [
-        ['taxonomy' => 'p1', 'type' => 'propagation_rules'],
-        ['taxonomy' => 'r1', 'type' => 'related_rules'],
-        ['taxonomy' => 'h1', 'type' => 'hierarchical_rules'],
-        ['taxonomy' => 'h2', 'type' => 'hierarchical_rules'],
+// save_rule, create: appended to the END of the kind list. Position is order
+// and order is composition, so an unplaced rule belongs last, where it cannot
+// change what the existing list already does.
+$s = $storage_over($seed());
+$check('save_rule returns the new per-type id, not the list position',
+    $s->save_rule('propagation_rules', -1, ['name' => 'p1']) === 1);
+$check('a new rule is appended to the end of the kind list',
+    array_column($stored()[OptionRuleStorage::KIND_TERM], 'name') === ['h0', 'p0', 'h1', 'p1']);
+$check('the appended row carries its type',
+    (($stored()[OptionRuleStorage::KIND_TERM][3] ?? [])['type'] ?? '') === 'propagation_rules');
+$check('a read-time id on the payload is never persisted',
+    !array_key_exists('id', $stored()[OptionRuleStorage::KIND_TERM][3] ?? []));
+$check('a create writes into the right KIND',
+    $s->save_rule('title_slug_rules', -1, ['name' => 's1']) === 1
+    && count($stored()[OptionRuleStorage::KIND_FORMAT]) === 2
+    && count($stored()[OptionRuleStorage::KIND_TERM]) === 4);
+
+// A stale `type` on the payload is corrected, not trusted — the argument names
+// the type, the same rule fan_in() follows.
+$s = $storage_over($seed());
+$s->save_rule('propagation_rules', -1, ['name' => 'p1', 'type' => 'related_rules']);
+$check('a stale type on the payload is overwritten by the argument',
+    (($stored()[OptionRuleStorage::KIND_TERM][3] ?? [])['type'] ?? '') === 'propagation_rules');
+
+// delete_rule: removes the type's Nth row and renumbers the type, leaving the
+// other types where they were.
+$s = $storage_over($seed());
+$check('delete_rule removes the type\'s Nth rule', $s->delete_rule('hierarchical_rules', 0));
+$check('the remaining rows keep their order',
+    array_column($stored()[OptionRuleStorage::KIND_TERM] ?? [], 'name') === ['p0', 'h1']);
+// A hole would still READ correctly (the projection walks values), so the
+// symptom of a missing reindex is a stored list that is no longer a list —
+// which serializes differently and breaks any === against a rebuilt one.
+$check('the stored list stays 0-indexed after a delete',
+    array_keys($stored()[OptionRuleStorage::KIND_TERM] ?? []) === [0, 1]);
+$check('the surviving rule of that type renumbers to 0',
+    ($s->get_rule('hierarchical_rules', 0)['name'] ?? '') === 'h1');
+$check('the other type is unaffected',
+    ($s->get_rule('propagation_rules', 0)['name'] ?? '') === 'p0');
+$check('delete_rule on an id the type does not have is false',
+    !$s->delete_rule('hierarchical_rules', 3));
+$check('delete_rule of an unknown type is false', !$s->delete_rule('nope_rules', 0));
+
+// bulk_toggle_rules: per-type ids again, and no-ops are not counted.
+$s = $storage_over($seed());
+$check('bulk_toggle counts only the rules whose state changes',
+    $s->bulk_toggle_rules('hierarchical_rules', [0, 1], false) === 1);
+$check('bulk_toggle toggled the right list position',
+    array_column($stored()[OptionRuleStorage::KIND_TERM], 'enabled') === [false, true, false]);
+$check('bulk_toggle of an all-correct set reports 0 without failing',
+    $s->bulk_toggle_rules('hierarchical_rules', [0, 1], false) === 0);
+$check('bulk_toggle of an unknown type reports 0',
+    $s->bulk_toggle_rules('nope_rules', [0], true) === 0);
+
+// duplicate_rule rides on get_rule + save_rule, so it must land at the end too.
+$s = $storage_over($seed());
+$check('duplicate_rule appends a copy with the next per-type id',
+    $s->duplicate_rule('hierarchical_rules', 0) === 2);
+$check('the copy is last in the list and named',
+    (($stored()[OptionRuleStorage::KIND_TERM][3] ?? [])['name'] ?? '') === 'h0 (Copy)');
+
+// search_rules sweeps both kinds and reports each row's own type.
+$s = $storage_over($seed());
+$hits = $s->search_rules('0');
+$check('search_rules sweeps every kind', count($hits) === 3);
+$check('search_rules reports the row\'s type',
+    array_column($hits, 'type')
+        === ['hierarchical_rules', 'propagation_rules', 'title_slug_rules']);
+$check('search_rules honours filters',
+    count($s->search_rules('h', ['type' => 'hierarchical_rules'])) === 2);
+
+// export / import: the interchange format stays type-keyed, but both ends of it
+// now read and write the kind list.
+$s      = $storage_over($seed());
+$export = $s->export_rules();
+$check('export groups the kind lists back by type',
+    array_keys($export['rules']) === ['propagation_rules', 'hierarchical_rules', 'title_slug_rules']);
+$check('export omits types with no rules',
+    !array_key_exists('time_based_rules', $export['rules']));
+$check('export honours an explicit type list',
+    array_keys($s->export_rules(['types' => ['title_slug_rules', 'nope_rules']])['rules'])
+        === ['title_slug_rules']);
+
+$s      = $storage_over($seed());
+$result = $s->import_rules([
+    'time_based_rules' => [['name' => 't0'], ['name' => 't1']],
+    'nope_rules'       => [['name' => 'x']],
+]);
+$check('import reports what it imported', $result['imported'] === 2);
+$check('import rejects an unknown type by name',
+    $result['errors'] === ['Invalid rule type: nope_rules']);
+$check('imported rules land in the kind list, at the end, typed',
+    array_column($stored()[OptionRuleStorage::KIND_TERM], 'name')
+        === ['h0', 'p0', 'h1', 't0', 't1']
+    && (($stored()[OptionRuleStorage::KIND_TERM][4] ?? [])['type'] ?? '') === 'time_based_rules');
+$check('import skips an exact-name duplicate',
+    $s->import_rules(['time_based_rules' => [['name' => 't0']]])['skipped'] === 1);
+
+// =============================================================================
+// 6. #27 — a write that was not needed is not a failure.
+// =============================================================================
+
+$s = $storage_over($seed());
+$check('save_rule of data identical to storage reports success, not -1',
+    $s->save_rule('hierarchical_rules', 0, ['name' => 'h0', 'enabled' => true]) === 0);
+
+$s = $storage_over($seed());
+$GLOBALS['mc_write_quiet'] = true;
+$check('a write that succeeds but reports false is still a success',
+    $s->save_rule('propagation_rules', -1, ['name' => 'p1']) === 1);
+$check('...and it really did persist',
+    count($stored()[OptionRuleStorage::KIND_TERM]) === 4);
+$check('import counts a quiet write as imported, not an error',
+    $s->import_rules(['time_based_rules' => [['name' => 't0']]]) === [
+        'imported' => 1,
+        'skipped'  => 0,
+        'errors'   => [],
     ]);
+$GLOBALS['mc_write_quiet'] = false;
+
+// A GENUINE failure still fails, and must not leave the request cache pointing
+// at data the database does not hold — a later save in the same request would
+// otherwise persist the failed data as its baseline.
+$s = $storage_over($seed());
+$GLOBALS['mc_write_fails'] = true;
+$check('a genuine write failure still reports failure',
+    $s->save_rule('propagation_rules', -1, ['name' => 'p1']) === -1);
+$check('import counts a genuine failure as an error',
+    $s->import_rules(['time_based_rules' => [['name' => 't0']]])['errors']
+        === ['Failed to import rule: t0']);
+$check('bulk_toggle reports 0 on a genuine write failure',
+    $s->bulk_toggle_rules('hierarchical_rules', [0], false) === 0);
+$GLOBALS['mc_write_fails'] = false;
+$check('the failed write did not poison the request cache',
+    array_column($s->get_kind_rules(OptionRuleStorage::KIND_TERM), 'name') === ['h0', 'p0', 'h1']);
+
+// =============================================================================
+// 7. THE ADMIN-LOAD PERSIST — one write, then nothing.
+// =============================================================================
+
+$s = $storage_over($settings);
+$check('the first admin load persists the upgraded shape',
+    $s->maybe_migrate_kind_lists() === true);
+$check('what it wrote is the kind shape, legacy arrays pruned',
+    array_keys($stored()) === [
+        'conflict_handling_overrides',
+        'manual_processing_enabled',
+        OptionRuleStorage::KIND_TERM,
+        OptionRuleStorage::KIND_FORMAT,
+    ]);
+$check('the persisted list is what the read path was already serving',
+    ($stored()[OptionRuleStorage::KIND_TERM] ?? null) === $lists['term_rules']);
+$check('a second load finds nothing to do',
+    (new OptionRuleStorage())->maybe_migrate_kind_lists() === false);
+$check('...and the marker is set',
+    get_option(OptionRuleStorage::KIND_SCHEMA_FLAG) === OptionRuleStorage::KIND_SCHEMA_VERSION);
+
+// The acf-ref rewrite runs over the kind list now, and is flag-gated once.
+$s = $storage_over($settings);
+$check('the acf-ref rewrite persists the key renames', $s->maybe_migrate_acf_ref_storage() === true);
+$rewritten = array_values(array_filter(
+    $stored()[OptionRuleStorage::KIND_TERM] ?? [],
+    static fn(array $r): bool => ($r['type'] ?? '') === 'related_post_terms_rules'
+));
+$check('the rewritten row is in the new shape, in the list',
+    (($rewritten[0] ?? [])['taxonomy'] ?? '') === 'sport'
+    && (($rewritten[0] ?? [])['keep_in_sync'] ?? null) === true
+    && !array_key_exists('bidirectional', $rewritten[0] ?? []));
+$check('the combined acf_field_name is NOT split in storage',
+    (($rewritten[0] ?? [])['acf_field_name'] ?? '') === 'event:related_team');
+$check('the rewrite is flag-gated to one run',
+    (new OptionRuleStorage())->maybe_migrate_acf_ref_storage() === false);
 
 // --- Report. ----------------------------------------------------------------
 
@@ -492,5 +694,5 @@ if ($fail) {
     exit(1);
 }
 
-fwrite(STDOUT, "KIND-LISTS OK — all $total assertions passed (fan-in idempotent, lossless, kind read == type read; #56).\n");
+fwrite(STDOUT, "KIND-LISTS OK — all $total assertions passed (migration lossless + idempotent, upgrade-on-read never clobbers, every mutator on the kind list, no-op-equal is not failure; #56/#66).\n");
 exit(0);

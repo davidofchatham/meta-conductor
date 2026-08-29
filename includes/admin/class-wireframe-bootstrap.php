@@ -55,62 +55,11 @@ class WireframeBootstrap {
         // to the per-taxonomy default, not to a rule (#53 §2).
         add_filter('wp-wireframe/save/payload', [self::class, 'snapshot_claim_override_labels'], 10, 1);
 
-        // Project the ordered lists back onto the type-keyed arrays handlers
-        // still read. Priority 20: strictly AFTER the snapshots above, so the
-        // row titles they bake are part of what gets projected.
-        add_filter('wp-wireframe/save/payload', [self::class, 'fan_out_rule_lists'], 20, 1);
-
         // The collision advisory's two surfaces (#65): recompute-and-persist on
         // `settings_saved`, and the on-demand ActionField re-check. Registered
         // from the detector itself rather than here — they are its hooks, and
         // both fire on requests that never reach `boot()`'s admin gate.
         CollisionDetector::init();
-    }
-
-    /**
-     * Project each ordered kind list onto the type-keyed arrays.
-     *
-     * Since #57 the repeater is the WRITER of `term_rules`, but every handler
-     * still reads rules derived from the type-keyed arrays
-     * (`OptionRuleStorage::get_kind_rules()` fans them in at read time — #66
-     * flips that). Without this hook a rule authored in the repeater would
-     * save, render back correctly, and never fire.
-     *
-     * Injected keys survive because this runs on `wp-wireframe/save/payload`,
-     * after the Sanitizer and before the merge into saved state — the same
-     * seam the row-title snapshots use. That merge is
-     * `array_merge($saved, $clean)`, so writing a type's array here REPLACES
-     * it wholesale, which is what makes a deletion in the repeater actually
-     * delete rather than leave an orphan behind.
-     *
-     * Only types the repeater authors are written. A kind list is not touched
-     * at all unless the payload carries it, so saving an unrelated tab cannot
-     * blank a rule array.
-     *
-     * @since 0.8.0
-     * @param array $clean_values Sanitized top-level field map.
-     * @return array
-     */
-    public static function fan_out_rule_lists(array $clean_values): array {
-        foreach ([OptionRuleStorage::KIND_TERM, OptionRuleStorage::KIND_FORMAT] as $kind) {
-            // array_key_exists, not isset/empty: an emptied repeater posts an
-            // empty array, and that has to clear the type arrays rather than
-            // be mistaken for "this tab wasn't submitted".
-            if (!array_key_exists($kind, $clean_values) || !is_array($clean_values[$kind])) {
-                continue;
-            }
-
-            $types = OptionRuleStorage::migrated_types_for_kind($kind);
-            if (empty($types)) {
-                continue;
-            }
-
-            foreach (OptionRuleStorage::fan_out_types($clean_values[$kind], $types) as $type => $rows) {
-                $clean_values[$type] = $rows;
-            }
-        }
-
-        return $clean_values;
     }
 
     /**
@@ -378,13 +327,6 @@ class WireframeBootstrap {
      * blank-collapsed-row failure is identical, and it is newly reachable
      * there because the format list stopped interpolating `{name}` live.
      *
-     * The result is written to BOTH the ordered list and the type-keyed
-     * arrays, through the same fan-out the save path uses. That is not
-     * optional: `authored_kind_list()` decides whether the stored list is
-     * still trustworthy by comparing it against those arrays, so repairing one
-     * side only would make them disagree and get the authored order thrown
-     * away on the next load.
-     *
      * Self-limiting — once every row is migrated and titled there is nothing
      * to do, so this is at most one write per rule set, not one per admin load.
      * Both kinds are repaired in ONE write for the same reason: two
@@ -420,7 +362,7 @@ class WireframeBootstrap {
             return;
         }
 
-        $settings = array_merge($settings, self::fan_out_rule_lists($changed));
+        $settings = array_merge($settings, $changed);
 
         // update_option returns false for a genuine failure AND for a no-op on
         // equality; here the values provably differ, so false can only mean the
@@ -1085,23 +1027,27 @@ class WireframeBootstrap {
         // BEFORE Wireframe reads the option raw (it bypasses normalize_rule_shape,
         // so the form would otherwise render legacy rows with config defaults and
         // a resave would corrupt them). Flag-gated → at most one write. (SPEC §V16/B6)
+        //
+        // It reads through the storage layer, which upgrades a pre-#56 option to
+        // the kind-list shape on the way in — so the rewrite lands on the rows
+        // the repeater is about to render, whichever shape the site arrived in.
         $storage = \BWS\MetaConductor\Storage\StorageFactory::get_instance();
         if (method_exists($storage, 'maybe_migrate_acf_ref_storage')) {
             $storage->maybe_migrate_acf_ref_storage();
         }
 
-        // Fan-in of the 7 type-keyed rule arrays into the two effect-kind
-        // ordered lists (ADR 0003, #56). Runs AFTER the acf-ref rewrite above
-        // so the persisted lists carry already-key-renamed related_post_terms
-        // rows. Additive — the type-keyed arrays are left untouched — and it
-        // writes only when the recomputed lists differ from the stored ones,
-        // which also repairs the staleness an admin save leaves behind (it
-        // merges over the saved option, carrying the old lists through).
-        // Handlers read a list DERIVED at read time, so front-end and cron
+        // Persist the kind-list shape (ADR 0003, #56 → #66). Runs AFTER the
+        // acf-ref rewrite above so the stored lists carry already-key-renamed
+        // related_post_terms rows. Writes only when the stored option differs
+        // from the upgraded shape, so it is at most one write per site.
+        //
+        // Reads apply the same upgrade themselves, so front-end and cron
         // requests — which never reach this boot — see the same rules whether
-        // or not this write has happened.
-        if (method_exists($storage, 'sync_kind_lists')) {
-            $storage->sync_kind_lists();
+        // or not this write has happened. The ADMIN is what needs the write:
+        // it reads the option RAW, and the ordered repeater can only bind to
+        // `term_rules` / `format_rules` if those keys are in storage.
+        if (method_exists($storage, 'maybe_migrate_kind_lists')) {
+            $storage->maybe_migrate_kind_lists();
         }
 
         // Bring the persisted list up to what the repeater expects to render,

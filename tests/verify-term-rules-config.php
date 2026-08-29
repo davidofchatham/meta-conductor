@@ -368,73 +368,40 @@ foreach ($subfields as $s) {
 $check('an untyped row shows only the shared frame',
     $untyped === ['type', 'enabled', 'post_status', 'row_title']);
 
-// --- The save path: repeater rows land back in the legacy arrays. ----------
+// --- The save path: the repeater's list IS the stored shape (#66). ---------
 //
-// The repeater writes `term_rules`, but every handler still reads rules
-// derived from the type-keyed arrays until #66. Without this projection a rule
-// authored here would save, render back correctly, and never fire — the
-// quietest possible failure.
+// Until #66 these rows had to be projected back onto seven type-keyed arrays on
+// the same save, because that was what handlers read. The contract ticket
+// deleted the projection along with the arrays: what the repeater writes to
+// `term_rules` is what storage holds and what a pass reads, in that order. A
+// payload filter that re-introduced a type-keyed copy would recreate exactly
+// the two-shapes reconciliation ADR 0003 set out to remove.
 
-$payload = WireframeBootstrap::fan_out_rule_lists([
+$check('the type-keyed save projection is gone (#66)',
+    !method_exists(WireframeBootstrap::class, 'fan_out_rule_lists'));
+
+// The snapshots are all that touch the list now, and they must leave it a KIND
+// list: same rows, same order, still typed, `row_title` baked on.
+$snapshotted = WireframeBootstrap::snapshot_term_rule_labels([
     $KIND => [
-        ['type' => 'hierarchical_rules', 'taxonomy' => 'category', 'row_title' => 'first'],
-        ['type' => 'propagation_rules',  'taxonomy' => 'category'],
-        ['type' => 'related_rules',      'trigger_taxonomy' => 'category'],
-        ['type' => 'hierarchical_rules', 'taxonomy' => 'post_tag'],
+        ['type' => 'hierarchical_rules', 'taxonomy' => 'category'],
+        ['type' => 'propagation_rules', 'enabled' => false, 'taxonomy' => 'category'],
     ],
-    'title_slug_rules' => [['post_type' => 'untouched']],
 ]);
-$check('fan-out writes each migrated type\'s array',
-    $payload['hierarchical_rules'] === [
-        ['taxonomy' => 'category', 'row_title' => 'first'],
-        ['taxonomy' => 'post_tag'],
-    ]);
-$check('fan-out carries the baked row title through',
-    ($payload['hierarchical_rules'][0]['row_title'] ?? null) === 'first');
-$check('fan-out writes the live types too (#58)',
-    $payload['related_rules'] === [['trigger_taxonomy' => 'category']]);
-$check('fan-out names every migrated type, even the empty ones',
-    $payload['time_based_rules'] === []
-    && $payload['hierarchical_level_restriction_rules'] === []
-    && $payload['related_post_terms_rules'] === []);
-// The payload carries the TERM list only — a save from the Auto-Set tab. The
-// term projection must not reach into another kind's array. (Until #59 this
-// read as "leaves a non-migrated type alone"; title_slug_rules is migrated now,
-// and the guard that drops rows of types outside the requested list is
-// exercised by H10's fan_out_types assertions.)
-$check('a term-list save does not touch the format kind\'s array',
-    $payload['title_slug_rules'] === [['post_type' => 'untouched']]);
-// The same projection runs for the format kind since #59 — one loop, both
-// lists. H12 owns the format side; this asserts only that the term list's
-// projection did not become term-only.
-$fmt_payload = WireframeBootstrap::fan_out_rule_lists([
-    OptionRuleStorage::KIND_FORMAT => [['type' => 'title_slug_rules', 'post_type' => 'x']],
-]);
-$check('fan-out projects the format kind too (#59)',
-    $fmt_payload['title_slug_rules'] === [['post_type' => 'x']]);
+$check('a rule-tab save payload carries the kind list and no type-keyed copy',
+    array_keys($snapshotted) === [$KIND]);
+$check('the snapshot keeps every row, in order, still typed',
+    array_column($snapshotted[$KIND], 'type')
+        === ['hierarchical_rules', 'propagation_rules']);
+$check('the snapshot bakes the row title onto the list rows',
+    ($snapshotted[$KIND][0]['row_title'] ?? '') !== ''
+    && str_starts_with($snapshotted[$KIND][1]['row_title'] ?? '', '[Disabled] '));
 
-// An emptied repeater must CLEAR the legacy arrays. `array_merge($saved,
-// $clean)` only replaces keys the payload carries, so an absent key would
-// leave every deleted rule still firing.
-$cleared = WireframeBootstrap::fan_out_rule_lists([$KIND => []]);
-$check('deleting every row clears the legacy arrays',
-    $cleared['propagation_rules'] === [] && $cleared['hierarchical_rules'] === []);
-
-// A save from another tab carries no rule list at all — it must not be read
-// as "delete everything".
-$other_tab = WireframeBootstrap::fan_out_rule_lists(['manual_processing_enabled' => true]);
-$check('a payload without the rule list writes no rule arrays',
-    $other_tab === ['manual_processing_enabled' => true]);
-
-// Hook order: titles are baked at priority 10, projected at 20, so the copy
-// in the legacy array carries the title too.
-$ordered = WireframeBootstrap::fan_out_rule_lists(
-    WireframeBootstrap::snapshot_term_rule_labels([
-        $KIND => [['type' => 'propagation_rules', 'enabled' => false, 'taxonomy' => 'category']],
-    ])
-);
-$check('the snapshot runs before the projection',
-    str_starts_with($ordered['propagation_rules'][0]['row_title'] ?? '', '[Disabled] '));
+// A save from another tab carries no rule list at all — it must pass through
+// untouched, not be read as "delete everything".
+$check('a payload without the rule list is returned untouched',
+    WireframeBootstrap::snapshot_term_rule_labels(['manual_processing_enabled' => true])
+        === ['manual_processing_enabled' => true]);
 
 // --- #16: a legacy hierarchical row is REWRITTEN, not just read. -----------
 //

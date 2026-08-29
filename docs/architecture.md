@@ -622,7 +622,7 @@ H11 (`tests/verify-term-rules-config.php`) and H12 (`tests/verify-format-rules-c
 
 Row titles are a **save-time snapshot** (`row_title`, rendered by `title_template`), assembled by `snapshot_term_rule_labels()` / `snapshot_format_rule_labels()` dispatching on the row's `type`. The format list gained one in #59 despite `{name}` having been interpolable live: a substitution-only template cannot carry the disabled marker, the post-type scope, or a second rule type's schema, and adding the snapshot later would be the restructure #59 exists to avoid.
 
-`WireframeBootstrap::repair_stored_rules()` runs on admin load, before `App::boot()`, and exists because **Wireframe reads the settings option raw** — it does not pass through the storage layer's read-time adapters, so anything a handler tolerates on read but the config does not declare gets rewritten by the first save (`RepeaterField::sanitize` rebuilds each row from declared subfields, filling defaults). That is invariant #1's hazard, and it takes two kinds of repair: the term list's shape migrations (`#16` `inheritance_behavior`, legacy related term ids, the ACF-reference key rename), and — on **both** kind lists since #59 — backfilling a `row_title` for any rule that reached storage some other way. `title_slug_rules` needs no shape migration: it moved into the format repeater with its stored keys unchanged. Everything writes through `fan_out_rule_lists()` in ONE `update_option`, so the ordered lists and the type-keyed arrays stay in agreement — repairing one side only would make `authored_kind_list()` distrust the list and throw the authored order away.
+`WireframeBootstrap::repair_stored_rules()` runs on admin load, before `App::boot()`, and exists because **Wireframe reads the settings option raw** — it does not pass through the storage layer's read-time adapters, so anything a handler tolerates on read but the config does not declare gets rewritten by the first save (`RepeaterField::sanitize` rebuilds each row from declared subfields, filling defaults). That is invariant #1's hazard, and it takes two kinds of repair: the term list's shape migrations (`#16` `inheritance_behavior`, legacy related term ids, the ACF-reference key rename), and — on **both** kind lists since #59 — backfilling a `row_title` for any rule that reached storage some other way. `title_slug_rules` needs no shape migration: it moved into the format repeater with its stored keys unchanged. Both kinds are repaired in ONE `update_option`, so two writes cannot leave the two lists belonging to different admin loads.
 
 ### Why Wireframe
 
@@ -648,47 +648,44 @@ Storage is the adapter boundary between writers (current: Wireframe REST) and ha
 
 ## Effect-kind rule lists
 
-Rules also exist as **two ordered lists keyed by effect kind** — `term_rules` (six types) and `format_rules` (`title_slug`) — each row carrying its own `type`, with order being array position. This is the model [ADR 0003](adr/0003-ordered-rule-list-and-dispatcher.md) settles on and the shape the Phase 4 dispatcher iterates.
+Rules are stored as **two ordered lists keyed by effect kind** — `term_rules` (six types) and `format_rules` (`title_slug`) — each row carrying its own `type`, with order being array position. This is the model [ADR 0003](adr/0003-ordered-rule-list-and-dispatcher.md) settles on, the shape the Phase 4 dispatcher iterates, and since **#66** the only shape storage holds.
 
-It ships **expand-first**, so both shapes are live at once and the split of duties matters:
+It arrived expand-first (#56): from #56 to #64 the two lists lived alongside the seven type-keyed arrays that predate them, so each rule type could move to the dispatcher one at a time. The contract ticket (#66) deleted the old shape once the last conversion landed. What that leaves:
 
-| | Type-keyed arrays (7) | Kind lists (2) |
-|---|---|---|
-| Written by | the ordered repeater's save-time projection, plus every storage-layer save | the ordered repeater (raw `update_option` via Wireframe), plus `sync_kind_lists()` |
-| Read by | `get_rules()`, everything pre-existing | `get_kind_rules()` → `get_enabled_rules()`, and the settings page |
-| Authority today | **yes, for behaviour** | **yes, for order** — but the rules themselves are derived on read |
-
-`get_kind_rules()` **derives the list at read time** via `fan_in()` rather than reading the persisted copy. The type-keyed arrays are what every handler's behaviour hangs off, so deriving is the only way a front-end or cron request — which never reaches the admin-gated `WireframeBootstrap::boot` — is guaranteed to see what the admin last saved. It also means no admin save can desync behaviour, and an emptied rule set cannot resurrect from a stale persisted copy. Authority flips to the persisted copy in the contract ticket (#66), when the type-keyed path is deleted.
-
-### Authored order vs derived rules
-
-The config collapse (#57, #58, #59) made the persisted `term_rules` and `format_rules` keys the things the settings page **writes**, which splits the two lists' roles in a way worth stating plainly:
-
-- The **rules** are derived. `WireframeBootstrap::fan_out_rule_lists()` projects each saved row back into its type-keyed array on the same save, so the derived read keeps seeing repeater edits, and a deleted row actually stops firing (the projection writes an *empty* array rather than omitting the key — Wireframe merges rather than replaces, so an absent key would leave the rule in place).
-- The **order** is authored, and only the persisted list has it. `fan_in()` groups by type, so it can never reproduce a list where a level-restriction rule sits above a propagation rule.
-
-  Since #60 that order has a consumer, and it reads the persisted list: `get_authored_kind_rules()` is the dispatcher's path, `get_kind_rules()` stays every handler's. Two reads of one kind is not duplication but a division of authority while both shapes are live — the persisted list is authoritative for ORDER, the type-keyed arrays for MEMBERSHIP, and `authored_kind_list()` is where the two are reconciled (keep the stored order while it still agrees per type; rebuild in `KIND_TYPES` order when a writer went behind the repeater's back). Handlers keep the derived read because they filter to their own type, where the two orders are the same sequence. The pair collapses at #66.
-
-`sync_kind_lists()` therefore stopped being a plain recompute, because on an authored list a recompute *is* a clobber. `authored_kind_list()` decides per kind:
-
-| Kind has… | Behaviour |
+| | Kind lists (2) |
 |---|---|
-| migrated types (both kinds since #59) | keep the stored list while `fan_out_types()` of it still equals the type-keyed arrays; otherwise rebuild |
-| no migrated types (no kind, since #59) | plain `fan_in()` — a pure derived duplicate, #56's regime. Kept as what makes declaring a future type in `KIND_TYPES` safe a change before its subfields exist |
+| Written by | the ordered repeater (raw `update_option` via Wireframe), plus every storage-layer save |
+| Read by | `get_kind_rules()` — the dispatcher's pass, `get_enabled_rules()`, `get_rules()`, and the settings page |
+| Authority | **rules and order both** |
 
-The rebuild path is what picks up a write that bypassed the page — a WP-CLI `save_rule()`, a seeded fixture, an import — at the cost of the authored order, which that writer never had. Still not gated on the schema flag, which stays a marker: a one-shot gate would refuse to ever repair the list again.
+`get_kind_rules()` serves the persisted list **verbatim**. Nothing regroups or re-sorts it, because order is the composition semantics a pass executes in (ADR 0003 decision 3) — a hierarchical rule sequenced after a level-restriction rule has to run after it. `get_rules($type)` is that read with a `['type' => $type]` filter; it is a VIEW, not a second path.
 
-**Since #60 that cost is behavioural.** Authored order is what a pass executes in, so a rebuild can change the end state of every rule in the kind, and `import_rules()` / `duplicate_rule()` / a CLI `save_rule()` reorder the author's list as a side effect of adding one rule. Rebuilding remains right while the type-keyed arrays are authoritative for membership — hiding the new rules would be worse — but it is no longer free, and #66 resolves it by making the persisted list authoritative rather than reconciled.
+### The per-type `$rule_id`
 
-**Types whose config has not collapsed yet are excluded from the persisted list.** The repeater renders every row in the key it is bound to, and `RepeaterField::sanitize` drops any subfield the config does not declare — so a row the repeater has no subfields for would be gutted on the next save. `CONFIG_MIGRATED_TYPES` is the list of types with repeater subfields, and a type is added to it in the same change that gives it those subfields, never before. As of #59 every rule type is in: batch 1 (#57) took the four term types not live on a real site, `related_rules` + `related_post_terms_rules` followed with their subfields (#58), and `title_slug_rules` joined the format repeater (#59). The list is now identical to the flattened `KIND_TYPES` and stays a separate constant precisely so the next type can be declared in `KIND_TYPES` — and therefore fanned in and read — a change before its subfields exist. Handlers are unaffected: they derive, so behaviour never depended on the persisted list's membership.
+The type-facing API (`get_rule`, `save_rule`, `delete_rule`, `bulk_toggle_rules`) still identifies a rule by its index **within its own type**, and the list is cross-type — so every mutator translates that number to a list POSITION before it can act. `id` deliberately did **not** re-base onto the kind-list position: `TitleSlugHandler::write_rule_status()` persists per-rule state against it, so re-basing would silently repoint every stored status, and changing it needs a migration for `bws_title_slug_rule_status`, not just an edit.
 
-Three invariants hold the expand phase together, all asserted by H10 (`tests/verify-kind-lists.php`):
+A rule created through that API is **appended to the end of its kind list**, not slotted in beside the other rules of its type. Position is order and order is composition, so a rule the author has not placed belongs where it cannot change what the list already does. (Before #66 such a write forced the stored list to be rebuilt in a fixed type order, silently re-sequencing every rule in the kind — the reconciliation cost that made the contract ticket worth doing on its own.)
 
-- **`fan_in()` is a pure regroup** — rows cross over verbatim plus a `type` key, with no shape coercion, so `fan_out(fan_in($s))` reproduces the type-keyed arrays byte-for-byte. Coercion stays at read time where it already was.
-- **`id` stays the per-type index**, not the kind-list position. `TitleSlugHandler::write_rule_status()` persists per-rule state against it, so re-basing it would silently repoint every stored status. Both projections derive it from *position*, so they agree even on a sparse stored array — the kind list has no keys to preserve, so a key-based id would diverge silently.
-- **The kind map and the storage layer's valid-type list are the same set.** A rule type added to one and not the other fails the harness instead of silently reading zero rules, which is what lets `get_enabled_rules()` carry no type-keyed fallback.
+### Migrating a pre-#56 site
 
-Together these make `get_kind_rules($kind, ['type' => X])` element-for-element equal to `get_rules(X)` — which is why every handler moved onto the kind list with no handler file changes.
+`fan_in()` (and its inverse `fan_out()`) survive as migration code. `upgrade_legacy_shape()` applies the fan-in on **read**, inside `get_all_settings()`, for the same reason #56 shipped a read-time adapter: handlers read storage on front-end and cron requests that never reach the admin-gated `WireframeBootstrap::boot()`, so an admin-load-only migration would leave those paths seeing no rules at all.
+
+Two rules keep it safe:
+
+- **A kind list that already exists wins.** Only an absent or unusable kind key is seeded from the legacy arrays. Re-deriving one that exists would group by type and discard the author's cross-type order.
+- **The legacy keys are pruned by the next WRITE**, never by the read that decides which shape to trust.
+
+`maybe_migrate_kind_lists()` (admin load, after `maybe_migrate_acf_ref_storage()`) persists that upgraded shape. Nothing depends on it having run *except the admin*, which reads the settings option raw and can only bind the ordered repeater to keys that are in storage. It is not flag-gated — it writes only when the stored option differs from the upgraded one, which is strictly better than a one-shot gate and idempotent across repeat loads. The schema flag stays a marker, not a gate.
+
+**`CONFIG_MIGRATED_TYPES`** is the list of types with repeater subfields. A type is added to it in the same change that gives it those subfields, never before: the repeater renders every row in the key it is bound to, and `RepeaterField::sanitize` drops any subfield the config does not declare — so a row the repeater has no subfields for would be gutted on the next save. As of #59 every rule type is in, making it identical to the flattened `KIND_TYPES`; it stays a separate constant precisely so the next type can be declared in `KIND_TYPES` — and therefore fanned in and read — a change before its subfields exist.
+
+Invariants asserted by H10 (`tests/verify-kind-lists.php`):
+
+- **`fan_in()` is a pure regroup** — rows cross over verbatim plus a `type` key, with no shape coercion, so `fan_out(fan_in($s))` reproduces the type-keyed arrays byte-for-byte. Coercion stays at read time.
+- **The upgrade never clobbers**: a stored kind list wins over legacy arrays that disagree with it in order or membership, and a read persists nothing.
+- **`id` is the per-type index**, not the kind-list position.
+- **`KIND_TYPES` is the enumeration.** `all_types()` flattens it and `get_kind_for_type()` inverts it, so there is no second list for it to drift out of step with — which is what lets `get_enabled_rules()` carry no fallback.
+- **A write that was not needed is not a failure** (#27): `save_rule()` / `import_rules()` / `bulk_toggle_rules()` report success when the data already matches storage, and failure only when a re-read shows it did not persist.
 
 ## Data conversion tool
 

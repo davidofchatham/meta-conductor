@@ -59,14 +59,14 @@ $snapshot = get_option(OptionRuleStorage::OPTION_NAME, []);
 
 /**
  * Push rows through the exact save path a settings submit takes: Wireframe's
- * real repeater sanitize against the live config, then the two payload filters
- * (row titles at priority 10, projection at 20), then the option write.
+ * real repeater sanitize against the live config, then the row-title snapshot
+ * filter, then the option write. There is no projection step since #66 — the
+ * list the repeater writes is the shape storage reads.
  */
 $save_rows = static function (array $rows) use ($KIND, $storage, $snapshot): array {
     $field   = FormatRulesConfig::section()['fields'][0];
     $payload = [$KIND => RepeaterField::sanitize($rows, $field['args'])];
     $payload = WireframeBootstrap::snapshot_format_rule_labels($payload);
-    $payload = WireframeBootstrap::fan_out_rule_lists($payload);
 
     // Wireframe merges the clean payload over saved state; mirror that rather
     // than replacing the option, so nothing else in the fixture is disturbed.
@@ -108,14 +108,10 @@ try {
         count($saved[$KIND] ?? []) === 2);
     $note('stored order is the authored order',
         array_column($saved[$KIND], 'name') === ['Sweep 59 first', 'Sweep 59 second']);
-    $note('the save projects onto title_slug_rules',
-        array_column($saved['title_slug_rules'] ?? [], 'name')
-            === ['Sweep 59 first', 'Sweep 59 second']);
-    $note('the projected rows shed the grouping key',
-        !array_key_exists('type', $saved['title_slug_rules'][0]));
-    $note('the row titles were snapshot on both copies',
-        ($saved[$KIND][0]['row_title'] ?? '') === 'Sweep 59 first (MC Items)'
-        && ($saved['title_slug_rules'][0]['row_title'] ?? '') === 'Sweep 59 first (MC Items)');
+    $note('the save writes no type-keyed copy (#66)',
+        !array_key_exists('title_slug_rules', $saved));
+    $note('the row title was snapshot onto the list row',
+        ($saved[$KIND][0]['row_title'] ?? '') === 'Sweep 59 first (MC Items)');
 
     // What the handler reads — the derived kind-list path, on a fresh cache.
     $read = $storage->get_rules('title_slug_rules');
@@ -151,9 +147,6 @@ try {
     $saved = $save_rows([$second, $first]);
     $note('the reorder is stored',
         array_column($saved[$KIND], 'name') === ['Sweep 59 second', 'Sweep 59 first']);
-    $note('the reorder reaches title_slug_rules',
-        array_column($saved['title_slug_rules'], 'name')
-            === ['Sweep 59 second', 'Sweep 59 first']);
     $note('dragging a rule up makes it the one that applies',
         ($winner($post)['name'] ?? '') === 'Sweep 59 second');
 

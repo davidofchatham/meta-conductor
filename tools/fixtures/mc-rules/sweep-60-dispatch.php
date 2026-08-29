@@ -52,12 +52,11 @@ $LR   = 'hierarchical_level_restriction_rules';
 /**
  * Author the persisted `term_rules` list in an explicit TYPE order.
  *
- * The dispatcher reads `get_authored_kind_rules()`, which keeps the stored list
- * whenever it still agrees with the type-keyed arrays as sets per type. So the
- * rows are built the way `fan_in()` builds them — the row verbatim plus a
- * `type` key — and the type arrays are left exactly as `mc_isolate()` wrote
- * them. Reordering only the kind list is precisely the edit the repeater makes
- * when an author drags a row.
+ * The dispatcher reads `get_kind_rules()`, which serves the stored list
+ * verbatim (#66) — so re-sequencing that list is exactly the edit the repeater
+ * makes when an author drags a row. The rows come out of the list
+ * `mc_isolate()` just wrote, regrouped into the requested type order and
+ * written back; nothing else about them changes.
  *
  * @param string[] $type_order Rule types, in the order their rules should run.
  * @return int Rows written.
@@ -65,22 +64,18 @@ $LR   = 'hierarchical_level_restriction_rules';
 function mc60_author_order( array $type_order ) {
 	$opt      = mc_sweep_option();
 	$settings = get_option( $opt, array() );
+	$current  = (array) ( $settings[ OptionRuleStorage::KIND_TERM ] ?? array() );
 	$rows     = array();
 
 	foreach ( $type_order as $type ) {
-		foreach ( (array) ( $settings[ $type ] ?? array() ) as $rule ) {
-			if ( is_array( $rule ) ) {
-				$rule['type'] = $type;
-				$rows[]       = $rule;
+		foreach ( $current as $rule ) {
+			if ( is_array( $rule ) && ( $rule['type'] ?? '' ) === $type ) {
+				$rows[] = $rule;
 			}
 		}
 	}
 
-	$settings[ OptionRuleStorage::KIND_TERM ] = $rows;
-	update_option( $opt, $settings );
-	mc_sweep_clear_cache();
-
-	return count( $rows );
+	return mc_write_ordered_rules( $rows, OptionRuleStorage::KIND_TERM );
 }
 
 /** The live dispatcher, or bail loudly — an unregistered one means no passes. */
@@ -225,17 +220,12 @@ switch ( $step ) {
 
 	// -------------------------------------------------------------- restore
 	case 'restore':
-		// Drop the authored list too: mc_restore() rewrites the type arrays,
-		// and a stale hand-authored term_rules would be repaired on the next
-		// admin load rather than here. Removing it returns the site to the
-		// derived regime the seeder leaves behind.
-		$opt      = mc_sweep_option();
-		$settings = get_option( $opt, array() );
-		unset( $settings[ OptionRuleStorage::KIND_TERM ] );
-		update_option( $opt, $settings );
-
+		// mc_restore() rewrites the kind lists themselves in the documented
+		// KIND_TYPES order (#66 — they ARE the stored shape), so the
+		// hand-authored order this sweep installed goes with them. No separate
+		// drop is needed, and dropping the list would leave no rules at all.
 		mc_restore( array( $subject ) );
-		WP_CLI::log( '[restore] rules rebuilt from manifest, subject reset, authored list dropped.' );
+		WP_CLI::log( '[restore] rules rebuilt from manifest, subject reset.' );
 		break;
 
 	default:

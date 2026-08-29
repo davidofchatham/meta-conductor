@@ -90,22 +90,16 @@ function mc64_subject() {
 /**
  * Isolate the rule types this step needs and install the title/slug rule.
  *
- * The persisted kind lists are dropped rather than hand-authored: with the
- * type-keyed arrays rewritten underneath it, `authored_kind_list()` rebuilds
- * both in KIND_TYPES order, and no step here depends on within-kind order.
+ * Written through mc_write_rule_types(), which lands the rules in the ordered
+ * kind lists in the documented KIND_TYPES order — no step here depends on
+ * within-kind order.
  *
  * @param string[] $keep_term_types Term rule types to leave enabled.
- * @param array[]  $ts_rules        Rules to write into `title_slug_rules`.
+ * @param array[]  $ts_rules        Rules to write as the format list.
  */
 function mc64_setup( array $keep_term_types, array $ts_rules ) {
 	mc_isolate( array_merge( $keep_term_types, array( 'title_slug_rules' ) ) );
-
-	$opt      = mc_sweep_option();
-	$settings = get_option( $opt, array() );
-	$settings['title_slug_rules'] = $ts_rules;
-	unset( $settings[ OptionRuleStorage::KIND_TERM ], $settings[ OptionRuleStorage::KIND_FORMAT ] );
-	update_option( $opt, $settings );
-	mc_sweep_clear_cache();
+	mc_write_rule_types( array( 'title_slug_rules' => $ts_rules ) );
 }
 
 /** The rule under test: title from the post's first topic, slug derived. */
@@ -345,16 +339,11 @@ switch ( $step ) {
 		delete_post_meta( $subject, '_bws_applied_title' );
 		delete_option( MC64_SUBJECT_OPTION );
 
-		// Drop the authored kind lists for the reason sweep-60's restore does:
-		// mc_restore() rewrites the type arrays, and a stale hand-built list
-		// would otherwise be repaired on the next admin load rather than here.
-		$opt      = mc_sweep_option();
-		$settings = get_option( $opt, array() );
-		unset( $settings[ OptionRuleStorage::KIND_TERM ], $settings[ OptionRuleStorage::KIND_FORMAT ] );
-		update_option( $opt, $settings );
-
+		// mc_restore() rewrites the kind lists themselves in the documented
+		// KIND_TYPES order (#66 — they ARE the stored shape), so this sweep's
+		// hand-built lists go with them.
 		mc_restore( array( $subject ) );
-		WP_CLI::log( '[restore] rules rebuilt from manifest, subject renamed back + reset, kind lists dropped.' );
+		WP_CLI::log( '[restore] rules rebuilt from manifest, subject renamed back + reset.' );
 		break;
 
 	default:

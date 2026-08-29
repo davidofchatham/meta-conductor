@@ -587,11 +587,11 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
      * relationship feeds which taxonomy.
      *
      * Both sides must derive it identically, and they do — the capture reads
-     * rules through `get_enabled_rules()` and the applier is handed its row by
-     * the pass through `get_authored_kind_rules()`, but both go through
-     * `OptionRuleStorage::normalize_rule_shape()`, which is what splits the
-     * combined `post_type:field` values. Nothing here is derived from a row's
-     * position or index, which the two paths assign independently.
+     * rules through `get_enabled_rules()` (this type's slice) and the applier
+     * is handed its row by the pass over the whole kind list, but both go
+     * through `OptionRuleStorage::normalize_rule_shape()`, which is what splits
+     * the combined `post_type:field` values. Nothing here is derived from a
+     * row's position or index, which the two paths assign independently.
      *
      * @param array $rule Canonical-shape rule.
      * @return string

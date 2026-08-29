@@ -832,9 +832,8 @@ spelled out in full** ✅ Eight collisions over the ten-row term list, pinned by
 list POSITION rather than counted — position is what the warning quotes and
 what the author reorders, so a detector that agreed on the pairs and disagreed
 on the numbering would still be wrong. The list also proves the detector reads
-through `get_authored_kind_rules()` → `authored_kind_list()`: after a
-`mc_restore()` the stored kind list is rebuilt in `KIND_TYPES` order, and the
-positions asserted are that order.
+the stored list as it stands: after a `mc_restore()` that list is written in
+`KIND_TYPES` order, and the positions asserted are that order.
 
 The eight, and why each is real: propagation × ACF-reference and ACF-reference ×
 {hierarchy, level restriction} all share `mc_topic` (the ACF-reference rows are
@@ -884,6 +883,49 @@ section.
 **§10h NON-MUTATING.** The advisory writes no term, saves no post and provokes
 no pass — asserted directly, and it is why the §7 rename trap does not apply
 here even though the sweep restores the manifest rules.
+
+### §11 storage contract (#66, 0.8.0) — results
+
+Run 2026-08-28 on the docker testbed, seeded mc-rules fixture. #66 deletes the
+type-keyed storage path, so the whole ticket is a *no behavioural difference*
+claim across all seven rule types — which means the evidence is the EXISTING
+sweep suite re-run, not a new scenario. There is no `sweep-66-*.php` on purpose.
+
+**§11a the stored shape** ✅ After a re-seed the option holds
+`manual_processing_enabled | term_rules | format_rules` and nothing else — no
+type-keyed array survives. 10 term rows in the documented `KIND_TYPES` order,
+1 format row.
+
+**§11b every fixture writer moved to the kind lists.** `seed.php`,
+`mc_isolate()`, `mc_restore()` and `verify.php`'s A7 cron probe all wrote
+type-keyed arrays, which after #66 silence nothing and install nothing. They now
+go through two new `sweep-lib.php` helpers: `mc_write_rule_types()` (author by
+TYPE, landed via `fan_in()` in `KIND_TYPES` order — the seeder and the
+isolate/restore path) and `mc_write_ordered_rules()` (author the list VERBATIM —
+the sweeps whose subject is cross-type order). **The three restore steps that
+`unset()` the authored kind list are gone**: that used to force a rebuild from
+the type arrays, and now it would leave the site with no rules at all —
+`sweep-61`'s did it *after* `mc_restore()`, so it was the one that would have
+emptied the fixture.
+
+**§11c the re-run** ✅ `verify.php` 127/127. Sweeps 58, 59-roundtrip,
+59-behaviour, 60 (order/provoke/s1/s2/restore), 61 (all five steps), 62 (all
+five), 63 (all eleven), 64 (all seven), 65 (all four), hierarchical-double-save,
+and `sweep-related-post-terms-sever.php` 14/15 (s7 fails by design). The §7
+rename trap fired as documented — `sweep-63`'s restore left `item-alpha` as
+`mc-item-alpha-2030`, and the next re-seed created a DUPLICATE post at the freed
+slug rather than updating post 94. Cleaned by deleting the duplicate and
+renaming 94 back under `meta_conductor_acf_reapply_enabled=false`; re-seed and
+verify then clean. **Check `wp post list --post_type=mc_item --fields=ID,post_name`
+after a restore AND after the next seed** — one row too many is the tell.
+
+**§11d the pre-#56 upgrade, end to end** ✅ A one-off eval fanned the fixture's
+kind lists back out to type-keyed arrays, stored only those, and read through
+the live storage instance: 10 term rules, 1 format rule, `get_rules()` agreeing
+per type, and **the read persisted nothing**. `maybe_migrate_kind_lists()` then
+wrote once, pruned the legacy arrays, and no-op'd on the second call. H10 covers
+the same ground as pure state transitions; this proves the wiring on a real
+option with real rules.
 
 ## Cross-handler interaction scenarios (later phase, own snapshot each)
 
@@ -938,12 +980,17 @@ here even though the sweep restores the manifest rules.
   than narrowing it, so the shared frame's ungatedness is asserted first. Runs
   Wireframe's real `Conditions::evaluate()` for the visible set, then checks
   separately that every key `TitleSlugHandler` reads is inside it.
-- **H10 — `tests/verify-kind-lists.php`** (static, no WP): the 7-type-arrays →
-  2-kind-lists fan-in (#56) — idempotent, lossless, every legacy rule shape
-  round-trips, and the kind read path reproduces the type read path element for
-  element (`id` included). This is Phase 4 Gate 1; it is what stands in for a
-  behaviour sweep on the transform itself, since a sweep can only show that the
-  rules it happens to exercise still fire.
+- **H10 — `tests/verify-kind-lists.php`** (static, no WP): the kind lists as the
+  only stored shape (#56 expand → #66 contract). Three blocks: the 7-type-arrays
+  → 2-kind-lists migration is idempotent and lossless with every legacy rule
+  shape round-tripping; the upgrade runs on READ and a stored list always wins
+  over legacy arrays that disagree with it; and every storage entry point
+  operates on the kind list, translating the per-type `$rule_id` to a list
+  position — plus the #27 boundary, that a write which was not needed is not a
+  failure. It runs the mutators against an in-memory option shim, so `update_option`'s
+  two meanings of `false` can both be provoked. This is Phase 4 Gate 1; it is what
+  stands in for a behaviour sweep on the transform itself, since a sweep can only
+  show that the rules it happens to exercise still fire.
 - **H7 — `tests/verify-fixture-manifest.php`** (static, no WP): manifest
   coherence — dangling fixture slugs, parent-before-child ordering, unknown
   rule types/value tokens, and the isolation invariant (every rule's post-type
