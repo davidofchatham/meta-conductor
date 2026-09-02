@@ -98,7 +98,11 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
    `update_option` returns false for BOTH a no-op-equal write AND a real failure
    — never ignore the bool, and don't let the request cache adopt data that
    didn't persist (it ghost-persists on the next save). Distinguish equal-vs-fail
-   by re-reading. (R5#5/R6#4/R8#1/R8#3; tracked as issue #27)
+   by re-reading. (R5#5/R6#4/R8#1/R8#3.) `OptionRuleStorage::save_all_settings()`
+   is where that re-read lives, and it returns true when the option ROUND-TRIPS
+   — write succeeded, or the bytes already matched — so every mutator can trust
+   the bool. (#27, closed in #66; the per-mutator statement is under
+   *Effect-kind rule lists*.)
 
 8. **Pre-filter site-wide hooks in BOTH directions.** Global `save_post` /
    `set_object_terms` / `acf/update_value` hooks fire for every post on the site;

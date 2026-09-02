@@ -173,15 +173,16 @@ abstract class UnifiedHandlerBase {
      *
      * Uses the storage abstraction layer to retrieve rules.
      *
-     * Reads the handler's rules out of its EFFECT-KIND list (ADR 0003 —
-     * `term_rules` / `format_rules`), filtering on each row's own `type`. Since
-     * #66 that is the only shape there is: the kind list is what storage holds,
-     * and a type filter over it is what "this handler's rules" means.
+     * The handler's own rules, out of its EFFECT-KIND list (ADR 0003 —
+     * `term_rules` / `format_rules`). Since #66 that list is the only shape
+     * there is, so "this handler's rules" means the list narrowed to one type,
+     * which is exactly what `get_rules()` is: the narrowing lives in storage,
+     * once, rather than being spelled out again here.
      *
-     * The filter stays because the list is CROSS-TYPE — a term pass reads six
-     * rule types out of one array, and a handler must see only its own. What
-     * went in #66 is the second read path it used to be a compatibility shim
-     * for, not the filter.
+     * The narrowing itself cannot go. The list is CROSS-TYPE — a term pass
+     * reads six rule types out of one array — and a handler must see only its
+     * own. What #66 removed is the second read path this used to be paired
+     * with, not the filter.
      *
      * Every rule type maps to a kind, and the kind map IS storage's enumeration
      * of the types (`OptionRuleStorage::all_types()` flattens it), so a type
@@ -189,15 +190,12 @@ abstract class UnifiedHandlerBase {
      * no fallback here: there is nothing left to fall back to.
      *
      * @since 0.2.0 Updated to use storage abstraction
-     * @since 0.8.0 Reads the kind list, filtered on row `type`.
+     * @since 0.8.0 Reads the kind list, narrowed to this handler's type.
      * @return array Enabled rules
      */
     public function get_enabled_rules() {
-        $storage = StorageFactory::get_instance();
-        $rule_type = $this->get_rule_type();
-        $kind = $storage->get_kind_for_type($rule_type);
-
-        return $storage->get_kind_rules($kind, ['enabled' => true, 'type' => $rule_type]);
+        return StorageFactory::get_instance()
+            ->get_rules($this->get_rule_type(), ['enabled' => true]);
     }
 
     /**
