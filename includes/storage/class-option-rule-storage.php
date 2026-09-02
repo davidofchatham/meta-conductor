@@ -191,9 +191,15 @@ class OptionRuleStorage implements RuleStorage {
      * kind key that is absent or unusable is seeded from the legacy arrays.
      *
      * The legacy keys are then dropped from the working copy, so the next write
-     * this class performs prunes them from storage. They are dropped only once
-     * the kind list exists, never as the same read that seeds it decides which
-     * shape to trust.
+     * this class performs prunes them from storage. Nothing is persisted here —
+     * a read that migrates must not write, or a front-end request would rewrite
+     * the option out from under an admin editing it.
+     *
+     * **What makes the drop safe is that `$legacy` is computed BEFORE the loop.**
+     * The seed and the `unset()` happen in the same iteration, so a seed that
+     * read `$settings` directly would be reading an array the previous iteration
+     * had already pruned. It reads the pre-prune fan-in instead. Don't move the
+     * `fan_in()` call inside the loop.
      *
      * @since 0.8.0
      * @param array $settings Raw stored option.
@@ -978,8 +984,12 @@ class OptionRuleStorage implements RuleStorage {
         $data['type'] = $type;
 
         if ($rule_id === -1) {
+            // Count BEFORE the append: the number of rows of this type already
+            // present is the new rule's per-type index, which is the number
+            // get_rules() will report for it. Counting after and subtracting one
+            // says the same thing twice, in opposite directions.
+            $new_id = self::count_of($rows, $type);
             $rows[] = $data;
-            $new_id = self::count_of($rows, $type) - 1;
         } else {
             $position = self::position_of($rows, $type, $rule_id);
 

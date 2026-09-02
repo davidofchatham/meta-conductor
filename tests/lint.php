@@ -2,12 +2,20 @@
 /**
  * H1 — Syntax-lint sweep (Phase 2a).
  *
- * Runs `php -l` over every .php file under includes/ plus the plugin root files
- * (autoload.php, meta-conductor.php). Skips vendor/, libs/, node_modules. Exits
- * non-zero if any file has a parse error.
+ * Runs `php -l` over every .php file under includes/ and tools/, plus the
+ * plugin root files (autoload.php, meta-conductor.php). Skips vendor/, libs/,
+ * node_modules. Exits non-zero if any file has a parse error.
  *
  * Catches the namespace-after-guard fatal (SPEC §V12) and any malformed edit
  * before sync. Pairs with verify-autoload.php (H2) which checks resolution.
+ *
+ * **tools/ is linted too (#66 review).** The seeder and the behaviour sweeps in
+ * `tools/fixtures/` are not shipped, but they ARE the evidence for any ticket
+ * whose claim is behavioural — a fixture that will not parse is a gate that
+ * silently is not there, and nothing else runs them except a human, one step at
+ * a time, on a testbed. The V1/V13 static checks below stay scoped to
+ * includes/: they encode the PSR-4 runtime rules, and tools/ is procedural
+ * WP-CLI script code that neither applies to.
  *
  * Run:  php tests/lint.php
  *
@@ -17,12 +25,17 @@
 $root = dirname(__DIR__);
 $targets = [$root . '/autoload.php', $root . '/meta-conductor.php'];
 
-$rii = new RecursiveIteratorIterator(
-    new RecursiveDirectoryIterator($root . '/includes', FilesystemIterator::SKIP_DOTS)
-);
-foreach ($rii as $f) {
-    if ($f->getExtension() === 'php') {
-        $targets[] = $f->getPathname();
+foreach (['/includes', '/tools'] as $dir) {
+    if (!is_dir($root . $dir)) {
+        continue;
+    }
+    $rii = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($root . $dir, FilesystemIterator::SKIP_DOTS)
+    );
+    foreach ($rii as $f) {
+        if ($f->getExtension() === 'php') {
+            $targets[] = $f->getPathname();
+        }
     }
 }
 

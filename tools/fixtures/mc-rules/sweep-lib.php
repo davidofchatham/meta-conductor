@@ -92,7 +92,7 @@ if ( ! function_exists( 'mc_write_rule_types' ) ) {
 			$settings = array();
 		}
 
-		$storage = '\BWS\MetaConductor\Storage\OptionRuleStorage';
+		$storage = \BWS\MetaConductor\Storage\OptionRuleStorage::class;
 
 		// The type-keyed VIEW of what is stored, so unnamed types survive.
 		$current = $storage::fan_out( array(
@@ -126,12 +126,12 @@ if ( ! function_exists( 'mc_write_ordered_rules' ) ) {
 	 * ordered list is also isolating itself.
 	 *
 	 * @param array[] $rows Rules in authored order, each carrying a `type` key.
-	 * @param string  $kind Kind list key; defaults to the term list.
+	 * @param string  $kind Kind list key. Required — a default would read as the
+	 *                      format list being the exception, and it is not.
 	 * @return int Rows written.
 	 */
-	function mc_write_ordered_rules( array $rows, $kind = null ) {
-		$storage = '\BWS\MetaConductor\Storage\OptionRuleStorage';
-		$kind    = $kind ?: $storage::KIND_TERM;
+	function mc_write_ordered_rules( array $rows, $kind ) {
+		$storage = \BWS\MetaConductor\Storage\OptionRuleStorage::class;
 
 		$opt      = mc_sweep_option();
 		$settings = get_option( $opt, array() );
