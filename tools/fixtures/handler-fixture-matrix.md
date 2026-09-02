@@ -927,12 +927,86 @@ wrote once, pruned the legacy arrays, and no-op'd on the second call. H10 covers
 the same ground as pure state transitions; this proves the wiring on a real
 option with real rules.
 
-## Cross-handler interaction scenarios (later phase, own snapshot each)
+### §12 cross-order: hierarchical vs level_restriction (#67, Phase 4 Gate 3) — results
 
-- level_restriction (p5) + hierarchical (p10) same taxonomy — prune-then-expand
-  ordering.
-- hierarchical + propagation — expanded ancestors propagate to child sections.
-- related + time_based sharing `Featured` target — both add/remove same term.
+Run 2026-09-02 on the docker testbed, seeded mc-rules fixture.
+`sweep-67-cross-order.php`, 2 assertions, all green. This closes the first
+"later phase" cross-handler scenario listed above — both types have been
+pure appliers since #60, so the p5-vs-p10 hook race that scenario used to name
+no longer exists; the order question is now the SAME shape as #35 (§62c/d):
+authored list position, not handler construction order. It is also the
+runtime proof for the pair H14 already names statically as `ancestors_stripped`
+(#51) — the collision detector's warning describes a real divergence, not a
+hypothetical one.
+
+Rule pair: hierarchical (`ancestors`, depth `all` — purely additive) +
+level_restriction (`deepest_only`, `include_ancestors` off). Subject
+`item-solo-a` assigned Coastal + Inland (siblings, both level 2), chosen so
+`deepest_only` is a genuine no-op on its own — the divergence comes entirely
+from whether hierarchical's ancestor additions survive a LATER prune.
+
+**§67a level_restriction, then hierarchical** ✅ LR sees a tie at the max
+level (no-op); hierarchical then adds Region + East. Final:
+`[region, east, coastal, inland]` — full lineage kept.
+
+**§67b same rules, order swapped** ✅ Hierarchical adds Region + East first;
+level_restriction then sees three levels, keeps only the max (Coastal +
+Inland), and strips the ancestors it just gained. Final:
+`[coastal, inland]` — ancestors gone.
+
+Same rules, same edit, opposite outcome by list position — the point.
+
+**⚠️ ACF-mirror trap, found running this.** `item-solo-a` carries an ACF
+`mc_topics` taxonomy mirror (`field_mc_topics_item`) that
+`HierarchicalLevelRestrictionHandler::process_acf_level_restrictions()` reads
+BEFORE the native branch. A stale value left by an earlier scenario (native
+reset alone does not touch it — the same trap as propagation's `mc_topics`
+mirror on `mc_section`, §5/§62) silently changed which term survived a prune,
+with no error — it just looked like the wrong term won. The sweep's
+`mc67_clean()` clears BOTH stores for exactly this reason.
+
+### §13 the post_status gate, closing #23 (#67, Phase 4 Gate 3) — results
+
+Run 2026-09-02 on the docker testbed, seeded mc-rules fixture.
+`sweep-67-post-status.php`, 4 assertions, all green. #23's own resolution
+comment says the gate landed as a side effect of the config collapse (#57/#58
+put the shared subfield on every term type at once) and enforcement was
+checked type-by-type as each handler converted to an applier (#61/#62/#63).
+No scenario had ever actually set a restrictive `post_status` and shown a
+rule skip a post outside it, then fire once the post matched — this sweep is
+that proof, not new handler code.
+
+**§67c the standard shape** ✅ `UnifiedHandlerBase::should_process_post()`
+gates the post being WRITTEN. Live subject: `HierarchicalHandler`, draft
+`item-solo-a`. Rule `post_status: [publish]` + assign Harbor → gated OUT, only
+Harbor lands (no ancestor expansion). Same edit, rule `post_status: [draft]` →
+gated IN, full ancestor chain expands. `HierarchicalLevelRestrictionHandler`,
+`PropagationHandler`, `TimeBasedHandler` and `RelatedHandler` call the
+identical base method at the top of their own `apply_to_post()`
+(grep-confirmed: same call shape, same early return) — one live scenario
+stands for all five rather than repeating an identical code path four more
+times.
+
+**§67d the exception** ✅ `RelatedPostTermsHandler` deliberately does NOT call
+`should_process_post()` — its `post_status` gates the SOURCE post being read
+FROM, not the dependent being written TO (§V5; gating the dependent would stop
+a draft dependent being kept in sync by a published source). Draft holder
+`section-holder`, rule `post_status: [publish]`, relationship pointed at
+`item-solo-a` → gated OUT, dependent untouched. Publish the holder, same rule →
+gated IN, dependent synced.
+
+**Scope note: `title_slug_rules` is OUT.** `FormatRulesConfig` never gained a
+`post_status` subfield in #59, and #67's acceptance criterion is scoped to
+"every TERM type" — #23's original text named title_slug too, but nothing in
+Phase 4 wired it, and closing #23 in the term-repeater's terms is what
+actually landed. Documented gap, not silently fixed here (a new format-config
+subfield is feature work, out of scope for a gate-verification ticket) —
+candidate for docs/future-features.md if it should happen later.
+
+**Restore gotcha (new).** `mc_restore()` rewrites RULES and resets named
+subjects' TERMS — it does not touch POST FIELDS, and §67d's step empties
+`section-holder`'s `mc_related_items` relationship. That is post data, so only
+a full `seed.php` repairs it, same shape as the §63 restore gotcha.
 
 ## Cross-blueprint traps
 
