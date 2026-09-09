@@ -6,7 +6,8 @@
  * WireframeBootstrap::snapshot_term_rule_labels() no-WP. Locks the
  * date-first sentence schema: "{start}–{end}: Apply {target} to {scope}{ with
  * {filter}}" — en dash no spaces, "posts" vs post-type scope, filter clause
- * (specific terms > any-taxonomy > none), disabled prefix. (SPEC §V11)
+ * (specific terms > any-taxonomy > none), disabled prefix.
+ * (architecture.md → The ordered rule repeaters)
  *
  * Rescoped in 0.8.0 (#57): the rules now ride in the ordered `term_rules`
  * repeater and each row carries `type`, so the fixtures below set it — a row
@@ -65,7 +66,9 @@ $check = function (string $name, bool $cond) use (&$fail) { if (!$cond) { $fail[
 $title = function (array $rule) use ($KIND) {
     $rule['type'] = 'time_based_rules';
     $out = WireframeBootstrap::snapshot_term_rule_labels([$KIND => [$rule]]);
-    return $out[$KIND][0]['row_title'];
+    // Row titles LEAD with the list position since the #65 UX follow-up;
+    // asserted there, stripped here — these cases are about the schema.
+    return preg_replace('/^#\d+ /', '', $out[$KIND][0]['row_title']);
 };
 
 // Case 1: all types, no filter.

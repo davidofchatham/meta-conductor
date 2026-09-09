@@ -76,7 +76,9 @@ $check = function (string $name, bool $cond) use (&$fail) { if (!$cond) { $fail[
 /** Snapshot one row and hand back its baked title. */
 $title = function (array $rule) use ($KIND) {
     $out = WireframeBootstrap::snapshot_term_rule_labels([$KIND => [$rule]]);
-    return $out[$KIND][0]['row_title'];
+    // Row titles LEAD with the list position since the #65 UX follow-up;
+    // asserted there, stripped here — these cases are about the schema.
+    return preg_replace('/^#\d+ /', '', $out[$KIND][0]['row_title']);
 };
 
 // --- Propagation: explicit post_types map, merge, enabled. ------------------

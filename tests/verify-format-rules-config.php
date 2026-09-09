@@ -277,9 +277,17 @@ $check('an untyped row shows only the shared frame',
 
 // --- Row titles. -------------------------------------------------------------
 
-$title = fn(array $row) => WireframeBootstrap::snapshot_format_rule_labels(
+$titled = fn(array $row) => WireframeBootstrap::snapshot_format_rule_labels(
     [$KIND => [$row]]
 )[$KIND][0]['row_title'];
+
+// Every row title LEADS with its list position (#65 UX follow-up): Wireframe
+// only numbers a row whose title renders empty, and position is what the
+// collision advisory names and what the author reorders. Asserted once, then
+// stripped — the per-type schema checks below are about the schema.
+$check('a row title leads with its list position',
+    str_starts_with($titled(['type' => 'title_slug_rules', 'name' => 'X']), '#1 '));
+$title = fn(array $row) => preg_replace('/^#\d+ /', '', $titled($row));
 
 $check('a title/slug row title is the name plus its post-type scope',
     $title(['type' => 'title_slug_rules', 'name' => 'MC item slug', 'post_type' => 'mc_item'])
@@ -309,7 +317,7 @@ $snapshotted = WireframeBootstrap::snapshot_format_rule_labels([$KIND => [
     ['type' => 'title_slug_rules', 'name' => 'B'],
 ]])[$KIND];
 $check('every row in the list is titled',
-    array_column($snapshotted, 'row_title') === ['A', 'B']);
+    array_column($snapshotted, 'row_title') === ['#1 A', '#2 B']);
 // A payload without the format list must not be touched — the term tab saves
 // without one, and inventing an empty list here would clear title_slug_rules
 // at the projection below.
@@ -340,7 +348,7 @@ $check('the snapshot keeps the authored order, still typed',
     array_column($ordered[$KIND], 'post_type') === ['mc_item', 'page']
     && array_column($ordered[$KIND], 'type') === ['title_slug_rules', 'title_slug_rules']);
 $check('the snapshot bakes the row title onto the list rows',
-    ($ordered[$KIND][0]['row_title'] ?? '') === '[Disabled] MC item slug (MC Items)');
+    ($ordered[$KIND][0]['row_title'] ?? '') === '#1 [Disabled] MC item slug (MC Items)');
 
 // --- The admin-load repair: a title backfill and nothing else. --------------
 //
@@ -361,7 +369,7 @@ $stored = [[
 ]];
 $repaired = $r($stored);
 $check('the repair backfills a missing row_title',
-    ($repaired[0]['row_title'] ?? '') === 'MC item slug (MC Items)');
+    ($repaired[0]['row_title'] ?? '') === '#1 MC item slug (MC Items)');
 $check('the repair changes NOTHING else about a stored row',
     array_diff_key($repaired[0], ['row_title' => null]) === $stored[0]);
 $check('the repair is idempotent', $r($repaired) === $repaired);

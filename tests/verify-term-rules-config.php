@@ -395,7 +395,12 @@ $check('the snapshot keeps every row, in order, still typed',
         === ['hierarchical_rules', 'propagation_rules']);
 $check('the snapshot bakes the row title onto the list rows',
     ($snapshotted[$KIND][0]['row_title'] ?? '') !== ''
-    && str_starts_with($snapshotted[$KIND][1]['row_title'] ?? '', '[Disabled] '));
+    && str_starts_with($snapshotted[$KIND][1]['row_title'] ?? '', '#2 [Disabled] '));
+// Every row title LEADS with its list position (#65 UX follow-up): Wireframe
+// only numbers a row whose title renders empty, and position is what the
+// collision advisory names and what the author reorders.
+$check('and numbers each row by its place in the list',
+    str_starts_with($snapshotted[$KIND][0]['row_title'] ?? '', '#1 '));
 
 // A save from another tab carries no rule list at all — it must pass through
 // untouched, not be read as "delete everything".
@@ -451,7 +456,7 @@ $check('related title joins trigger and target with an arrow',
     str_contains($rel_title, "\xE2\x86\x92")
     && str_contains($rel_title, 'Term 7') && str_contains($rel_title, 'Term 9'));
 $check('related title carries the uniform disabled prefix',
-    str_starts_with($rel_title, '[Disabled] '));
+    str_starts_with($rel_title, '#1 [Disabled] '));
 
 // Taxonomy-triggered variant names the taxonomy, not a term.
 $rel_tax_title = WireframeBootstrap::snapshot_term_rule_labels([$KIND => [[
@@ -460,7 +465,7 @@ $rel_tax_title = WireframeBootstrap::snapshot_term_rule_labels([$KIND => [[
     'target_term_id' => [9],
 ]]])[$KIND][0]['row_title'];
 $check('taxonomy-triggered related title names the taxonomy',
-    str_starts_with($rel_tax_title, 'Categories'));
+    str_starts_with($rel_tax_title, '#1 Categories'));
 
 // ACF-reference: verb tracks keep_in_sync, direction tracks holder_role, and
 // the COMBINED "post_type:field" value renders as the bare field name (the
@@ -471,7 +476,7 @@ $acf_title = WireframeBootstrap::snapshot_term_rule_labels([$KIND => [[
     'acf_field_name' => 'event:related_team',
 ]]])[$KIND][0]['row_title'];
 $check('acf-reference title: Sync + to + bare field name',
-    str_starts_with($acf_title, 'Sync')
+    str_starts_with($acf_title, '#1 Sync')
     && str_contains($acf_title, ' to ')
     && str_contains($acf_title, 'related_team')
     && !str_contains($acf_title, 'event:'));
@@ -481,7 +486,7 @@ $acf_copy_title = WireframeBootstrap::snapshot_term_rule_labels([$KIND => [[
     'acf_field_name' => 'event:related_team',
 ]]])[$KIND][0]['row_title'];
 $check('acf-reference title: Copy + from when pull and not syncing',
-    str_starts_with($acf_copy_title, 'Copy') && str_contains($acf_copy_title, ' from '));
+    str_starts_with($acf_copy_title, '#1 Copy') && str_contains($acf_copy_title, ' from '));
 
 // Legacy related rows: scalar term ids must become the arrays the selects
 // bind, or the admin renders them EMPTY and the next save disarms the rule.

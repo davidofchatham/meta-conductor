@@ -243,7 +243,7 @@ $found_desc_swapped = $scan($KIND_TERM, [$s51_desc[1], $s51_desc[0]]);
 $check('#51: the descendants message names the adder first as well',
     str_starts_with(
         CollisionDetector::message($found_desc_swapped[0]),
-        '“Inherit Topics” (#2) adds descendant terms'
+        '“Inherit Topics” adds descendant terms'
     ));
 
 // The templates are ASYMMETRIC — "%1$s adds … %3$s does not keep them" — so the
@@ -261,8 +261,20 @@ $check('#51: while the positions still report the authored order',
 $check('#51: so the message names the adder first',
     str_starts_with(
         CollisionDetector::message($found_swapped[0]),
-        '“Inherit Topics” (#2) adds ancestor terms'
+        '“Inherit Topics” adds ancestor terms'
     ));
+
+// The snapshot row title now LEADS with the row's list position, so the
+// sentence must not append a second one — "“#6 Rule” (#6)" was the bug, and
+// "Rule 6" (#6) for a row with no title yet. A title-less row is named by the
+// bare position, which is what the repeater renders for it too.
+$s_untitled = $s51;
+unset($s_untitled[0]['row_title'], $s_untitled[1]['row_title']);
+$m_untitled = CollisionDetector::message($scan($KIND_TERM, $s_untitled)[0]);
+$check('an untitled row is named by its list position', str_contains($m_untitled, '“#1”'));
+$check('and no position is ever appended a second time',
+    !str_contains($m_untitled, '(#')
+    && !str_contains(CollisionDetector::message($found_swapped[0]), '(#'));
 
 // A legacy row carrying only the pre-#16 pair must not be read as the
 // `ancestors` default — that would name the wrong contradiction. Resolved

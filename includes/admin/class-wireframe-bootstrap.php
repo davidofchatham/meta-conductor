@@ -30,7 +30,8 @@ class WireframeBootstrap {
         add_action('init', [self::class, 'boot'], 10);
         add_action('admin_menu', [self::class, 'register_subpages'], 11);
 
-        // Snapshot every row title in the ordered term-rule list (SPEC §V11).
+        // Snapshot every row title in the ordered term-rule list
+        // (architecture.md → The ordered rule repeaters).
         // One hook for the whole repeater, dispatching on each row's `type` —
         // the per-type propagation and time-based hooks rescoped onto it when
         // the config collapsed (#57), then related + ACF-reference (#58), and
@@ -43,9 +44,9 @@ class WireframeBootstrap {
 
         // The same, for the ordered format-rule list (#59). A separate hook
         // rather than one generic snapshot over both kinds: the two lists
-        // dispatch on disjoint type sets and share nothing but the disabled
-        // prefix, so merging them would buy a parameter and cost the ability
-        // to read either one on its own.
+        // dispatch on disjoint type sets and share only the mechanics
+        // `snapshot_row_titles()` holds, so merging them would buy a parameter
+        // and cost the ability to read either one on its own.
         add_filter('wp-wireframe/save/payload', [self::class, 'snapshot_format_rule_labels'], 10, 1);
 
         // Snapshot the General-tab claim-override row title. Without it the
@@ -101,10 +102,11 @@ class WireframeBootstrap {
     }
 
     /**
-     * ACF-reference title (SPEC §V10). Runs PRE-storage — `acf_field_name` is
-     * still the raw "post_type:field_name" option value (before the storage
-     * adapter splits it). No A→B arrow: same term, same taxonomy, moved
-     * across a relationship.
+     * ACF-reference title (architecture.md → The ordered rule repeaters).
+     * Runs PRE-storage — `acf_field_name` is still the raw
+     * "post_type:field_name" option value (before the storage adapter splits
+     * it). No A→B arrow: same term, same taxonomy, moved across a
+     * relationship.
      *
      * Schema: {Copy|Sync} {Taxonomy} terms {to|from} {field_label}{ on {statuses}}
      *   Copy|Sync ← keep_in_sync (off|on)
@@ -151,41 +153,88 @@ class WireframeBootstrap {
     }
 
     /**
-     * Assemble the row title for every rule in the ordered term-rule list
-     * (SPEC §V11).
+     * Bake `row_title` onto every row of one kind list.
      *
-     * Hooked on `wp-wireframe/save/payload`, which fires AFTER the Sanitizer
-     * (so `row_title` survives despite not being editable) and before the
-     * merge into saved state. One hook for the whole repeater: it dispatches
-     * on each row's `type`, so a rule type's title schema stays one function
-     * while the disabled marker, the escaping and the "which key holds the
-     * rules" question are answered once for all of them.
+     * The mechanics both kinds share, stated once: the position number, the
+     * disabled marker, the single escape, and leaving a payload that carries
+     * no list of this kind untouched. What differs is the per-type title
+     * schema, which is the `$title` builder each caller passes.
      *
-     * Each per-type builder returns UNESCAPED text and is escaped here, once
-     * — the same discipline the term/taxonomy label helpers already follow.
+     * Runs on `wp-wireframe/save/payload`, which fires AFTER the Sanitizer (so
+     * `row_title` survives despite not being an editable subfield) and before
+     * the merge into saved state.
+     *
+     * Each per-type builder returns UNESCAPED text and is escaped here, once —
+     * the same discipline the term/taxonomy label helpers already follow.
+     *
+     * The title LEADS with the row's list position ("#3 "). Wireframe only
+     * numbers a row whose `title_template` renders empty, so a titled list
+     * showed no positions at all — and position is what decides a collision,
+     * what the collision advisory names, and what the author reorders. Baked
+     * rather than interpolated because `title_template` substitutes row values
+     * and has no index token. The same save that renumbers the rows recomputes
+     * the findings, and the on-demand check re-snapshots in-flight rows before
+     * reading their titles, so the two never disagree (#65 UX follow-up).
+     *
+     * The position counts EVERY row, including one that is not an array and
+     * carries no title: a skipped row still occupies a place in the list the
+     * repeater renders, so numbering past it would misname every row below.
+     *
+     * @since 0.8.0
+     * @param array    $clean_values Sanitized top-level field map.
+     * @param string   $key          Kind-list key.
+     * @param callable $title        fn(array $rule): string — unescaped title.
+     * @return array
+     */
+    private static function snapshot_row_titles(array $clean_values, string $key, callable $title): array {
+        if (empty($clean_values[$key]) || !is_array($clean_values[$key])) {
+            return $clean_values;
+        }
+
+        $position = 0;
+
+        foreach ($clean_values[$key] as &$rule) {
+            $position++;
+
+            if (!is_array($rule)) {
+                continue;
+            }
+
+            $rule['row_title'] = '#' . $position . ' '
+                . self::disabled_prefix($rule)
+                . \esc_html($title($rule));
+        }
+        unset($rule);
+
+        return $clean_values;
+    }
+
+    /**
+     * Assemble the row title for every rule in the ordered term-rule list.
+     *
+     * One hook for the whole repeater, dispatching on each row's `type`, so a
+     * rule type's title schema stays one function while the disabled marker,
+     * the escaping and the "which key holds the rules" question are answered
+     * once for all of them.
+     *
+     * A separate entry point from the format twin rather than one generic
+     * snapshot over both kinds: the two lists dispatch on disjoint type sets
+     * and share nothing but the mechanics `snapshot_row_titles()` now holds,
+     * so merging them would buy a parameter and cost the ability to read
+     * either one on its own.
+     *
+     * See [docs/architecture.md → The ordered rule repeaters](../../docs/architecture.md#the-ordered-rule-repeaters).
      *
      * @since 0.8.0 Replaces snapshot_propagation_labels + snapshot_time_based_labels.
      * @param array $clean_values Sanitized top-level field map.
      * @return array
      */
     public static function snapshot_term_rule_labels(array $clean_values): array {
-        $key = OptionRuleStorage::KIND_TERM;
-
-        if (empty($clean_values[$key]) || !is_array($clean_values[$key])) {
-            return $clean_values;
-        }
-
-        foreach ($clean_values[$key] as &$rule) {
-            if (!is_array($rule)) {
-                continue;
-            }
-
-            $rule['row_title'] = self::disabled_prefix($rule)
-                . \esc_html(self::term_rule_title($rule));
-        }
-        unset($rule);
-
-        return $clean_values;
+        return self::snapshot_row_titles(
+            $clean_values,
+            OptionRuleStorage::KIND_TERM,
+            [self::class, 'term_rule_title']
+        );
     }
 
     /**
@@ -204,23 +253,11 @@ class WireframeBootstrap {
      * @return array
      */
     public static function snapshot_format_rule_labels(array $clean_values): array {
-        $key = OptionRuleStorage::KIND_FORMAT;
-
-        if (empty($clean_values[$key]) || !is_array($clean_values[$key])) {
-            return $clean_values;
-        }
-
-        foreach ($clean_values[$key] as &$rule) {
-            if (!is_array($rule)) {
-                continue;
-            }
-
-            $rule['row_title'] = self::disabled_prefix($rule)
-                . \esc_html(self::format_rule_title($rule));
-        }
-        unset($rule);
-
-        return $clean_values;
+        return self::snapshot_row_titles(
+            $clean_values,
+            OptionRuleStorage::KIND_FORMAT,
+            [self::class, 'format_rule_title']
+        );
     }
 
     /**
@@ -792,7 +829,7 @@ class WireframeBootstrap {
     /**
      * Resolve a raw "post_type:field_name" (or bare name) ACF relationship
      * field to its clean human label via acf_get_field(). Falls back to the
-     * bare field name. (SPEC §V10)
+     * bare field name. (architecture.md → Canonical shape adapter)
      *
      * @param string $stored Raw option value.
      * @return string Unescaped label.
@@ -816,7 +853,7 @@ class WireframeBootstrap {
 
     /**
      * Comma-joined human labels for a post_status gate (Wireframe {slug:bool}
-     * map or list). '' when no gate set. (SPEC §V10)
+     * map or list). '' when no gate set.
      *
      * @param mixed $post_status
      * @return string Unescaped.
@@ -1026,7 +1063,8 @@ class WireframeBootstrap {
         // One-time persist of the related_post_terms_rules read-time migration,
         // BEFORE Wireframe reads the option raw (it bypasses normalize_rule_shape,
         // so the form would otherwise render legacy rows with config defaults and
-        // a resave would corrupt them). Flag-gated → at most one write. (SPEC §V16/B6)
+        // a resave would corrupt them). Flag-gated → at most one write.
+        // (architecture.md → Canonical shape adapter, key-renaming caveat)
         //
         // It reads through the storage layer, which upgrades a pre-#56 option to
         // the kind-list shape on the way in — so the rewrite lands on the rows
@@ -1075,7 +1113,7 @@ class WireframeBootstrap {
             // to a path outside WP_PLUGIN_DIR, so Wireframe's assetsUrl() prefix
             // match fails and emits a broken asset base. plugins_url() keyed off
             // the symlinked main-file path derives the correct URL. Wireframe
-            // appends src/assets/ internally. (SPEC: symlink asset-URL fix.)
+            // appends src/assets/ internally.
             'assets_url' => \plugins_url(
                 'vendor/tdrayson/wp-wireframe/src/assets/',
                 dirname(__DIR__, 2) . '/meta-conductor.php'

@@ -331,7 +331,8 @@ class CollisionDetector {
     /**
      * Assemble one finding, resolving the labels while the terms and taxonomies
      * are in front of us. Labels are SNAPSHOT into the finding for the same
-     * reason row titles are (SPEC §V11): the notice is rendered from persisted
+     * reason row titles are (architecture.md → The ordered rule repeaters):
+     * the notice is rendered from persisted
      * data on a later request, and re-resolving there would let the notice and
      * the row title disagree about what a term is called.
      *
@@ -358,13 +359,13 @@ class CollisionDetector {
      * task) — and the two rules in the order the MESSAGE needs them.
      *
      * The order matters because the diagnosable templates are asymmetric:
-     * `%1$s` is the rule that ADDS a lineage and `%3$s` the one that does not
+     * `%1$s` is the rule that ADDS a lineage and `%2$s` the one that does not
      * keep it. `a`/`b` are therefore ordered by ROLE for those codes, not by
      * list position — with the restriction row authored above the hierarchy
      * row, list order would make the notice say the restriction rule adds
      * ancestors, which is exactly backwards. The list order is not lost: each
-     * side carries its own `index`, and that is what the position numbers and
-     * the "lower in the list acts last" sentence refer to.
+     * side carries its own `index`, the snapshot title leads with that same
+     * position, and the "lower in the list acts last" sentence refers to it.
      *
      * Everything else falls back to `shared_target`, which is still a true
      * statement — just a less useful one — and keeps list order, where the two
@@ -533,6 +534,12 @@ class CollisionDetector {
      * added in the UI and never saved has no `row_title` yet, and the
      * on-demand check is exactly the surface that sees those.
      *
+     * The snapshot title already LEADS with the row's position ("#3 …"), which
+     * is why `message()` no longer appends one: the sentence would have read
+     * "#6 Foo" (#6), and for a title-less row "Rule 6" (#6). The bare "#6" here
+     * is exactly what Wireframe renders for such a row, so both fallbacks
+     * agree with the list.
+     *
      * DECODED, because `row_title` is stored ALREADY `esc_html()`-ed: the
      * repeater's `title_template` renders raw, so the snapshot escapes on the
      * way in. Every other label here is plain text, and `message()` is a
@@ -554,7 +561,7 @@ class CollisionDetector {
         }
 
         /* translators: %d: the rule's position in the ordered list. */
-        return sprintf(__('Rule %d', 'meta-conductor'), $fact['index'] + 1);
+        return sprintf(__('#%d', 'meta-conductor'), $fact['index'] + 1);
     }
 
     /**
@@ -635,8 +642,6 @@ class CollisionDetector {
     public static function message(array $finding): string {
         $a_title = (string) ($finding['a']['title'] ?? '');
         $b_title = (string) ($finding['b']['title'] ?? '');
-        $a_pos   = (int) ($finding['a']['index'] ?? 0) + 1;
-        $b_pos   = (int) ($finding['b']['index'] ?? 0) + 1;
         $target  = (string) ($finding['target'] ?? '');
         $scope   = (string) ($finding['scope'] ?? '');
         $scope   = $scope === '' ? __('every post type', 'meta-conductor') : $scope;
@@ -645,37 +650,37 @@ class CollisionDetector {
         switch ((string) ($finding['code'] ?? '')) {
             case 'ancestors_stripped':
                 return sprintf(
-                    /* translators: 1: rule name, 2: position, 3: rule name, 4: position, 5: taxonomy, 6: post types, 7: order sentence. */
-                    __('“%1$s” (#%2$d) adds ancestor terms in %5$s and “%3$s” (#%4$d) does not keep them, on %6$s. The two want opposite results. %7$s', 'meta-conductor'),
-                    $a_title, $a_pos, $b_title, $b_pos, $target, $scope, $order
+                    /* translators: 1: rule name, 2: rule name, 3: taxonomy, 4: post types, 5: order sentence. */
+                    __('“%1$s” adds ancestor terms in %3$s and “%2$s” does not keep them, on %4$s. The two want opposite results. %5$s', 'meta-conductor'),
+                    $a_title, $b_title, $target, $scope, $order
                 );
 
             case 'descendants_stripped':
                 return sprintf(
-                    /* translators: 1: rule name, 2: position, 3: rule name, 4: position, 5: taxonomy, 6: post types, 7: order sentence. */
-                    __('“%1$s” (#%2$d) adds descendant terms in %5$s and “%3$s” (#%4$d) does not keep them, on %6$s. The two want opposite results. %7$s', 'meta-conductor'),
-                    $a_title, $a_pos, $b_title, $b_pos, $target, $scope, $order
+                    /* translators: 1: rule name, 2: rule name, 3: taxonomy, 4: post types, 5: order sentence. */
+                    __('“%1$s” adds descendant terms in %3$s and “%2$s” does not keep them, on %4$s. The two want opposite results. %5$s', 'meta-conductor'),
+                    $a_title, $b_title, $target, $scope, $order
                 );
 
             case 'shared_term_cancels':
                 return sprintf(
-                    /* translators: 1: rule name, 2: position, 3: rule name, 4: position, 5: term, 6: post types, 7: order sentence. */
-                    __('“%1$s” (#%2$d) and “%3$s” (#%4$d) both apply and remove %5$s on %6$s. Either rule removes that term whoever applied it, so the two can cancel each other out. %7$s', 'meta-conductor'),
-                    $a_title, $a_pos, $b_title, $b_pos, $target, $scope, $order
+                    /* translators: 1: rule name, 2: rule name, 3: term, 4: post types, 5: order sentence. */
+                    __('“%1$s” and “%2$s” both apply and remove %3$s on %4$s. Either rule removes that term whoever applied it, so the two can cancel each other out. %5$s', 'meta-conductor'),
+                    $a_title, $b_title, $target, $scope, $order
                 );
 
             case 'first_match_wins':
                 return sprintf(
-                    /* translators: 1: rule name, 2: position, 3: rule name, 4: position, 5: what is written, 6: post types. */
-                    __('“%1$s” (#%2$d) and “%3$s” (#%4$d) both write %5$s on %6$s. Only the higher rule runs — the lower one never does.', 'meta-conductor'),
-                    $a_title, $a_pos, $b_title, $b_pos, $target, $scope
+                    /* translators: 1: rule name, 2: rule name, 3: what is written, 4: post types. */
+                    __('“%1$s” and “%2$s” both write %3$s on %4$s. Only the higher rule runs — the lower one never does.', 'meta-conductor'),
+                    $a_title, $b_title, $target, $scope
                 );
         }
 
         return sprintf(
-            /* translators: 1: rule name, 2: position, 3: rule name, 4: position, 5: taxonomy or term, 6: post types, 7: order sentence. */
-            __('“%1$s” (#%2$d) and “%3$s” (#%4$d) both write %5$s on %6$s. %7$s', 'meta-conductor'),
-            $a_title, $a_pos, $b_title, $b_pos, $target, $scope, $order
+            /* translators: 1: rule name, 2: rule name, 3: taxonomy or term, 4: post types, 5: order sentence. */
+            __('“%1$s” and “%2$s” both write %3$s on %4$s. %5$s', 'meta-conductor'),
+            $a_title, $b_title, $target, $scope, $order
         );
     }
 
@@ -847,6 +852,11 @@ class CollisionDetector {
             'id'      => $kind . '_collision_check',
             'type'    => 'action',
             'columns' => 12,
+            // Explicit empty label, not an omitted one: the client normalizes
+            // `label ?? id` and would render the field id as a heading
+            // ("TERM_RULES_COLLISION_CHECK"). '' passes the ?? and the control
+            // then renders no label at all — the button names itself.
+            'label'   => '',
             'args'    => [
                 'button_label' => __('Check for collisions', 'meta-conductor'),
                 'variant'      => 'secondary',
