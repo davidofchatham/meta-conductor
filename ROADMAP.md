@@ -2,7 +2,7 @@
 
 Pre-release `0.x` line — unstable until the first production-ready cut graduates to `1.0.0`. Runtime version is **not** tracked here (drifts too fast); source of truth is the plugin header + `META_CONDUCTOR_VERSION` in `meta-conductor.php`.
 
-The refactor is an **incremental migration, not a rewrite** — the core business logic works; the remaining work is structural (config page split, integrations). Rename (2b) and PSR-4 namespacing (2a) have landed. This document tracks the phased plan and the decisions behind it.
+The refactor is an **incremental migration, not a rewrite** — the core business logic works. The structural work has landed: PSR-4 (2a), rename (2b), handler unification (3), and the ordered rule list + dispatchers (4). What remains is integrations (6a, 6b) and the migration / preview tool (7). This document tracks the phased plan and the decisions behind it.
 
 ---
 
@@ -17,27 +17,19 @@ Phase numbers are **stable IDs, not execution order** — work has landed out of
 | 2c | Wireframe UI swap | ✅ done | — | god-class `BWS_Settings` → 60-line shell; mixed JS globals (legacy JS deleted) |
 | 0.3.1 | PR #17 review pass | ✅ done | — | — |
 | 2a | PSR-4 namespacing (+ `lib/`→`Support\`, abstracts co-located, `tests/` harness) | ✅ done (0.4.0) | — | manual `require_once` chains; `includes/abstracts/` + `includes/lib/` |
-| 3 | Migrate 5 legacy handlers → UnifiedHandlerBase — **✅ done (0.6.0)**. All 7 handlers on `UnifiedHandlerBase`; legacy `BWS_Handler_Base` deleted; redundant `on_post_save` loop removed | ✅ done | 2a ✅ | legacy handler base; dual-base divergence; `on_post_save` loop double-run |
+| 3 | Migrate 5 legacy handlers → UnifiedHandlerBase. All 7 handlers on `UnifiedHandlerBase`; legacy `BWS_Handler_Base` deleted; redundant `on_post_save` loop removed | ✅ done (0.6.0) | 2a ✅ | legacy handler base; dual-base divergence; `on_post_save` loop double-run |
 | 2b | Rename sweep — text domain, constants, nonces, core hooks, log table + migration all done (PR #48; real-Athletics verified). JS object + conversion cron/AJAX/transients deferred to P7; internal fn names deferred | ✅ done (shipped 0.7.0) | 2a ✅ | mixed text domains |
-| **4** | Ordered rule list + central dispatcher — *was config page split; was CPT storage before that* | **next** | 3 ✅ | #35; both instantiation-order dependencies; 7-array storage shape; ~~dead `class-settings.php` + AJAX bodies~~ ✅ #55 |
+| 4 | Ordered rule list + central dispatcher — *was config page split; was CPT storage before that* | ✅ done (shipped 0.8.0) | 3 ✅ | #35; both instantiation-order dependencies; 7-array storage shape; ~~dead `class-settings.php` + AJAX bodies~~ ✅ #55 |
 | 7 | Unified migration / preview tool | queued | — (ungated; can run anytime) | `lib/` classes instantiated but never called; tab-aware save bug; conversion `error_log` spam; **rename remainder** (conversion JS global/cron/AJAX/transients — #13 closed, remainder tracked here) |
 | 6a | Options-compatible integrations | queued | 3 | — |
 | 6b | BWS User Based Terms (→ a `type` in `term_rules`) | queued | 4 | UBT merge; needs the unified rule list from P4 |
 | ~~5~~ | ~~Settings refactor~~ | cancelled | — | absorbed by 2c; lib delegation folded into 7 |
 
-**Recommended run order:** ~~2a~~ ✅ → ~~3~~ ✅ → ~~2b~~ ✅ → **4** → (6a, 7) → 6b. Phase 3 landed before 2b so the rename sweep touches already-migrated handlers once. Phase 7 is unblocked and can slot in whenever Conversion is needed.
+**Recommended run order:** ~~2a~~ ✅ → ~~3~~ ✅ → ~~2b~~ ✅ → ~~4~~ ✅ → (6a, 7) → 6b. Phase 3 landed before 2b so the rename sweep touches already-migrated handlers once. Phase 7 is unblocked and can slot in whenever Conversion is needed.
 
-**Also in 0.6.0 (not a phase — bugfix):** Admin Columns Pro **v7** integration fixed ([#37](https://github.com/davidofchatham/meta-conductor/issues/37)). The pre-v7 integration was dead on AC v7; replaced by a shared `reapply_for_post` seam + `ac/editing/saved` fallback across all ACF-listening handlers, legacy integration deleted.
+**Not phases — shipped bugfix waves.** 0.6.0 fixed the Admin Columns Pro **v7** integration ([#37](https://github.com/davidofchatham/meta-conductor/issues/37)) via a shared `reapply_for_post` seam. 0.7.0 landed both AC v7 follow-ups — [#42](https://github.com/davidofchatham/meta-conductor/issues/42) (`Core\AcfWriteQueue` drives term sync from ACF's own `acf/update_value`, covering bare `update_field()`, WP-CLI/cron and REST; guard H8) and [#43](https://github.com/davidofchatham/meta-conductor/issues/43) (dependent-end sever) — plus [#31](https://github.com/davidofchatham/meta-conductor/issues/31) (bulk apply no longer inert; **still no UI trigger**, that stays with P7), [#45](https://github.com/davidofchatham/meta-conductor/issues/45)/[#47](https://github.com/davidofchatham/meta-conductor/issues/47) (propagation removals stick on descendants), and the Data Conversion AJAX endpoint-shadowing fix. Full detail in [CHANGELOG.md](CHANGELOG.md).
 
-**Also in 0.7.0 (not a phase — bugfix wave):** the AC v7 follow-ups both landed, plus four unrelated defects.
-- ✅ [#42](https://github.com/davidofchatham/meta-conductor/issues/42) — AC-agnostic reapply. `Core\AcfWriteQueue` drives term sync from ACF's own `acf/update_value`, covering bare `update_field()`, WP-CLI/cron, and REST writes, not just save-hook paths. New filter `meta_conductor_acf_reapply_enabled`; imports (`WP_IMPORTING`) now stand down. Regression guard `tests/verify-acf-write-queue.php` (H8).
-- ✅ [#43](https://github.com/davidofchatham/meta-conductor/issues/43) — dependent-end sever. Clearing a reverse relationship from the dependent end now strips the inherited term, both reverse-resolution styles (explicit `reverse_acf_field_name` + ACF native bidi).
-- ✅ [#31](https://github.com/davidofchatham/meta-conductor/issues/31) — bulk "process existing posts" no longer inert for hook-driven handlers; new `apply_to_post()` primitive per handler, honest changed-of-scanned reporting. **Still no UI trigger** — that stays with the Phase 7 tool.
-- ✅ [#45](https://github.com/davidofchatham/meta-conductor/issues/45) / [#47](https://github.com/davidofchatham/meta-conductor/issues/47) — propagation removals now stick on descendants (same-request re-push) and `wp_remove_object_terms()` on a parent propagates down.
-- ✅ Data Conversion tool made usable again — eight divergent AJAX endpoints on `TaxonomyManager` were shadowing the canonical `ConversionUi` handlers; all now delegate, with the missing auth checks added.
-- Open from this wave: [#40](https://github.com/davidofchatham/meta-conductor/issues/40) (dead `validate_rule()` overrides) and [#41](https://github.com/davidofchatham/meta-conductor/issues/41) (value-independent ACF field discovery) both shipped in 0.7.0 but are **still open on GitHub** — close them.
-
-Live defects not yet scheduled to a phase are tracked under each phase section's **Known issues**; the "Open items it closes" column above is the at-a-glance index.
+Live defects not yet scheduled to a phase are tracked in GitHub Issues; the "Open items it closes" column above is the at-a-glance index.
 
 ---
 
@@ -55,7 +47,7 @@ Status column: ✅ = actioned · Pn = pending in that phase · standing = ongoin
 | **lib/ classes** | Absorb into `Support\` namespace | ✅ (0.4.0) | BatchProcessor, FieldConverter, ValueMapper, TermMigrator → `includes/support/` (renamed from `lib/` to avoid collision with vendored `libs/`; not `Conversion\` as originally planned) |
 | **lib/ integration** | Complete in Phase 7 | P7 | `Conversion\DataProcessor` delegates to `Support\` classes during the migration-tool build (was Phase 5, cancelled). |
 | **Conversion tool** | Keep in this plugin | ✅ decided | Operates on same entities/fields |
-| **CPT vs options** | Options + page split; CPT deferred | ✅ reassessed (2026-06-23) | Storage choice is **per Wireframe page**, not per rule type. Page split (P4) splits the blob; CPT only if a type needs a draft/test lifecycle. See [storage-model.md](docs/storage-model.md). |
+| **CPT vs options** | ~~Options + page split~~; CPT deferred | ⚠️ superseded by the row below | Storage choice is **per Wireframe page**, not per rule type. Page split (P4) splits the blob; CPT only if a type needs a draft/test lifecycle. See [storage-model.md](docs/storage-model.md). |
 | **CPT structure** | Deferred | — | `bws_mc_rule` shared-CPT design preserved in storage-model.md if/when a type needs it. Not scheduled. |
 | **Config storage boundary** | Effect kind, not page | ✅ reassessed (2026-08-13) | Page split abandoned as the mechanism — it doesn't shrink the hot blob. One page, three tabs; storage is one ordered list per **effect kind**; clobber is a version-token guard. See [ADR 0003](docs/adr/0003-ordered-rule-list-and-dispatcher.md). |
 | **Plugin file rename** | Yes | ✅ | All installs are controlled |
@@ -89,183 +81,50 @@ Split the rename by layer — public-facing identity drops `BWS`, code/storage l
 
 ## Phased Roadmap
 
-### ✅ Phase 0: Title/Slug Rules + Conversion Tooling (COMPLETED)
+### ✅ Completed phases: 0, 1, 2c, 0.3.1, 2a, 2b, 3
 
-Pre-refactor feature work landed on this branch.
+Per-phase detail lives in [CHANGELOG.md](CHANGELOG.md) and the PRs; the invariants each one established are in [docs/architecture.md](docs/architecture.md), [CONTEXT.md](CONTEXT.md) and CLAUDE.md's don'ts. What the status board's one-liners leave out:
 
-- Title/Slug Rules: new rule type with token engine, idempotency, slug collision avoidance, preview, bulk apply, full settings UI. First handler on `BWS_Unified_Handler_Base`.
-- ACF Conversion Tooling: ConversionManager, DataProcessor, FieldMapper, PreviewSystem, ConversionCLI + dedicated JS/CSS.
-- Propagation Handler: term-removal propagation to children.
-- Generic AJAX rule helpers built on storage abstraction.
+- **Phase 0** — Title/Slug rules (token engine, idempotency, slug collision avoidance) + the ACF conversion tooling (ConversionManager, DataProcessor, FieldMapper, PreviewSystem, ConversionCLI). First handler on the unified base.
+- **Phase 1** — three bug fixes (commit `f16091e`).
+- **Phase 2c** — the hand-rolled ~5,000-line settings UI replaced by WP Wireframe; option key migrated to `bws_meta_conductor_settings`; `normalize_rule_shape()` adapter landed. Descoped **for good**: custom client-side field types — Wireframe has no client-side extension API (CLAUDE.md don't 5). Deferred to P7: the Title/Slug inline Preview / Apply buttons.
+- **0.3.1 review pass** — established the **site-time invariant** (`{pub_*}` tokens bound to `wp_timezone()`), now locked in CONTEXT.md → *Site time*.
+- **Phase 2a (0.4.0)** — PSR-4 under `BWS\MetaConductor\`, root `autoload.php`, `includes/lib/` → `Support\`, abstracts co-located. The two traps it discovered (namespace before the ABSPATH guard; leading-backslash every global class ref) are CLAUDE.md don't 0, enforced by H1/H2.
+- **Phase 2b (0.7.0)** — rename sweep: text domain, `META_CONDUCTOR_*` constants (no aliases), nonces, core hooks, log table + migration. Verified against real production data.
+- **Phase 3 (0.6.0)** — all 7 handlers on `UnifiedHandlerBase`, `HandlerBase` deleted, the redundant `on_post_save` loop removed, and the `apply_to_post()` bulk seam introduced ([#31](https://github.com/davidofchatham/meta-conductor/issues/31)).
 
-### ✅ Phase 1: Fix Bugs (COMPLETED — commit `f16091e`)
-
-1. ✅ Fix nonce mismatch in `class-bws-conversion-ui.php::verify_ajax_request()`
-2. ✅ Fix option key in `class-bws-unified-handler-base.php:305`
-3. ✅ Move `test-conversion-integration.php` → `debug/test-conversion-integration.php`
-
----
-
-### ✅ Phase 2c: Wireframe UI Swap (COMPLETED — branch `claude/wireframe-swap-2c`)
-
-Full admin UI replacement. Hand-rolled settings UI (~5,000 lines across `class-bws-settings.php`, `admin.js`, `admin.css`) replaced by WP Wireframe (`tdrayson/wp-wireframe ~1.0.5`).
-
-**Completed:**
-- Wireframe boots under top-level `meta-conductor` menu; settings save via REST to `bws_meta_conductor_settings`
-- Per-tab config builders for all 7 rule types + General, organized into 5 user-facing tabs (Auto-Set Terms, Format & Transform, Restrict, Personalize by User, General)
-- Data Conversion promoted to subpage under Meta Conductor menu
-- Diagnostics dev subpage (gated on `WP_DEBUG`)
-- Storage option key migrated from `bws_taxonomy_manager_settings` to `bws_meta_conductor_settings`
-- `normalize_rule_shape()` canonical-shape adapter in storage layer
-- Hierarchical handler rewritten: flat-field processing, auto-term tracking via `_bws_auto_terms` post meta, promotion logic for user-kept terms
-- Related handler fix: spurious target-term removal on unrelated saves
-- `should_process_post()` checkbox normalization for Wireframe's `{slug: bool}` format
-- Title/Slug handler: hybrid pre-write processing, date escalation fixes, engine bypass
-- Dead AJAX methods removed (6 methods, ~250 lines)
-- Legacy `admin.js` and `admin.css` deleted; `class-bws-settings.php` reduced to ~60-line compat shell
-- Doc reorganization: README.md, readme.txt, docs/architecture.md, docs/future-features.md
-- Subpage padding workaround for Wireframe body class bug (upstream: wp-wireframe#6) — **removed in 1.0.6 upgrade**
-
-**Descoped / deferred:**
-- Custom client-side field types (`bws_wp_select`, `bws_action_button`) — Wireframe has no client-side extension API. Replaced with stock selects + server-side option builders.
-- Title/Slug inline Preview/Apply buttons → Phase 7 Migration tool
-- Subfield conditional visibility → **unblocked in Wireframe 1.0.6 (#13)**; conversion of description-text workarounds to real `conditions` queued (see docs/future-features.md)
-
-**Known issues:**
-- ~~Conversion subpage: taxonomy selectors not populating~~ ✅ **fixed (0.7.0)** — cause was not the menu structure: eight `wp_ajax_bws_meta_manager_conversion_*` endpoints on `TaxonomyManager` were divergent local copies shadowing the canonical `ConversionUi` handlers, each emitting a payload the client couldn't consume (key-preserved arrays serializing as JSON objects, wrapped responses, unimplemented stubs, a nested `config` read the client never sends). All eight now delegate to `ConversionUi`; the five handlers that lacked them gained nonce + `manage_options` checks.
-- ~~`BWS_Option_Rule_Storage::update_settings()` blunt top-level `array_merge` clobbers sibling rule arrays~~ ✅ **closed (0.8.0, #55)** — the clobber *path* went dead first (all migrated handlers write via `OptionRuleStorage::save_rule()`, per-type merge into `get_all_settings()`, no cross-type clobber), and the offending method has now gone with the `class-settings.php` compat shell that held it.
-- ~~Hierarchical handler `$this->processed` accumulates indefinitely within a request and silently skips legitimate double-saves~~ ✅ **fixed** — `$processed` map removed entirely. Re-entrant recursion was already blocked by the `$processing` flag; `apply_rule()` reads terms + auto-meta fresh each call (idempotent), so legit double-saves within one request now recompute instead of being skipped.
-
-**Runtime verification:** Propagation and Level Restriction were swept on the local docker testbed during 0.6.0/0.7.0 (mc-rules fixture + `sweep-lib.php`). Related Post Terms is verified on a live AC Pro v7 site — add-sync during the #37 fix, dependent-end sever with #43 in 0.7.0. InstaWP is retired as a test target; see CLAUDE.md → Test site.
-
-**Plan file:** deleted post-ship; see commit history on `claude/wireframe-swap-2c` and PR #17.
+**Still open from these phases**, all carried by Phase 7 below: the conversion-subsystem rename remainder, its ~137 unconditional `error_log()` calls, and the tab-URL builder that targets `admin_url('tools.php')` when the menu registers elsewhere. Internal function names (`bws_meta_manager_init`, `bws_taxonomy_manager_activate/deactivate/uninstall`) stay deferred — not user-facing, no BC pressure, rename opportunistically.
 
 ---
 
-### ✅ Phase 2c review pass — 0.3.1 (COMPLETED — commit `4f1a439`)
+### ✅ Phase 4: Ordered Rule List + Central Dispatcher — DONE (0.8.0)
 
-Correctness fixes from the PR #17 review (full list in CHANGELOG `[0.3.1]`). Roadmap-relevant carry-overs:
+**Twice re-scoped** (was CPT storage, then config page split). Rationale: **[ADR 0003](docs/adr/0003-ordered-rule-list-and-dispatcher.md)**, partially superseding [ADR 0002](docs/adr/0002-cross-rule-composition.md). Vocabulary: [CONTEXT.md](CONTEXT.md) → *Effect kind*, *Dependency*, *Pass*, *Order*.
 
-- Established the **site-time invariant** (`{pub_*}` tokens bound to `wp_timezone()`) — later locked for Temporal rules (CONTEXT.md → *Site time*); the shared `parse_date_value` pull-up in the Temporal work must honor it.
-- `TODO(Phase 3)` markers added to all 5 legacy `BWS_Handler_Base` handlers flagging dual-base divergence — visible debt for the Phase 3 migration below.
+**Why the page split stopped being the point.** Splitting 5 tabs into 4 pages doesn't shrink the hot blob — Auto-Set & Restrict would host 6 of 7 rule types today — and cutting further would have to cut *inside* the term group, exactly where rules interact and the one place a storage boundary hurts. Page count is therefore a pure UX choice: **one page, three tabs.**
 
----
-
-### Phase 2a: PSR-4 Namespacing ✅ DONE (branch `claude/psr4-2a`)
-
-Pure structural change — no behavior changes, no user-visible changes. Independently revertable (single merge). **Static verification (lint + autoload-resolution harness) green; behavior parity pending the manual InstaWP sweep before merge.**
-
-- ✅ `autoload.php` at plugin root, adapted from a sibling BWS plugin's loader (`BWS\MetaConductor\`, `BWS_META_CONDUCTOR_PATH`)
-- ✅ `autoload.php` required in main file; all 12 manual `require_once includes/*` lines removed
-- **Namespace structure**:
-  - `Core\` → `includes/core/`, `Handlers\` → `includes/handlers/` (incl abstract bases), `Storage\` → `includes/storage/` (incl interface), `Conversion\` → `includes/conversion/`, `Admin\` + `Admin\Config\` → `includes/admin/` + `/config/`
-  - **`Support\` → `includes/support/`** — DIVERGENCE from original plan: the `includes/lib/` reusable modules (BatchProcessor, TermMigrator, FieldConverter, ValueMapper + interfaces) became their own top-level `Support\` namespace, NOT absorbed into `Conversion\`. They are interface-driven and zero-coupled, so the namespace advertises that. `lib/` renamed to `support/` to avoid collision with vendored `libs/` (PUC).
-- ✅ `includes/abstracts/` + `includes/lib/` eliminated; bases co-located in `handlers/`/`storage/`; `HandlerBase` stays until Phase 3
-- ✅ Files `class-{kebab}.php`, classes drop `BWS_`, `use`/FQN for cross-ns refs
-- **Naming**: `CptRuleStorage` not `CPTRuleStorage`; acronyms `Acf`/`Cli`/`Ui` (kebab converter breaks on consecutive caps); interface files use `class-` prefix
-
-**Discoveries (logged as SPEC §V/§B, carry into Phase 2b/3):**
-- **§V12** — `namespace` must be the FIRST statement, *before* the `if(!defined('ABSPATH'))exit;` guard (only `declare()` may precede). Namespace-after-guard = php -l fatal.
-- **§V13** — under a namespace, every GLOBAL class ref must be leading-backslash qualified (`new \WP_Query`, `catch (\Exception`, `\WP_CLI::`, `new \DateTime`). Unqualified resolves into the plugin namespace → RUNTIME fatal, invisible to `php -l` AND the autoload harness. Global *function* calls (`get_post`, `__`) are fine — PHP auto-falls-back functions, not classes.
-- **Harnesses** (`tests/`, export-ignored): `verify-autoload.php` (H2) asserts all 47 FQNs resolve with no WP boot; `lint.php` (H1) is a `php -l` sweep. Reusable pattern for Phase 2b/3.
-
-**End of phase**: ✅ CLAUDE.md updated. Merge gated on user's manual InstaWP behavior sweep.
-
----
-
-### Phase 2b: Rename & Branding
-
-Visible change — rename the plugin, migrate the option key, update all strings.
-
-Follow the **Naming Surface (0.x)** table in the decisions section above for which layers drop `bws-` and which keep `bws_`/`BWS\`.
-
-> **✅ Done (branch `claude/rename-2b`, [PR #48](https://github.com/davidofchatham/meta-conductor/pull/48)).** User-facing rename landed early (2c + release-infra); the code-internal sweep completed in 2b: text domain, `META_CONDUCTOR_*` constants (no aliases), nonces, core hooks, and the log-table rename+migration. Two-axis code review clean; static gates (H1/H2) green; testbed mc-rules sweep + **real production data** (staging-clone dev-swap) both verified — migration no-ops on the real DB and a live cross-taxonomy Baseball connector rule fired correctly under the renamed hooks. Deferred to Phase 7: the JS localized object and all conversion-subsystem identifiers (cron/AJAX/transients), left with the code being reworked there.
-
-- ~~Rename plugin folder: `bws-meta-manager` → `meta-conductor`~~ ✅ done (repo, GitHub, local dev folder, test-site install all renamed)
-- ~~Rename main file: `bws-taxonomy-manager.php` → `meta-conductor.php`~~ ✅ done
-- ~~Update plugin header: `Plugin Name: Meta Conductor`, `Text Domain: meta-conductor`~~ ✅ done
-- ~~Rename option key: `bws_taxonomy_manager_settings` → `bws_meta_conductor_settings`~~ ✅ done in Phase 2c (Wireframe boots against the new key; tested on InstaWP)
-- ~~Update admin menu label and page title~~ ✅ done in Phase 2c (`class-wireframe-bootstrap.php` `page_title`/`menu_title`/`menu_slug`)
-- ~~Update settings page H1~~ ✅ done in Phase 2c (`class-wireframe-config.php` `title`)
-- ~~Update all nonce action strings to `bws_meta_conductor_*` pattern~~ ✅ done in 2b (shipped 0.7.0) — `bws_taxonomy_manager_nonce` → `bws_meta_conductor_nonce`, 23 sites
-- ~~Unify text domain to `meta-conductor` throughout~~ ✅ done in 2b (shipped 0.7.0) — 509 i18n args / 29 files
-- ~~Update constants to `META_CONDUCTOR_*`~~ ✅ done in 2b (shipped 0.7.0) — **no aliases** (confirmed no external consumer); dropped the 3 dead `BWS_TAX_MANAGER_*` defines
-- ~~Update hook/filter prefix to `bws_meta_conductor_*`~~ ✅ done in 2b (shipped 0.7.0) for **core** hooks (rule-engine, condition/action, storage-factory, unified-base). No aliases.
-- ~~Log table renamed~~ ✅ done in 2b (shipped 0.7.0) — `bws_meta_manager_log` → `bws_meta_conductor_log` + idempotent `RENAME TABLE` migration (testbed-verified, rows preserved)
-- ~~Drop dead legacy log-table create~~ ✅ done in 2b (shipped 0.7.0, post-review) — fresh installs no longer create `bws_taxonomy_manager_log`; uninstall drop-list still cleans it on legacy installs
-- ~~Rebrand user-facing runtime strings~~ ✅ done in 2b (shipped 0.7.0, post-review) — `BWS Meta Manager`/`BWS Taxonomy Manager` → `Meta Conductor` (requirement/table-error notices, handler log prefix, conversion cleanup log). Text-domain args were already correct.
-- **Deferred to Phase 7 (conversion subsystem):** JS localized object `bwsMetaManager` → `bwsMetaConductor` + PHP enqueue; conversion cron `*_conversion_cleanup`, AJAX `wp_ajax_*_conversion_*`, transient keys `*_conversion_*`. Left with the conversion code that's mid-rework in P7.
-- **Deferred (low value):** internal function names (`bws_meta_manager_init`, `bws_taxonomy_manager_activate/deactivate/uninstall`) — not user-facing, no BC pressure. Rename opportunistically or in a later tidy pass.
-- **Flagged bug (P7):** conversion tab-URL builder targets `admin_url('tools.php')` but the menu registers elsewhere — verify parent when conversion is revisited.
-
-**Files**: `meta-conductor.php`, `includes/class-taxonomy-manager.php`, `includes/storage/class-option-rule-storage.php`, `includes/handlers/class-unified-handler-base.php`, plus every file containing `__()` / `_e()` / `_x()` / `_n()` calls (paths post-2a)
-
-**End of phase**: Keep version on the `0.x` line; graduate to `1.0.0` only when production-ready. Update CLAUDE.md
-
----
-
-### Phase 3: Migrate Legacy Handlers (One at a Time)
-
-Migrate each handler from `BWS_Handler_Base` to `UnifiedHandlerBase`. Template: `includes/handlers/class-hierarchical-handler.php`.
-
-**Order** (simplest first):
-1. ~~`class-related-handler.php`~~ ✅ **done** (branch `claude/related-multi-pt-3a`) — also gained multi-post-type support (single `post_type` select → shared `post_types` checkboxes via `ConfigHelpers::post_types_field()`). Ported 4 term-utility helpers (`apply_terms_to_post`, `remove_terms_from_post`, `post_has_terms`, `debug_log`) from `BWS_Handler_Base` → `UnifiedHandlerBase`; **steps 2–5 now inherit these from the new base** rather than the legacy one.
-2. ~~`class-hierarchical-level-restriction-handler.php`~~ ✅ **done** (0.6.0, branch `claude/handler-migration-p3`) — shared `post_types_field()`, `include_ancestors` → real Wireframe `conditions`.
-3. ~~`class-propagation-handler.php`~~ ✅ **done** (0.6.0) — scalar→plural `post_types` + hierarchical-only field, new-child inherit on child save (B3), no-change short-circuit, snapshot row title.
-4. ~~`class-related-post-terms-handler.php`~~ ✅ **done** (0.5.0, branch `claude/acf-reference-p3`) — full ACF-reference rework: declarative source-authoritative sync, `holder_role` direction, 3-tier reverse resolution, both-direction sever (relationship-edit + permanent-delete), source-status gate. Legacy `AcfIntegration` shadow engine removed.
-5. ~~`class-time-based-handler.php`~~ ✅ **done** (0.6.0) — scalar→plural `post_types`, `process_post` stays functional (own save/publish hooks), date-first snapshot row title.
-
-**For each**: Change `extends` → implement `get_rule_type()` + `get_handler_type()` → replace `process_post()` with `init_hooks()` → replace direct settings reads with `$this->get_enabled_rules()` → test on InstaWP before next.
-
-**After last handler** ✅ (0.6.0):
-- ~~Delete `class-handler-base.php`~~ ✅ — ACF read/write helpers (`get_acf_taxonomy_value`/`set_acf_taxonomy_value`) ported to `UnifiedHandlerBase` first (they were used by propagation + level-restriction ACF paths; the base flip had silently dropped them — latent fatal, B4). HandlerBase-internal-only helpers died with the file.
-- ~~Remove `on_post_save()` loop~~ ✅ — every handler owns its hooks. Removal closed the time-based double-run. The no-op `process_post()` overrides stay as defensive guards against the base RuleEngine route. **Updated 0.7.0:** `process_existing_posts` no longer routes through those no-ops — bulk re-apply goes through a new `apply_to_post(int, array): bool` primitive each hook-driven handler overrides ([#31](https://github.com/davidofchatham/meta-conductor/issues/31)). Still no UI trigger; that lands with the Phase 7 tool.
-
-**End of phase**: Update CLAUDE.md
-
----
-
-### Phase 4: Ordered Rule List + Central Dispatcher
-
-**Second re-scope.** Was "Implement CPT Storage" (CPT deferred, 2026-06-23), then "Config Page Split" (2026-06-23 → 2026-08-13). The page split is now a *by-product*, not the deliverable. Full rationale: **[ADR 0003](docs/adr/0003-ordered-rule-list-and-dispatcher.md)**, which partially supersedes [ADR 0002](docs/adr/0002-cross-rule-composition.md). Domain vocabulary: [CONTEXT.md](CONTEXT.md) → *Effect kind*, *Dependency*, *Pass*, *Order*.
-
-**Why the page split stopped being the point.** Splitting 5 tabs → 4 pages doesn't shrink the blast radius: Auto-Set & Restrict would host 6 of 7 rule types today and 10 of 12 eventually, so the hot blob stays one blob. Cutting further would have to cut *inside* the term group — exactly where rules interact, and the one place a storage boundary hurts. Cross-type clobber is already dead (every handler writes via `OptionRuleStorage::save_rule()`, per-type merge); lost-update clobber is a **version-token guard**, which works at any page count. Page count is therefore a pure UX choice: **one page, three tabs.**
-
-**What replaced it.** Checking the vendored Wireframe 1.0.6 turned two assumptions into hard constraints — no cross-repeater ordering primitive, and no flexible content — and a pass over `docs/future-features.md` falsified ADR 0002's "effect kind partitions cleanly" claim in both directions (`title_slug` *reads* `{term:TAX}` and `{meta:field}`; `user_based` *writes* terms). The model that survives:
+**What shipped** — per-ticket detail in [CHANGELOG.md](CHANGELOG.md) `[0.8.0]`; the invariants it left behind are in [docs/architecture.md](docs/architecture.md) and CLAUDE.md don'ts 6 / 6b–6g:
 
 | | |
 |---|---|
-| **Grouping** | One ordered rule list per **effect kind** — `term_rules`, `format_rules`. Each row carries its own `type`; subfields are `conditions`-gated on it. |
-| **Order** | **Authored within a kind** (repeater move up/down). **Derived between kinds** (terms → title/field → rendered) — those are *dependencies*, which have a right answer. |
-| **Execution** | A **central dispatcher per kind**, the *sole* entry point. Any trigger runs a **full ordered pass** over the entity; every rule recomputes from live state. |
-| **Re-entrancy** | A **pass-scoped** lock keyed *(entity, effect kind)*. |
-| **UI** | One page, three tabs: Auto-Set & Restrict / Format & Transform / General. |
+| **Storage** (#56 expand → #66 contract) | 7 type-keyed arrays → 2 kind-keyed ordered lists. `get_kind_rules()` is the one kind read and serves the stored list **verbatim**; the type-facing API is a view over it, with the per-type `$rule_id` translated to a list position. Legacy shapes migrate on **read** (handlers read on front-end and cron, where the admin bootstrap never runs). Rode along: **#27**. |
+| **Config** (#57, #58, #59) | 5 tabs → 3 (Personalize removed). All six term types became rows in `term_rules`, `title_slug` the sole row type of `format_rules`; all eight per-type config classes deleted. Two schema decisions taken in the free window: **#16** (hierarchy pair → one `inheritance_behavior` outcome selector) and **#32** (`include_ancestors` redefined to one additive meaning; `remove_conflicting_ancestors()` deleted as dead). |
+| **Dispatch** (#60 → #64) | `Core\TermDispatcher` — trigger union, dirty-entity queue, one full ordered pass per entity, pass-scoped lock keyed *(entity, kind)* — plus `Core\FormatDispatcher` run from the same drain step, which turns the cross-kind order into one statement instead of an instantiation accident. All 7 handlers are pure appliers; four `private $processing` booleans and the taxonomy-scoped cascade guard are gone. Every entry point routes through it (`AcfWriteQueue` #42, the AC v7 `reapply_for_post` seam #37, bulk apply, time_based's cron). |
+| **Collision advisory** (#65) | Advisory, never a resolver: same effect target + overlapping written post types ⇒ warn, on both rule tabs and on demand. Re-scopes **#39**. |
+| **Claim wording** | Four values, not three — `replace`/`merge`/`skip` = owning/contributing/deferring. Closes **#34**; UI wording only, stored values untouched. [ADR 0004](docs/adr/0004-claim-axis-and-jurisdiction.md). |
+| **Ride-alongs** (#55) | `class-settings.php` deleted, taking the dormant blunt `array_merge` clobber; `flatten_conflict_overrides()` rehomed to `Storage\OptionRuleStorage`; unreachable AJAX bodies removed. |
 
-**Work:**
+**Closed:** #35 and **both** latent instantiation-order dependencies (propagation-before-hierarchical, `TitleSlugHandler` constructed last).
 
-- **Storage — DONE (0.8.0, #56 expand → #66 contract).** 7 type-keyed arrays → 2 kind-keyed ordered lists. It shipped expand-first, both shapes live from #56 to #64 so each rule type could convert on its own, then the contract slice deleted the old path once nothing read it: the seven arrays, the seven-entry valid-types list, the derived kind read and its memo, the save-time projection back onto the arrays, and `authored_kind_list()` — the reconciliation that decided per load whether the stored list could still be trusted, and which since #60 could silently re-sequence what a pass DOES. `get_kind_rules()` is now the one kind read and serves the stored list verbatim; the type-facing API is a view over it, with the per-type `$rule_id` translated to a list position. The migration survives as `fan_in()`/`fan_out()` and runs on **read** (`upgrade_legacy_shape()`) — `WireframeBootstrap::boot` is admin/REST-only while handlers read on front-end and cron — with a stored kind list always winning over the legacy arrays, and the arrays pruned by the next write. No stable `_id`: order is array position, and ADR 0002 rejected provenance. `related_post_terms` and `related` are **live**, so this was a breaking change under the CLAUDE.md live-rule-type rule; it is covered by H10 (Gate 1) plus the whole existing sweep suite re-run, since the ticket's claim is *no behavioural difference*. Rode along: **#27** — storage mutators stop reporting a no-op-equal write as a failure.
-- **Config — batch 1 DONE (0.8.0, #57).** Five tabs → three (Auto-Set & Restrict / Format & Transform / General; Personalize removed). Propagation, time-based, hierarchical and level-restriction — the four types **not** live on a real site — collapsed into one `term_rules` repeater with a `type` select driving subfield `conditions`; their five config classes and `PersonalizeConfig` are deleted. Shared subfields unified (`enabled`, `taxonomy`, `post_types`, `post_status`, claim via `ConfigHelpers::claim_field()`), which also gave all four the publication-status gate (**the config half of #23**) and a uniform `[Disabled]` row-title prefix (**#30**'s interim follow-up). The four `get_post_types()` loops and both post-type field builders in `ConfigHelpers` collapsed (**#38 cluster 1**). The repeater is the writer of `term_rules`; a save-time projection puts each row back in its type-keyed array so handlers still see it, and `authored_kind_list()` stops the admin-load sync clobbering the authored order.
-  - **Two schema decisions taken in the free window.** **#16**: hierarchical `hierarchy_direction` × `expansion_behavior` → one outcome selector, `inheritance_behavior` (legacy pair still read, nothing migrates). **#32**: level-restriction `include_ancestors` redefined to one additive meaning in all three modes; the `one_per_level` branch it used to take was dead code, and `remove_conflicting_ancestors()` went with it.
-  - **Batch 2 DONE (0.8.0, #58).** The two live types — `related` + `related_post_terms` — joined the repeater; their config classes are deleted and every term type is now a row in the ordered list. The ACF field select's combined `post_type:field_name` value round-trips whole, legacy related rows (scalar term ids, stale three-token title keys) are repaired on admin load, and `post_types` is gated to the five types whose handlers read it (the ACF-reference rule's post type is pinned by its field). Verified by H10/H11 plus a testbed sanitize round-trip sweep (`sweep-58-roundtrip.php`) and behavior sweeps on both live types.
-  - **Batch 3 DONE (0.8.0, #59).** `title_slug` became the ordered `format_rules` repeater on the Format & Transform tab, so **no tab holds a per-type section any more** and `TitleSlugConfig` is deleted with the rest. It needed no shape migration — the stored keys are unchanged, which is the ticket's "existing rules survive" criterion as an absence of code — but it did gain a `row_title` snapshot in place of the live `{name}` template, so the disabled marker and post-type scope reach it and a second format rule type is an *addition* rather than a restructure. `post_type` stays a **single select**, not the shared checkboxes: `TitleSlugHandler::find_matching_rule()` is first-match-wins on one post type, so it is a lookup key rather than a scope — and the ordered list makes that visible, which the field's description now states. Verified by new H12 (`verify-format-rules-config.php`) plus two testbed sweeps: `sweep-59-roundtrip.php` (stored rule survives the real sanitize) and `sweep-59-behaviour.php` (reordering two rules on one post type swaps which one applies; the `{meta:}`/`{term:}`/`{terms:}`/`{pub_*}` token engine is unchanged).
-  - ⚠️ A condition-hidden subfield is **dropped server-side at sanitize**, so a wrong gate is silent data loss — H11 (`verify-term-rules-config.php`) and H12 (`verify-format-rules-config.php`) assert the visible set per type through Wireframe's own evaluator, and every show/hide is swept on the testbed. On the one-type format list the risk inverts: a gate on the shared frame deletes its field outright rather than narrowing it, which is what H12 pins first. Changing a row's `type` discards its type-specific values (correct, and the `type` select says so).
-- **Dispatcher.** Handlers stop registering hooks and become pure appliers on the existing `apply_to_post(int, array): bool` seam (#31, 0.7.0). This inverts handler-authoring invariant (a). All four other entry points route through it too — `AcfWriteQueue` (#42), the AC v7 `reapply_for_post` seam (#37), bulk apply, and time_based's cron — so ordering is honoured on *every* path, not just saves.
-- **Lock.** Pass-scoped, keyed *(entity, effect kind)*. Deletes the **four** `private $processing` booleans (related, level_restriction, propagation, hierarchical) and `related_post_terms`' taxonomy-scoped cascade guard at `class-related-post-terms-handler.php:476-478`. Also closes PR #19 review #1 (`RelatedHandler::on_terms_set` resetting `$processing` per rule inside the loop) — that window stops existing by design.
-- **Minimal collision warning.** At settings save, warn when two rules in a tab share a taxonomy *and* overlap on post types. Advisory only. **Re-scopes #39**; covers the unfiled hierarchical-vs-level-restriction ancestors case.
-- **Claim wording — DONE.** The axis is **claim**, not *ownership* (the old name was one of its own values), and it has **four** values, not three: `replace` = *owning*, `merge` = *contributing*, `skip` = *deferring*. `skip` was previously misfiled as contributing — it satisfies "never removes" but not "the rule's values are present", since it writes only into an empty taxonomy. **Closes #34** — contributing *and* deferring rules decline to remove by definition; UI wording only, no handler change, stored `conflict_handling` values untouched. Labels now lead with the domain word (`Owning: only this rule's terms are allowed here; anything else is removed`), which also surfaces the jurisdiction widening the old "Replace existing terms" hid. See [ADR 0004](docs/adr/0004-claim-axis-and-jurisdiction.md), CONTEXT.md → *Claim* / *Jurisdiction*.
-- **Ride-alongs — DONE (0.8.0, #55).** `class-settings.php` deleted, taking the dormant blunt `array_merge` clobber with it; `flatten_conflict_overrides()` rehomed to `Storage\OptionRuleStorage` first (the adapter boundary its siblings already use — not `ConfigHelpers`, which would pull `Admin\Config` into runtime resolution), with new H9 coverage. Unreachable AJAX bodies removed (the 5 rule-management ones were already gone; `ajax_get_dashboard_stats()` + its orphaned `get_dashboard_stats()` went in this pass). #40/#41 were already closed.
-  - **Left open:** the per-taxonomy claim default is stored and flattened but **read by nobody** — a rule that omits its own claim still falls back to a hard-coded `merge` in each handler. Deciding rule-level-vs-taxonomy-level precedence and wiring the lookup is dispatcher work, so it lands here rather than in the ride-along slice. Two orphans ride along with it: `RuleStorage::get_raw_settings()` (kept — it is the seam that wiring reads through) and write-only `manual_processing_enabled` (kept — the bulk-apply buttons it gates are Phase 7).
-- **Unit-test harness for the snapshot helpers** (PR #19 review #6, deferred to "Phase 4+ when schema stability increases" — that is now). `WireframeBootstrap::term_label()` / `scope_label()` / `taxonomy_label()` / `snapshot_related_labels()` are near-pure functions of WP data (two term-ID shapes, taxonomy-trigger path, empty-vs-populated post_types map, unresolvable → `''`) covered only by manual sweeps — no `tests/` harness touches them and `composer.json` has no `require-dev`. Standing up PHPUnit here also gives the reach/collision work somewhere to land unit tests.
+**Gates — all four passed before the `v0.8.0` tag:** migration harness (H10), dispatch-order source inspection (H13), full testbed sweep of all 7 types incl. explicit cross-type ordering, and the mandatory **Athletics copy** run against real data ([#67](https://github.com/davidofchatham/meta-conductor/issues/67)) — the two live rule types only exist there.
 
-**Closes #35** and kills **both** latent instantiation-order dependencies: propagation-before-hierarchical (`class-taxonomy-manager.php:145-153`) and `TitleSlugHandler` being constructed last, which is currently the only thing ordering term writes before title reads.
+⚠️ A condition-hidden subfield is **dropped server-side at sanitize**, so a wrong gate is silent data loss. H11/H12 assert the visible set per type through Wireframe's own evaluator, and every show/hide is swept on the testbed. CLAUDE.md don't 3.
 
-**Gates (all four required before merge):** migration harness (idempotent, lossless, every legacy shape round-trips); dispatch-order source-inspection harness (no handler registers hooks; dispatcher is the only `apply_to_post` caller); full testbed sweep of all 7 types incl. explicit cross-type ordering cases; **Athletics copy gate** — mandatory, since the two live types only exist in real data.
+**Carry-overs — real work, not scheduled to any phase:**
 
-**Delivery:** one release, many dev passes, one branch. Further features may join the same release; this lands first.
-
-**Deferred (not this phase):** full reach/component collision detector (define reach once the non-term effect kinds are real); stable rule `_id`; CPT storage; rule-type renaming; sub-scope for restricting rules. The format dispatcher goes two-phase when `field_transformation` lands (`wp_insert_post_data` vs `acf/save_post` pri 20).
-
-**End of phase**: Update CLAUDE.md
+- **The per-taxonomy claim default is stored and flattened but read by nobody** — a rule that omits its own claim still falls back to a hard-coded `merge` in each handler. Deciding rule-level-vs-taxonomy-level precedence and wiring the lookup is what's left. Two orphans wait on it: `RuleStorage::get_raw_settings()` (the seam the wiring reads through) and write-only `manual_processing_enabled` (gates the bulk-apply buttons, which are P7).
+- **PHPUnit for the snapshot label helpers** — [#68](https://github.com/davidofchatham/meta-conductor/issues/68). `WireframeBootstrap::term_label()` / `scope_label()` / `taxonomy_label()` / `snapshot_related_labels()` are near-pure functions of WP data covered only by manual sweeps; `composer.json` still has no `require-dev`. Standing PHPUnit up also gives the reach/collision work somewhere to land unit tests.
+- **Deferred by design:** full reach/component collision detector (define reach once the non-term effect kinds are real); stable rule `_id` (order is array position — ADR 0002 rejected provenance); CPT storage; rule-type renaming; sub-scope for restricting rules. The format dispatcher goes two-phase when `field_transformation` lands (`wp_insert_post_data` vs `acf/save_post` p20) — CLAUDE.md don't 6f(c).
 
 ---
 
@@ -322,9 +181,9 @@ Reframes the existing ACF "Data Conversion" page as a general-purpose Migration 
 
 ---
 
-### Phase 6a: Options-Compatible Integrations (After Phase 3)
+### Phase 6a: Options-Compatible Integrations
 
-These do not require CPT storage.
+**Ungated** — its Phase 3 gate closed in 0.6.0. These do not require CPT storage.
 
 **ACF Post Relationship Manager**
 - Sets hierarchical parent/child post relationships based on ACF post object/relationship fields
@@ -335,13 +194,15 @@ These do not require CPT storage.
 
 **Field Transformation Rules** (from existing snippet)
 - Combines multiple fields into a formatted output field (e.g. athlete stats → bio string, date + time → sortable datetime). Must also work inside ACF repeater rows (per-row compose/write).
-- New rule type `field_transformation_rules` → storage TBD via [storage-model.md](docs/storage-model.md) (likely Options + indirection; CPT only if a per-recipe lifecycle is wanted). **Not gated on Phase 4** — Phase 4 is the page split, not CPT.
+- New rule type `field_transformation_rules` → storage TBD via [storage-model.md](docs/storage-model.md) (likely Options + indirection; CPT only if a per-recipe lifecycle is wanted). **Not gated on Phase 4** (done 0.8.0 anyway) — but it lands as a row type in the existing `format_rules` list, and the format dispatcher goes two-phase when it does (CLAUDE.md don't 6f(c)).
 
 **End of phase**: Update CLAUDE.md
 
 ---
 
-### Phase 6b: BWS User Based Terms (Requires the Phase 4 rule list)
+### Phase 6b: BWS User Based Terms (→ a `type` in `term_rules`)
+
+**Ungated** — the Phase 4 rule list it needed landed in 0.8.0.
 
 **Re-scoped 2026-08-13** by [ADR 0003](docs/adr/0003-ordered-rule-list-and-dispatcher.md). There is no Personalize *page* and no `bws_mc_personalize` option — the page split was abandoned. UBT lands as **`type` values inside the unified `term_rules` list**, ordered among the other term rules.
 
@@ -366,38 +227,31 @@ These do not require CPT storage.
 
 Key reassessments since the original inline framework (2026-06-23):
 - `user_based_rules` (UBT): **CPT → Options** — role/user is the *target*, not the owner → single author, no concurrent writes; per-user explosion solved by indirection (profile field + one rule). See [ubt-merger plan](.claude/plans/ubt-merger.md).
-- `title_slug_rules` / `time_based_rules`: **CPT (Phase 4) re-opened** — no concurrent authoring; page-split covers blast radius. Options unless a real draft/test lifecycle is wanted.
-- Storage choice is **per Wireframe page**, not per rule type — see [config-pages-split plan](.claude/plans/config-pages-split.md).
+- **Superseded 2026-08-13 ([ADR 0003](docs/adr/0003-ordered-rule-list-and-dispatcher.md)):** the storage boundary is the **effect kind**, not the Wireframe page — two ordered lists (`term_rules`, `format_rules`), lost-update clobber handled by a version token. The page split is abandoned, and with it both "storage choice is per Wireframe page" and the "CPT re-opened for `title_slug` / `time_based` under the split" reassessment. **CPT stays deferred for every type.**
 
 ---
 
 ## Critical Files Reference
 
-| File | Role | Phase |
-|------|------|-------|
-> Paths reflect post-2a reality (PSR-4 done in 0.4.0): no `BWS_` prefix, kebab `class-{name}.php`, `BWS\MetaConductor\` namespace. `meta-conductor.php` main-file rename landed in 2c.
+Paths reflect post-2a reality (PSR-4, 0.4.0): kebab `class-{name}.php`, `BWS\MetaConductor\` namespace, main file `meta-conductor.php`.
 
 | File | Role | Phase |
 |------|------|-------|
-| `includes/handlers/class-unified-handler-base.php` | Shared handler base; gains migrated handlers | 3 |
-| `meta-conductor.php` | Main file (renamed 2c); constants/hooks `__()` sweep | 2b |
-| `includes/class-taxonomy-manager.php` | Menu registration, AJAX hooks | 2b |
-| `includes/storage/class-option-rule-storage.php` | Option storage; gains rule_type → option_key routing | 4 |
-| `includes/storage/class-storage-factory.php` | Rule-type → option_key router (page split) | 4 |
-| `includes/storage/class-rule-storage.php` | RuleStorage interface | 4 |
-| `includes/handlers/class-hierarchical-handler.php` | Migration template | 3 |
-| `includes/handlers/class-title-slug-handler.php` | Unified handler (Phase 0) | — |
+| `includes/core/class-term-dispatcher.php` | Term-kind dispatcher: trigger union, dirty queue, ordered pass, pass-scoped lock | 4 ✅ |
+| `includes/core/class-format-dispatcher.php` | Format-kind pass, run from the term drain step (the cross-kind order) | 4 ✅ |
+| `includes/handlers/class-unified-handler-base.php` | Shared handler base; the `apply_to_post` / `apply_to_data` / `fan_out` / `drain_captures` seams | 3 ✅ |
+| `includes/storage/class-option-rule-storage.php` | Kind-list storage + legacy fan-in migration | 4 ✅ |
+| `includes/admin/config/class-term-rules-config.php` | The ordered term repeater (all 6 term types) | 4 ✅ |
+| `includes/admin/config/class-format-rules-config.php` | The ordered format repeater (`title_slug` today) | 4 ✅ |
+| `includes/admin/class-collision-detector.php` | Collision advisory, both surfaces | 4 ✅ |
 | `includes/conversion/class-data-processor.php` | Delegates to `Support\` classes during the tool build | 7 |
-| `assets/js/conversion-admin.js` | Conversion JS | 7 |
+| `assets/js/conversion-admin.js` | Conversion JS — the rename remainder lives here | 7 |
 
 ---
 
 ## Hard Constraints
 
-- ~~Don't start Phase 2a until title/slug handler testing is complete on InstaWP~~ (Phase 2c completed; Title/Slug tested)
-- ~~Don't start Phase 2b until Phase 2a is stable on InstaWP~~ (2a done in 0.4.0; static-verified H1+H2, InstaWP sweep done)
-- Don't start Phase 6a integrations until Phase 3 handler migration is done
-- Don't start `field_transformation_rules` until its storage is decided via [storage-model.md](docs/storage-model.md) (likely Options + indirection; CPT only if a per-recipe lifecycle is needed)
-- Don't start Phase 6b (UBT) until Phase 4 is done — but the reason changed: UBT no longer needs a Personalize *option*, it needs the unified `term_rules` list to land in as a `type`. Both its variants are term rules (the lock variant makes a *restricting* claim over terms, not a separate effect). See [ADR 0003](docs/adr/0003-ordered-rule-list-and-dispatcher.md), CONTEXT.md → *restricting-the-editor is still a restricting claim*.
-- Don't refactor BWS_Settings until handler migration is done (cleaner split once handlers own their logic)
-- Update CLAUDE.md at the end of every phase
+- Don't start `field_transformation_rules` until its storage is decided via [storage-model.md](docs/storage-model.md) (likely Options + indirection; CPT only if a per-recipe lifecycle is needed).
+- Update CLAUDE.md at the end of every phase.
+
+**Satisfied / dead constraints:** 6a's gate on Phase 3 (done 0.6.0) and 6b's gate on Phase 4 (done 0.8.0) — both remaining phases are now ungated. The 2a/2b InstaWP gates died with InstaWP itself (CLAUDE.md → *Test site*). "Don't refactor `BWS_Settings` until handler migration is done" — the class is deleted (#55).
