@@ -3,7 +3,9 @@
 *.css~
 *.js~
 
-# Claude working files
+# Working files
 CLAUDE.md
 *.code-workspace
 /.claude
+/.scratch
+/.serena
