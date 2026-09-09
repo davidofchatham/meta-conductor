@@ -1,9 +1,9 @@
 <?php
 /**
- * Athletics real-data confirmation for #42 / #43 — hargrave.test clone.
+ * Real-data confirmation for #42 / #43 — production staging clone.
  *
- * Subject: schedule #77740 "Varsity Wrestling Schedule 2026-27" (3 games),
- * dependent #77745 "BRAC Championships" (single source).
+ * Subject: schedule #77740 (3 games), dependent #77745 (single source). The
+ * ids are the clone's; titles are deliberately not recorded here.
  *
  * Rules live here are PUSH + keep_in_sync on athletics_schedule:schedule_games,
  * explicit reverse athletics_events:game_team_schedule_cpt, 3 taxonomies

@@ -65,6 +65,95 @@ if ( ! function_exists( 'mc_sweep_clear_cache' ) ) {
 	}
 }
 
+if ( ! function_exists( 'mc_write_rule_types' ) ) {
+	/**
+	 * Write a TYPE-KEYED map of rules into the ordered kind lists — the only
+	 * shape storage reads since #66.
+	 *
+	 * Sweeps and the seeder author by rule TYPE because that is how the
+	 * manifest is written, but `term_rules` / `format_rules` are what handlers
+	 * and the dispatcher read. This translates one into the other through the
+	 * storage layer's own migration transform, so the row order it produces is
+	 * exactly the documented KIND_TYPES order — the same order the option held
+	 * before the contract ticket. A sweep that asserts a specific CROSS-TYPE
+	 * order must author the list itself (see mc_write_ordered_rules()).
+	 *
+	 * The types NOT named are carried through from what is already stored, and
+	 * the legacy type-keyed keys are pruned so a stale copy can never be
+	 * mistaken for the live shape.
+	 *
+	 * @param array<string,array[]> $by_type Rules keyed by rule type.
+	 * @return void
+	 */
+	function mc_write_rule_types( array $by_type ) {
+		$opt      = mc_sweep_option();
+		$settings = get_option( $opt, array() );
+		if ( ! is_array( $settings ) ) {
+			$settings = array();
+		}
+
+		$storage = \BWS\MetaConductor\Storage\OptionRuleStorage::class;
+
+		// The type-keyed VIEW of what is stored, so unnamed types survive.
+		$current = $storage::fan_out( array(
+			$storage::KIND_TERM   => $settings[ $storage::KIND_TERM ] ?? array(),
+			$storage::KIND_FORMAT => $settings[ $storage::KIND_FORMAT ] ?? array(),
+		) );
+
+		foreach ( $by_type as $type => $rules ) {
+			$current[ $type ] = array_values( (array) $rules );
+		}
+
+		$lists = $storage::fan_in( $current );
+
+		foreach ( array_keys( $current ) as $type ) {
+			unset( $settings[ $type ] );
+		}
+		$settings[ $storage::KIND_TERM ]   = $lists[ $storage::KIND_TERM ];
+		$settings[ $storage::KIND_FORMAT ] = $lists[ $storage::KIND_FORMAT ];
+
+		update_option( $opt, $settings );
+		mc_sweep_clear_cache();
+	}
+}
+
+if ( ! function_exists( 'mc_write_ordered_rules' ) ) {
+	/**
+	 * Write one kind list VERBATIM — for a sweep whose subject is cross-type
+	 * order, which mc_write_rule_types() cannot express (it groups by type).
+	 *
+	 * Every other rule of that kind is replaced, so a step that authors an
+	 * ordered list is also isolating itself.
+	 *
+	 * @param array[] $rows Rules in authored order, each carrying a `type` key.
+	 * @param string  $kind Kind list key. Required — a default would read as the
+	 *                      format list being the exception, and it is not.
+	 * @return int Rows written.
+	 */
+	function mc_write_ordered_rules( array $rows, $kind ) {
+		$storage = \BWS\MetaConductor\Storage\OptionRuleStorage::class;
+
+		$opt      = mc_sweep_option();
+		$settings = get_option( $opt, array() );
+		if ( ! is_array( $settings ) ) {
+			$settings = array();
+		}
+
+		// The legacy type-keyed arrays are not a shape storage reads any more
+		// (#66); drop any left behind so nothing can read them by accident.
+		foreach ( array_keys( mc_sweep_manifest()['mc_rules'] ) as $type ) {
+			unset( $settings[ $type ] );
+		}
+
+		$settings[ $kind ] = array_values( $rows );
+
+		update_option( $opt, $settings );
+		mc_sweep_clear_cache();
+
+		return count( $rows );
+	}
+}
+
 if ( ! function_exists( 'mc_isolate' ) ) {
 	/**
 	 * Keep only $keep_types' rules enabled; empty every OTHER seeded rule type.
@@ -80,19 +169,13 @@ if ( ! function_exists( 'mc_isolate' ) ) {
 		$manifest = mc_sweep_manifest();
 		$resolved = mc_resolved_rules( $manifest );
 
-		$opt      = mc_sweep_option();
-		$settings = get_option( $opt, array() );
-		if ( ! is_array( $settings ) ) {
-			$settings = array();
-		}
-
+		$by_type = array();
 		foreach ( array_keys( $manifest['mc_rules'] ) as $type ) {
-			$settings[ $type ] = in_array( $type, $keep, true )
+			$by_type[ $type ] = in_array( $type, $keep, true )
 				? ( $resolved[ $type ] ?? array() )
 				: array();
 		}
-		update_option( $opt, $settings );
-		mc_sweep_clear_cache();
+		mc_write_rule_types( $by_type );
 
 		WP_CLI::log( '[sweep] isolated → ' . implode( ', ', $keep ) );
 		return $keep;
@@ -115,16 +198,7 @@ if ( ! function_exists( 'mc_restore' ) ) {
 		$manifest = mc_sweep_manifest();
 		$resolved = mc_resolved_rules( $manifest );
 
-		$opt      = mc_sweep_option();
-		$settings = get_option( $opt, array() );
-		if ( ! is_array( $settings ) ) {
-			$settings = array();
-		}
-		foreach ( $resolved as $type => $rules ) {
-			$settings[ $type ] = $rules;
-		}
-		update_option( $opt, $settings );
-		mc_sweep_clear_cache();
+		mc_write_rule_types( $resolved );
 
 		foreach ( $reset_post_ids as $pid ) {
 			mc_reset_subject( (int) $pid );

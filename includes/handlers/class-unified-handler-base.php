@@ -17,8 +17,8 @@ if (!defined('ABSPATH')) {
 
 use BWS\MetaConductor\Core\RuleEngine;
 use BWS\MetaConductor\Core\Entity;
+use BWS\MetaConductor\Core\TermDispatcher;
 use BWS\MetaConductor\Storage\StorageFactory;
-use BWS\MetaConductor\Settings;
 
 abstract class UnifiedHandlerBase {
 
@@ -45,13 +45,6 @@ abstract class UnifiedHandlerBase {
     protected $handler_type;
 
     /**
-     * Settings instance (for backward compatibility)
-     *
-     * @var Settings|null
-     */
-    protected $settings;
-
-    /**
      * Memoized plugin settings option, loaded once per request.
      *
      * @var array|null
@@ -61,10 +54,13 @@ abstract class UnifiedHandlerBase {
     /**
      * Constructor
      *
-     * @param Settings|null $settings Settings instance (optional, for backward compatibility)
+     * Takes no arguments. The old `Settings|null $settings` parameter existed
+     * only for the legacy handlers, which read rules through an injected
+     * settings object; every handler now goes through StorageFactory and the
+     * shell it pointed at is deleted (#55). Nothing ever read `$this->settings`
+     * after the Phase 3 migration.
      */
-    public function __construct($settings = null) {
-        $this->settings = $settings;
+    public function __construct() {
         $this->rule_engine = new RuleEngine();
         $this->handler_type = $this->get_handler_type();
         $this->init_hooks();
@@ -91,6 +87,22 @@ abstract class UnifiedHandlerBase {
      * @return string Rule type key (e.g., 'hierarchical_rules')
      */
     abstract protected function get_rule_type();
+
+    /**
+     * Public reader for the rule type key.
+     *
+     * The dispatcher keys its handler map by RULE type, because that is what a
+     * kind-list row carries, and it resolves a handler's effect kind through
+     * the same key. `get_rule_type()` is protected and stays that way — every
+     * subclass declares it protected, so widening it in place would be a fatal
+     * on all seven. This is the one-line seam instead. (#60)
+     *
+     * @since 0.8.0
+     * @return string Rule type key (e.g. 'hierarchical_rules').
+     */
+    public function rule_type(): string {
+        return $this->get_rule_type();
+    }
 
     /**
      * Process a rule using unified engine
@@ -161,14 +173,29 @@ abstract class UnifiedHandlerBase {
      *
      * Uses the storage abstraction layer to retrieve rules.
      *
+     * The handler's own rules, out of its EFFECT-KIND list (ADR 0003 —
+     * `term_rules` / `format_rules`). Since #66 that list is the only shape
+     * there is, so "this handler's rules" means the list narrowed to one type,
+     * which is exactly what `get_rules()` is: the narrowing lives in storage,
+     * once, rather than being spelled out again here.
+     *
+     * The narrowing itself cannot go. The list is CROSS-TYPE — a term pass
+     * reads six rule types out of one array — and a handler must see only its
+     * own. What #66 removed is the second read path this used to be paired
+     * with, not the filter.
+     *
+     * Every rule type maps to a kind, and the kind map IS storage's enumeration
+     * of the types (`OptionRuleStorage::all_types()` flattens it), so a type
+     * cannot fall out of one list and stay in the other. That is why there is
+     * no fallback here: there is nothing left to fall back to.
+     *
      * @since 0.2.0 Updated to use storage abstraction
+     * @since 0.8.0 Reads the kind list, narrowed to this handler's type.
      * @return array Enabled rules
      */
     public function get_enabled_rules() {
-        $storage = StorageFactory::get_instance();
-        $rule_type = $this->get_rule_type();
-
-        return $storage->get_rules($rule_type, ['enabled' => true]);
+        return StorageFactory::get_instance()
+            ->get_rules($this->get_rule_type(), ['enabled' => true]);
     }
 
     /**
@@ -577,19 +604,30 @@ abstract class UnifiedHandlerBase {
     }
 
     /**
-     * Apply ONE rule to ONE existing post OUT OF BAND — the bulk-apply primitive
-     * process_existing_posts() drives, decoupled from the hook-path process_post.
+     * Apply ONE rule to ONE post. THE applier seam.
      *
-     * Why this exists (#31): the hook-driven handlers (related, propagation,
-     * level-restriction) make process_post a no-op — their real work fires from
-     * their own set_object_terms/save_post/acf hooks, so the base process_post
-     * (which routes through RuleEngine) must NOT run for them. That left the bulk
-     * "process existing posts" tool inert: it looped process_post, which did
-     * nothing, yet counted every post as processed (the "lying button"). Bulk now
-     * loops THIS instead. Each hook-driven handler overrides it, delegating to its
-     * own per-post primitive with the same $processing re-entry guard its hooks
-     * use; RuleEngine handlers (hierarchical, title-slug, and time-based via its
-     * functional process_post) inherit this default.
+     * Why it exists (#31): the hook-driven handlers made process_post a no-op —
+     * their real work fired from their own set_object_terms/save_post/acf hooks,
+     * so the base process_post (which routes through RuleEngine) must NOT run
+     * for them. That left the bulk "process existing posts" tool inert: it
+     * looped process_post, which did nothing, yet counted every post as
+     * processed (the "lying button"). Bulk loops THIS instead.
+     *
+     * What it became (#60): the seam a CONVERTED handler is reduced to. A
+     * converted handler registers no hooks at all; `TermDispatcher` owns the
+     * trigger union and calls this once per rule per pass, in authored order.
+     * So an override must be the handler's WHOLE apply — everything its hooks
+     * used to do — and it must be idempotent, because a pass re-runs every rule
+     * whether or not that rule's own trigger fired. It must NOT carry a
+     * re-entrancy boolean: the pass lock is the only guard, and a second one
+     * silently suppresses the author's own chain (ADR 0003, rejected option).
+     *
+     * Handlers still awaiting conversion keep their hooks and their overrides
+     * of this as the bulk primitive only — see TermDispatcher::UNCONVERTED_TYPES.
+     *
+     * ONLY `TermDispatcher::apply()` may call this. H13 asserts the single call
+     * site; that is what makes "every execution went through a pass" checkable
+     * rather than merely intended.
      *
      * @param int   $post_id Post to apply the rule to.
      * @param array $rule    One enabled rule (canonical shape).
@@ -613,6 +651,125 @@ abstract class UnifiedHandlerBase {
         $this->process_entity($entity, $rule);
 
         return $this->terms_fingerprint($post_id, $taxonomy) !== $before;
+    }
+
+    /**
+     * Apply ONE format rule to ONE entity's post data. THE format applier seam
+     * (#64).
+     *
+     * WHY IT IS NOT `apply_to_post()`. A term rule's effect is a set of term
+     * relationships: the applier can write them and report whether anything
+     * moved. A format rule's effect is the post ROW, and several rules can land
+     * on one row — so a format applier writes nothing and instead returns the
+     * data the next rule in the list receives. `FormatDispatcher` performs the
+     * single `wp_update_post()` at the end of the pass, which is what keeps one
+     * save to one row update however many rules matched.
+     *
+     * It is also the shape the deferred two-phase split needs (ADR 0003): when
+     * `field_transformation` lands and the format pass gains a pre-write half,
+     * that half can hand `wp_insert_post_data`'s own `$data` array to this same
+     * seam, because the seam never assumed the row existed.
+     *
+     * NULL MEANS "NOT MINE". Returning null says this rule does not apply to
+     * this entity at all — wrong post type, no pattern, nothing to say. It is
+     * distinct from returning the data UNCHANGED, which says the rule applied
+     * and the entity is already in the state it wants. The dispatcher needs
+     * both: first-match-of-a-type-wins is decided on the first non-null, and a
+     * no-op re-apply must not consume that slot's decision differently from the
+     * apply that produced it.
+     *
+     * An override MUST be idempotent and MUST be the handler's WHOLE apply, for
+     * the same reason `apply_to_post()`'s must: a pass runs every rule whether
+     * or not that rule's own trigger fired, because format rules have no
+     * triggers of their own any more.
+     *
+     * Null by default: a handler of another effect kind is in the same handler
+     * map and is asked nothing here.
+     *
+     * @param array $data    Post data as the previous rule left it. Keys: ID,
+     *                       post_title, post_name, post_type, post_status,
+     *                       post_date, post_parent. Only post_title and
+     *                       post_name are written back.
+     * @param int   $post_id Entity being passed over.
+     * @param array $rule    One enabled rule (canonical shape).
+     * @return array|null Post data, or null when the rule does not apply here.
+     */
+    public function apply_to_data(array $data, int $post_id, array $rule): ?array {
+        return null;
+    }
+
+    /**
+     * The OTHER entities this rule's effect reaches from $post_id. THE declared
+     * fan-out seam (#62).
+     *
+     * WHY A DECLARATION RATHER THAN A WALK. `apply_to_post()` writes the entity
+     * it was handed and nothing else — that is what makes a pass the unit of
+     * execution, because an entity written from inside another entity's pass
+     * never gets an ordered pass of its own. Propagation is the first rule type
+     * whose effect is genuinely about a second entity, and it was writing its
+     * descendants directly: the child was reconciled by ONE rule, out of band,
+     * and hierarchical then expanded that write on its own hook — one extra
+     * level of terms, which is #35.
+     *
+     * So a cross-entity rule INVERTS. Its applier pulls: it reconciles the post
+     * it is given by reading the entities the rule points at. And separately it
+     * declares, here, which entities its own change reaches. The dispatcher
+     * marks those dirty; each gets its OWN full ordered pass, so every rule in
+     * the list sees the child in list order instead of one rule reaching it
+     * first.
+     *
+     * DECLARE NEIGHBOURS, NOT CLOSURES. Return the entities one step away — the
+     * post's immediate children, not every descendant. Each of those gets a
+     * pass, and its own fan-out carries the effect the next step, so the queue
+     * performs the recursion. `TermDispatcher::drain()` bounds it at one pass
+     * per entity per drain, which is what makes a parent/child cycle terminate.
+     *
+     * Empty by default: a rule whose effect stops at the entity it was applied
+     * to declares nothing, and the dispatcher enqueues nothing extra for it.
+     *
+     * Called ONCE PER RULE PER PASS, whether or not the apply changed anything.
+     * That is deliberate: the common case is a parent whose OWN terms a user
+     * edited, where propagation's applier on the parent correctly reports "no
+     * change to the parent" while the children are exactly what must now be
+     * reconciled. Gate it on the rule being applicable to $post_id, not on the
+     * apply's result.
+     *
+     * @param int   $post_id Entity the rule was just applied to.
+     * @param array $rule    The same rule, canonical shape.
+     * @return int[] Entity IDs to mark dirty. Empty for a same-entity rule.
+     */
+    public function fan_out(int $post_id, array $rule): array {
+        return [];
+    }
+
+    /**
+     * Entities an allow-listed CAPTURE hook says need a pass. THE capture-queue
+     * seam (#63). Consuming: the dispatcher asks once per drain, and what it
+     * was told is spent.
+     *
+     * WHY IT IS NOT `fan_out()`. The fan-out is asked while passing over a
+     * post, and names entities reachable FROM it. A capture exists precisely
+     * because the thing that would make an entity reachable is what the write
+     * destroyed — a severed relationship, a deleted holder — so the entity it
+     * names is reachable from no post that will get a pass. Folding the two
+     * together would make the sever depend on some unrelated post happening to
+     * be saved in the same request, which is the "keys under a post that is
+     * never saved" trap invariant #15 records.
+     *
+     * WHY IT IS NOT the capture hook marking dirty itself. Capture is not
+     * execution and must not reach into the dispatcher; keeping the direction
+     * (dispatcher asks handler) is what lets H13 check the capture callbacks
+     * for writes and find nothing but recording.
+     *
+     * Empty by default: a handler with no capture hooks has nothing to hand
+     * over, and the dispatcher's ask costs an empty array.
+     *
+     * @return int[] Entity IDs to mark dirty. MUST be consumed — returning the
+     *               same IDs on every call would refill the queue faster than
+     *               the drain empties it.
+     */
+    public function drain_captures(): array {
+        return [];
     }
 
     /**
@@ -757,20 +914,43 @@ abstract class UnifiedHandlerBase {
 
         $processed = 0;
 
-        // Loop rules × posts through apply_to_post (the bulk primitive), NOT
-        // process_post — the hook-driven handlers no-op process_post (#31). Count
-        // a post as processed only when at least one rule actually applied to it,
-        // so the reported total reflects work done, not just posts iterated (the
-        // old loop counted every iteration → "Processed N of N" while writing
+        // Loop rules × posts through the applier seam, NOT process_post — the
+        // hook-driven handlers no-op process_post (#31). Count a post as
+        // processed only when at least one rule actually applied to it, so the
+        // reported total reflects work done, not just posts iterated (the old
+        // loop counted every iteration → "Processed N of N" while writing
         // nothing).
+        //
+        // The call goes through TermDispatcher::apply() rather than straight to
+        // $this->apply_to_post(): the dispatcher is the sole caller of that seam
+        // (#60), which is what lets H13 prove by inspection that nothing
+        // executes a rule outside it. It also means bulk apply takes the same
+        // pass lock a hook-driven pass does, so the writes a rule makes here
+        // don't enqueue this post for a redundant second pass at shutdown.
+        //
+        // A CONVERTED type takes the pass instead. Looping this handler's own
+        // rules would apply them in isolation, so bulk would produce a
+        // different end state than a save over the same rule set whenever a
+        // rule of another type sits between two of this one's — which is
+        // exactly the arrangement the ordered list exists to allow. A pass is
+        // the same pass however it was provoked (CONTEXT.md → Pass), so bulk
+        // provokes one. Handlers still owning their hooks keep the per-rule
+        // loop; the branch goes away with the last of them (#66).
+        $dispatcher   = TermDispatcher::instance();
+        $run_full_pass = $dispatcher !== null && TermDispatcher::owns($this->get_rule_type());
+
         foreach ($query->posts as $post_id) {
             if (!get_post($post_id)) {
                 continue;
             }
             $applied = false;
-            foreach ($rules as $rule) {
-                if ($this->apply_to_post($post_id, $rule)) {
-                    $applied = true;
+            if ($run_full_pass) {
+                $applied = $dispatcher->run_pass((int) $post_id) > 0;
+            } else {
+                foreach ($rules as $rule) {
+                    if (TermDispatcher::apply($post_id, $rule, $this)) {
+                        $applied = true;
+                    }
                 }
             }
             if ($applied) {
@@ -792,7 +972,20 @@ abstract class UnifiedHandlerBase {
             // this batch's changed posts, count($query->posts) is this batch's
             // scanned posts — mixing per-batch numerator with a cumulative
             // denominator would misreport under pagination.
-            'message' => sprintf(
+            //
+            // On the pass path the count means "posts some rule in the ordered
+            // list changed", not "posts THIS rule type changed", and the posts
+            // scanned are still the ones this handler's rules name. Both are
+            // consequences of bulk provoking a real pass, so the message says
+            // which of the two it is rather than reporting the wider number
+            // under the narrower sentence.
+            'message' => $run_full_pass
+                ? sprintf(
+                    __('Ran the ordered rule list over %2$d posts; %1$d changed.', 'meta-conductor'),
+                    $processed,
+                    count($query->posts)
+                )
+                : sprintf(
                 __('Applied to %d of %d posts scanned.', 'meta-conductor'),
                 $processed,
                 count($query->posts)

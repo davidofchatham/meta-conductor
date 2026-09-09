@@ -57,13 +57,14 @@ require $root . '/autoload.php';
 $classes = [
     // root
     'BWS\\MetaConductor\\TaxonomyManager',
-    'BWS\\MetaConductor\\Settings',
     // Core\
     'BWS\\MetaConductor\\Core\\Entity',
     'BWS\\MetaConductor\\Core\\ConditionEvaluator',
     'BWS\\MetaConductor\\Core\\ActionExecutor',
     'BWS\\MetaConductor\\Core\\RuleEngine',
     'BWS\\MetaConductor\\Core\\AcfWriteQueue',
+    'BWS\\MetaConductor\\Core\\TermDispatcher',
+    'BWS\\MetaConductor\\Core\\FormatDispatcher',
     // Storage\
     'BWS\\MetaConductor\\Storage\\OptionRuleStorage',
     'BWS\\MetaConductor\\Storage\\StorageFactory',
@@ -86,17 +87,18 @@ $classes = [
     // Admin\
     'BWS\\MetaConductor\\Admin\\Diagnostics',
     'BWS\\MetaConductor\\Admin\\WireframeBootstrap',
+    // The collision advisory (#65). Admin\, not Core\ — it is computed at
+    // authoring time and read by nothing at runtime.
+    'BWS\\MetaConductor\\Admin\\CollisionDetector',
     // Admin\Config\
     'BWS\\MetaConductor\\Admin\\Config\\ConfigHelpers',
     'BWS\\MetaConductor\\Admin\\Config\\GeneralConfig',
-    'BWS\\MetaConductor\\Admin\\Config\\HierarchicalConfig',
-    'BWS\\MetaConductor\\Admin\\Config\\PropagationConfig',
-    'BWS\\MetaConductor\\Admin\\Config\\RelatedConfig',
-    'BWS\\MetaConductor\\Admin\\Config\\RelatedPostTermsConfig',
-    'BWS\\MetaConductor\\Admin\\Config\\TimeBasedConfig',
-    'BWS\\MetaConductor\\Admin\\Config\\LevelRestrictionConfig',
-    'BWS\\MetaConductor\\Admin\\Config\\TitleSlugConfig',
-    'BWS\\MetaConductor\\Admin\\Config\\PersonalizeConfig',
+    // The ordered term-rule list. Propagation/TimeBased/Hierarchical/
+    // LevelRestriction/Personalize config classes were deleted in 0.8.0 (#57)
+    // when their sections collapsed into this one; Related and
+    // RelatedPostTerms followed in #58.
+    'BWS\\MetaConductor\\Admin\\Config\\TermRulesConfig',
+    'BWS\\MetaConductor\\Admin\\Config\\FormatRulesConfig',
     'BWS\\MetaConductor\\Admin\\Config\\WireframeConfig',
     // Support\ (concrete)
     'BWS\\MetaConductor\\Support\\BatchProcessor',

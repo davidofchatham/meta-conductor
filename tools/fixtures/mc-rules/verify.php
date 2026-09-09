@@ -11,7 +11,11 @@
  *      section B again after every behavior sweep (pre-restore) to catch
  *      isolation breaks: an MC rule that leaked onto page/post/staff.
  *
- * NOT a behavior-sweep replacement — asserts state, not handler outcomes.
+ * NOT a behavior-sweep replacement — asserts state, not handler outcomes. The
+ * ONE exception is A7 (time_based cron cleanup): a scheduled-event check cannot
+ * prove the handler ever ran, and this file is the only thing seed-all.sh runs.
+ * A7 is the only MUTATING probe here — keep it that way, everything else
+ * belongs in a sweep. See its own comment, and matrix §6e/§6f/§6g.
  * Exits non-zero if any assertion fails.
  */
 
@@ -181,8 +185,164 @@ if ( class_exists( '\\BWS\\MetaConductor\\Storage\\StorageFactory' ) ) {
 	$check( 'StorageFactory available (plugin active?)', false );
 }
 
-// A7. Cron event for time_based cleanup.
+// A7. Cron cleanup for expired time_based rules — BEHAVIOURAL.
+//
+// The only MUTATING probe in this file. It snapshots the rule option, isolates
+// time_based, drives the handler, asserts, and restores — the restore also
+// registered as a shutdown function so a fatal mid-probe cannot leave the site
+// isolated. Rationale for covering cron here at all, and the over-removal this
+// probe deliberately does NOT pin: handler-fixture-matrix.md §6e/§6f/§6g.
+//
+// PRECONDITION: item-solo-a at seed state. The manifest gives it no post_terms
+// entry, so no mc_topic terms; the restore CLEARS mc_topic rather than putting
+// back what it found, so running this against a solo-a some sweep is mid-way
+// through would discard that sweep's state.
+//
+// WHY IT SYNTHESIZES A RULE SET: the subject must be applied by the HANDLER,
+// not planted by hand. Hand-planting asserts only that cleanup strips a term
+// the post happens to hold — the retroactive ownership of §6e — and never
+// exercises the apply path at all; driving the apply is what surfaced §6g.
+// The claim worth making is the contract itself: cleanup removes what its own
+// rule applied.
+//
+// Driving it needs two deviations from the seeded rules, both asserted below:
+// the expired rule's window is slid in-range, and it runs ALONE. The second is
+// not tidiness — the manifest seeds a future-dated rule on the SAME target
+// term, a deliberate collision pair, and an out-of-range rule strips that term
+// whoever applied it, in the same save pass. With it present nothing lands.
+// (§6f/§6g, #69 — a known collision, warned by #65, not a defect to code round.)
+$mc_a7_solo = $mc_post( 'item-solo-a' );
+$mc_a7_arch = $mc_term( 'topic-archived' );
+$mc_a7_feat = $mc_term( 'topic-featured' );
+
 $check( 'cron bws_taxonomy_manager_cleanup scheduled', (bool) wp_next_scheduled( 'bws_taxonomy_manager_cleanup' ) );
+$check( 'a handler is hooked to bws_taxonomy_manager_cleanup', (bool) has_action( 'bws_taxonomy_manager_cleanup' ) );
+
+if ( ! $mc_a7_solo || ! $mc_a7_arch || ! $mc_a7_feat || ! class_exists( '\\BWS\\MetaConductor\\Storage\\StorageFactory' ) ) {
+	$check( 'A7 cron-cleanup probe has its subjects', false, 'solo-a/Archived/Featured/storage missing — probe skipped' );
+} else {
+	$mc_a7_opt      = 'bws_meta_conductor_settings';
+	$mc_a7_snapshot = get_option( $mc_a7_opt, array() );
+	$mc_a7_today    = current_time( 'Y-m-d' );
+	$mc_a7_done     = false;
+
+	/** solo-a's mc_topic ids, sorted. WP_Error-safe — see sweep-lib's mc_terms(). */
+	$mc_a7_topics = function () use ( $mc_a7_solo ) {
+		$terms = wp_get_object_terms( $mc_a7_solo, 'mc_topic', array( 'fields' => 'ids' ) );
+		if ( is_wp_error( $terms ) ) {
+			return array();
+		}
+		$terms = array_map( 'intval', $terms );
+		sort( $terms );
+		return $terms;
+	};
+
+	/**
+	 * Write one rule set and re-read it through the handlers' storage instance.
+	 *
+	 * Rules live in the ordered kind lists since #66, so a type-keyed write
+	 * would silence nothing and install nothing.
+	 */
+	$mc_a7_set_rules = function ( array $rules ) use ( $mc_a7_opt ) {
+		$settings = get_option( $mc_a7_opt, array() );
+		$settings[ \BWS\MetaConductor\Storage\OptionRuleStorage::KIND_TERM ] =
+			\BWS\MetaConductor\Storage\OptionRuleStorage::fan_in(
+				array( 'time_based_rules' => $rules )
+			)[ \BWS\MetaConductor\Storage\OptionRuleStorage::KIND_TERM ];
+		update_option( $mc_a7_opt, $settings );
+		\BWS\MetaConductor\Storage\StorageFactory::get_instance()->clear_cache();
+	};
+
+	// Restore ORDER is load-bearing: clear the subject WHILE still isolated, then
+	// put the rules back. The reverse lets the live hierarchical / related /
+	// level-restriction handlers re-populate mc_topic on the clearing write. Only
+	// mc_topic and _bws_auto_terms are touched — all this probe writes.
+	$mc_a7_restore = function () use ( $mc_a7_opt, $mc_a7_snapshot, $mc_a7_solo, &$mc_a7_done ) {
+		if ( $mc_a7_done ) {
+			return;
+		}
+		$mc_a7_done = true;
+		wp_set_object_terms( $mc_a7_solo, array(), 'mc_topic' );
+		delete_post_meta( $mc_a7_solo, '_bws_auto_terms' );
+		update_option( $mc_a7_opt, $mc_a7_snapshot );
+		\BWS\MetaConductor\Storage\StorageFactory::get_instance()->clear_cache();
+	};
+	register_shutdown_function( $mc_a7_restore );
+
+	// Isolate time_based. solo-a is push-free but still in scope for the
+	// hierarchical / related / level-restriction rules, all of which fire on an
+	// mc_topic write and would bury the subject in ancestors + Featured.
+	$mc_a7_isolated = $mc_a7_snapshot;
+	$mc_a7_kind     = \BWS\MetaConductor\Storage\OptionRuleStorage::KIND_TERM;
+	$mc_a7_isolated[ $mc_a7_kind ] = array_values( array_filter(
+		(array) ( $mc_a7_snapshot[ $mc_a7_kind ] ?? array() ),
+		static function ( $row ) {
+			return is_array( $row ) && 'time_based_rules' === ( $row['type'] ?? '' );
+		}
+	) );
+	$mc_a7_isolated[ \BWS\MetaConductor\Storage\OptionRuleStorage::KIND_FORMAT ] = array();
+	update_option( $mc_a7_opt, $mc_a7_isolated );
+	\BWS\MetaConductor\Storage\StorageFactory::get_instance()->clear_cache();
+
+	// Find the seeded expired-Archived rule by its shape, not its index.
+	$mc_a7_expired = null;
+	foreach ( (array) ( $mc_a7_snapshot[ $mc_a7_kind ] ?? array() ) as $mc_a7_rule ) {
+		if ( ! is_array( $mc_a7_rule ) || 'time_based_rules' !== ( $mc_a7_rule['type'] ?? '' ) ) {
+			continue;
+		}
+		if ( (int) ( $mc_a7_rule['target_term_id'] ?? 0 ) === $mc_a7_arch
+			&& ! empty( $mc_a7_rule['end_date'] )
+			&& $mc_a7_rule['end_date'] < $mc_a7_today ) {
+			$mc_a7_expired = $mc_a7_rule;
+			break;
+		}
+	}
+	$check( 'A7 found the seeded expired Archived rule', is_array( $mc_a7_expired ) );
+
+	if ( is_array( $mc_a7_expired ) ) {
+		// Deviation 1+2: slide the window in-range, and run this rule ALONE.
+		$mc_a7_in_range               = $mc_a7_expired;
+		$mc_a7_in_range['start_date'] = gmdate( 'Y-m-d', strtotime( $mc_a7_today . ' -1 day' ) );
+		$mc_a7_in_range['end_date']   = gmdate( 'Y-m-d', strtotime( $mc_a7_today . ' +7 days' ) );
+		$mc_a7_set_rules( array( $mc_a7_in_range ) );
+
+		wp_set_object_terms( $mc_a7_solo, array(), 'mc_topic' );
+		delete_post_meta( $mc_a7_solo, '_bws_auto_terms' );
+		wp_update_post( array( 'ID' => $mc_a7_solo ) );
+
+		// If this fails the apply never happened and the cleanup assertion below
+		// would be vacuously green — fail here rather than misattribute it.
+		$mc_a7_applied = $mc_a7_topics();
+		$check(
+			'A7 the HANDLER applied the target term on save',
+			$mc_a7_applied === array( $mc_a7_arch ),
+			'got [' . implode( ',', $mc_a7_applied ) . '] want [' . $mc_a7_arch . ']'
+		);
+
+		// Negative control, hand-planted on purpose: its claim is only "a term the
+		// cleanup does not target stays put", so how it got there is irrelevant.
+		// Appended, not set, so the handler-applied term above is left as it landed.
+		wp_add_object_terms( $mc_a7_solo, array( $mc_a7_feat ), 'mc_topic' );
+
+		// Put the expiry back, then fire the event wp-cron would have fired.
+		$mc_a7_set_rules( array( $mc_a7_expired ) );
+		do_action( 'bws_taxonomy_manager_cleanup' );
+
+		$mc_a7_post = $mc_a7_topics();
+		$check(
+			'A7 cron cleanup removed the term its own expired rule applied',
+			! in_array( $mc_a7_arch, $mc_a7_post, true ),
+			'solo-a still holds [' . implode( ',', $mc_a7_post ) . ']'
+		);
+		$check(
+			'A7 cron cleanup left the untargeted term alone',
+			$mc_a7_post === array( $mc_a7_feat ),
+			'got [' . implode( ',', $mc_a7_post ) . '] want [' . $mc_a7_feat . ']'
+		);
+	}
+
+	$mc_a7_restore();
+}
 
 WP_CLI::log( '── B. Negative controls (core-structures untouched) ────' );
 
@@ -195,11 +355,18 @@ if ( ! $mc_core_manifest ) {
 		if ( ! $def ) {
 			return 0;
 		}
-		// Same status-blind trap as the MC lookup (see lookup.php). Every
-		// core-structures fixture is published today, so `'any'` would work
-		// here by luck — use the safe helper anyway so a future non-published
-		// core fixture doesn't silently read as missing.
-		return mc_fixture_find_post( $def['post_name'], $def['post_type'] );
+		// Same status-blind trap as the MC lookup (see lookup.php), and the
+		// "future non-published core fixture" this comment used to hypothesise
+		// has since arrived: core-structures v14 added `staff-gate-trashed` in
+		// status `trash`, on purpose. Read with the READABLE set, not the
+		// upsert one — trash is excluded there because an MC fixture in the bin
+		// should be re-created, which is a policy about OUR posts and says
+		// nothing about what another blueprint may legitimately own.
+		return mc_fixture_find_post(
+			$def['post_name'],
+			$def['post_type'],
+			mc_fixture_readable_statuses()
+		);
 	};
 
 	// B1. department term assignments still match the core manifest.
@@ -245,11 +412,24 @@ if ( ! $mc_core_manifest ) {
 
 	// B3. Slugs unchanged (title_slug isolation — a leaked rule renames posts
 	// and every GBDTE matrix URL breaks).
+	//
+	// B3b rides along because B3's lookup now includes trash: without a status
+	// assertion, an MC rule that TRASHED a core post would leave B3 green (the
+	// slug is intact in the bin). The manifest declares post_status per post,
+	// absent meaning publish, so the expectation costs nothing to state.
 	foreach ( $mc_core_manifest['posts'] as $mc_slug => $mc_def ) {
 		$mc_pid = $mc_core_post( $mc_slug );
 		$check(
 			"NEG core {$mc_slug}: post_name still '{$mc_def['post_name']}'",
 			$mc_pid && get_post_field( 'post_name', $mc_pid ) === $mc_def['post_name']
+		);
+
+		$mc_want_status = $mc_def['post_status'] ?? 'publish';
+		$mc_got_status  = $mc_pid ? get_post_status( $mc_pid ) : '(missing)';
+		$check(
+			"NEG core {$mc_slug}: post_status still '{$mc_want_status}'",
+			$mc_got_status === $mc_want_status,
+			"got {$mc_got_status}"
 		);
 	}
 

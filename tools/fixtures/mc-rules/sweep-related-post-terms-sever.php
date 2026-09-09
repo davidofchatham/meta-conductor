@@ -35,6 +35,14 @@
  * checks: on a consistent graph — either side maintained, or ACF's native
  * bidirectional keeping both sides in step — the strip happens as before.
  *
+ * POST-#63. This sweep is the regression suite for the conversion, and two of
+ * its premises changed with it. The apply is no longer synchronous with the
+ * write — `s9` drains the dispatcher explicitly after `wp_delete_post()`,
+ * because a real request would only reach the pass at `shutdown`. And the #42
+ * KNOWN LIMIT `s4a`/`s4b` was written around is CLOSED: a bare `update_field()`
+ * sever now reconciles on its own (see `sweep-63-acf-reference.php` §63d/e),
+ * where before the capture was recorded and never drained.
+ *
  * Expects the mc-rules fixture (v5+) seeded. Mutates term state; reseed after.
  *
  * CLEANUP TRAP: several steps save item-alpha, which carries mc_event_date and
@@ -274,6 +282,17 @@ switch ( $step ) {
 		$assert( ! empty( $before ), 'temp item inherited the holder terms' );
 
 		wp_delete_post( $h, true );
+
+		// The pass is no longer synchronous with the delete (#63). The capture
+		// runs on before_delete_post and records the dependent; the ordered
+		// pass that withdraws the gone source's terms happens at the DRAIN,
+		// which in a real request is `shutdown`. A sweep reading terms back in
+		// the same eval must provoke it — CLAUDE.md don't 6b, trap (a).
+		$dispatcher = \BWS\MetaConductor\Core\TermDispatcher::instance();
+		if ( ! $dispatcher ) {
+			WP_CLI::error( 'No registered TermDispatcher — the plugin did not boot one.' );
+		}
+		$dispatcher->drain();
 
 		clean_object_term_cache( $i, 'mc_item' );
 		$after = $slugs( $i, 'mc_topic' );

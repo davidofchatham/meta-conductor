@@ -44,7 +44,9 @@ Wireframe binds **one `option_key` per page** (`Wireframe\App::boot(... 'pages' 
 - **Tabs are cosmetic.** All tabs on one page share one option and one save. Today all 5 tabs = one `bws_meta_conductor_settings` blob.
 - **One save rewrites that page's entire blob** — all rule types on the page. Two admins editing *different* types on the same page still clobber each other.
 - **The page is the unit of storage choice.** A rule type can't quietly defect to CPT mid-page — Wireframe submits the whole-page array in one REST write. Mixing stores within a page means splitting that one submit into "options write + CPT reconcile."
-- **To split storage, split pages** (`option_key` per page) — see [config-pages-split plan](../.claude/plans/config-pages-split.md). Splitting tabs→pages shrinks the clobber blast radius and lets each page pick its store independently, **whether or not** any page goes CPT.
+- **To split storage, split pages** (`option_key` per page) — there is no other Wireframe-native way.
+
+> **⚠️ Splitting pages was considered and rejected as the answer (2026-08-13, [ADR 0003](adr/0003-ordered-rule-list-and-dispatcher.md)).** The mechanics above are accurate; the conclusion drawn from them was not. A 4-page split doesn't shrink the hot blob — Auto-Set & Restrict would host 6 of 7 rule types today and 10 of 12 eventually — and cutting further would have to cut *inside* the term group, which is exactly where rules interact and therefore the one place a storage boundary is harmful. Cross-type clobber is already dead (every handler writes via `OptionRuleStorage::save_rule()`, never a raw whole-option write); lost-update clobber is handled by the **version token** in the next section, which works at any page count. Outcome: **one page, three tabs**, and storage is one ordered list per **effect kind** (`term_rules`, `format_rules`). The real boundary is the effect kind, not the page. [config-pages-split plan](../.claude/plans/config-pages-split.md) is superseded.
 
 ### CPT-under-Wireframe reconcile cost
 
@@ -66,7 +68,7 @@ The options failure mode that matters is **not** slowness — it's **silent data
 6. **Atomic per-row writes** — don't read-modify-write a blob at all; write only the changed row. This IS CPT / custom table. The blob shape is what *forces* the read-modify-write window.
 7. **Single-writer / serialize** — funnel writes through one app-level lock.
 
-**Today: single admin → no concurrent writers → none needed.** Version token (1) is the graceful upgrade if multi-author editing ever appears, no CPT required. Page-split (above) further shrinks the window by isolating each page's blob.
+**Today: single admin → no concurrent writers → none needed.** Version token (1) is the graceful upgrade if multi-author editing ever appears, no CPT required — and since the page split was abandoned, it is now the *only* planned answer here rather than a supplement to it ([ADR 0003](adr/0003-ordered-rule-list-and-dispatcher.md)).
 
 ---
 
@@ -90,7 +92,7 @@ Result: rule count stays **O(1) in entities**; the per-entity data scales native
 | 50–300 | blob rewrite noticeable; concurrency risk **if** multiple editors | comfortable |
 | 300+ | blob + autoload pain | clear win |
 
-Page-split pushes the options ceiling further out (smaller per-page blobs, isolated saves).
+Splitting rules across more options would push the ceiling further out, but the page split that would have done so was abandoned ([ADR 0003](adr/0003-ordered-rule-list-and-dispatcher.md)). The two effect-kind lists (`term_rules`, `format_rules`) share one page option, so the ceiling applies to the combined blob — with `term_rules` carrying nearly all of it.
 
 ---
 
@@ -106,13 +108,19 @@ Page-split pushes the options ceiling further out (smaller per-page blobs, isola
 | `hierarchical_level_restriction_rules` | Options | One per taxonomy max |
 | `related_post_terms_rules` | Options | ACF sync config; bounded |
 | `acf_relationship_rules` (new) | Options | Parent/child relationship config; bounded |
-| `title_slug_rules` | Options *(reassess)* | Named patterns per post type; *can* accumulate, but single-author + bounded-in-practice. Prior ROADMAP marked CPT/Phase-4 — **re-open**: no concurrent authoring, page-split covers blast radius. CPT only if a real draft/test lifecycle is wanted. |
+| `title_slug_rules` | Options *(reassess)* | Named patterns per post type; *can* accumulate, but single-author + bounded-in-practice. Prior ROADMAP marked CPT/Phase-4 — **re-open**: no concurrent authoring; blast radius covered by the version token, not by a page split. CPT only if a real draft/test lifecycle is wanted. |
 | `time_based_rules` | Options *(reassess)* | Schedule rules *can* multiply, but single-author. Same re-open as title_slug. |
 | `field_transformation_rules` (new) | TBD | Named computed-field recipes; could be numerous. Run the criteria when designed — likely Options + indirection unless a per-recipe lifecycle is needed. |
 | `user_based_rules` (UBT) | **Options** | **Changed from CPT.** Role/user = *target*, not owner → single author, no concurrent writes. Per-user explosion solved by [indirection](#the-indirection-escape-hatch) (profile field + one rule), not N rules. CPT's entity chrome (author/date/trash) explicitly unwanted. Wireframe panel preferred over CPT editor. See [UBT merger plan](../.claude/plans/ubt-merger.md). |
+
+**As of Phase 4, the row above is not the unit of storage.** Rules are stored as one ordered list per **effect kind** — `term_rules` and `format_rules` — with each row carrying its own `type`. The per-type reasoning still governs *whether a type belongs in Options at all*; it no longer implies a per-type array. See [ADR 0003](adr/0003-ordered-rule-list-and-dispatcher.md).
+
+Since **#66** the kind lists are the *only* stored shape, which changes the mechanics two sections up in one way worth naming: `save_rule()` is **no longer a per-type merge**. It resolves the rule's position inside a **cross-type** list and rewrites the whole option. Write isolation between rule types is therefore no longer a property of the storage call — it is a property of the settings page submitting one blob, which is what the version token already covers. Nothing above changes as a conclusion; only the mechanism it rested on.
 
 ---
 
 ## Change log
 
 - **2026-06-23** — Initial doc. Reassessed UBT (CPT→Options) and flagged title_slug/time_based for re-open, based on: target-not-owner access pattern, indirection escape hatch, Wireframe page = storage boundary, page-split as cheap write-isolation. Supersedes the inline ROADMAP framework (now a pointer).
+- **2026-09-02** — #66 made the two kind lists the only stored shape, retiring the seven per-type arrays. `save_rule()` stopped being a per-type merge (it now rewrites the whole option around a position in a cross-type list), so per-type write isolation is no longer a storage-call property. The page-as-storage-boundary mechanics and the version-token conclusion are unaffected.
+- **2026-08-13** — Page-split retracted as the write-isolation mechanism ([ADR 0003](adr/0003-ordered-rule-list-and-dispatcher.md)): it doesn't shrink the hot blob, and cutting deeper would cut through the group where rules interact. The storage boundary is the **effect kind**, not the page — one ordered list per kind, one page, three tabs. Lost-update clobber → version token. The Wireframe one-option-per-page mechanics recorded above remain accurate.

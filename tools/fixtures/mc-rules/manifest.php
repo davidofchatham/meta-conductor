@@ -142,17 +142,28 @@ return array(
 	// Canonical UI-written shape; positional arrays; `id` never persisted.
 	// Term/field refs use fixture slugs ({TERM:slug} resolved to term_id at
 	// seed). EVERY rule pins post_types to mc_* (isolation invariant).
+	//
+	// `checkboxes` fields (post_types, filter_taxonomies) MUST be a flat list
+	// of slugs — array('mc_item') — never the {slug:bool} map. Handlers read
+	// both (ConfigHelpers::selected_post_type_slugs, should_process_post), but
+	// Wireframe's REST validator only accepts the list: given a map it
+	// validates the VALUES, so `true` arrives as "1" and the save 400s with
+	// `"1" is not a valid option`. The map shape seeded here previously made
+	// every fixture tab unsaveable from the settings page.
 	'mc_rules' => array(
 
-		// matrix §1 — expand child→parent, all ancestors, smart.
+		// matrix §1 — apply ancestors of hand-picked terms, all levels.
+		// `inheritance_behavior` replaced the hierarchy_direction +
+		// expansion_behavior pair in 0.8.0 (#16). The handler still reads the
+		// legacy pair when the outcome key is absent, but a fixture is a
+		// statement about the CURRENT schema, so it seeds the new key.
 		'hierarchical_rules' => array(
 			array(
-				'enabled'            => true,
-				'taxonomy'           => 'mc_topic',
-				'post_types'         => array( 'mc_item' => true ),
-				'hierarchy_direction' => 'child_to_parent',
-				'inheritance_depth'  => 'all',
-				'expansion_behavior' => 'smart',
+				'enabled'              => true,
+				'taxonomy'             => 'mc_topic',
+				'post_types'           => array( 'mc_item' ),
+				'inheritance_behavior' => 'ancestors',
+				'inheritance_depth'    => 'all',
 			),
 		),
 
@@ -161,7 +172,7 @@ return array(
 			array(
 				'enabled'           => true,
 				'taxonomy'          => 'mc_topic',
-				'post_types'        => array( 'mc_item' => true ),
+				'post_types'        => array( 'mc_item' ),
 				'restriction_mode'  => 'one_per_level',
 				'include_ancestors' => false,
 			),
@@ -172,7 +183,7 @@ return array(
 		'related_rules' => array(
 			array(
 				'enabled'         => true,
-				'post_types'      => array( 'mc_item' => true ),
+				'post_types'      => array( 'mc_item' ),
 				'trigger_type'    => 'term',
 				'trigger_term_id' => array( '{TERM:topic-coastal}' ),
 				'target_term_id'  => '{TERM:topic-featured}',
@@ -180,7 +191,7 @@ return array(
 			),
 			array(
 				'enabled'          => true,
-				'post_types'       => array( 'mc_item' => true ),
+				'post_types'       => array( 'mc_item' ),
 				'trigger_type'     => 'taxonomy',
 				'trigger_taxonomy' => 'mc_flag',
 				'target_term_id'   => '{TERM:topic-featured}',
@@ -222,31 +233,39 @@ return array(
 			array(
 				'enabled'           => true,
 				'taxonomy'          => 'mc_topic',
-				'post_types'        => array( 'mc_section' => true ),
+				'post_types'        => array( 'mc_section' ),
 				'conflict_handling' => 'merge',
 			),
 		),
 
 		// matrix §6 — in-range / expired / future windows around seed day.
+		//
+		// [1] and [2] SHARE A TARGET TERM ON PURPOSE (topic-archived). They are a
+		// deliberate collision pair: an out-of-range rule strips the target term
+		// whoever applied it, so the two cancel — on save (§6g) and on the daily
+		// cron (§6f). Tracked as #69, warned at authoring time by #65 once that
+		// lands, and this is the ready-made fixture for its detector. Do NOT give
+		// [2] a different target to make §6 read cleanly — the duplication IS the
+		// case, and verify.php A7 already works around it deliberately.
 		'time_based_rules' => array(
 			array(
 				'enabled'           => true,
-				'post_types'        => array( 'mc_item' => true ),
+				'post_types'        => array( 'mc_item' ),
 				'start_date'        => '{TODAY-1}',
 				'end_date'          => '{TODAY+7}',
 				'target_term_id'    => '{TERM:topic-featured}',
-				'filter_taxonomies' => array( 'mc_topic' => true ),
+				'filter_taxonomies' => array( 'mc_topic' ),
 			),
 			array(
 				'enabled'        => true,
-				'post_types'     => array( 'mc_item' => true ),
+				'post_types'     => array( 'mc_item' ),
 				'start_date'     => '{TODAY-30}',
 				'end_date'       => '{TODAY-2}',
 				'target_term_id' => '{TERM:topic-archived}',
 			),
 			array(
 				'enabled'        => true,
-				'post_types'     => array( 'mc_item' => true ),
+				'post_types'     => array( 'mc_item' ),
 				'start_date'     => '{TODAY+10}',
 				'end_date'       => '{TODAY+20}',
 				'target_term_id' => '{TERM:topic-archived}',

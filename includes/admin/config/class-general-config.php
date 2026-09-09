@@ -2,7 +2,7 @@
 /**
  * General Settings tab.
  *
- * Per-taxonomy default conflict handling + global processing toggles.
+ * Per-taxonomy default claim + global processing toggles.
  *
  * @package BWS_Meta_Manager
  * @since 0.2.0
@@ -28,7 +28,13 @@ class GeneralConfig {
     }
 
     /**
-     * Per-taxonomy default conflict handling.
+     * Per-taxonomy default claim (CONTEXT.md → Claim, ADR 0004).
+     *
+     * The stored key stays `conflict_handling` and its values stay
+     * merge|replace|skip — the rename to the claim vocabulary is wording
+     * only, so nothing migrates. Value ↔ claim: replace = owning-claim,
+     * merge = contributing-claim, skip = deferring-claim (the `-claim`
+     * qualifier disambiguates `deferring` from defer-as-postpone).
      *
      * Wireframe doesn't sanitize dot-notation field IDs (its Sanitizer
      * explicitly skips them, src/Framework/Sanitizer.php). So the per-
@@ -39,21 +45,21 @@ class GeneralConfig {
     private static function conflict_handling_section(): array {
         return [
             'id'          => 'conflict_handling',
-            'title'       => __('Global conflict handling', 'meta-conductor'),
-            'description' => __('Default behavior when an existing post already has terms in a taxonomy and a rule wants to apply more. Individual rules can override these defaults. Taxonomies without an entry default to "Merge".', 'meta-conductor'),
+            'title'       => __('Default claim per taxonomy', 'meta-conductor'),
+            'description' => __('What rules claim in a taxonomy by default: what they do about terms a post already has. Individual rules can override these defaults. Taxonomies without an entry default to "Contributing".', 'meta-conductor'),
             'fields'      => [
                 [
                     'id'    => 'conflict_handling_overrides',
                     'type'  => 'repeater',
-                    'label' => __('Conflict handling per taxonomy', 'meta-conductor'),
+                    'label' => __('Overrides', 'meta-conductor'),
                     'args'  => [
                         'sortable'       => true,
                         'collapsible'    => true,
                         'collapsed'      => true,
                         'duplicate_row'  => false,
                         'add_label'      => __('Add taxonomy override', 'meta-conductor'),
-                        'empty_message'  => __('No overrides — all taxonomies default to "Merge".', 'meta-conductor'),
-                        'title_template' => '{taxonomy}: {mode}',
+                        'empty_message'  => __('No overrides: all taxonomies default to "Contributing".', 'meta-conductor'),
+                        'title_template' => '{row_title}',
                         'subfields'      => [
                             [
                                 'id'       => 'taxonomy',
@@ -66,19 +72,18 @@ class GeneralConfig {
                                     'options' => ConfigHelpers::taxonomy_options(),
                                 ],
                             ],
+                            ConfigHelpers::claim_field('post', [
+                                'id'    => 'mode',
+                                'label' => __('Default claim on terms', 'meta-conductor'),
+                            ]),
+                            // Snapshot row title. Not user-editable; assembled
+                            // at save by snapshot_claim_override_labels in
+                            // WireframeBootstrap. Declared so {row_title}
+                            // resolves. Same pattern as propagation_rules.
                             [
-                                'id'      => 'mode',
-                                'type'    => 'select',
-                                'label'   => __('Conflict handling mode', 'meta-conductor'),
-                                'default' => 'merge',
-                                'columns' => 12,
-                                'args'    => [
-                                    'options' => [
-                                        'merge'   => __('Merge with existing terms', 'meta-conductor'),
-                                        'replace' => __('Replace existing terms', 'meta-conductor'),
-                                        'skip'    => __('Skip if terms exist', 'meta-conductor'),
-                                    ],
-                                ],
+                                'id'      => 'row_title',
+                                'type'    => 'hidden',
+                                'default' => '',
                             ],
                         ],
                     ],

@@ -39,38 +39,186 @@ class OptionRuleStorage implements RuleStorage {
     private $cached_settings = null;
 
     /**
-     * Valid rule types
+     * Effect-kind list keys (ADR 0003 decision 1).
      *
-     * @var array
+     * @since 0.8.0
      */
-    private $valid_types = [
-        'hierarchical_rules',
+    const KIND_TERM   = 'term_rules';
+    const KIND_FORMAT = 'format_rules';
+
+    /**
+     * Effect kind ⇒ the rule types it holds, IN ORDER.
+     *
+     * Two jobs since #66. It is the ENUMERATION of every rule type storage
+     * knows (`all_types()` flattens it, `get_kind_for_type()` inverts it) — the
+     * seven-entry `$valid_types` list that used to be a second copy is gone.
+     * And it is still the seed order for the pre-#56 migration: the position
+     * each type's rules take inside its kind list when `fan_in()` builds one,
+     * where position IS order (ADR 0003 — no stable `_id`). That order
+     * reproduces the old Auto-Set tab order, so a rule set authored before the
+     * migration keeps the sequence its author was looking at. Do not reorder
+     * this without a migration.
+     *
+     * The `type` value written onto each row is the legacy type key verbatim
+     * (`hierarchical_rules`, not `hierarchical`). Rule-type RENAMING stays
+     * deferred per ADR 0002/0003, and reusing the existing key means
+     * `get_enabled_rules()` can filter on `get_rule_type()` with no mapping
+     * table between the two vocabularies. Author-facing labels are a config
+     * concern (#57), not a storage one.
+     *
+     * @since 0.8.0
+     * @var array<string,string[]>
+     */
+    private const KIND_TYPES = [
+        self::KIND_TERM => [
+            'propagation_rules',
+            'related_post_terms_rules',
+            'time_based_rules',
+            'related_rules',
+            'hierarchical_rules',
+            'hierarchical_level_restriction_rules',
+        ],
+        self::KIND_FORMAT => [
+            'title_slug_rules',
+        ],
+    ];
+
+    /**
+     * Rule types whose AUTHORING SURFACE has collapsed into the ordered
+     * kind-list repeater (#57, §2 batch 1).
+     *
+     * This is the one fact that tells storage which persisted kind list is
+     * *authored* rather than *derived*, and it exists here — not on the
+     * config class — because the config classes read it to build their
+     * repeaters, and storage runs on CLI and front-end paths that must never
+     * resolve `Admin\Config` (CLAUDE.md don't #4).
+     *
+     * **Every rule type is in as of #59.** Batch 1 (#57) took the four term
+     * types not live on a real site, the two live ones (`related_rules`,
+     * `related_post_terms_rules`) followed in #58, and `title_slug_rules`
+     * joined the format repeater in #59. A row of a type absent here must NOT
+     * appear in a persisted kind list, because the repeater renders every row
+     * in the key it is bound to and Wireframe DROPS any subfield the config
+     * does not declare (`RepeaterField::sanitize`) — rendering a rule the
+     * repeater has no subfields for would silently gut it on the next save.
+     *
+     * Add a type here in the same change that gives it repeater subfields,
+     * never before. The list is now identical to the flattened KIND_TYPES,
+     * and it stays a separate constant precisely so the NEXT type
+     * (`field_transformation`) can be declared in KIND_TYPES — and therefore
+     * fanned in and read — a change before its subfields exist.
+     *
+     * @since 0.8.0
+     * @var string[]
+     */
+    private const CONFIG_MIGRATED_TYPES = [
         'propagation_rules',
-        'related_rules',
         'time_based_rules',
-        'related_post_terms_rules',
+        'hierarchical_rules',
         'hierarchical_level_restriction_rules',
+        'related_rules',
+        'related_post_terms_rules',
         'title_slug_rules',
     ];
 
     /**
-     * Get all settings from options
+     * The migrated types belonging to one kind, in KIND_TYPES order.
+     *
+     * Empty ⇒ no repeater is bound to that kind's list yet, so the config
+     * classes render no rows for it.
+     *
+     * @since 0.8.0
+     * @param string $kind KIND_TERM or KIND_FORMAT.
+     * @return string[]
+     */
+    public static function migrated_types_for_kind(string $kind): array {
+        return array_values(array_intersect(
+            self::KIND_TYPES[$kind] ?? [],
+            self::CONFIG_MIGRATED_TYPES
+        ));
+    }
+
+    /**
+     * Every rule type storage knows, flattened out of KIND_TYPES in kind order.
+     *
+     * The single enumeration since #66 — the seven-entry `$valid_types` list it
+     * replaces was a second copy that could drift out of step with the kind map
+     * and read zero rules for a type that fell out of one of them.
+     *
+     * @since 0.8.0
+     * @return string[]
+     */
+    public static function all_types(): array {
+        return array_merge(...array_values(self::KIND_TYPES));
+    }
+
+    /**
+     * Get all settings from options, in the kind-list shape.
+     *
+     * The kind lists are the ONLY rule shape as of #66. Anything still holding
+     * the pre-#56 type-keyed arrays is upgraded here, on read, so a front-end
+     * or cron request on a site whose admin has never been loaded still sees
+     * its rules (see upgrade_legacy_shape()).
      *
      * @return array Complete settings array
      */
     private function get_all_settings(): array {
         if ($this->cached_settings === null) {
-            $this->cached_settings = get_option(self::OPTION_NAME, []);
-
-            // Ensure all rule types exist
-            foreach ($this->valid_types as $type) {
-                if (!isset($this->cached_settings[$type])) {
-                    $this->cached_settings[$type] = [];
-                }
-            }
+            $stored = get_option(self::OPTION_NAME, []);
+            $this->cached_settings = self::upgrade_legacy_shape(
+                is_array($stored) ? $stored : []
+            );
         }
 
         return $this->cached_settings;
+    }
+
+    /**
+     * The one-time pre-#56 upgrade, applied at READ time so it cannot be missed.
+     *
+     * A site that last ran a version before the expand ticket (#56) stores seven
+     * type-keyed rule arrays and no kind list. The contract ticket (#66) deleted
+     * every reader of those arrays, so without this such a site would read zero
+     * rules — silently, on every request, until an admin load. Running it on
+     * read rather than only on admin load is the same reasoning #56 used for its
+     * read-time adapter: handlers read storage on front-end and cron requests
+     * that never reach `WireframeBootstrap::boot()`.
+     *
+     * A kind list that is ALREADY present wins. That is the whole safety
+     * argument: from #56 onwards both shapes exist side by side, the kind list
+     * is the authored one, and re-deriving it from the type-keyed arrays would
+     * discard the author's cross-type order (the fan-in groups by type). Only a
+     * kind key that is absent or unusable is seeded from the legacy arrays.
+     *
+     * The legacy keys are then dropped from the working copy, so the next write
+     * this class performs prunes them from storage. Nothing is persisted here —
+     * a read that migrates must not write, or a front-end request would rewrite
+     * the option out from under an admin editing it.
+     *
+     * **What makes the drop safe is that `$legacy` is computed BEFORE the loop.**
+     * The seed and the `unset()` happen in the same iteration, so a seed that
+     * read `$settings` directly would be reading an array the previous iteration
+     * had already pruned. It reads the pre-prune fan-in instead. Don't move the
+     * `fan_in()` call inside the loop.
+     *
+     * @since 0.8.0
+     * @param array $settings Raw stored option.
+     * @return array
+     */
+    private static function upgrade_legacy_shape(array $settings): array {
+        $legacy = self::fan_in($settings);
+
+        foreach (self::KIND_TYPES as $kind => $types) {
+            if (!isset($settings[$kind]) || !is_array($settings[$kind])) {
+                $settings[$kind] = $legacy[$kind];
+            }
+
+            foreach ($types as $type) {
+                unset($settings[$type]);
+            }
+        }
+
+        return $settings;
     }
 
     /**
@@ -86,51 +234,289 @@ class OptionRuleStorage implements RuleStorage {
     }
 
     /**
-     * Save settings to options
+     * Coerce the General tab's claim-override rows `[{taxonomy, mode}, ...]`
+     * into the canonical `{taxonomy_slug: mode}` dict (ADR 0004).
      *
-     * @param array $settings Complete settings array
-     * @return bool Success
+     * Same adapter boundary as normalize_rule_shape() below, for the same
+     * reason: the rows are an artifact of the writer, not the meaning. They
+     * exist only because Wireframe's Sanitizer skips dot-notation field ids
+     * (CLAUDE.md don't #4), so the dict cannot be a field — this is the way
+     * back. Public because the shape is a pure function of its input, so
+     * callers needn't hold an instance; static for the same reason.
+     *
+     * Incomplete rows are dropped rather than landing an empty key — an
+     * "Add taxonomy override" click with neither select touched is the usual
+     * source. On a duplicate taxonomy the last row wins.
+     *
+     * **No runtime consumer yet.** Nothing reads the per-taxonomy default
+     * when a rule omits its own claim; every handler still falls back to a
+     * hard-coded `merge`. Wiring belongs with the Phase 4 dispatcher (#53),
+     * where rule-level-vs-taxonomy-level precedence gets decided. Rehomed
+     * here (#55) from the deleted `Settings` shell, whose get_settings() was
+     * the only caller. Feed it `get_raw_settings()['conflict_handling_overrides']`.
+     *
+     * @since 0.8.0
+     * @param array $rows Repeater rows from `conflict_handling_overrides`.
+     * @return array<string,string> taxonomy slug ⇒ merge|replace|skip.
      */
-    private function save_all_settings(array $settings): bool {
-        $success = update_option(self::OPTION_NAME, $settings);
+    public static function flatten_conflict_overrides(array $rows): array {
+        $out = [];
+        foreach ($rows as $row) {
+            if (empty($row['taxonomy']) || empty($row['mode'])) {
+                continue;
+            }
+            $out[$row['taxonomy']] = $row['mode'];
+        }
+        return $out;
+    }
 
-        // Refresh the request cache to match what's ACTUALLY stored. update_option
-        // returns false for TWO reasons: (a) the new value equals the stored value
-        // (no write needed) — cache should reflect $settings; (b) a genuine DB
-        // failure — cache must NOT adopt $settings, or a later save in the same
-        // request (e.g. import_rules looping save_rule) would read the poisoned
-        // cache and persist the failed data as the baseline. Distinguish by
-        // re-reading: only adopt $settings when it actually round-trips.
-        // (PR#24 round 5 #5 + round 6 #4)
-        if ($success || $this->cached_settings === $settings) {
-            // Success ⇒ adopt. Or false BUT the cache already equals $settings ⇒
-            // the false can only mean update_option no-op'd on equality (the
-            // stored value also equals $settings), so adopting is correct and no
-            // re-read is needed. (PR#24 round 5 #5, round 7 #3, round 8 #5)
-            $this->cached_settings = $settings;
-        } else {
-            // false AND cache differs: distinguish a no-op (stored already ==
-            // $settings) from a genuine DB failure by re-reading. Adopt only if
-            // it round-trips; otherwise drop the cache so a later save in the
-            // same request (e.g. import_rules looping save_rule) doesn't persist
-            // failed data as the baseline. (PR#24 round 6 #4)
-            $stored = get_option(self::OPTION_NAME, []);
-            $this->cached_settings = (is_array($stored) && $stored === $settings)
-                ? $settings
-                : null;
+    /**
+     * Regroup the seven type-keyed rule arrays into the two kind-keyed ordered
+     * lists (ADR 0003 decision 1).
+     *
+     * **Migration code since #66.** It was the read path for the expand half of
+     * expand-then-contract; with the type-keyed arrays gone its only remaining
+     * job is seeding a kind list that does not exist yet, from a site that last
+     * ran a pre-#56 version (see upgrade_legacy_shape()). It stays public, and
+     * `fan_out()` stays with it, because "the migration is lossless" is a claim
+     * H10 has to be able to check.
+     *
+     * A pure regroup, deliberately: each row is carried across VERBATIM plus a
+     * `type` key naming the array it came from. It applies no shape coercion —
+     * not `normalize_rule_shape()`, not `migrate_related_post_terms_shape()`.
+     * Two reasons. (1) Losslessness: `fan_out(fan_in($s))` must reproduce the
+     * type-keyed arrays byte-for-byte, which is what makes persisting the lists
+     * safe on live data. (2) The persisted lists are what the Wireframe admin
+     * will read raw once the config collapses (#57), and the admin needs the
+     * STORED shape — e.g. `acf_field_name` must stay the combined
+     * "post_type:field" the select's option keys use. Coercion stays at read
+     * time, in `project_kind_rules()`, exactly where it already is for the
+     * type-keyed path.
+     *
+     * Rows that are not arrays cannot carry a `type` and are dropped; nothing
+     * the plugin writes produces one.
+     *
+     * @since 0.8.0
+     * @param array $settings Raw settings option.
+     * @return array<string,array[]> Both kind keys, always present.
+     */
+    public static function fan_in(array $settings): array {
+        $lists = [];
+
+        foreach (self::KIND_TYPES as $kind => $types) {
+            $rows = [];
+            foreach ($types as $type) {
+                $source = $settings[$type] ?? [];
+                if (!is_array($source)) {
+                    continue;
+                }
+                foreach ($source as $row) {
+                    if (!is_array($row)) {
+                        continue;
+                    }
+                    // Authoritative: the owning array names the type, so a
+                    // stale `type` on the row (a round-tripped kind row saved
+                    // back through save_rule) is corrected rather than trusted.
+                    $row['type'] = $type;
+                    $rows[]      = $row;
+                }
+            }
+            $lists[$kind] = $rows;
         }
 
-        return $success;
+        return $lists;
+    }
+
+    /**
+     * Inverse of fan_in(): split kind lists back into type-keyed arrays.
+     *
+     * Exists to PROVE fan_in is lossless — Phase 4 Gate 1 asks for exactly
+     * that, and "lossless" is only checkable against an inverse. Its caller is
+     * H10, deliberately: it is a proof obligation, not a rollback path (#56
+     * asks for no reversal, and the migration only ADDS keys, so there is
+     * nothing to roll back).
+     *
+     * Rows are stripped of `type` (it is the grouping, not rule data) and
+     * reindexed, so a round-trip reproduces the original arrays.
+     *
+     * All seven type keys are always present, empty where the kind lists hold
+     * no rows of that type.
+     *
+     * @since 0.8.0
+     * @param array $lists Kind-keyed lists as produced by fan_in().
+     * @return array<string,array[]> Type-keyed rule arrays.
+     */
+    public static function fan_out(array $lists): array {
+        $out = [];
+
+        foreach (self::KIND_TYPES as $kind => $types) {
+            $out = array_merge($out, array_fill_keys($types, []));
+
+            foreach ($lists[$kind] ?? [] as $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $type = (string) ($row['type'] ?? '');
+                if (!in_array($type, $types, true)) {
+                    continue;
+                }
+                unset($row['type']);
+                $out[$type][] = $row;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Which kind list a rule type lives in.
+     *
+     * Every type storage knows is covered — the kind map IS the enumeration
+     * since #66 (`all_types()` flattens it), so there is no second list for it
+     * to drift out of step with.
+     *
+     * @since 0.8.0
+     * @param string $type Legacy rule type key.
+     * @return string Kind key, or '' if the type is unknown.
+     */
+    public function get_kind_for_type(string $type): string {
+        foreach (self::KIND_TYPES as $kind => $types) {
+            if (in_array($type, $types, true)) {
+                return $kind;
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * Read a kind list, coerced to the canonical shape handlers consume.
+     *
+     * **The persisted `term_rules` / `format_rules` key IS the list** since
+     * #66. It was derived at read time from the seven type-keyed arrays while
+     * both shapes existed, and there were two read paths for exactly as long as
+     * that lasted: a derived one that could not reproduce cross-type order, and
+     * `get_authored_kind_rules()` reading the persisted key. The contract
+     * ticket collapsed them — the type-keyed arrays are gone, so there is
+     * nothing left for a derivation to reconcile against.
+     *
+     * The row order is the AUTHORED order, and authored order is the
+     * composition semantics a pass executes in (ADR 0003 decision 3) — a
+     * hierarchical rule sequenced after a level-restriction rule runs after it.
+     * Never re-derive or re-sort this list: sorting it by type is precisely the
+     * clobber the old derived path could not avoid.
+     *
+     * `id` is assigned PER TYPE, not per kind-list position — it stays the
+     * index the rule has inside its own type, exactly as `get_rules()` reports
+     * it. Handlers persist state keyed on it (`TitleSlugHandler`'s
+     * `write_rule_status()`), so re-basing it onto the kind list would silently
+     * repoint every stored per-rule status. It carries the same warning as
+     * `get_rules()`: positional, re-derived on read, never a stable identity.
+     *
+     * Not memoized on purpose. It reads only what `get_all_settings()` already
+     * cached, and a second request-scoped cache would need resetting in
+     * lockstep with that one — a live trap for a cost that is not there.
+     *
+     * @since 0.8.0
+     * @param string $kind    KIND_TERM or KIND_FORMAT.
+     * @param array  $filters Same filters as get_rules(), plus 'type'.
+     * @return array Rules in authored order.
+     */
+    public function get_kind_rules(string $kind, array $filters = []): array {
+        if (!isset(self::KIND_TYPES[$kind])) {
+            return [];
+        }
+
+        $rows = $this->get_all_settings()[$kind] ?? [];
+
+        return self::filter_rules(self::project_kind_rules($rows), $filters);
+    }
+
+    /**
+     * Read-time projection of a kind list: assign per-type `id`, then apply the
+     * canonical-shape coercion. Pure — the harness runs it without WordPress.
+     *
+     * @since 0.8.0
+     * @param array $rows Kind-list rows, each carrying `type`.
+     * @return array
+     */
+    public static function project_kind_rules(array $rows): array {
+        $counters = [];
+        $out      = [];
+
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $type = (string) ($row['type'] ?? '');
+
+            // Per-type running index — the same number get_rules() derives from
+            // the type array's own key.
+            $index            = $counters[$type] ?? 0;
+            $counters[$type]  = $index + 1;
+
+            if (!isset($row['id'])) {
+                $row['id'] = $index;
+            }
+
+            $out[] = self::normalize_rule_shape($type, $row);
+        }
+
+        return $out;
+    }
+
+    /**
+     * Save settings to options.
+     *
+     * Returns TRUE when the option round-trips — the write succeeded, OR the
+     * bytes already equalled what was stored so no write was needed. FALSE only
+     * when a re-read shows the data did not persist (#27). `update_option()`
+     * cannot be believed on its own: it returns false for both of those, and
+     * every mutator on this class treats false as failure.
+     *
+     * The request cache is refreshed to match what is ACTUALLY stored, for the
+     * same reason. Adopting $settings after a genuine DB failure would have a
+     * later save in the same request (import_rules looping save_rule) read the
+     * poisoned cache and persist the failed data as its baseline.
+     * (PR#24 round 5 #5 + round 6 #4)
+     *
+     * @param array $settings Complete settings array
+     * @return bool True when storage holds $settings afterwards.
+     */
+    private function save_all_settings(array $settings): bool {
+        if (update_option(self::OPTION_NAME, $settings)) {
+            $this->cached_settings = $settings;
+
+            return true;
+        }
+
+        // false ⇒ a no-op on equality, or a genuine failure. Re-read to tell
+        // them apart, bypassing the request cache we may have primed earlier.
+        $stored = get_option(self::OPTION_NAME, []);
+
+        if (is_array($stored) && $stored === $settings) {
+            $this->cached_settings = $settings;
+
+            return true;
+        }
+
+        $this->cached_settings = null;
+
+        return false;
     }
 
     /**
      * Apply filters to rules array
      *
+     * Static + pure so the harness can exercise it without WordPress. Renamed
+     * from apply_filters() in 0.8.0 — it never was the WP hook of that name,
+     * and the collision read as one.
+     *
      * @param array $rules Rules array
      * @param array $filters Filters to apply
      * @return array Filtered rules
      */
-    private function apply_filters(array $rules, array $filters): array {
+    private static function filter_rules(array $rules, array $filters): array {
         if (empty($filters)) {
             return $rules;
         }
@@ -144,6 +530,14 @@ class OptionRuleStorage implements RuleStorage {
             if (isset($filters['enabled'])) {
                 $rule_enabled = $rule['enabled'] ?? true;
                 if ($rule_enabled !== $filters['enabled']) {
+                    $matches = false;
+                }
+            }
+
+            // Filter by rule type — the kind list is cross-type, so this is
+            // what "one type's rules" means. (0.8.0)
+            if (isset($filters['type']) && $matches) {
+                if (($rule['type'] ?? '') !== $filters['type']) {
                     $matches = false;
                 }
             }
@@ -165,10 +559,10 @@ class OptionRuleStorage implements RuleStorage {
             }
 
             if ($matches) {
-                // Ensure rule has an ID
-                if (!isset($rule['id'])) {
-                    $rule['id'] = $index;
-                }
+                // No id-default here: the caller projects first
+                // (project_kind_rules), which assigns `id` before this runs. A
+                // second copy would be dead code claiming to be a safety net.
+                // (0.8.0)
                 $filtered[] = $rule;
             }
         }
@@ -190,33 +584,31 @@ class OptionRuleStorage implements RuleStorage {
 
     /**
      * {@inheritDoc}
+     *
+     * One type's slice of its kind list, in authored order. Since #66 this is a
+     * VIEW over the kind list rather than a read of a type-keyed array — the
+     * kind list is the only stored shape, and a type filter over it is what
+     * "this type's rules" now means.
+     *
+     * WARNING: `id` is the rule's per-type POSITION, re-derived on every read
+     * and never persisted (save reindexes; the id key is stripped before write).
+     * Rules are stored POSITIONALLY, so reordering or deleting one renumbers the
+     * rest. NEVER key persistent per-rule state (tracking meta, caches) on this
+     * id — use a stable identity (e.g. post id + field name). The ACF-reference
+     * handler is declarative and stores nothing keyed on rules, so it is
+     * unaffected.
+     *
+     * Rows carry their own `type` now, which the type-keyed read could not
+     * report. Nothing depends on its absence.
      */
     public function get_rules(string $type, array $filters = []): array {
-        if (!in_array($type, $this->valid_types, true)) {
+        $kind = $this->get_kind_for_type($type);
+
+        if ($kind === '') {
             return [];
         }
 
-        $all_settings = $this->get_all_settings();
-        $rules = $all_settings[$type] ?? [];
-
-        // Add IDs if not present + normalize Wireframe shape changes to legacy shape.
-        //
-        // WARNING: `id` is the ARRAY INDEX, re-derived on every read and never
-        // persisted (save reindexes via array_values; the id key is stripped
-        // before write). Wireframe stores rules POSITIONALLY, so reordering or
-        // deleting a rule renumbers the rest. NEVER key persistent per-rule state
-        // (tracking meta, caches) on this id — use a stable identity (e.g. post
-        // id + field name). The ACF-reference handler is declarative and stores
-        // nothing keyed on rules, so it is unaffected.
-        foreach ($rules as $index => &$rule) {
-            if (!isset($rule['id'])) {
-                $rule['id'] = $index;
-            }
-            $rule = self::normalize_rule_shape($type, $rule);
-        }
-        unset($rule);
-
-        return $this->apply_filters($rules, $filters);
+        return $this->get_kind_rules($kind, array_merge($filters, ['type' => $type]));
     }
 
     /**
@@ -304,10 +696,19 @@ class OptionRuleStorage implements RuleStorage {
      *   holder_role absent                → 'target' (= legacy pull-to-holder)
      *   post_status absent                → untouched (= any)
      *
+     * Public since #58: `WireframeBootstrap::repair_stored_rules()` applies it
+     * to the kind-list rows too, closing the gap the one-shot flag leaves — a
+     * legacy-shaped row written AFTER the flag is set (CLI, import) would
+     * otherwise render with config defaults in the unified repeater and be
+     * persisted that way, e.g. an absent `holder_role` rendering as the radio
+     * default `source` and silently reversing a live rule's direction on the
+     * next save. Deliberately does NOT split acf_field_name (see below), so
+     * it is safe on admin-facing shapes.
+     *
      * @param array $rule Normalized-so-far rule (post_type/acf split already done).
      * @return array
      */
-    private static function migrate_related_post_terms_shape(array $rule): array {
+    public static function migrate_related_post_terms_shape(array $rule): array {
         // Taxonomy collapse.
         if (!isset($rule['taxonomy']) || $rule['taxonomy'] === '') {
             $rule['taxonomy'] = $rule['source_taxonomy'] ?? $rule['target_taxonomy'] ?? '';
@@ -382,89 +783,186 @@ class OptionRuleStorage implements RuleStorage {
             return false;
         }
 
-        $settings = get_option(self::OPTION_NAME, []);
-        if (!is_array($settings)) {
-            $settings = [];
-        }
+        // Through the request cache, so a pre-#56 site is upgraded to the kind
+        // shape first and the rewrite lands on the rows the repeater will read.
+        $settings = $this->get_all_settings();
+        $rows     = $settings[self::KIND_TERM] ?? [];
+        $changed  = false;
 
-        $rows = $settings['related_post_terms_rules'] ?? [];
-        $changed = false;
-
-        if (is_array($rows)) {
-            foreach ($rows as $i => $row) {
-                if (!is_array($row)) {
-                    continue;
-                }
-                $migrated = self::migrate_related_post_terms_shape($row);
-                if ($migrated !== $row) {
-                    $rows[$i] = $migrated;
-                    $changed = true;
-                }
+        foreach ($rows as $i => $row) {
+            if (!is_array($row) || ($row['type'] ?? '') !== 'related_post_terms_rules') {
+                continue;
+            }
+            $migrated = self::migrate_related_post_terms_shape($row);
+            if ($migrated !== $row) {
+                $rows[$i] = $migrated;
+                $changed  = true;
             }
         }
 
-        if ($changed) {
-            $settings['related_post_terms_rules'] = $rows;
-            $this->save_all_settings($settings);
+        if (!$changed) {
+            // Nothing to migrate (fresh install / already-new data): no write
+            // was needed, so flag unconditionally to skip future scans.
+            update_option(self::ACFREF_SCHEMA_FLAG, self::ACFREF_SCHEMA_VERSION);
 
-            // Flag iff the migrated rows are ACTUALLY in storage now. This
-            // distinguishes the two reasons save_all_settings/update_option can
-            // report false: (a) a genuine DB write failure — rows NOT persisted
-            // → don't flag, so we retry next load instead of permanently
-            // skipping and later corrupting on a raw resave (PR#24 round 2 #3);
-            // (b) the new bytes equalled the stored bytes (already migrated by a
-            // concurrent writer) — rows ARE persisted → flag, so we don't loop
-            // re-entering the migration every admin load (PR#24 round 4 #3).
-            // Re-read fresh (bypass the request cache, which we just primed).
-            // Return true ONLY when the rewrite actually persisted (flag set) —
-            // matches the docblock ("true if a rewrite was performed"). On a
-            // write failure the flag stays unset (retry next load) and we report
-            // false so a caller doesn't log "migration done". (PR#24 round 8 #3)
-            $persisted = get_option(self::OPTION_NAME, []);
-            if (is_array($persisted)
-                && ($persisted['related_post_terms_rules'] ?? null) === $rows) {
-                update_option(self::ACFREF_SCHEMA_FLAG, self::ACFREF_SCHEMA_VERSION);
-                return true;
-            }
             return false;
         }
 
-        // Nothing to migrate (fresh install / already-new data): no write was
-        // needed, so flag unconditionally to skip future scans.
+        $settings[self::KIND_TERM] = $rows;
+
+        // Flag iff the migrated rows are ACTUALLY in storage now. save_all_settings()
+        // reports true for a successful write AND for a no-op on equality (a
+        // concurrent writer got there first) — both mean the rows are stored, so
+        // both should flag. A genuine DB failure leaves the flag unset so the next
+        // load retries rather than permanently skipping and later corrupting on a
+        // raw resave (PR#24 round 2 #3 / round 4 #3), and reports false so a caller
+        // doesn't log "migration done" (round 8 #3).
+        if (!$this->save_all_settings($settings)) {
+            return false;
+        }
+
         update_option(self::ACFREF_SCHEMA_FLAG, self::ACFREF_SCHEMA_VERSION);
 
-        return false;
+        return true;
+    }
+
+    /**
+     * Schema marker recording that the kind-list shape has been persisted.
+     *
+     * Bumped only if the stored shape changes again (a kind added, the
+     * documented order changed). It is a MARKER, not a gate — see
+     * maybe_migrate_kind_lists() for why gating on it would be wrong.
+     *
+     * @since 0.8.0
+     */
+    const KIND_SCHEMA_VERSION = 1;
+    const KIND_SCHEMA_FLAG    = 'bws_mc_kind_schema';
+
+    /**
+     * Persist the kind-list shape (#56 → #66, ADR 0003). Runs on admin load,
+     * AFTER maybe_migrate_acf_ref_storage() so the persisted lists carry
+     * already-key-renamed `related_post_terms` rows rather than freezing a
+     * legacy shape into the new one.
+     *
+     * All it does now is write back what `get_all_settings()` already read:
+     * the kind lists seeded from any pre-#56 type-keyed arrays, and those
+     * arrays pruned. Reads apply that upgrade themselves
+     * (`upgrade_legacy_shape()`), so nothing depends on this having run —
+     * except the ADMIN, which reads the settings option RAW and can therefore
+     * only bind the ordered repeater to `term_rules` / `format_rules` if those
+     * keys exist in storage. That is the whole reason it persists.
+     *
+     * **Deliberately NOT flag-gated, though #56 asked for "flag-gated".** The
+     * flag was asked for to avoid a write on every admin load; writing only
+     * when the upgraded settings differ from the stored ones achieves that and
+     * is strictly better, because it also covers a site that is upgraded, rolled
+     * back and upgraded again. Idempotent: once the option is in the kind shape
+     * the comparison matches and no write happens.
+     *
+     * It is NOT a reconciliation. Before #66 this method had to decide whether
+     * a stored kind list could still be trusted against the type-keyed arrays,
+     * and rebuild it in KIND_TYPES order when it could not — which silently
+     * reordered the author's list, and since #60 that meant changing what a pass
+     * DOES. With one stored shape there is nothing to reconcile: the list is
+     * authoritative, full stop.
+     *
+     * @since 0.8.0
+     * @return bool True if a rewrite was performed AND persisted.
+     */
+    public function maybe_migrate_kind_lists(): bool {
+        // Through the request cache: this is exactly the upgraded shape every
+        // read in this request is already serving.
+        $settings = $this->get_all_settings();
+        $stored   = get_option(self::OPTION_NAME, []);
+
+        if (is_array($stored) && $stored === $settings) {
+            // Already in the stored shape (a migrated site, or a fresh install
+            // whose first save wrote it). Record the schema version.
+            update_option(self::KIND_SCHEMA_FLAG, self::KIND_SCHEMA_VERSION);
+
+            return false;
+        }
+
+        // save_all_settings() reports true only when storage actually holds
+        // $settings afterwards, so a genuine DB failure leaves the marker unset
+        // and the next load retries. The marker gates nothing, so a missed mark
+        // costs only its own accuracy.
+        if (!$this->save_all_settings($settings)) {
+            return false;
+        }
+
+        update_option(self::KIND_SCHEMA_FLAG, self::KIND_SCHEMA_VERSION);
+
+        return true;
+    }
+
+    /**
+     * The kind-list POSITION of one type's Nth rule, or null if it has no Nth.
+     *
+     * The bridge every mutator crosses: `$rule_id` is the per-type index the
+     * read paths report (see get_rules()), the stored list is cross-type, and
+     * these two numbers only coincide for a single-type kind.
+     *
+     * @since 0.8.0
+     * @param array  $rows    One kind list.
+     * @param string $type    Rule type.
+     * @param int    $rule_id Per-type index.
+     * @return int|null
+     */
+    private static function position_of(array $rows, string $type, int $rule_id): ?int {
+        $index = 0;
+
+        foreach ($rows as $position => $row) {
+            if (!is_array($row) || ($row['type'] ?? '') !== $type) {
+                continue;
+            }
+            if ($index === $rule_id) {
+                return (int) $position;
+            }
+            $index++;
+        }
+
+        return null;
+    }
+
+    /**
+     * How many rules of one type a kind list holds.
+     *
+     * @since 0.8.0
+     * @param array  $rows One kind list.
+     * @param string $type Rule type.
+     * @return int
+     */
+    private static function count_of(array $rows, string $type): int {
+        return count(array_filter(
+            $rows,
+            static fn($row): bool => is_array($row) && ($row['type'] ?? '') === $type
+        ));
     }
 
     /**
      * {@inheritDoc}
      */
     public function get_rule(string $type, int $rule_id): ?array {
-        if (!in_array($type, $this->valid_types, true)) {
+        if ($rule_id < 0) {
             return null;
         }
 
-        $all_settings = $this->get_all_settings();
-        $rules = $all_settings[$type] ?? [];
-
-        if (!isset($rules[$rule_id])) {
-            return null;
-        }
-
-        $rule = $rules[$rule_id];
-        $rule['id'] = $rule_id;
-
-        return self::normalize_rule_shape($type, $rule);
+        return $this->get_rules($type)[$rule_id] ?? null;
     }
 
     /**
      * {@inheritDoc}
+     *
+     * A new rule is APPENDED to the end of its kind list, not slotted in beside
+     * the other rules of its type. Position is order and order is composition
+     * (ADR 0003 decision 3), so a rule the author has not placed belongs last —
+     * where it cannot change what the existing list already does.
      */
     public function save_rule(string $type, int $rule_id, array $data): int {
-        // Returns the saved rule's zero-based index on success, or -1 on
-        // failure. Index 0 is a valid first rule — callers must guard with
-        // `>= 0`, not `> 0`.
-        if (!in_array($type, $this->valid_types, true)) {
+        $kind = $this->get_kind_for_type($type);
+
+        if ($kind === '') {
             return -1;
         }
 
@@ -477,49 +975,59 @@ class OptionRuleStorage implements RuleStorage {
         }
 
         $all_settings = $this->get_all_settings();
+        $rows         = $all_settings[$kind] ?? [];
 
-        if (!isset($all_settings[$type])) {
-            $all_settings[$type] = [];
-        }
-
-        // Remove ID from data (it's the array key)
+        // `id` is the read-time position, never stored; `type` is the row's
+        // place in the list, so it is written from the argument rather than
+        // trusted off the payload.
         unset($data['id']);
+        $data['type'] = $type;
 
-        // Create new rule (append)
         if ($rule_id === -1) {
-            $all_settings[$type][] = $data;
-            $new_id = count($all_settings[$type]) - 1;
+            // Count BEFORE the append: the number of rows of this type already
+            // present is the new rule's per-type index, which is the number
+            // get_rules() will report for it. Counting after and subtracting one
+            // says the same thing twice, in opposite directions.
+            $new_id = self::count_of($rows, $type);
+            $rows[] = $data;
         } else {
-            // Update existing rule
-            if (!isset($all_settings[$type][$rule_id])) {
+            $position = self::position_of($rows, $type, $rule_id);
+
+            if ($position === null) {
                 return -1;
             }
-            $all_settings[$type][$rule_id] = $data;
-            $new_id = $rule_id;
+
+            $rows[$position] = $data;
+            $new_id          = $rule_id;
         }
 
-        $success = $this->save_all_settings($all_settings);
+        $all_settings[$kind] = array_values($rows);
 
-        return $success ? $new_id : -1;
+        return $this->save_all_settings($all_settings) ? $new_id : -1;
     }
 
     /**
      * {@inheritDoc}
      */
     public function delete_rule(string $type, int $rule_id): bool {
-        if (!in_array($type, $this->valid_types, true)) {
+        $kind = $this->get_kind_for_type($type);
+
+        if ($kind === '' || $rule_id < 0) {
             return false;
         }
 
         $all_settings = $this->get_all_settings();
+        $rows         = $all_settings[$kind] ?? [];
+        $position     = self::position_of($rows, $type, $rule_id);
 
-        if (!isset($all_settings[$type][$rule_id])) {
+        if ($position === null) {
             return false;
         }
 
-        // Remove rule and re-index array
-        unset($all_settings[$type][$rule_id]);
-        $all_settings[$type] = array_values($all_settings[$type]);
+        // Remove rule and re-index — the remaining rules keep their order, and
+        // every id after this one shifts down, exactly as before.
+        unset($rows[$position]);
+        $all_settings[$kind] = array_values($rows);
 
         return $this->save_all_settings($all_settings);
     }
@@ -531,20 +1039,19 @@ class OptionRuleStorage implements RuleStorage {
         $query_lower = strtolower($query);
         $results = [];
 
-        foreach ($this->valid_types as $type) {
-            $rules = $this->get_rules($type, $filters);
-
-            foreach ($rules as $rule) {
+        foreach (array_keys(self::KIND_TYPES) as $kind) {
+            foreach ($this->get_kind_rules($kind, $filters) as $rule) {
                 $searchable = [
                     $rule['name'] ?? '',
                     $rule['taxonomy'] ?? '',
-                    implode(' ', $rule['post_types'] ?? []),
+                    implode(' ', (array) ($rule['post_types'] ?? [])),
                 ];
 
                 $searchable_text = strtolower(implode(' ', $searchable));
 
                 if (strpos($searchable_text, $query_lower) !== false) {
-                    $rule['type'] = $type;
+                    // `type` is already on the row — it is the grouping key of
+                    // the list this came out of, not something added here.
                     $results[] = $rule;
                 }
             }
@@ -557,7 +1064,7 @@ class OptionRuleStorage implements RuleStorage {
      * {@inheritDoc}
      */
     public function get_rule_types(): array {
-        return $this->valid_types;
+        return self::all_types();
     }
 
     /**
@@ -602,37 +1109,44 @@ class OptionRuleStorage implements RuleStorage {
      * {@inheritDoc}
      */
     public function bulk_toggle_rules(string $type, array $rule_ids, bool $enabled): int {
-        if (!in_array($type, $this->valid_types, true)) {
+        $kind = $this->get_kind_for_type($type);
+
+        if ($kind === '') {
             return 0;
         }
 
-        $all_settings = $this->get_all_settings();
+        $all_settings  = $this->get_all_settings();
+        $rows          = $all_settings[$kind] ?? [];
         $updated_count = 0;
 
         foreach ($rule_ids as $rule_id) {
+            $position = self::position_of($rows, $type, (int) $rule_id);
+
+            if ($position === null) {
+                continue;
+            }
+
             // Only count + mutate rules whose state ACTUALLY changes. Counting
             // no-ops would (a) overstate the toggle count, and (b) when EVERY
             // target is already in the requested state, leave $settings ===
-            // stored ⇒ update_option no-ops ⇒ save_all_settings returns false ⇒
-            // the failure guard below would wrongly report 0. (PR#24 round 8 #1)
-            if (isset($all_settings[$type][$rule_id])
-                && (bool) ($all_settings[$type][$rule_id]['enabled'] ?? false) !== $enabled) {
-                $all_settings[$type][$rule_id]['enabled'] = $enabled;
+            // stored ⇒ nothing to write ⇒ the failure guard below would report
+            // 0 for a set of rules that are all correct. (PR#24 round 8 #1)
+            if ((bool) ($rows[$position]['enabled'] ?? false) !== $enabled) {
+                $rows[$position]['enabled'] = $enabled;
                 $updated_count++;
             }
         }
 
-        // Report 0 if a real write was needed but didn't persist, so callers
-        // don't show success on a genuine DB failure (save_rule/delete_rule
-        // already propagate the save result; bulk_toggle must too). With the
-        // change-detection above, $updated_count>0 implies $settings differs
-        // from stored, so a false here is a true failure, not a no-op.
-        // (PR#24 round 6 #3, round 8 #1)
-        if ($updated_count > 0 && !$this->save_all_settings($all_settings)) {
+        if ($updated_count === 0) {
             return 0;
         }
 
-        return $updated_count;
+        $all_settings[$kind] = $rows;
+
+        // Report 0 if the write didn't persist, so callers don't show success
+        // on a genuine DB failure (save_rule/delete_rule already propagate the
+        // save result; bulk_toggle must too). (PR#24 round 6 #3, round 8 #1)
+        return $this->save_all_settings($all_settings) ? $updated_count : 0;
     }
 
     /**
@@ -647,10 +1161,10 @@ class OptionRuleStorage implements RuleStorage {
         ];
 
         // Export specific types or all types
-        $types_to_export = $filters['types'] ?? $this->valid_types;
+        $types_to_export = $filters['types'] ?? self::all_types();
 
         foreach ($types_to_export as $type) {
-            if (!in_array($type, $this->valid_types, true)) {
+            if ($this->get_kind_for_type($type) === '') {
                 continue;
             }
 
@@ -679,7 +1193,7 @@ class OptionRuleStorage implements RuleStorage {
         $prefix_names = $options['prefix_names'] ?? '';
 
         foreach ($rules_data as $type => $rules) {
-            if (!in_array($type, $this->valid_types, true)) {
+            if ($this->get_kind_for_type((string) $type) === '') {
                 $results['errors'][] = "Invalid rule type: {$type}";
                 continue;
             }
@@ -742,6 +1256,16 @@ class OptionRuleStorage implements RuleStorage {
      * {@inheritDoc}
      */
     public function validate_rule(string $type, array $data): array {
+        // An unknown type names no kind list, so there is nowhere for the rule
+        // to be saved and nothing to validate it against. This replaces the
+        // `$valid_types` membership test the mutators used to share (#66).
+        if ($this->get_kind_for_type($type) === '') {
+            return [
+                'valid'  => false,
+                'errors' => ['Unknown rule type: ' . $type],
+            ];
+        }
+
         $errors = [];
 
         // Basic validation - check required fields by type

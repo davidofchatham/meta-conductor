@@ -26,11 +26,14 @@ class HierarchicalHandler extends UnifiedHandlerBase {
 
     private const AUTO_TERMS_META = '_bws_auto_terms';
 
-    private bool $processing = false;
-
-    protected function init_hooks() {
-        add_action('set_object_terms', array($this, 'on_terms_set'), 10, 6);
-    }
+    /**
+     * Pure applier: no hooks (#60).
+     *
+     * `set_object_terms` p10 lived here until 0.8.0. `TermDispatcher` owns the
+     * trigger union now, so registering anything here would run this handler's
+     * rules twice — once out of order, once in it.
+     */
+    protected function init_hooks() {}
 
     public function get_handler_type() {
         return 'hierarchical';
@@ -40,20 +43,43 @@ class HierarchicalHandler extends UnifiedHandlerBase {
         return 'hierarchical_rules';
     }
 
-    // Hierarchical rules use on_terms_set exclusively. Base class process_post
-    // routes through RuleEngine which expects action/source_type keys.
+    // Not the applier — apply_to_post() is. The base process_post routes
+    // through RuleEngine, which expects action/source_type keys these flat
+    // Wireframe rules do not carry, so it must stay a no-op here.
     public function process_post($post_id, $post, $update) {}
 
-    public function on_terms_set($object_id, $terms, $tt_ids, $taxonomy, $append, $old_tt_ids) {
-        if ($this->processing) {
-            return;
+    /**
+     * Apply ONE hierarchical rule to ONE post. The whole of what `on_terms_set`
+     * used to do, minus the taxonomy filtering the hook signature gave it for
+     * free: a pass hands over rules, not taxonomies, so the rule's own
+     * `taxonomy` is the one to expand.
+     *
+     * Overrides the base default deliberately. That default routes through
+     * RuleEngine, which this handler has never used — inheriting it would have
+     * made the dispatcher call a no-op and silently retire the rule type.
+     *
+     * No re-entrancy boolean: the `private $processing` flag that used to wrap
+     * the write is deleted, because the pass lock already suppresses the
+     * `set_object_terms` this fires (#60, ADR 0003 decision 4).
+     *
+     * @param int   $post_id Post to apply to.
+     * @param array $rule    One enabled hierarchical rule.
+     * @return bool Whether the post's terms actually changed.
+     */
+    public function apply_to_post(int $post_id, array $rule): bool {
+        if (!$this->should_process_post($post_id, $rule)) {
+            return false;
         }
 
-        foreach ($this->get_rules_for_taxonomy($taxonomy) as $rule) {
-            if ($this->should_process_post($object_id, $rule)) {
-                $this->apply_rule((int) $object_id, $taxonomy, $rule);
-            }
+        $taxonomy = $rule['taxonomy'] ?? '';
+        if ($taxonomy === '' || !taxonomy_exists($taxonomy)) {
+            return false;
         }
+
+        $before = $this->terms_fingerprint($post_id, $taxonomy);
+        $this->apply_rule($post_id, $taxonomy, $rule);
+
+        return $this->terms_fingerprint($post_id, $taxonomy) !== $before;
     }
 
     /**
@@ -87,9 +113,8 @@ class HierarchicalHandler extends UnifiedHandlerBase {
             return;
         }
 
-        $direction = $rule['hierarchy_direction'] ?? 'child_to_parent';
-        $depth     = $rule['inheritance_depth'] ?? 'all';
-        $expansion = $rule['expansion_behavior'] ?? 'smart';
+        [$direction, $expansion] = self::resolve_behavior($rule);
+        $depth                   = $rule['inheritance_depth'] ?? 'all';
 
         // Tentative user terms: what's on the post minus what we auto-added before.
         $user_terms = array_values(array_diff($current_terms, $prev_auto));
@@ -119,9 +144,101 @@ class HierarchicalHandler extends UnifiedHandlerBase {
             return;
         }
 
-        $this->processing = true;
         wp_set_object_terms($post_id, $final, $taxonomy);
-        $this->processing = false;
+    }
+
+    /**
+     * The five author-facing outcomes, mapped to the mechanism pair.
+     *
+     * @since 0.8.0
+     * @var array<string,array{0:string,1:string}> outcome => [direction, expansion]
+     */
+    private const BEHAVIOR_MAP = [
+        'ancestors'          => ['child_to_parent', 'never'],
+        'descendants_smart'  => ['parent_to_child', 'smart'],
+        'descendants_always' => ['parent_to_child', 'merge'],
+        'both_smart'         => ['both',            'smart'],
+        'both_always'        => ['both',            'merge'],
+    ];
+
+    /**
+     * Resolve a rule to the (direction, expansion) pair compute_expansion()
+     * takes.
+     *
+     * ### #16, settled in 0.8.0
+     *
+     * The config used to expose the mechanism directly: `hierarchy_direction`
+     * × `expansion_behavior`, nine combinations for six distinct outcomes.
+     * Two combinations spelled "ancestors only" (`child_to_parent` + any
+     * expansion, and `both` + `never`), and one — `parent_to_child` +
+     * `never` — did nothing whatsoever while looking like a configured rule.
+     * Authors picked mechanisms and got outcomes they had not predicted.
+     *
+     * One `inheritance_behavior` selector replaces both, with five options
+     * that ARE the five useful outcomes. Nothing downstream changed: this
+     * maps straight back onto the pair the expansion code already implements,
+     * which is why the collapse is a config change rather than a rewrite.
+     *
+     * A row saved before the collapse carries only the old pair, so that is
+     * the fallback — reading it exactly as before, defaults included. This is
+     * the RUNTIME half only, and it covers front-end and cron requests, which
+     * never reach the admin boot. The admin half is a real rewrite,
+     * `WireframeBootstrap::migrate_inheritance_behavior()`: Wireframe reads
+     * the settings option raw, so a row left un-migrated would render with the
+     * new select's default and be persisted as such on the next save. A
+     * read-time fallback alone would have silently converted rules.
+     *
+     * @since 0.8.0
+     * @param array $rule Rule configuration.
+     * @return array{0:string,1:string} [direction, expansion]
+     */
+    private static function resolve_behavior(array $rule): array {
+        $behavior = $rule['inheritance_behavior'] ?? '';
+
+        if (isset(self::BEHAVIOR_MAP[$behavior])) {
+            return self::BEHAVIOR_MAP[$behavior];
+        }
+
+        // Legacy row (or an unrecognised value): the mechanism pair as stored.
+        return [
+            $rule['hierarchy_direction'] ?? 'child_to_parent',
+            $rule['expansion_behavior'] ?? 'smart',
+        ];
+    }
+
+    /**
+     * The author-facing outcome a rule resolves to, for the row-title
+     * snapshot. Legacy rows are named by the outcome their stored mechanism
+     * pair produces, so a title never reads "(none)" for a working rule.
+     *
+     * @since 0.8.0
+     * @param array $rule Rule configuration.
+     * @return string One of BEHAVIOR_MAP's keys, or '' when the pair is the
+     *                degenerate parent_to_child + never (applies nothing).
+     */
+    public static function behavior_key(array $rule): string {
+        [$direction, $expansion] = self::resolve_behavior($rule);
+
+        foreach (self::BEHAVIOR_MAP as $key => $pair) {
+            if ($pair === [$direction, $expansion]) {
+                return $key;
+            }
+        }
+
+        // Combinations the five outcomes don't spell exactly: 'always' is a
+        // synonym of 'merge' downstream, and child_to_parent ignores its
+        // expansion entirely.
+        if ($direction === 'child_to_parent') {
+            return 'ancestors';
+        }
+        if ($expansion === 'always') {
+            return $direction === 'both' ? 'both_always' : 'descendants_always';
+        }
+        if ($direction === 'both') {
+            return 'ancestors';
+        }
+
+        return '';
     }
 
     /**
@@ -228,18 +345,10 @@ class HierarchicalHandler extends UnifiedHandlerBase {
         }
     }
 
-    protected function get_rules_for_taxonomy(string $taxonomy): array {
-        $matching = [];
-
-        foreach ($this->get_enabled_rules() as $rule_id => $rule) {
-            if (($rule['taxonomy'] ?? '') === $taxonomy) {
-                $rule['id'] = $rule_id;
-                $matching[] = $rule;
-            }
-        }
-
-        return $matching;
-    }
+    // get_rules_for_taxonomy() lived here until 0.8.0. It selected this
+    // handler's rules by the taxonomy the `set_object_terms` hook reported;
+    // with the hook gone, a pass hands over one rule at a time and the rule's
+    // own `taxonomy` is the only one that matters. (#60)
 
     protected function validate_rule_internal($rule) {
         if (empty($rule['enabled'])) {
@@ -254,6 +363,15 @@ class HierarchicalHandler extends UnifiedHandlerBase {
         $tax_obj = get_taxonomy($taxonomy);
         if (!$tax_obj->hierarchical) {
             return false;
+        }
+
+        // `inheritance_behavior` (0.8.0, #16) supersedes the direction/expansion
+        // pair; validate whichever the row carries. resolve_behavior() falls
+        // back to the pair when the outcome key is absent OR unrecognised, so
+        // an unknown outcome must be rejected here rather than quietly running
+        // as child_to_parent.
+        if (isset($rule['inheritance_behavior']) && $rule['inheritance_behavior'] !== '') {
+            return isset(self::BEHAVIOR_MAP[$rule['inheritance_behavior']]);
         }
 
         $valid_directions = ['child_to_parent', 'parent_to_child', 'both'];
@@ -282,9 +400,8 @@ class HierarchicalHandler extends UnifiedHandlerBase {
 
         $prev_auto  = $this->get_auto_terms($post_id, $taxonomy);
         $user_terms = array_values(array_diff($current_ids, $prev_auto));
-        $direction  = $rule['hierarchy_direction'] ?? 'child_to_parent';
-        $depth      = $rule['inheritance_depth'] ?? 'all';
-        $expansion  = $rule['expansion_behavior'] ?? 'smart';
+        [$direction, $expansion] = self::resolve_behavior($rule);
+        $depth                   = $rule['inheritance_depth'] ?? 'all';
 
         $auto = $this->compute_expansion($user_terms, $taxonomy, $direction, $depth, $expansion);
 

@@ -16,11 +16,6 @@ if (!defined('ABSPATH')) {
 class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
 
     /**
-     * Track processing to prevent infinite loops
-     */
-    private $processing = false;
-
-    /**
      * Cache for term level calculations
      */
     private $term_level_cache = array();
@@ -34,29 +29,45 @@ class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
     }
 
     /**
-     * Initialize hooks
+     * Pure applier: no hooks (#60).
+     *
+     * Two registrations lived here until 0.8.0 — `set_object_terms` p5 and
+     * `acf/save_post` p15 — and the p5 was itself an ordering device, chosen to
+     * land before the hierarchical handler's p10. That is the ordering the
+     * author now expresses in the rule list, so encoding it in a priority as
+     * well would make it unchangeable. `TermDispatcher` owns the trigger union.
      */
-    protected function init_hooks() {
-        // Hook with high priority to run before hierarchical handler
-        add_action('set_object_terms', array($this, 'on_terms_set'), 5, 6);
+    protected function init_hooks() {}
 
-        // Hook into ACF field updates
-        add_action('acf/save_post', array($this, 'on_acf_save_post'), 15);
-    }
-
-    // Intentional no-op (not a forgotten implementation). Level restrictions
-    // fire via on_terms_set / on_acf_save_post; the base process_post routes
-    // through RuleEngine, which this handler does not use. (The redundant
-    // TaxonomyManager on_post_save loop that used to call this was removed in the
-    // Phase-3 teardown; process_existing_posts is the only remaining caller.)
+    // Not the applier — apply_to_post() is. The base process_post routes
+    // through RuleEngine, which this handler does not use.
     public function process_post($post_id, $post, $update) {}
 
     /**
-     * Bulk-apply primitive (#31). Delegates to apply_level_restrictions for one
-     * rule + post, gated by the post-type check. Guards $processing so the
-     * wp_set_object_terms it fires doesn't re-enter on_terms_set. Returns whether
-     * the post's terms actually changed (a post already within the restriction is
-     * a no-op → false), so the bulk count reflects posts pruned (#31).
+     * Apply ONE level-restriction rule to ONE post. The whole of what both
+     * hooks used to do.
+     *
+     * ORDER MATTERS INSIDE HERE. The ACF pass runs first and touches only the
+     * FIELD; the native pass then restricts the post's live terms, which by
+     * then include anything ACF's own sync wrote off the back of that field.
+     * Reversing them would restrict the native side against a pre-ACF set.
+     * Neither half replaces the taxonomy wholesale — see
+     * process_acf_level_restrictions() for why that mattered enough to change.
+     *
+     * Recomputes from live state (`apply_level_restrictions` reads the post's
+     * current terms), which is what makes it correct to run whether or not a
+     * term write provoked this pass. The old `set_object_terms` path narrowed
+     * on the ADDED terms and returned early when nothing was added — right for
+     * a hook, wrong for a pass: an earlier rule's write is exactly the case
+     * this must catch, and it arrives with no "added" delta of its own.
+     *
+     * No re-entrancy boolean: the deleted `private $processing` guarded the
+     * handler against its own `wp_set_object_terms`, which the pass lock now
+     * absorbs (#60, ADR 0003 decision 4).
+     *
+     * @param int   $post_id Post to apply to.
+     * @param array $rule    One enabled level-restriction rule.
+     * @return bool Whether the post's terms actually changed.
      */
     public function apply_to_post(int $post_id, array $rule): bool {
         if (!$this->should_process_post($post_id, $rule)) {
@@ -66,130 +77,42 @@ class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
         if ($taxonomy === '' || !taxonomy_exists($taxonomy)) {
             return false;
         }
-        $before = $this->terms_fingerprint($post_id, $taxonomy);
-        $this->processing = true;
-        try {
-            $this->apply_level_restrictions($post_id, $taxonomy, $rule);
-        } finally {
-            $this->processing = false;
+        if (!get_post($post_id)) {
+            return false;
         }
+
+        $before = $this->terms_fingerprint($post_id, $taxonomy);
+
+        $this->process_acf_level_restrictions($post_id, $taxonomy, $rule);
+        $this->apply_level_restrictions($post_id, $taxonomy, $rule);
+
         return $this->terms_fingerprint($post_id, $taxonomy) !== $before;
     }
 
     /**
-     * Handle terms being set on an object
-     */
-    public function on_terms_set($object_id, $terms, $tt_ids, $taxonomy, $append, $old_tt_ids) {
-        if ($this->processing) {
-            return;
-        }
-        
-        $post = get_post($object_id);
-        if (!$post) {
-            return;
-        }
-        
-        $enabled_rules = $this->get_enabled_rules();
-        
-        foreach ($enabled_rules as $rule) {
-            if ($rule['taxonomy'] !== $taxonomy) {
-                continue;
-            }
-
-            if (!$this->should_process_post($object_id, $rule)) {
-                continue;
-            }
-
-            // Reset even if a downstream hook/filter throws, so later rules in
-            // this request aren't silently skipped by a stuck guard (mirrors the
-            // propagation handler's try/finally).
-            $this->processing = true;
-            try {
-                $this->process_term_level_restrictions($object_id, $taxonomy, $tt_ids, $old_tt_ids, $rule);
-            } finally {
-                $this->processing = false;
-            }
-        }
-    }
-    
-    /**
-     * AC v7 reapply seam (SPEC §V2/§V6). Delegates to the gated on_acf_save_post
-     * — the apply path AC v7's update_field() bypasses.
-     */
-    public function reapply_for_post(int $post_id): void {
-        $this->on_acf_save_post($post_id);
-    }
-
-    /**
-     * Handle ACF field saves
-     */
-    public function on_acf_save_post($post_id) {
-        if ($this->processing || !is_numeric($post_id)) {
-            return;
-        }
-        
-        $post = get_post($post_id);
-        if (!$post) {
-            return;
-        }
-        
-        $enabled_rules = $this->get_enabled_rules();
-
-        foreach ($enabled_rules as $rule) {
-            if (!$this->should_process_post($post_id, $rule)) {
-                continue;
-            }
-
-            // Set the reentrancy guard (mirrors on_terms_set): process_acf_level_restrictions
-            // calls wp_set_object_terms, which re-fires set_object_terms -> on_terms_set.
-            // Without this the handler re-enters and runs a second (idempotent but
-            // wasteful) restriction pass. try/finally so a downstream throw can't
-            // leave the guard stuck for later rules in this request.
-            $this->processing = true;
-            try {
-                // Check if this taxonomy has ACF fields that might have been updated
-                $this->process_acf_level_restrictions($post_id, $rule['taxonomy'], $rule);
-            } finally {
-                $this->processing = false;
-            }
-        }
-    }
-    
-    /**
-     * Process term level restrictions when terms are set
-     */
-    private function process_term_level_restrictions($post_id, $taxonomy, $new_tt_ids, $old_tt_ids, $rule) {
-        // Get term IDs from term_taxonomy IDs
-        $new_term_ids = $this->convert_tt_ids_to_term_ids($new_tt_ids, $taxonomy);
-        $old_term_ids = $this->convert_tt_ids_to_term_ids($old_tt_ids ?? array(), $taxonomy);
-        
-        // Find newly added terms
-        $added_terms = array_diff($new_term_ids, $old_term_ids);
-        
-        if (empty($added_terms)) {
-            return;
-        }
-        
-        // Process level restrictions for newly added terms
-        $final_terms = $this->calculate_restricted_terms($new_term_ids, $taxonomy, $rule);
-        
-        // Apply the restricted terms if they're different
-        if ($final_terms !== $new_term_ids) {
-            wp_set_object_terms($post_id, $final_terms, $taxonomy);
-            
-            $this->debug_log(
-                sprintf('Applied level restrictions to post %d for taxonomy %s', $post_id, $taxonomy),
-                array(
-                    'original_terms' => $new_term_ids,
-                    'restricted_terms' => $final_terms,
-                    'removed_terms' => array_diff($new_term_ids, $final_terms)
-                )
-            );
-        }
-    }
-    
-    /**
-     * Process ACF level restrictions
+     * Restrict the post's ACF taxonomy FIELDS in one taxonomy.
+     *
+     * ### It no longer writes native terms (#60)
+     *
+     * It used to finish with `wp_set_object_terms($post_id, $restricted_terms,
+     * $taxonomy)` — a REPLACE of the whole taxonomy with whatever survived
+     * restricting the ACF field's value. That was defensible while this only
+     * ran from `acf/save_post`, where the field WAS the authoritative source
+     * for the save in hand. Inside an ordered pass it is not: this method now
+     * runs on every pass, so that write would replace terms an earlier rule
+     * had just added — destroying them rather than pruning them, and doing it
+     * on a rule whose claim is *restricting*, which prunes what violates a
+     * constraint and nothing else.
+     *
+     * The native side is not lost, because `apply_level_restrictions()` runs
+     * straight after this and restricts the post's LIVE terms under the same
+     * rule. A term the field dropped either syncs natively through ACF, or is
+     * pruned there on its own merits, or is a term this rule has no complaint
+     * about — and in the last case the old write removed it anyway.
+     *
+     * @param int    $post_id  Post to restrict.
+     * @param string $taxonomy Taxonomy slug.
+     * @param array  $rule     Rule configuration.
      */
     private function process_acf_level_restrictions($post_id, $taxonomy, $rule) {
         // Value-independent discovery (0.6.x ACF B-sweep, #41): resolve fields
@@ -212,9 +135,6 @@ class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
                 // ACF reference row (see set_acf_taxonomy_value docblock).
                 $this->set_acf_taxonomy_value($post_id, $field['key'], $restricted_terms);
 
-                // Update native taxonomy terms
-                wp_set_object_terms($post_id, $restricted_terms, $taxonomy);
-
                 $this->debug_log(
                     sprintf('Applied ACF level restrictions to post %d for taxonomy %s', $post_id, $taxonomy),
                     array('field' => $field['name'], 'restricted_terms' => $restricted_terms)
@@ -224,21 +144,51 @@ class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
     }
     
     /**
-     * Calculate restricted terms based on hierarchical levels
+     * Calculate restricted terms based on hierarchical levels.
+     *
+     * Two steps, in this order: the mode decides which terms survive, then
+     * `include_ancestors` — if set — adds back the parent chain of whatever
+     * survived.
+     *
+     * ### `include_ancestors` has ONE meaning as of 0.8.0 (#32)
+     *
+     * It used to branch on the mode and mean two different things:
+     * additive in `deepest_only`, and in `one_per_level` a suppression of the
+     * `remove_conflicting_ancestors()` pass. That second meaning was a no-op
+     * in every case — `one_per_level` has already reduced the set to at most
+     * one term per level by the time the pass runs, and the pass only dropped
+     * a term whose ancestor sat on a level holding MORE than one term, which
+     * by then can never be true. So the flag did nothing at all in that mode
+     * while the UI claimed otherwise.
+     *
+     * Redefined to the additive meaning uniformly, which is the one that was
+     * real, and applied in all three modes. `shallowest_only` therefore gains
+     * behaviour it did not have: asking to keep ancestors of terms selected
+     * for being shallowest does pull in still-shallower terms, and that is
+     * what the author asked for.
+     *
+     * The change was free rather than breaking: level restriction runs on the
+     * test site only (CLAUDE.md live-rule-type rule), so no stored rule
+     * needed migrating. Config side: TermRulesConfig::level_restriction_subfields().
+     *
+     * @param int[]  $term_ids Term IDs currently on the post.
+     * @param string $taxonomy Taxonomy slug.
+     * @param array  $rule     Rule configuration.
+     * @return int[] Terms that survive the restriction.
      */
     private function calculate_restricted_terms($term_ids, $taxonomy, $rule) {
         if (empty($term_ids)) {
             return $term_ids;
         }
-        
+
         $restriction_mode = $rule['restriction_mode'] ?? 'one_per_level';
         $include_ancestors = !empty($rule['include_ancestors']);
-        
+
         // Group terms by their hierarchical level
         $terms_by_level = $this->group_terms_by_level($term_ids, $taxonomy);
-        
+
         $final_terms = array();
-        
+
         if ($restriction_mode === 'one_per_level') {
             // Keep only one term per level (prefer the last one added/most specific)
             foreach ($terms_by_level as $level => $level_terms) {
@@ -249,26 +199,22 @@ class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
             // Keep only terms from the deepest level
             $max_level = max(array_keys($terms_by_level));
             $final_terms = $terms_by_level[$max_level];
-            
-            // If including ancestors, add ancestors of the deepest terms
-            if ($include_ancestors) {
-                foreach ($final_terms as $term_id) {
-                    $ancestors = get_ancestors($term_id, $taxonomy);
-                    $final_terms = array_merge($final_terms, $ancestors);
-                }
-            }
         } elseif ($restriction_mode === 'shallowest_only') {
             // Keep only terms from the shallowest level
             $min_level = min(array_keys($terms_by_level));
             $final_terms = $terms_by_level[$min_level];
         }
-        
-        // Remove ancestors that conflict with the restriction rules
-        if (!$include_ancestors && $restriction_mode === 'one_per_level') {
-            $final_terms = $this->remove_conflicting_ancestors($final_terms, $taxonomy);
+
+        // One meaning, every mode: keep the lineage of whatever survived.
+        // Iterate a snapshot — the ancestors being added are not themselves
+        // walked again (get_ancestors already returns the full chain).
+        if ($include_ancestors) {
+            foreach (array_values($final_terms) as $term_id) {
+                $final_terms = array_merge($final_terms, get_ancestors($term_id, $taxonomy));
+            }
         }
-        
-        return array_unique($final_terms);
+
+        return array_values(array_unique($final_terms));
     }
     
     /**
@@ -318,68 +264,24 @@ class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
         return $level;
     }
     
+    // remove_conflicting_ancestors() lived here until 0.8.0. It ran only on
+    // the `one_per_level` + !include_ancestors path and could not remove
+    // anything on it: the mode had already reduced the set to one term per
+    // level, and the method only dropped a term whose ancestor sat on a level
+    // holding more than one. Deleted with the flag's second meaning (#32) —
+    // see calculate_restricted_terms().
+
+    // convert_tt_ids_to_term_ids() lived here until 0.8.0. Its only caller was
+    // process_term_level_restrictions(), which existed to turn the
+    // `set_object_terms` hook's term_taxonomy_ids into term IDs and diff them
+    // against the old set. A pass carries no such delta — it recomputes from
+    // live state — so both went with the hook. (#60)
+
     /**
-     * Remove ancestors that conflict with level restrictions
-     */
-    private function remove_conflicting_ancestors($term_ids, $taxonomy) {
-        $terms_to_keep = array();
-        $terms_by_level = $this->group_terms_by_level($term_ids, $taxonomy);
-        
-        foreach ($terms_by_level as $level => $level_terms) {
-            foreach ($level_terms as $term_id) {
-                $ancestors = get_ancestors($term_id, $taxonomy);
-                
-                // Check if any ancestors are in the same level restriction
-                $has_conflicting_ancestor = false;
-                foreach ($ancestors as $ancestor_id) {
-                    $ancestor_level = $this->get_term_level($ancestor_id, $taxonomy);
-                    if (isset($terms_by_level[$ancestor_level]) && 
-                        count($terms_by_level[$ancestor_level]) > 1) {
-                        $has_conflicting_ancestor = true;
-                        break;
-                    }
-                }
-                
-                if (!$has_conflicting_ancestor) {
-                    $terms_to_keep[] = $term_id;
-                }
-            }
-        }
-        
-        return $terms_to_keep;
-    }
-    
-    /**
-     * Convert term_taxonomy IDs to term IDs
-     */
-    private function convert_tt_ids_to_term_ids($tt_ids, $taxonomy) {
-        if (empty($tt_ids)) {
-            return array();
-        }
-        
-        global $wpdb;
-        
-        $tt_ids_sql = implode(',', array_map('absint', $tt_ids));
-        
-        $term_ids = $wpdb->get_col($wpdb->prepare(
-            "SELECT term_id FROM {$wpdb->term_taxonomy} 
-             WHERE term_taxonomy_id IN ($tt_ids_sql) 
-             AND taxonomy = %s",
-            $taxonomy
-        ));
-        
-        return array_map('absint', $term_ids);
-    }
-    
-    /**
-     * Apply level restrictions to one existing post.
+     * Restrict the post's NATIVE terms in one taxonomy to what the rule allows.
      *
-     * Per-post bulk-apply primitive. NOT currently wired: post-migration the
-     * base process_existing_posts() drives bulk via process_post(), which is a
-     * no-op here (V4) — so the "process existing posts" tool is inert for this
-     * handler, same as every hook-driven unified handler since 0.4.0. The
-     * systemic fix (base routes bulk through an apply_to_post() primitive each
-     * handler implements) will call this. Kept ready, not dead. See issue.
+     * Reads the post's current terms rather than any delta, which is what makes
+     * it correct at any point in a pass, including after another rule wrote.
      */
     private function apply_level_restrictions($post_id, $taxonomy, $rule) {
         $current_terms = wp_get_object_terms($post_id, $taxonomy, array('fields' => 'ids'));

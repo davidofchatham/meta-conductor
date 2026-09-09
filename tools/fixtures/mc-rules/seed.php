@@ -120,17 +120,23 @@ $log( 'schema registered (ACF ' . ( $mc_have_acf ? 'present' : 'ABSENT — scala
 //
 // Every upsert below fires save_post / set_object_terms / acf/save_post. With
 // a prior seed's rules live, handlers would rewrite terms mid-seed and the
-// resulting state wouldn't match the manifest. Empty the rule arrays first;
-// step 6 writes the baselines back.
+// resulting state wouldn't match the manifest. Empty the rules first; step 6
+// writes the baselines back.
+//
+// Rules live in the two ordered kind lists since #66 — emptying the legacy
+// type-keyed arrays would silence nothing, because nothing reads them.
 // ---------------------------------------------------------------------------
 $mc_option   = 'bws_meta_conductor_settings';
 $mc_settings = get_option( $mc_option, array() );
 if ( ! is_array( $mc_settings ) ) {
 	$mc_settings = array();
 }
+$mc_storage_class = '\BWS\MetaConductor\Storage\OptionRuleStorage';
 foreach ( array_keys( $mc_manifest['mc_rules'] ) as $mc_type ) {
-	$mc_settings[ $mc_type ] = array();
+	unset( $mc_settings[ $mc_type ] );
 }
+$mc_settings[ $mc_storage_class::KIND_TERM ]   = array();
+$mc_settings[ $mc_storage_class::KIND_FORMAT ] = array();
 update_option( $mc_option, $mc_settings );
 
 // The storage layer caches the option per-request; the handlers hold a live
@@ -353,16 +359,20 @@ foreach ( $mc_manifest['mc_rules'] as $mc_type => $mc_rules ) {
 	}
 }
 
-// Replace each seeded rule-type array wholesale (positional arrays don't merge
-// safely); leave every other key in the option — incl. rule types this
-// blueprint doesn't seed and globals like enable_logging — untouched.
+// Land the seeded rules in the ordered kind lists — the only shape storage
+// reads (#66). The fan-in produces the documented KIND_TYPES order; every
+// other key in the option — globals like enable_logging — is untouched.
+$mc_lists = $mc_storage_class::fan_in( $mc_rules_out );
+
 $mc_settings = get_option( $mc_option, array() );
 if ( ! is_array( $mc_settings ) ) {
 	$mc_settings = array();
 }
-foreach ( $mc_rules_out as $mc_type => $mc_rules ) {
-	$mc_settings[ $mc_type ] = $mc_rules;
+foreach ( array_keys( $mc_manifest['mc_rules'] ) as $mc_type ) {
+	unset( $mc_settings[ $mc_type ] );
 }
+$mc_settings[ $mc_storage_class::KIND_TERM ]   = $mc_lists[ $mc_storage_class::KIND_TERM ];
+$mc_settings[ $mc_storage_class::KIND_FORMAT ] = $mc_lists[ $mc_storage_class::KIND_FORMAT ];
 update_option( $mc_option, $mc_settings );
 if ( isset( $mc_storage ) && method_exists( $mc_storage, 'clear_cache' ) ) {
 	$mc_storage->clear_cache();

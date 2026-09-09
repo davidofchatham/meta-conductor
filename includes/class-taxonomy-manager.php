@@ -18,6 +18,8 @@ use BWS\MetaConductor\Conversion\ConversionManager;
 use BWS\MetaConductor\Conversion\ConversionCli;
 use BWS\MetaConductor\Storage\StorageFactory;
 use BWS\MetaConductor\Core\AcfWriteQueue;
+use BWS\MetaConductor\Core\TermDispatcher;
+use BWS\MetaConductor\Core\FormatDispatcher;
 
 // Prevent direct access
 if (!defined('ABSPATH')) {
@@ -30,11 +32,6 @@ class TaxonomyManager {
      * Single instance of the class
      */
     private static $instance = null;
-    
-    /**
-     * Settings instance
-     */
-    private $settings;
     
     /**
      * Handler instances
@@ -52,6 +49,20 @@ class TaxonomyManager {
      * @var AcfWriteQueue|null
      */
     private $acf_write_queue = null;
+
+    /**
+     * Term dispatcher — sole entry point to term-rule execution (#60).
+     *
+     * @var TermDispatcher|null
+     */
+    private $term_dispatcher = null;
+
+    /**
+     * Format dispatcher — sole entry point to format-rule execution (#64).
+     *
+     * @var FormatDispatcher|null
+     */
+    private $format_dispatcher = null;
 
     /**
      * Get singleton instance
@@ -82,6 +93,34 @@ class TaxonomyManager {
      */
     public function get_acf_write_queue() {
         return $this->acf_write_queue;
+    }
+
+    /**
+     * Get the term dispatcher (#60).
+     *
+     * Exposed for the same reason as get_acf_write_queue(): a behaviour sweep
+     * needs to provoke a pass directly (`run_pass`/`drain_post`) rather than
+     * wait for the shutdown drain, which WP-CLI reaches only at the very end of
+     * a run.
+     *
+     * @return TermDispatcher|null
+     */
+    public function get_term_dispatcher() {
+        return $this->term_dispatcher;
+    }
+
+    /**
+     * Get the format dispatcher (#64).
+     *
+     * Exposed for the same reason as get_term_dispatcher(). Note that a sweep
+     * wanting the REAL sequence must drive the TERM dispatcher's drain — the
+     * format pass runs inside its per-entity step, and calling this one alone
+     * skips the term pass whose writes a `{term:TAX}` pattern reads.
+     *
+     * @return FormatDispatcher|null
+     */
+    public function get_format_dispatcher() {
+        return $this->format_dispatcher;
     }
 
     /**
@@ -140,24 +179,55 @@ class TaxonomyManager {
      * Initialize handlers
      */
     private function init_handlers() {
-        $this->settings = new Settings();
-
+        // Handlers take no constructor argument: they read rules through
+        // StorageFactory, not through an injected settings object. The
+        // `Settings` compat shell that used to be passed here died with the
+        // last legacy handler (#55).
         $this->handlers = array(
-			'hierarchical' => new HierarchicalHandler($this->settings),
-			'propagation' => new PropagationHandler($this->settings),
-			'related' => new RelatedHandler($this->settings),
-			'time_based' => new TimeBasedHandler($this->settings),
-			'related_post_terms' => new RelatedPostTermsHandler($this->settings),
-			'hierarchical_level_restriction' => new HierarchicalLevelRestrictionHandler($this->settings),
-			'title_slug' => new TitleSlugHandler($this->settings),
+			'hierarchical' => new HierarchicalHandler(),
+			'propagation' => new PropagationHandler(),
+			'related' => new RelatedHandler(),
+			'time_based' => new TimeBasedHandler(),
+			'related_post_terms' => new RelatedPostTermsHandler(),
+			'hierarchical_level_restriction' => new HierarchicalLevelRestrictionHandler(),
+			'title_slug' => new TitleSlugHandler(),
         );
+
+        // The two dispatchers (#60, #64) — the sole entry points to rule
+        // execution. Built BEFORE the ACF write queue because the queue marks
+        // entities dirty on the term one: a bare update_field() fires none of
+        // its triggers, so the queue is how that write reaches a pass.
+        //
+        // CONSTRUCTION ORDER NOW CARRIES NO EXECUTION MEANING AT ALL, which is
+        // the point. Two dependencies used to live in the handler array above
+        // and both are dead: propagation-before-hierarchical (#62 — both types
+        // are converted, the pass runs them in authored order, and propagation
+        // no longer writes a child that a hierarchical hook then expands out of
+        // band), and title-slug-LAST (#64 — the only thing that used to order
+        // term writes before title reads, now expressed by the term dispatcher
+        // running the format pass inside its own drain step). The format
+        // dispatcher is constructed first only because the term one takes it.
+        $this->format_dispatcher = new FormatDispatcher($this->handlers);
+        $this->format_dispatcher->register();
+
+        $this->term_dispatcher = new TermDispatcher($this->handlers, $this->format_dispatcher);
+        $this->term_dispatcher->register();
+
+        // Time-based's daily sweep (#61). It lives HERE rather than in
+        // TimeBasedHandler::init_hooks() because a converted handler must
+        // register nothing at all — that is the bright line H13 holds, and
+        // "nothing except the one hook that only enqueues" is not a line a
+        // static check can hold. The sweep is a provocation like bulk apply,
+        // not an apply: it selects the posts an expired rule still holds, marks
+        // them dirty on the dispatcher above and drains ordered passes.
+        add_action('bws_taxonomy_manager_cleanup', array($this->handlers['time_based'], 'cleanup_expired_rules'));
 
         // AC-agnostic ACF write queue (#42). Watches ACF's own write filter, so
         // EVERY write that bypasses the save_post family — AC v7 inline/bulk,
         // bare update_field(), REST — reapplies the handlers afterwards. This
         // generalises the #37 AC-only fallback below, which now just asks the
         // queue to flush one post immediately.
-        $this->acf_write_queue = new AcfWriteQueue($this->handlers);
+        $this->acf_write_queue = new AcfWriteQueue($this->handlers, $this->term_dispatcher);
         $this->acf_write_queue->register();
 
         // Admin Columns v7 immediate flush (#37). Gate on the ACP_VERSION
@@ -460,7 +530,7 @@ class TaxonomyManager {
 		}
 		
 		// Create a temporary handler instance for preview
-		$handler = new HierarchicalLevelRestrictionHandler($this->settings);
+		$handler = new HierarchicalLevelRestrictionHandler();
 		
 		// Simulate the restriction logic
 		$restricted_terms = $this->simulate_level_restrictions($term_ids, $taxonomy, $restriction_mode, $include_ancestors);
@@ -711,13 +781,6 @@ class TaxonomyManager {
 		return $summary;
 	}
     
-    /**
-     * Get settings instance
-     */
-    public function get_settings() {
-        return $this->settings;
-    }
-
 	/**
 	 * Check system requirements and compatibility
 	 */
@@ -771,51 +834,6 @@ class TaxonomyManager {
 			'handlers_summary' => $handlers_summary,
 			'requirements' => $requirements
 		);
-	}
-
-	/**
-	 * Get statistics for dashboard widget
-	 */
-	public function get_dashboard_stats() {
-		$stats = array(
-			'total_rules' => 0,
-			'active_rules' => 0,
-			'handlers' => array()
-		);
-		
-		foreach ($this->handlers as $handler_type => $handler) {
-			$rules = $handler->get_enabled_rules();
-			$handler_stats = array(
-				'total_rules' => count($rules),
-				'active_rules' => count($rules)
-			);
-			
-			// Special handling for time-based rules
-			if ($handler_type === 'time_based' && method_exists($handler, 'get_active_rules')) {
-				$handler_stats['active_rules'] = count($handler->get_active_rules());
-			}
-			
-			$stats['handlers'][$handler_type] = $handler_stats;
-			$stats['total_rules'] += $handler_stats['total_rules'];
-			$stats['active_rules'] += $handler_stats['active_rules'];
-		}
-		
-		return $stats;
-	}
-	
-	/**
-	 * AJAX handler for getting dashboard stats
-	 */
-	public function ajax_get_dashboard_stats() {
-		check_ajax_referer('bws_meta_conductor_nonce', 'nonce');
-
-		if (!current_user_can('manage_options')) {
-			wp_die(__('You do not have sufficient permissions to access this page.', 'meta-conductor'));
-		}
-
-		$stats = $this->get_dashboard_stats();
-
-		wp_send_json_success($stats);
 	}
 
 	// ========================================
