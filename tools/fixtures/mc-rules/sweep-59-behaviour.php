@@ -8,7 +8,7 @@
  * — through Wireframe's real sanitize, the row-title snapshot and the save-time
  * projection — is a rule the handler finds and resolves tokens against.
  *
- * Three acts:
+ * Four acts:
  *
  *   1. **Author.** Two rows on the SAME post type are pushed through
  *      `RepeaterField::sanitize` + both save-payload filters and written to the
@@ -26,6 +26,11 @@
  *      context, and compared against expectations computed independently from
  *      WordPress. #59 moves the config, not the engine, so these must be
  *      identical to before — which is exactly why they are asserted.
+ *   4. **The duplicate-insertion guard** (added post-#59, with the 0.8.1 fix).
+ *      The guard may only measure a token against a base the rule's output
+ *      actually keeps. Both branches are exercised, `slug_keeps_default()` is
+ *      pinned per slug mode, and the flip-flop a from-scratch pattern used to
+ *      produce is reproduced as two passes over the same pattern.
  *
  * NON-MUTATING by construction: no post is ever saved, so nothing renames a
  * `post_name` and the §7 restore gotcha does not apply. The settings option is
@@ -215,6 +220,54 @@ try {
     // {default_slug} — the token the seeded fixture rule leans on.
     $note('{default_slug} derives from the computed title',
         $token('{default_slug}', 'slug') === sanitize_title($post->post_title));
+
+    // ── 4. The duplicate-insertion guard, and the rules it may NOT measure. ──
+    //
+    // The guard drops a token whose value already appears in the base, so a
+    // `{default_title}`/prefix-slug rule cannot double its own suffix on a
+    // re-pass. It is measured against a base that only SOME rules keep: a
+    // pattern that composes from scratch discards it, and guarding there
+    // deletes exactly the tokens that resolved correctly last time — the title
+    // flip-flops between the composed form and its own leftovers on every save.
+
+    $guarded = static fn(string $pattern, string $context, string $base, bool $guard)
+        => $resolve->invoke($handler, $pattern, $post_id, $post, $context, $base, $guard);
+
+    $pub_year = get_the_date('Y', $post);
+    $year_base = $pub_year . ' Something';
+
+    $note('the guard drops a token already present in the base',
+        $guarded('{pub_year}', 'slug', $year_base, true) === '');
+    $note('with the guard off the same token resolves',
+        $guarded('{pub_year}', 'slug', $year_base, false) === $pub_year);
+
+    // Which side of that a rule lands on is slug_keeps_default()'s call.
+    $keeps = new ReflectionMethod(TitleSlugHandler::class, 'slug_keeps_default');
+    $keeps->setAccessible(true);
+    $note('prefix mode keeps the base, so it is guarded',
+        $keeps->invoke($handler, ['slug_mode' => 'prefix', 'slug_pattern' => '{pub_year}']) === true);
+    $note('suffix mode keeps the base, so it is guarded',
+        $keeps->invoke($handler, ['slug_mode' => 'suffix', 'slug_pattern' => '{pub_year}']) === true);
+    $note('replace discards the base, so it is NOT guarded',
+        $keeps->invoke($handler, ['slug_mode' => 'replace', 'slug_pattern' => '{pub_year}']) === false);
+    $note('replace that names {default_slug} folds the base back in, so it IS guarded',
+        $keeps->invoke($handler, ['slug_mode' => 'replace', 'slug_pattern' => '{default_slug}-x']) === true);
+
+    // The flip-flop itself, in the two passes that produce it. A from-scratch
+    // pattern's second pass sees its OWN output as the base — every token is a
+    // substring of it — so a guard there empties the result. Unguarded, the
+    // second pass reproduces the first, which is what idempotency means here.
+    $compose  = '{pub_year} {pub_day}';
+    $expected = $pub_year . ' ' . get_the_date('j', $post);
+
+    $pass1_on  = $guarded($compose, 'title', $post->post_title, true);
+    $pass1_off = $guarded($compose, 'title', $post->post_title, false);
+    $note('a from-scratch pattern resolves every token when unguarded (' . $pass1_off . ')',
+        $pass1_off === $expected);
+    $note('guarded, a second pass over its own output collapses',
+        $guarded($compose, 'title', $pass1_on === '' ? $expected : $pass1_on, true) === '');
+    $note('unguarded, a second pass over its own output reproduces it',
+        $guarded($compose, 'title', $pass1_off, false) === $expected);
 
     // Nothing above saved a post, so no slug was rewritten.
     $note('the subject\'s post_name is untouched',

@@ -108,6 +108,7 @@ require dirname(__DIR__) . '/autoload.php';
 
 use BWS\MetaConductor\Admin\WireframeBootstrap;
 use BWS\MetaConductor\Admin\Config\FormatRulesConfig;
+use BWS\MetaConductor\Admin\Config\TermRulesConfig;
 use BWS\MetaConductor\Admin\Config\WireframeConfig;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 use Wireframe\Framework\Conditions;
@@ -394,6 +395,39 @@ $check('and the ordered format list follows it',
 // an author those buttons are coming rather than missing.
 $check('the deferred Preview/Apply note is still on the tab',
     ($section['fields'][1]['id'] ?? '') === 'title_slug_actions_note');
+
+// --- No bare {token} in any description, on EITHER ordered list. ------------
+//
+// Wireframe runs a field's `description` through the same interpolator that
+// fills the repeater's row title: `/\{(\w+)\}/g` against the row's own values,
+// with an unmatched name replaced by the empty string. A description that
+// documents a pattern token therefore loses it silently — `{default_slug}`
+// rendered as "the pattern contains ." — and one that happens to name a
+// SUBFIELD would render that row's stored value instead, which is worse.
+//
+// A token with a colon (`{meta:x}`, `{term:tax}`) is not `\w+` and is safe, as
+// are `placeholder` and the `html` field's `content`, neither of which is
+// interpolated. Only the `\w+` form is asserted here, because only that form
+// is what the interpolator can see.
+$bare_token = '/\{(\w+)\}/';
+$descriptions = [];
+$walk = function (array $fields, string $where) use (&$walk, &$descriptions) {
+    foreach ($fields as $f) {
+        if (isset($f['description'])) {
+            $descriptions[] = [$where . ':' . ($f['id'] ?? '?'), (string) $f['description']];
+        }
+        foreach ($f['args']['subfields'] ?? [] as $sub) {
+            $walk([$sub], $where);
+        }
+    }
+};
+$walk($section['fields'], 'format');
+$walk(TermRulesConfig::section()['fields'], 'term');
+
+$check('both ordered lists offered descriptions to check', count($descriptions) > 10);
+foreach ($descriptions as [$where, $text]) {
+    $check("no bare {token} in the $where description", !preg_match($bare_token, $text));
+}
 
 // --- Report. ----------------------------------------------------------------
 

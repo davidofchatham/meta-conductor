@@ -344,7 +344,16 @@ class FormatRulesConfig {
                 'id'          => 'slug_mode',
                 'type'        => 'select',
                 'label'       => __('Slug mode', 'meta-conductor'),
-                'description' => __('How the slug pattern combines with the default slug. Only used when a slug pattern is set. Automatically forced to Replace when the pattern contains {default_slug}.', 'meta-conductor'),
+                // NO BARE `{token}` IN A DESCRIPTION. Wireframe interpolates a
+                // field's description against the row's own values before it
+                // renders (`/\{(\w+)\}/g`), and an unmatched name is replaced
+                // with the empty string — so `{default_slug}` here rendered as
+                // "…when the pattern contains ." A token carrying a colon
+                // (`{meta:x}`) is not `\w+` and survives, which is why the other
+                // descriptions are unaffected. `placeholder` and the `html`
+                // field's `content` are passed through raw and are safe. H12
+                // fails on any bare `{word}` in a description on either config.
+                'description' => __('How the slug pattern combines with the default slug. Only used when a slug pattern is set. Automatically forced to Replace when the pattern contains the default-slug token.', 'meta-conductor'),
                 'default'     => 'prefix',
                 'columns'     => 12,
                 'conditions'  => $gate,

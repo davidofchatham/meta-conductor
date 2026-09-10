@@ -106,7 +106,8 @@ class TitleSlugHandler extends UnifiedHandlerBase {
         $default_title = $current_title;
         if (!empty($rule['title_pattern'])) {
             $default_title = $this->resolve_default_title($post_id, $post, $rule);
-            $new_title = $this->resolve_pattern($rule['title_pattern'], $post_id, $post, 'title', $default_title);
+            $new_title = $this->resolve_pattern($rule['title_pattern'], $post_id, $post, 'title', $default_title,
+                                                $this->pattern_uses_default_title($rule['title_pattern']));
             if ($new_title === '') $new_title = $current_title; // never blank a title
         }
 
@@ -116,7 +117,8 @@ class TitleSlugHandler extends UnifiedHandlerBase {
         $new_slug = null;
         $default_slug = sanitize_title($new_title);
         if (!empty($rule['slug_pattern'])) {
-            $built = $this->resolve_pattern($rule['slug_pattern'], $post_id, $post, 'slug', $new_title);
+            $built = $this->resolve_pattern($rule['slug_pattern'], $post_id, $post, 'slug', $new_title,
+                                            $this->slug_keeps_default($rule));
             $new_slug = $this->apply_slug_mode($built, $default_slug, $rule['slug_mode'] ?? 'prefix', $rule['slug_pattern'] ?? '');
         } elseif (!empty($rule['title_pattern'])) {
             $new_slug = $default_slug; // implicit: derive slug from computed title
@@ -225,12 +227,29 @@ class TitleSlugHandler extends UnifiedHandlerBase {
     // -------------------------------------------------------------------------
 
     protected function resolve_pattern(string $pattern, int $post_id, object $post,
-                                       string $context, string $computed_title = ''): string {
+                                       string $context, string $computed_title = '',
+                                       bool $guard_duplicates = true): string {
         $default_title = $computed_title;
         $default_slug  = sanitize_title($computed_title);
         $segments = $this->parse_pattern_segments($pattern);
-        $out = $this->build_from_segments($segments, $post_id, $post, $context, $default_title, $default_slug);
+        $out = $this->build_from_segments($segments, $post_id, $post, $context, $default_title, $default_slug,
+                                          $guard_duplicates);
         return $this->trim_pattern_output($out, $context);
+    }
+
+    /**
+     * Whether this rule's slug output still carries the base slug, and so needs
+     * the duplicate-insertion guard.
+     *
+     * `prefix`/`suffix` concatenate `$default_slug` onto the built string, so a
+     * token that already appears in it would double. `replace` discards the base
+     * entirely — UNLESS the pattern names `{default_slug}` itself, which
+     * `apply_slug_mode()` treats as replace precisely because the token folds the
+     * base back in.
+     */
+    private function slug_keeps_default(array $rule): bool {
+        return ($rule['slug_mode'] ?? 'prefix') !== 'replace'
+               || str_contains((string) ($rule['slug_pattern'] ?? ''), '{default_slug}');
     }
 
     private function parse_pattern_segments(string $pattern): array {
@@ -250,7 +269,7 @@ class TitleSlugHandler extends UnifiedHandlerBase {
 
     private function build_from_segments(array $segments, int $post_id, object $post,
                                           string $context, string $default_title,
-                                          string $default_slug): string {
+                                          string $default_slug, bool $guard_duplicates = true): string {
         $result = '';
         $pending_literal = '';
 
@@ -262,7 +281,7 @@ class TitleSlugHandler extends UnifiedHandlerBase {
             }
 
             $value = $this->resolve_token($seg['token'], $post_id, $post, $context,
-                                          $default_title, $default_slug);
+                                          $default_title, $default_slug, $guard_duplicates);
 
             if ($value !== '') {
                 $result .= $pending_literal . $seg['literal'] . $value;
@@ -282,7 +301,7 @@ class TitleSlugHandler extends UnifiedHandlerBase {
 
     private function resolve_token(string $token, int $post_id, object $post,
                                     string $context, string $default_title,
-                                    string $default_slug): string {
+                                    string $default_slug, bool $guard_duplicates = true): string {
         // {default_title} and {default_slug} — never apply duplicate-insertion guard.
         if ($token === 'default_title') return $default_title;
         if ($token === 'default_slug')  return $default_slug;
@@ -308,14 +327,22 @@ class TitleSlugHandler extends UnifiedHandlerBase {
 
         if ($value === '') return '';
 
-        // Duplicate-insertion guard: skip token if its value already appears in the base title/slug.
-        if ($context === 'title' && $default_title !== ''
-            && mb_stripos($default_title, $value) !== false) {
-            return '';
-        }
-        if ($context === 'slug' && $default_slug !== ''
-            && str_contains($default_slug, sanitize_title($value))) {
-            return '';
+        // Duplicate-insertion guard: skip a token whose value already appears in the
+        // base title/slug — but ONLY when the base survives into the output. A
+        // pattern that composes the title from scratch (`{meta:first} {meta:last}`
+        // with no `{default_title}`) discards the base, so measuring against it
+        // deletes exactly the tokens that already resolved correctly last pass:
+        // "David Mitchell" -> "Mr. III" -> "David Mitchell", flip-flopping on every
+        // save. The caller decides; see slug_keeps_default() for the slug half.
+        if ($guard_duplicates) {
+            if ($context === 'title' && $default_title !== ''
+                && mb_stripos($default_title, $value) !== false) {
+                return '';
+            }
+            if ($context === 'slug' && $default_slug !== ''
+                && str_contains($default_slug, sanitize_title($value))) {
+                return '';
+            }
         }
 
         // In slug context, sanitize all token output.
@@ -646,12 +673,14 @@ class TitleSlugHandler extends UnifiedHandlerBase {
         $new_title = $post->post_title;
         if (!empty($rule['title_pattern'])) {
             $default_title = $this->resolve_default_title($post_id, $post, $rule);
-            $new_title = $this->resolve_pattern($rule['title_pattern'], $post_id, $post, 'title', $default_title);
+            $new_title = $this->resolve_pattern($rule['title_pattern'], $post_id, $post, 'title', $default_title,
+                                                $this->pattern_uses_default_title($rule['title_pattern']));
         }
         $new_slug = $post->post_name;
         $default_slug = sanitize_title($new_title);
         if (!empty($rule['slug_pattern'])) {
-            $built = $this->resolve_pattern($rule['slug_pattern'], $post_id, $post, 'slug', $new_title);
+            $built = $this->resolve_pattern($rule['slug_pattern'], $post_id, $post, 'slug', $new_title,
+                                            $this->slug_keeps_default($rule));
             $new_slug = $this->apply_slug_mode($built, $default_slug, $rule['slug_mode'] ?? 'prefix', $rule['slug_pattern'] ?? '');
         } elseif (!empty($rule['title_pattern'])) {
             $new_slug = $default_slug;
