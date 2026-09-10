@@ -115,8 +115,10 @@ try {
         array_column($saved[$KIND], 'name') === ['Sweep 59 first', 'Sweep 59 second']);
     $note('the save writes no type-keyed copy (#66)',
         !array_key_exists('title_slug_rules', $saved));
+    // The title LEADS with the row's list position (#65) — this assertion
+    // predates that and expected the bare schema.
     $note('the row title was snapshot onto the list row',
-        ($saved[$KIND][0]['row_title'] ?? '') === 'Sweep 59 first (MC Items)');
+        ($saved[$KIND][0]['row_title'] ?? '') === '#1 Sweep 59 first (MC Items)');
 
     // What the handler reads — the derived kind-list path, on a fresh cache.
     $read = $storage->get_rules('title_slug_rules');
@@ -152,6 +154,11 @@ try {
     $saved = $save_rows([$second, $first]);
     $note('the reorder is stored',
         array_column($saved[$KIND], 'name') === ['Sweep 59 second', 'Sweep 59 first']);
+    // The position is BAKED, so the same save that reorders must renumber. H12
+    // snapshots a list directly; this is the only place the real save path does.
+    $note('the baked positions follow the reorder',
+        array_column($saved[$KIND], 'row_title')
+            === ['#1 Sweep 59 second (MC Items)', '#2 Sweep 59 first (MC Items)']);
     $note('dragging a rule up makes it the one that applies',
         ($winner($post)['name'] ?? '') === 'Sweep 59 second');
 
@@ -253,21 +260,37 @@ try {
     $note('replace that names {default_slug} folds the base back in, so it IS guarded',
         $keeps->invoke($handler, ['slug_mode' => 'replace', 'slug_pattern' => '{default_slug}-x']) === true);
 
+    // The title half of that decision is pattern_uses_default_title(), and it is
+    // what apply_to_data()/preview_rule() feed the guard flag from — so assert
+    // the WIRING, not just the flag's semantics. Without this the sweep proves
+    // the guard parameter behaves and says nothing about which value production
+    // hands it, which is exactly where the flip-flop lived.
+    $uses_dt = new ReflectionMethod(TitleSlugHandler::class, 'pattern_uses_default_title');
+    $uses_dt->setAccessible(true);
+
+    $compose  = '{pub_year} {pub_day}';
+    $expected = $pub_year . ' ' . get_the_date('j', $post);
+
+    $note('a from-scratch title pattern discards the base, so it is NOT guarded',
+        $uses_dt->invoke($handler, $compose) === false);
+    $note('a title pattern naming {default_title} folds the base in, so it IS guarded',
+        $uses_dt->invoke($handler, '{default_title} — {pub_year}') === true);
+
     // The flip-flop itself, in the two passes that produce it. A from-scratch
     // pattern's second pass sees its OWN output as the base — every token is a
     // substring of it — so a guard there empties the result. Unguarded, the
     // second pass reproduces the first, which is what idempotency means here.
-    $compose  = '{pub_year} {pub_day}';
-    $expected = $pub_year . ' ' . get_the_date('j', $post);
+    // The flag is DERIVED here, so a regression in either half fails this.
+    $compose_guard = $uses_dt->invoke($handler, $compose);
 
     $pass1_on  = $guarded($compose, 'title', $post->post_title, true);
-    $pass1_off = $guarded($compose, 'title', $post->post_title, false);
+    $pass1_off = $guarded($compose, 'title', $post->post_title, $compose_guard);
     $note('a from-scratch pattern resolves every token when unguarded (' . $pass1_off . ')',
         $pass1_off === $expected);
     $note('guarded, a second pass over its own output collapses',
         $guarded($compose, 'title', $pass1_on === '' ? $expected : $pass1_on, true) === '');
     $note('unguarded, a second pass over its own output reproduces it',
-        $guarded($compose, 'title', $pass1_off, false) === $expected);
+        $guarded($compose, 'title', $pass1_off, $compose_guard) === $expected);
 
     // Nothing above saved a post, so no slug was rewritten.
     $note('the subject\'s post_name is untouched',

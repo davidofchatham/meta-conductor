@@ -101,28 +101,10 @@ class TitleSlugHandler extends UnifiedHandlerBase {
         $current_title = (string) ($data['post_title'] ?? '');
         $current_slug  = (string) ($data['post_name'] ?? '');
 
-        // --- Title ---
-        $new_title     = $current_title; // default: unchanged
-        $default_title = $current_title;
-        if (!empty($rule['title_pattern'])) {
-            $default_title = $this->resolve_default_title($post_id, $post, $rule);
-            $new_title = $this->resolve_pattern($rule['title_pattern'], $post_id, $post, 'title', $default_title,
-                                                $this->pattern_uses_default_title($rule['title_pattern']));
-            if ($new_title === '') $new_title = $current_title; // never blank a title
-        }
-
-        // --- Slug ---
-        // {default_slug} is always sanitize_title($new_title) in the current pass —
-        // NEVER read from post_name. Slug idempotency derives from title idempotency.
-        $new_slug = null;
-        $default_slug = sanitize_title($new_title);
-        if (!empty($rule['slug_pattern'])) {
-            $built = $this->resolve_pattern($rule['slug_pattern'], $post_id, $post, 'slug', $new_title,
-                                            $this->slug_keeps_default($rule));
-            $new_slug = $this->apply_slug_mode($built, $default_slug, $rule['slug_mode'] ?? 'prefix', $rule['slug_pattern'] ?? '');
-        } elseif (!empty($rule['title_pattern'])) {
-            $new_slug = $default_slug; // implicit: derive slug from computed title
-        }
+        $resolved      = $this->resolve_rule_output($rule, $post_id, $post, $current_title);
+        $new_title     = $resolved['title'];
+        $new_slug      = $resolved['slug'];
+        $default_title = $resolved['default_title'];
 
         if ($new_slug !== null) {
             $new_slug = $this->make_unique_slug($new_slug, $post_id, $post, $rule);
@@ -160,6 +142,51 @@ class TitleSlugHandler extends UnifiedHandlerBase {
         }
 
         return $data;
+    }
+
+    /**
+     * Resolve one rule's title and slug for one post, writing nothing.
+     *
+     * The ONE encoding of the pattern -> title -> slug chain. `apply_to_data()`
+     * writes what this returns and `preview_rule()` displays it, so a dry run
+     * and a real pass cannot report different things — including which side of
+     * the duplicate-insertion guard each pattern lands on, which is a single
+     * decision here rather than one per caller. Each caller keeps only its own
+     * tail: slug uniqueness and the idempotency meta on the write path, neither
+     * of which a preview wants.
+     *
+     * @param array  $rule          One title/slug rule.
+     * @param int    $post_id       Entity being resolved.
+     * @param object $post          Post-shaped object the tokens read.
+     * @param string $current_title Title to fall back to when the rule is silent.
+     * @return array{title: string, slug: ?string, default_title: string}
+     *         `slug` is null when the rule has no slug opinion at all.
+     */
+    private function resolve_rule_output(array $rule, int $post_id, object $post, string $current_title): array {
+        // --- Title ---
+        $new_title     = $current_title; // default: unchanged
+        $default_title = $current_title;
+        if (!empty($rule['title_pattern'])) {
+            $default_title = $this->resolve_default_title($post_id, $post, $rule);
+            $new_title = $this->resolve_pattern($rule['title_pattern'], $post_id, $post, 'title', $default_title,
+                                                $this->pattern_uses_default_title($rule['title_pattern']));
+            if ($new_title === '') $new_title = $current_title; // never blank a title
+        }
+
+        // --- Slug ---
+        // {default_slug} is always sanitize_title($new_title) in the current pass —
+        // NEVER read from post_name. Slug idempotency derives from title idempotency.
+        $new_slug     = null;
+        $default_slug = sanitize_title($new_title);
+        if (!empty($rule['slug_pattern'])) {
+            $built = $this->resolve_pattern($rule['slug_pattern'], $post_id, $post, 'slug', $new_title,
+                                            $this->slug_keeps_default($rule));
+            $new_slug = $this->apply_slug_mode($built, $default_slug, $rule['slug_mode'] ?? 'prefix', $rule['slug_pattern'] ?? '');
+        } elseif (!empty($rule['title_pattern'])) {
+            $new_slug = $default_slug; // implicit: derive slug from computed title
+        }
+
+        return ['title' => $new_title, 'slug' => $new_slug, 'default_title' => $default_title];
     }
 
     /**
@@ -509,7 +536,12 @@ class TitleSlugHandler extends UnifiedHandlerBase {
         if ($candidate === '' || $candidate === $submitted) return null;
 
         // Verify: re-apply full rule with candidate — result must match submitted.
-        $verified = $this->resolve_pattern($pattern, $post_id, $post, 'title', $candidate);
+        // Guarded explicitly rather than by the parameter default: this branch is
+        // only reached when $pattern names {default_title} (see $dt_pos above), so
+        // the candidate base DOES survive into the output and the production
+        // resolve would have guarded it too. Reproducing that is the whole point
+        // of the check — an unguarded verify would never match a guarded apply.
+        $verified = $this->resolve_pattern($pattern, $post_id, $post, 'title', $candidate, true);
         return ($verified === $submitted) ? $candidate : null;
     }
 
@@ -669,22 +701,11 @@ class TitleSlugHandler extends UnifiedHandlerBase {
         $post    = $posts[0];
         $post_id = $post->ID;
 
-        // Dry-run: resolve without writing.
-        $new_title = $post->post_title;
-        if (!empty($rule['title_pattern'])) {
-            $default_title = $this->resolve_default_title($post_id, $post, $rule);
-            $new_title = $this->resolve_pattern($rule['title_pattern'], $post_id, $post, 'title', $default_title,
-                                                $this->pattern_uses_default_title($rule['title_pattern']));
-        }
-        $new_slug = $post->post_name;
-        $default_slug = sanitize_title($new_title);
-        if (!empty($rule['slug_pattern'])) {
-            $built = $this->resolve_pattern($rule['slug_pattern'], $post_id, $post, 'slug', $new_title,
-                                            $this->slug_keeps_default($rule));
-            $new_slug = $this->apply_slug_mode($built, $default_slug, $rule['slug_mode'] ?? 'prefix', $rule['slug_pattern'] ?? '');
-        } elseif (!empty($rule['title_pattern'])) {
-            $new_slug = $default_slug;
-        }
+        // Dry-run: the same resolution the pass runs, minus the write and the
+        // uniqueness suffix (which depends on what else is stored at the time).
+        $resolved  = $this->resolve_rule_output($rule, $post_id, $post, (string) $post->post_title);
+        $new_title = $resolved['title'];
+        $new_slug  = $resolved['slug'] ?? $post->post_name;
 
         return [
             'post_id'       => $post_id,

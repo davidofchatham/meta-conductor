@@ -13,6 +13,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
   Posts saved while such a rule was active hold the mangled title and slug until re-saved, `post_name` included — so a published post's permalink will change. Check the affected post type before and after.
 
+- **A rule preview can no longer show a blank title.** The pass has always kept the existing title when a pattern resolves to nothing; the preview resolved the same pattern down a second code path that did not, so it could display an empty title the save would never write. Both now run one resolution.
+
 - **The *Slug mode* help text no longer swallows the token it names.** It read "Automatically forced to Replace when the pattern contains ." — Wireframe interpolates a description against the row's own values, and `{default_slug}` matched nothing. Reworded, and a static check now fails on any bare `{word}` in a description on either rule list. Tokens carrying a colon (`{meta:x}`, `{term:tax}`) and the *Available tokens* table were never affected.
 
 ## [0.8.0] — 2026-09-09
