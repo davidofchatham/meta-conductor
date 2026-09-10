@@ -332,7 +332,7 @@ class TitleSlugHandler extends UnifiedHandlerBase {
         // pattern that composes the title from scratch (`{meta:first} {meta:last}`
         // with no `{default_title}`) discards the base, so measuring against it
         // deletes exactly the tokens that already resolved correctly last pass:
-        // "David Mitchell" -> "Mr. III" -> "David Mitchell", flip-flopping on every
+        // "John Smith" -> "Mr. III" -> "John Smith", flip-flopping on every
         // save. The caller decides; see slug_keeps_default() for the slug half.
         if ($guard_duplicates) {
             if ($context === 'title' && $default_title !== ''
