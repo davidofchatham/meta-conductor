@@ -5,6 +5,16 @@ All notable changes to Meta Conductor are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] — 2026-09-10
+
+### Fixed
+
+- **A title/slug pattern that composes from scratch no longer eats its own tokens.** A rule whose pattern builds the whole title out of fields — `{meta:name_pre} {meta:name_first} {meta:name_last} {meta:name_post}`, with no `{default_title}` — was measuring every token against the title already on the post and dropping any that matched. On a post titled *David Mitchell* that deleted the two tokens that had resolved correctly and kept the two that had not, saving *Mr. III*; the next save measured against *Mr. III* and put *David Mitchell* back. The check exists so a rule that folds the existing title back into itself cannot double its own prefix or suffix on a re-pass, and it still runs for those rules. It now runs only when the base actually survives into the output: a title pattern that names `{default_title}`, or a slug in `prefix`/`suffix` mode, or a `replace` slug that names `{default_slug}`. A `replace` slug pattern that names no `{default_slug}` is no longer measured against anything.
+
+  Posts saved while such a rule was active hold the mangled title and slug. They correct themselves the next time the post is saved — including the `post_name`, so a published post's permalink will change. Check the affected post type before and after.
+
+- **The *Slug mode* help text no longer swallows the token it names.** It read "Automatically forced to Replace when the pattern contains ." — Wireframe interpolates a field's description against the row's own values before rendering it, and `{default_slug}` matched nothing, so it was replaced with nothing. Reworded, and a static check now fails on any bare `{word}` in a description on either rule list. Tokens carrying a colon (`{meta:x}`, `{term:tax}`) were never affected, nor was the *Available tokens* reference table.
+
 ## [0.8.0] — 2026-09-09
 
 **Phase 4: rules are an ordered list, and that order is what runs.** The settings page is three tabs instead of five, and no tab holds a per-type section any more. Every rule that writes terms is a row in one repeater; every rule that formats a title or slug is a row in another. Each row has a *Rule type* select at the top, type-specific settings that show and hide on it, and drag-to-reorder. A central dispatcher then executes those lists — one full ordered pass per post, term rules first, then format rules — on every path a post can change by. Drag a rule above another and the result changes; that is the point.

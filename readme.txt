@@ -4,7 +4,7 @@ Tags: taxonomy, meta, acf, automation, hierarchical
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 0.8.0
+Stable tag: 0.8.1
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -36,6 +36,12 @@ Rules are authored as two ordered lists — one for rules that write terms, one 
 
 == Upgrade Notes ==
 
+= 0.8.1 =
+
+Fixes a title/slug rule whose pattern builds the whole title out of fields and never names `{default_title}`. Such a rule was dropping any token whose value already appeared in the post's current title, so the result alternated between the composed title and its own leftovers on each save.
+
+**Posts saved while such a rule was active hold a mangled title and slug.** Re-saving each one corrects both — the `post_name` included, so a published post's permalink changes and WordPress leaves no redirect behind. Review the affected post type before and after.
+
 = 0.8.0 =
 
 Rules now run as two ordered lists driven by a central dispatcher, instead of each rule type acting on its own hooks. Nothing you have authored needs re-saving, and the migration is automatic. Four behavior changes are worth checking before you update.
@@ -55,6 +61,9 @@ Full detail, including the two post-status corrections and the storage migration
 See CHANGELOG.md in the plugin directory for the full release log.
 
 == Upgrade Notice ==
+
+= 0.8.1 =
+Fixes a title/slug pattern built entirely from fields dropping tokens that matched the existing title. Posts saved under the broken rule need one re-save to correct, which also changes their slug.
 
 = 0.8.0 =
 ⚠️ Behavior changes: Bidirectional related rules remove their target whenever no trigger term is present. Two ACF-reference rules in one taxonomy now compose by list order, not merged. Title/slug rules run after save and also on term changes — a published slug can be renamed, with no redirect.
