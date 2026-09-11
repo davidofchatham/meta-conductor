@@ -46,7 +46,7 @@ Wireframe binds **one `option_key` per page** (`Wireframe\App::boot(... 'pages' 
 - **The page is the unit of storage choice.** A rule type can't quietly defect to CPT mid-page — Wireframe submits the whole-page array in one REST write. Mixing stores within a page means splitting that one submit into "options write + CPT reconcile."
 - **To split storage, split pages** (`option_key` per page) — there is no other Wireframe-native way.
 
-> **⚠️ Splitting pages was considered and rejected as the answer (2026-08-13, [ADR 0003](adr/0003-ordered-rule-list-and-dispatcher.md)).** The mechanics above are accurate; the conclusion drawn from them was not. A 4-page split doesn't shrink the hot blob — Auto-Set & Restrict would host 6 of 7 rule types today and 10 of 12 eventually — and cutting further would have to cut *inside* the term group, which is exactly where rules interact and therefore the one place a storage boundary is harmful. Cross-type clobber is already dead (every handler writes via `OptionRuleStorage::save_rule()`, never a raw whole-option write); lost-update clobber is handled by the **version token** in the next section, which works at any page count. Outcome: **one page, three tabs**, and storage is one ordered list per **effect kind** (`term_rules`, `format_rules`). The real boundary is the effect kind, not the page. [config-pages-split plan](../.claude/plans/config-pages-split.md) is superseded.
+> **⚠️ Splitting pages was considered and rejected as the answer (2026-08-13, [ADR 0003](adr/0003-ordered-rule-list-and-dispatcher.md)).** The mechanics above are accurate; the conclusion drawn from them was not. A 4-page split doesn't shrink the hot blob — Auto-Set & Restrict would host 6 of 7 rule types today and 10 of 12 eventually — and cutting further would have to cut *inside* the term group, which is exactly where rules interact and therefore the one place a storage boundary is harmful. Cross-type clobber is already dead (every handler writes via `OptionRuleStorage::save_rule()`, never a raw whole-option write); lost-update clobber is handled by the **version token** in the next section, which works at any page count. Outcome: **one page, three tabs**, and storage is one ordered list per **effect kind** (`term_rules`, `format_rules`). The real boundary is the effect kind, not the page.
 
 ### CPT-under-Wireframe reconcile cost
 
@@ -80,7 +80,7 @@ Instead:
 - Put the varying value on the **entity** (user meta / ACF profile field, post meta).
 - Keep **one indirection rule**: *"apply the value in each entity's field `X`."*
 
-Result: rule count stays **O(1) in entities**; the per-entity data scales natively in `wp_usermeta` / `wp_postmeta` (indexed, one row per entity, no blob, no clobber). This dissolves the "unbounded accumulation → CPT" trigger for the whole class of per-entity rules. See [UBT merger plan](../.claude/plans/ubt-merger.md) for the worked example (per-user default terms).
+Result: rule count stays **O(1) in entities**; the per-entity data scales natively in `wp_usermeta` / `wp_postmeta` (indexed, one row per entity, no blob, no clobber). This dissolves the "unbounded accumulation → CPT" trigger for the whole class of per-entity rules. See [FW-8](future-work.md#fw-8--user_based_rules-user-based-term-setting--restriction) for the worked example (per-user default terms).
 
 ---
 
@@ -111,7 +111,7 @@ Splitting rules across more options would push the ceiling further out, but the 
 | `title_slug_rules` | Options *(reassess)* | Named patterns per post type; *can* accumulate, but single-author + bounded-in-practice. Prior ROADMAP marked CPT/Phase-4 — **re-open**: no concurrent authoring; blast radius covered by the version token, not by a page split. CPT only if a real draft/test lifecycle is wanted. |
 | `time_based_rules` | Options *(reassess)* | Schedule rules *can* multiply, but single-author. Same re-open as title_slug. |
 | `field_transformation_rules` (new) | TBD | Named computed-field recipes; could be numerous. Run the criteria when designed — likely Options + indirection unless a per-recipe lifecycle is needed. |
-| `user_based_rules` (UBT) | **Options** | **Changed from CPT.** Role/user = *target*, not owner → single author, no concurrent writes. Per-user explosion solved by [indirection](#the-indirection-escape-hatch) (profile field + one rule), not N rules. CPT's entity chrome (author/date/trash) explicitly unwanted. Wireframe panel preferred over CPT editor. See [UBT merger plan](../.claude/plans/ubt-merger.md). |
+| `user_based_rules` (UBT) | **Options** | **Changed from CPT.** Role/user = *target*, not owner → single author, no concurrent writes. Per-user explosion solved by [indirection](#the-indirection-escape-hatch) (profile field + one rule), not N rules. CPT's entity chrome (author/date/trash) explicitly unwanted. Wireframe panel preferred over CPT editor. See [FW-8](future-work.md#fw-8--user_based_rules-user-based-term-setting--restriction). |
 
 **As of Phase 4, the row above is not the unit of storage.** Rules are stored as one ordered list per **effect kind** — `term_rules` and `format_rules` — with each row carrying its own `type`. The per-type reasoning still governs *whether a type belongs in Options at all*; it no longer implies a per-type array. See [ADR 0003](adr/0003-ordered-rule-list-and-dispatcher.md).
 

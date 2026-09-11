@@ -1001,7 +1001,7 @@ gated IN, dependent synced.
 Phase 4 wired it, and closing #23 in the term-repeater's terms is what
 actually landed. Documented gap, not silently fixed here (a new format-config
 subfield is feature work, out of scope for a gate-verification ticket) —
-candidate for docs/future-features.md if it should happen later.
+candidate for docs/future-work.md if it should happen later.
 
 **Restore gotcha (new).** `mc_restore()` rewrites RULES and resets named
 subjects' TERMS — it does not touch POST FIELDS, and §67d's step empties

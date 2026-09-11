@@ -92,7 +92,7 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
    UI warns as much. Any nested-field support must match by field KEY or reconcile
    bare↔qualified. The AC v7 `ac/editing/saved` reapply fallback (#37) matches
    `get_meta_key()` — correct for top-level, revisit if nested is ever supported.
-   (#37; future-features.md → grouped relationship fields)
+   (#37; future-work.md → FW-19)
 
 7. **Storage write results must propagate; cache must mirror storage.**
    `update_option` returns false for BOTH a no-op-equal write AND a real failure
@@ -639,7 +639,7 @@ Replaces a ~2,000-line hand-rolled god-class settings file plus 1,700-line jQuer
 
 ### Wireframe quirks worth knowing
 
-- **No client-side field type extension API** (stock Wireframe). Custom field types declared via `wp-wireframe/field_types` filter handle sanitize/validate server-side but don't render in React. Use stock field types only — *unless* we ship our own Wireframe fork that adds the JS registry (Gap A), which is buildable and fork-releasable: see [.claude/plans/wireframe-js-field-type-extension-blocker.md](../.claude/plans/wireframe-js-field-type-extension-blocker.md).
+- **No client-side field type extension API** (stock Wireframe). Custom field types declared via `wp-wireframe/field_types` filter handle sanitize/validate server-side but don't render in React. Use stock field types only — *unless* we ship our own Wireframe fork that adds the JS registry (Gap A), which is buildable and fork-releasable: see [FW-23](future-work.md#fw-23--client-side-custom-field-types).
 - **Dot-notation field IDs are skipped by Sanitizer** ([src/Framework/Sanitizer.php](../vendor/tdrayson/wp-wireframe/src/Framework/Sanitizer.php)). Don't use `field.subkey` syntax for save fields — use repeaters with subfields instead.
 
 Fixed upstream in 1.0.6 (no longer quirks): single-page `App::boot()` honors `menu_slug` (#5); subfield-level `conditions` evaluate client-side (#13); admin-screen body class anchors on the `_page_{menu_slug}` suffix instead of a substring (#6).

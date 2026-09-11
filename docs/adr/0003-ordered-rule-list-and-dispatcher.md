@@ -5,7 +5,7 @@ supersedes: partially supersedes ADR 0002
 
 # One ordered rule list per effect kind, executed by a central dispatcher
 
-[ADR 0002](0002-cross-rule-composition.md) settled *what* cross-rule composition means — cascade suppressed, order as the composition semantics, three-value ownership, collisions detected not resolved. It deferred *how*, and it assumed a settings UI it never checked against. Inspecting the vendored WP Wireframe 1.0.6 turned two of its assumptions into hard constraints, and a pass over `docs/future-features.md` falsified a third.
+[ADR 0002](0002-cross-rule-composition.md) settled *what* cross-rule composition means — cascade suppressed, order as the composition semantics, three-value ownership, collisions detected not resolved. It deferred *how*, and it assumed a settings UI it never checked against. Inspecting the vendored WP Wireframe 1.0.6 turned two of its assumptions into hard constraints, and a pass over the future-work tracker falsified a third.
 
 We settle the implementation as four decisions:
 

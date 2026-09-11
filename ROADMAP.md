@@ -190,7 +190,7 @@ Reframes the existing ACF "Data Conversion" page as a general-purpose Migration 
 - Distinct from `related_post_terms_rules`: same data source (ACF relationship field), different output (post parent vs taxonomy terms)
 - New rule type `acf_relationship_rules` → Options storage
 
-**Date-Based Taxonomy Updater** — *folded into the in-flight Temporal State Rule (0.x), not a separate type.* The per-post ACF-date comparison this described is now an Options-storage extension of `time_based_rules`. See docs/future-features.md → `time_based_rules`.
+**Date-Based Taxonomy Updater** — *folded into the in-flight Temporal State Rule (0.x), not a separate type.* The per-post ACF-date comparison this described is now an Options-storage extension of `time_based_rules`. See [FW-3](docs/future-work.md#fw-3--time_based_rules-temporal-state-rule).
 
 **Field Transformation Rules** (from existing snippet)
 - Combines multiple fields into a formatted output field (e.g. athlete stats → bio string, date + time → sortable datetime). Must also work inside ACF repeater rows (per-row compose/write).
@@ -209,10 +209,10 @@ Reframes the existing ACF "Data Conversion" page as a general-purpose Migration 
 - **Both variants are term rules.** The auto-set variant writes terms (`wp_set_object_terms($post_id, $term_ids, $taxonomy, false)` in the source plugin — replace, i.e. *owning*). The lock/restrict variant is **not** a separate effect: its effect target is terms and its **claim** is *restricting*, exactly like level-restriction. Filtering what the admin UI offers is the surface, not the effect. See CONTEXT.md → *restricting-the-editor is still a restricting claim*.
 - **Consequence: UBT is ordered against the other term rules.** It sits in the same ordered list and the same **pass**, so "does the user default win over the propagated parent term?" becomes an author-visible position rather than an emergent accident. It also participates in the collision warning.
 - **Basis is ambient but needs no sweep** — the acting user only matters at the instant of a write, so the dispatcher's `save_post` trigger is sufficient. Contrast Temporal, whose ambient "now" moves on its own. (CONTEXT.md → *Basis*.)
-- Stored in **options** (not CPT): role/user = *target*, not owner → single author. Per-user customization → **profile ACF field + one indirection rule**, not N per-user rules. See [ubt-merger plan](.claude/plans/ubt-merger.md), [storage-model.md](docs/storage-model.md).
+- Stored in **options** (not CPT): role/user = *target*, not owner → single author. Per-user customization → **profile ACF field + one indirection rule**, not N per-user rules. See [FW-8](docs/future-work.md#fw-8--user_based_rules-user-based-term-setting--restriction), [storage-model.md](docs/storage-model.md).
 - **Migration:** UBT CPT posts (`bws_user_term_rule`) → rows appended to `term_rules` with the appropriate `type` (dry-run). Note UBT carries its own `priority` field — map it onto **list position**, since position is now the ordering mechanism.
 - Port UBT rule-engine / applicator / cache / ACF-integration into an MC handler extending `UnifiedHandlerBase`, exposing `apply_to_post()` like every other handler — it registers **no hooks of its own** (the dispatcher owns them, per ADR 0003). Drop the UBT CPT editor in favor of the Wireframe panel.
-- ⚠️ **Type-key name unsettled**: `.claude/plans/ubt-merger.md` proposes `user_based_terms_rules`; `docs/future-features.md` and `docs/storage-model.md` say `user_based_rules`. Under the unified list this is a `type` value, not an option key — settle it when building.
+- ⚠️ **Type-key name unsettled**: the UBT merger plan proposes `user_based_terms_rules`; [FW-8](docs/future-work.md#fw-8--user_based_rules-user-based-term-setting--restriction) and [storage-model.md](docs/storage-model.md) say `user_based_rules`. Under the unified list this is a `type` value, not an option key — settle it when building.
 - Largest integration; tackle last.
 
 **End of phase**: Update CLAUDE.md
@@ -226,7 +226,7 @@ Reframes the existing ACF "Data Conversion" page as a general-purpose Migration 
 **Run every new rule type through it before implementing.**
 
 Key reassessments since the original inline framework (2026-06-23):
-- `user_based_rules` (UBT): **CPT → Options** — role/user is the *target*, not the owner → single author, no concurrent writes; per-user explosion solved by indirection (profile field + one rule). See [ubt-merger plan](.claude/plans/ubt-merger.md).
+- `user_based_rules` (UBT): **CPT → Options** — role/user is the *target*, not the owner → single author, no concurrent writes; per-user explosion solved by indirection (profile field + one rule). See [FW-8](docs/future-work.md#fw-8--user_based_rules-user-based-term-setting--restriction).
 - **Superseded 2026-08-13 ([ADR 0003](docs/adr/0003-ordered-rule-list-and-dispatcher.md)):** the storage boundary is the **effect kind**, not the Wireframe page — two ordered lists (`term_rules`, `format_rules`), lost-update clobber handled by a version token. The page split is abandoned, and with it both "storage choice is per Wireframe page" and the "CPT re-opened for `title_slug` / `time_based` under the split" reassessment. **CPT stays deferred for every type.**
 
 ---

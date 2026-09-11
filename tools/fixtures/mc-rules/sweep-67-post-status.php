@@ -35,7 +35,7 @@
  * closing #23 in the term-repeater's terms is what actually landed. Left as
  * a documented gap, not silently fixed here (that would be new format-config
  * feature work, out of scope for a gate-verification ticket) — see
- * docs/future-features.md if it should happen later.
+ * docs/future-work.md if it should happen later.
  *
  * Usage (one step per eval):
  *   wp eval-file .../sweep-67-post-status.php standard    # §67c

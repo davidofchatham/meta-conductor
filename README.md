@@ -14,7 +14,7 @@ See [readme.txt](readme.txt) — the plugin's own readme, and the canonical copy
 |---|---|
 | [readme.txt](readme.txt) | Features, requirements, install, upgrade notes. |
 | [docs/architecture.md](docs/architecture.md) | How the rule engine, handlers, storage, and Wireframe UI fit together. |
-| [docs/future-features.md](docs/future-features.md) | Ideas / planned / blocked features. Canonical list. |
+| [docs/future-work.md](docs/future-work.md) | Non-bug work: ideas, planned features, refactors, open questions. Canonical `FW-N` index. |
 | [ROADMAP.md](ROADMAP.md) | Phase plan, decisions, what comes next. |
 | [CHANGELOG.md](CHANGELOG.md) | Release log. |
 | [Issues](https://github.com/davidofchatham/meta-conductor/issues) | Bugs, refactors, and the spec for whatever feature is in flight. |

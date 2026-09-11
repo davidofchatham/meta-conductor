@@ -48,5 +48,5 @@ This closes three issues as a cluster: **#35** (propagation + hierarchical yield
 ## Deferred
 
 - **Rule-type names.** The current names conflate basis, effect and ownership into one string, which is why `hierarchical` (term graph) and `propagation` (post graph) read as near-synonyms, as do `related` (term↔term) and `related_post_terms` (post↔post). Renaming is deferred until the Effect axis has non-term values, so names can be composed from settled axes rather than minted twice.
-- **A sub-scope field for restricting rules** (e.g. "governs levels 3–4 only"). Today a level-restriction rule declares no sub-scope, so its reach is its whole taxonomy and it necessarily collides with any rule touching the same one. A sub-scope would let such pairs be made genuinely disjoint rather than merely warned about. Tracked in `docs/future-features.md`.
+- **A sub-scope field for restricting rules** (e.g. "governs levels 3–4 only"). Today a level-restriction rule declares no sub-scope, so its reach is its whole taxonomy and it necessarily collides with any rule touching the same one. A sub-scope would let such pairs be made genuinely disjoint rather than merely warned about. Tracked as [FW-12](../future-work.md#fw-12--sub-scope-field-for-restricting-rules).
 - **The write-lock's implementation home.** A Phase 4 implementation detail, not a modelling decision.
