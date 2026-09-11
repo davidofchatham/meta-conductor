@@ -4,6 +4,7 @@
 
 - **Bugs do NOT go here** → [GitHub Issues](https://github.com/davidofchatham/meta-conductor/issues). Issues hold bugs and anything an outsider is waiting on; everything else — enhancements, refactors, open design questions, testing debt, repo hygiene — lives here. See [docs/agents/issue-tracker.md](agents/issue-tracker.md) for the split.
 - **Detail lives in its home** — a private plan file, a [design-history](design-history/) document, or an [ADR](adr/). An item states only *that the work exists, what gates it, what it touches, where it stands, and where to read more*.
+- **This file is the only one allowed to cite a `.scratch/` or `.claude/` path.** Elsewhere such a link resolves for one person and dangles silently for every other reader, so `scripts/check-private-citations.sh` hard-fails on it in CI and exempts this file alone. Cite a live plan by its `FW-N` row here; cite a plan by path only once it is finished and lifted into [design-history](design-history/).
 - **Cross-refs use ids, never prose**, so a reworded item never orphans a reference. `FW-7` is an item here · `#7` is a GitHub issue · `<slug>/03` is a local ticket. A bare integer is ambiguous between all three.
 - **Ids are permanent.** A shipped or cut item's id retires to [Closed / retired](#closed--retired); it is never reused or reassigned.
 

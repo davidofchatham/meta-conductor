@@ -131,7 +131,7 @@ incl. a `related_post_terms` case ([line 156](includes/integrations/class-acf-in
   ([line 76](includes/integrations/class-acf-integration.php#L76)). NOTE: corrected below — most in-scope posts
   DO have ACF taxonomy fields, so this fires live alongside the handler (not the latent landmine first assumed).
 - **NOT a UBT dependency.** Checked `ubt-merger.md`: UBT brings its OWN
-  `class-bws-user-terms-acf-integration.php` ([ubt-merger.md:29/94](.claude/plans/ubt-merger.md#L29)); the
+  `class-bws-user-terms-acf-integration.php` (the UBT merger plan, [FW-8](../future-work.md#fw-8)); the
   "reuse ACF taxonomy-field integration" note refers to UBT's ported class, not MC's `AcfIntegration`.
   Severing MC's `related_post_terms` case costs UBT nothing.
 
@@ -178,7 +178,7 @@ engine (all 6 cases), not just `related_post_terms`. Two rule types are LIVE on 
 3. Also remove the now-dead `related_post_terms` reliance — handler is sole writer regardless.
 4. Engine-off verify happens in two stages (see Verify environments below) — kill-switch makes it reversible.
 5. After both stages clean → DELETE the engine wholesale (follow-up commit, end of Phase 3). Regression → flip
-   filter on, investigate the specific type. NOT a UBT dependency (UBT ships its own ACF class, [ubt-merger.md:29](.claude/plans/ubt-merger.md#L29)).
+   filter on, investigate the specific type. NOT a UBT dependency (UBT ships its own ACF class — the UBT merger plan, [FW-8](../future-work.md#fw-8)).
 
 ## Verify environments (two-stage, gated — grill 2026-06-23)
 

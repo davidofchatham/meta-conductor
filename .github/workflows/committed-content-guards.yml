@@ -1,0 +1,42 @@
+name: Committed-content guards
+
+# Tracked prose accretes -- docs/future-work.md, ROADMAP.md and CHANGELOG.md are
+# committed and edited continuously, and this repo is public. A rule that lives only
+# in prose fails silently; the guards here are rules that already failed that way and
+# became scanners. Each step names its own why, and each is paired with a step that
+# proves it still fails.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  guards:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # A committed file citing .scratch/ resolves for one person and fails silently
+      # for everyone else -- which is why 16 such citations sat dangling across five
+      # files here for months. See scripts/check-private-citations.sh.
+      - name: No committed file cites a private path
+        run: bash scripts/check-private-citations.sh
+
+      # A guard nobody has watched fail is a guard nobody knows still works. This one
+      # has no standing live fixture (the repo is clean by construction), so plant a
+      # violation and require the failure.
+      - name: Self-test -- citation guard must fail on a planted violation
+        run: |
+          # One line, escaped newlines: a multi-line quoted string here would have to
+          # sit at column 0 to keep its own formatting, which ENDS the YAML block
+          # scalar and makes the whole workflow unparseable -- reported as one red X
+          # rather than as a rule that did not run.
+          printf '\n<!-- ci-probe `.scratch/plans/ci-probe.md` -->\n' >> CONTEXT.md
+          if bash scripts/check-private-citations.sh > /dev/null 2>&1; then
+            git checkout CONTEXT.md
+            echo "::error::Citation guard PASSED on a planted violation; it is not working."
+            exit 1
+          fi
+          git checkout CONTEXT.md
+          echo "Citation guard correctly fails on a planted violation."

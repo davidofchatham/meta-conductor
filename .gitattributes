@@ -19,8 +19,12 @@
 /debug              export-ignore
 /tests              export-ignore
 /tools              export-ignore
+/scripts            export-ignore
 /plugins-to-integrate export-ignore
 /ROADMAP.md         export-ignore
 /CONTEXT.md         export-ignore
 /composer.json      export-ignore
 /composer.lock      export-ignore
+
+# Shell guards must stay LF — CRLF breaks bash on a Windows checkout.
+*.sh text eol=lf
