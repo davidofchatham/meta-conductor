@@ -23,7 +23,7 @@
 # hold the path, which is exactly what lets every other file be held to the rule.
 #
 # docs/design-history/ is NOT exempt, unlike the origin repo's frozen spec-history.
-# A plan is sanitised as part of being lifted there, and a lifted plan citing a
+# A plan is sanitized as part of being lifted there, and a lifted plan citing a
 # still-private sibling is the same dangling pointer one directory over.
 
 set -uo pipefail

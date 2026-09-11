@@ -34,7 +34,7 @@ Triage labels are the five canonical roles; see [triage-labels.md](triage-labels
 [docs/future-work.md](../future-work.md) is the single visible index of everything that is not a bug. It defines its own item shape, typed blockers, and lifecycle — read its preamble before adding a row. Two things matter from here:
 
 - It is the **one committed file allowed to cite a private `.scratch/` or `.claude/` path**; `scripts/check-private-citations.sh` hard-fails every other file for it. Cite a live plan by its `FW-N` row, never by path.
-- A finished plan **moves** into [docs/design-history/](../design-history/) and is sanitised on the way (this repo is public; the plans name testbed containers and client sites). An unbuilt plan is never lifted.
+- A finished plan **moves** into [docs/design-history/](../design-history/) and is sanitized on the way (this repo is public; the plans name testbed containers and client sites). An unbuilt plan is never lifted.
 
 ## Specs and build tickets: local files
 
