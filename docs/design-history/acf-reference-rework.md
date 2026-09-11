@@ -24,7 +24,7 @@ Remaining 8 findings + disposition (decided 2026-06-24):
   set_object_terms callback leaves `in_sync[id]=true` for the request → that post skipped after. → FIX NOW.
 - **#4 multi-level chain propagation** — A→B→C where B is dependent of A AND source of C: B's write is
   suppressed by its own in_sync guard, so C doesn't recompute that pass. → DOCUMENT as known limit (athletics
-  is 2-level). Noted in future-features; revisit if a 3-level chain appears.
+  is 2-level). Tracked as FW-10; revisit if a 3-level chain appears.
 - **#5 double-fire** save_post + acf/save_post both run sync_for_post per save → DEDUPE per request (guard).
 - **#6 spurious reverse-lookup every save** — push rule with no reverse field runs a meta_query on EVERY saved
   post (the cost half of #1; correctness already fixed by V13's skip). → FIX NOW: skip the candidate-dependent
@@ -47,7 +47,7 @@ Remaining 8 findings + disposition (decided 2026-06-24):
   target). A term ID belongs to exactly one taxonomy; `wp_set_object_terms` rejects foreign-taxonomy IDs.
   Dual source/target selector only ever works when source==target. Standalone script confirms: always
   same-taxonomy both ends (`school_year`→`school_year`, `teams`→`teams`). → **Collapse to one `taxonomy`
-  field.** (If true cross-tax is ever wanted, must copy by slug/name — out of scope, note in future-features.)
+  field.** (If true cross-tax is ever wanted, must copy by slug/name — out of scope; tracked as FW-10.)
 - **B. Status filter plumbing already exists.** `UnifiedHandlerBase::should_process_post()` already enforces
   `$rule['post_status']` (line 549). Missing pieces: (1) a UI field to set it, (2) the handler must be ON the
   unified base and actually call `should_process_post`. So status-filter = mostly UI + migration, not new logic.
@@ -414,7 +414,7 @@ configurable orphan policy, re-entrancy/capability/gate-interaction opens (S2–
 Restrict" page-label naming debt (ROADMAP P4). The term-sync label here reserves a deferred slot for its
 clause (item 5). **Build the term-sync rework (items 1–6) first; status mirroring follows once verified live.**
 
-## Out of scope (→ docs/future-features.md)
+## Out of scope (→ [future-work.md](../future-work.md), FW-10)
 - True cross-taxonomy copy (by slug/name mapping).
 - Status-filter sweep across the *other* 5 rule types (do in this branch only if cheap; else follow-up).
 - Temporal action #5 ("set post status" effect) — built later, consumes the shared status-effect primitive

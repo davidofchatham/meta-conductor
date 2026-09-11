@@ -155,14 +155,16 @@ The refinements deliberately left out of the `related_post_terms_rules` rework. 
   - **True cross-taxonomy copy** — map terms by slug/name so source and target taxonomies can differ; the current copy is by ID, single taxonomy only.
   - **Multi-level chain propagation** — a post that is BOTH a dependent (of A) and a source (for C) does not propagate to C in the same save: its term-change is suppressed by the re-entrancy guard while it is being written. Chains deeper than 2 levels need a depth-bounded re-dispatch after each write. **Confirmed as the only path by [ADR 0002](adr/0002-cross-rule-composition.md)**: cascade is suppressed within one effect target, so a rule's own write will *never* re-trigger peer term rules — waiting for the cascade is not an option that was taken away, it is one that never worked. The design is an explicit depth-bounded re-dispatch inside the handler, mirroring how propagation already walks its whole subtree itself rather than relying on cascade. Build only if a 3+ level chain appears.
   - **Single-owner optimization** — skip the multi-source rule-union when a dependent provably has one owner (ACF `max=1` / native bidi). Negligible gain when a reverse field is configured; only matters for the meta_query fallback with large fan-out.
+  - **Multiple taxonomies per rule.** `$rule['taxonomy']` is scalar, and so are `severed[post][taxonomy]`, the status gate and the capture — to sync several taxonomies across the *same* relationship you duplicate the rule once per taxonomy. Duplicating is **correct**, not a workaround: each taxonomy mirrors the source's full term set independently, so there is no correctness penalty. The only material win is **shared relationship-graph resolution** — N duplicated rules each run `dependents_of_source` / `resolve_reverse` per save, which is N cheap `get_field` reads under tier 2 (the common case) but N unindexed LIKE scans under tier 3, multiplying exactly the cost FW-11 flags. So the payoff scales with tier-3 usage and this is worth scoping *with* FW-11, not before it. Cost: scalar → array touches `recompute_dependent`, `capture_removed_dependents`, `process_severed`, every label snapshot and the storage shape — mechanical, since the per-taxonomy logic is already a clean loop boundary.
 - **Blocked by:** `decision:reopen provenance` — manual-survives only; the rest are unblocked • **Interacts with:** FW-9, FW-11, FW-19
 
 #### FW-11 — Tier-3 reverse-lookup is an unindexed query on every eligible save
 
 A pull rule with NEITHER an explicit reverse field NOR a detectable ACF bidirectional field falls back to `find_holders_referencing` — an unindexed `meta_query` LIKE over all holder posts — on every eligible save. B7 (0.5.0) removed the spurious calls on ineligible saves; the legitimate case is still O(N).
 
-- **Detail home:** [design-history/acf-reference-rework.md](design-history/acf-reference-rework.md) → the reverse-lookup tiers.
-- **Progress:** Not started. Mitigated in the UI: the config warns the admin to set a reverse or bidirectional field. A code fix — an index or registry — would remove the warning.
+- **Detail home:** [design-history/acf-reference-rework.md](design-history/acf-reference-rework.md) → the reverse-lookup tiers. The issue that framed it was #22.
+- **Progress:** Not started. Mitigated in the UI: the config warns the admin to set a reverse or bidirectional field. A code fix — a reverse index maintained on relationship-field save, or a registry built at rule-save time mapping related-post → holders — would remove the warning. Deliberately kept out of #63 even though that ticket rewrote the handler: the fix is its own design decision with its own invalidation questions, and riding it along would have widened the largest ticket in the phase with work that had no dependency on the ordering model.
+- **Open:** the reverse-lookup-resolution cluster is best decided in one sitting — this, FW-10's *multiple taxonomies per rule* (whose only material payoff is sharing exactly this resolution), and #25 (resolve fields by key, not bare name) all touch how the "other end" is resolved.
 - **Blocked by:** — • **Interacts with:** FW-10
 
 #### FW-12 — Sub-scope field for restricting rules
@@ -246,6 +248,27 @@ The main file is `meta-conductor.php` and the header `Text Domain:` is `meta-con
 - **Blocked by:** — • **Interacts with:** FW-10
 - **Phase:** on demand — only when a real site needs a grouped relationship field
 
+#### FW-27 — PHPUnit harness, starting with the snapshot label helpers
+
+The repo's gates are plain-PHP `tests/verify-*.php` scripts run on bare host PHP, deliberately carrying no dev dependency. `WireframeBootstrap`'s `snapshot_*_labels` methods are the best first PHPUnit candidates in the codebase: static, pure `array → array`, hooked on `wp-wireframe/save/payload`, and load-bearing — they are what makes a collapsed repeater row readable instead of "Row 1".
+
+- **Detail home:** none. Carved out of #53 §7, from the PR #19 review; the issue that framed it was #68.
+- **Progress:** Not started. Partial coverage exists today from `verify-config-helpers.php` and `verify-propagation-labels.php`, but both assert on source strings and mappings rather than exercising the transform over real payload shapes.
+- **Open:**
+  - **The gap that matters** is the malformed or partially-populated payload. A condition-hidden subfield is *dropped* from the save payload server-side, so an absent subfield is the normal case, not an edge case — happy-path assertions do not catch a helper that fatals or silently blanks a title when one is missing.
+  - **Three decisions before any code:** whether PHPUnit runs in CI (there is no test workflow today — only `claude.yml`, `claude-code-review.yml`, `release.yml`) or stays a local gate like H1–H14; whether WP calls are stubbed or a WP test bootstrap is pulled in (the former keeps the suite runnable on bare host PHP like the existing harnesses, the latter is a far heavier dependency); and whether the plain-PHP harnesses stay — they should, since several are *source-inspection* checks that PHPUnit fits poorly.
+  - **Scope when it lands:** `require-dev` on PHPUnit plus a `/tests export-ignore` check so nothing new reaches the ZIP. Note the helpers are no longer uniform — four of the five now read the unified repeater's rows, while `snapshot_claim_override_labels` still reads the General tab's per-taxonomy default; fixtures must reflect that split rather than assume one shape.
+- **Blocked by:** — • **Interacts with:** FW-20
+
+#### FW-29 — `trigger_term_id`'s `int[]` invariant is declared but not enforced
+
+`OptionRuleStorage::normalize_rule_shape()` declares `related_rules.trigger_term_id` to be `int[]`, but nothing guarantees it at the boundary, so every consumer re-coerces defensively — `(array)`, `(int)`, `is_wp_error` guard. Forgetting one is silent: the term lookup fails and the rule quietly misbehaves, which is the class of mistake that produced B1.
+
+- **Detail home:** none. The issue that framed it was #20.
+- **Progress:** Mostly closed by attrition rather than by decision. #61 rewrote `RelatedHandler` into a pure applier and deleted `should_trigger_related_terms` / `apply_related_terms` / `process_acf_related_terms`, and the integration call sites are gone; of the original ~8 re-coercion sites, **3 remain**, all in `class-related-handler.php` (`trigger_resolvable`, `get_trigger_terms`, `validate_rule_internal`).
+- **Open:** the three survivors ask genuinely different questions — *any* id resolves, which resolved ids are on the post, *every* id resolves — so they are not one extracted helper's worth of duplication any more. What is actually left is the decision the issue's point 3 named and #61 never settled: **is `normalize_rule_shape()` the guaranteed `int[]` boundary or not?** If yes, the casts come out and the guarantee gets stated where the shape is declared; if no, that is worth one comment saying why a consumer must still re-coerce. Doing neither is what leaves the invariant declared and unenforced.
+- **Blocked by:** — • **Interacts with:** —
+
 ---
 
 ## UX polish
@@ -256,8 +279,10 @@ Each rule type builds its collapsed-row title independently — a per-handler `s
 
 - **Detail home:** none. Raised during the Phase 3 handler migration, 2026-07-01.
 - **Progress:** Not started. Titles stay per-handler and are revised one at a time.
-- **Open:** extract a shared title-builder with a small declarative schema — tokens, separators, conditional clauses — that each config declares, so the row title is data rather than a bespoke callback per handler, folding the existing `snapshot_*_labels` into it.
-- **Blocked by:** `code:per-handler titles have not stabilized through use` — doing it before they settle means designing the grammar against a moving target • **Interacts with:** FW-21
+- **Open:**
+  - **The schema itself** — extract a shared title-builder with a small declarative schema (tokens, separators, conditional clauses) that each config declares, so the row title is data rather than a bespoke callback per handler, folding the existing `snapshot_*_labels` into it.
+  - **A live enabled/disabled indicator in the collapsed header.** A disabled rule looks identical to an enabled one until expanded. 0.5.0 shipped a stopgap — a baked `[Disabled] ` prefix prepended to the leading title token at save (`WireframeBootstrap::disabled_prefix`) — which is accurate for *persisted* state but is a snapshot, not live, and covers only the two rule types whose labels were reworked. Stock Wireframe blocks the clean version from every side: `title_template` is raw token substitution with no client-side conditional (a live `{enabled}` token renders `true`/`false`), the repeater row header is hardcoded in the React bundle with a fixed `row-actions` set and no slot to inject a status pill or toggle, and a CSS-only dim is a dead end because a collapsed row does not render its body, so the `enabled` input is not in the DOM to drive a `:has()` rule. The real fix is a header-action slot from the **FW-23 Gap A** fork; until then the cheap consistency win is extending the baked prefix to the remaining rule types' title snapshots. Drop the prefix when the slot lands.
+- **Blocked by:** `code:per-handler titles have not stabilized through use` — doing it before they settle means designing the grammar against a moving target. The live indicator additionally needs `row:FW-23` (Gap A); the baked-prefix extension needs neither • **Interacts with:** FW-21, FW-23
 
 #### FW-21 — Hierarchical rule label rework
 
@@ -303,7 +328,7 @@ Per-rule claim overrides (stored `conflict_handling`) default to `merge` regardl
 Only `propagation` lets the author choose a claim. `time_based` and `related` are hardcoded **owning** (they remove their target term when the trigger stops holding), `hierarchical` is contributing, `level_restriction` restricting, `title_slug` owning, and `related_post_terms` is owning-or-contributing under the name `keep_in_sync`. This item is about letting the author *change* it.
 
 - **Axes:** no change to basis or effect target — this is the **claim** axis becoming author-set where it is currently hardcoded.
-- **Detail home:** [ADR 0004](adr/0004-claim-axis-and-jurisdiction.md) for the law it must obey. The concrete half — *stating* each type's claim in its config — is GitHub issue #54.
+- **Detail home:** [ADR 0004](adr/0004-claim-axis-and-jurisdiction.md) for the law it must obey. The concrete, no-behavior-change half — *stating* each type's claim in its config — is FW-28.
 - **Progress:** Not started. `ConfigHelpers::claim_field()` already exists and is id-agnostic, so adding the control is cheap. The ordered rule list shipped in 0.8.0, so the configs are already one repeater with `conditions`-gated subfields — the claim field would be gated on rule `type`, and the "building it twice" concern that deferred this is now resolved.
 - **Open:** ⚠️ **constrained by ADR 0004's law** — *owning requires a statically enumerable jurisdiction*. `time_based` and `related` qualify (one configured target term each), so owning↔contributing is a genuine choice for them. `hierarchical` does **not**: its derivable set is data-dependent, which is why it already buys the forbidden cell with `_bws_auto_terms` provenance meta — offering it *owning* would need that meta generalized or a silent widening to the whole taxonomy. `level_restriction` is restricting by construction with no meaningful alternative. So this is **not one uniform dropdown**; it is a per-rule-type legality question, and that is the real work.
 - **Blocked by:** — • **Interacts with:** FW-3, FW-8, FW-12, FW-24
@@ -315,6 +340,17 @@ The trigger-term and target-term dropdowns list all terms across all taxonomies.
 - **Detail home:** `.scratch/plans/wireframe-js-field-type-extension-blocker.md` — this is the one named, wanted use case that justifies doing the Gap A PR.
 - **Progress:** Not started; deferred from Phase 3b. Static boot-time enumeration holds until then. **The design question is settled**: a custom Edit component receives full row context — `RepeaterEdit` passes `data={row}` to each subfield — so a `taxonomy_term_picker` field type reads its sibling taxonomy straight from `data` and fetches its term list via REST. **No sibling-update API is needed**; the earlier "must update a sibling select → blocked" framing was wrong, because one component owns both the taxonomy choice and the dependent term list. The `action`-field round-trip idea is a dead end — an action cannot update a sibling. Roughly a one-day build once unblocked.
 - **Blocked by:** `row:FW-23` — specifically Gap A landing in our vendored Wireframe, by our own fork or an upstream release • **Interacts with:** FW-23
+
+#### FW-28 — State each rule type's fixed claim in its config
+
+[ADR 0004](adr/0004-claim-axis-and-jurisdiction.md) named the **claim** axis (*owning* / *contributing* / *deferring* / *restricting*) and made it author-visible — but only on `propagation`, the one rule type that already had a control for it. Every other type's claim is fixed in code and stated nowhere in its config. This item is purely *saying what the code already does*, in the vocabulary already on screen elsewhere: no new control, no storage change, no behavior change. FW-25 is the separate, much larger question of letting the author *change* it.
+
+- **Detail home:** [ADR 0004](adr/0004-claim-axis-and-jurisdiction.md) for the vocabulary. The issue that framed it was #54, which carries the per-type evidence table (file and line for each type's apply and remove sites).
+- **Progress:** Not started. Deliberately sequenced *after* the ordered rule list, which reshaped every config — a wording pass written before it would have been redone. That list shipped in 0.8.0, so this is now unblocked.
+- **Open:**
+  - **The wording, per type.** The two hardcoded **owning** types are the ones that most need it, because owning is the claim that *removes* — e.g. on a time-based rule: "This rule **owns** the target term: it adds the term inside the window and removes it outside, whether this rule placed it or someone added it by hand. Terms other than the target are never touched." `hierarchical` deserves a second sentence, because its jurisdiction is **provenance-derived** (`_bws_auto_terms`) and it is the only type where that is true — it means hand-added terms are safe there in a way they are not under `time_based`.
+  - **One naming overlap to settle with it:** `related_post_terms` already exposes this axis under a different name (`keep_in_sync`), so stating the claim there without reconciling the two names adds a second vocabulary rather than removing one.
+- **Blocked by:** — • **Interacts with:** FW-24, FW-25
 
 ---
 
@@ -330,7 +366,7 @@ Shipped or cut items retire here, densely — a closed item is read in bulk and 
 
 ## Maintenance
 
-**Where this list comes from.** [ROADMAP.md](../ROADMAP.md) Phase 6+ assignments; Phase 2c session planning (the strategic roadmap it produced now lives in ROADMAP.md, its working plan file is gone); deleted standalone plugins under `plugins-to-integrate/`, captured at deletion time so the intent was not lost; and session discussion that did not fit a phase.
+**Where this list comes from.** [ROADMAP.md](../ROADMAP.md) Phase 6+ assignments; Phase 2c session planning (the strategic roadmap it produced now lives in ROADMAP.md, its working plan file is gone); deleted standalone plugins under `plugins-to-integrate/`, captured at deletion time so the intent was not lost; session discussion that did not fit a phase; and — since 2026-09-11 — the non-bug GitHub issues, which moved here wholesale when the split in [docs/agents/issue-tracker.md](agents/issue-tracker.md) took effect. An issue that names an item is cited as the thing that *framed* it, not as a live home: it is closed, and this file is the home now.
 
 **When an item becomes work in flight**, point its `Detail home:` at the spec and put the real build state in `Progress:` — do not move it to a separate section, and do not write a percentage.
 
