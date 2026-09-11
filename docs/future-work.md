@@ -229,16 +229,6 @@ Implement `Storage\CptRuleStorage` against the existing `Storage\RuleStorage` in
 - **Progress:** **Deferred, unscheduled.** Was Phase 4; reassessed 2026-06-23, and Phase 4 became the ordered rule list instead. The blast-radius and clobber concerns CPT was originally reached for are covered by the version-token guard. Accumulation alone no longer triggers CPT — per-entity explosion is solved by indirection, not N rows. CPT remains a deferred *option* for a draft/test lifecycle, not a planned migration.
 - **Blocked by:** `decision:a rule type actually needs a draft/test lifecycle` • **Interacts with:** FW-4
 
-#### FW-18 — Text-domain string sweep
-
-The main file is `meta-conductor.php` and the header `Text Domain:` is `meta-conductor`, but internal `__()` / `_e()` / `_x()` / `_n()` string arguments still read `'bws-meta-manager'` / `'bws-taxonomy-manager'`. No `.po` files exist, so the mismatch is cosmetic today — it becomes real the moment translation is wanted.
-
-- **Detail home:** none.
-- **Progress:** The *rename* half shipped in 2c; this is the remainder of Phase 2b. ~600 call sites — mechanical find/replace plus a lint pass to catch stragglers.
-- **Open:** collision-safe layers (PHP namespace, option keys, hook prefix) keep `bws_` / `BWS\` per the Naming Surface decision. This sweep touches text-domain arguments **only** — widening it re-opens a settled decision.
-- **Blocked by:** — • **Interacts with:** —
-- **Phase:** 2b remainder
-
 #### FW-19 — Grouped / nested relationship fields for Related Post Terms
 
 `related_post_terms` is verified only for **top-level** ACF relationship/post-object fields. The field picker (`ConfigHelpers::acf_relationship_field_options()`) enumerates top-level fields only — `acf_get_fields($group_key)` does not recurse into Group / Repeater / Flexible-Content subfields — so a nested relationship field never appears as a choice.
@@ -361,7 +351,7 @@ Shipped or cut items retire here, densely — a closed item is read in bulk and 
 
 | Id | Item | Outcome |
 |---|---|---|
-| — | — | Nothing retired yet; this ledger starts at the 2026-09-11 migration from `docs/future-features.md`. |
+| FW-18 | Text-domain string sweep | **Shipped in 0.7.0** (Phase 2b rename sweep, [#48](https://github.com/davidofchatham/meta-conductor/pull/48)) — the row survived the 2026-09-11 migration describing work already done. Every `__()` / `_e()` / `_x()` / `_n()` call site now passes `'meta-conductor'`; `'bws-meta-manager'` survives only as the Composer package name in `vendor/`. The *conversion* subsystem's identifiers (JS object, cron / AJAX / transient names) were never part of this row — they are the 2b remainder deferred to Phase 7, tracked in [ROADMAP.md](../ROADMAP.md) § Phase 7. |
 
 ---
 
