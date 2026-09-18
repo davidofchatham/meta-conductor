@@ -210,8 +210,8 @@ return array(
 			// dependent-end sever branch itself (#43).
 			array(
 				'enabled'                => true,
-				'acf_field_name'         => 'mc_section:mc_related_items',
-				'reverse_acf_field_name' => 'mc_item:mc_parent_section',
+				'acf_field_name'         => 'mc_section:mc_related_items:field_mc_related_items',
+				'reverse_acf_field_name' => 'mc_item:mc_parent_section:field_mc_parent_section',
 				'holder_role'            => 'source',
 				'taxonomy'               => 'mc_topic',
 				'keep_in_sync'           => true,
@@ -220,7 +220,7 @@ return array(
 			// that failed in production.
 			array(
 				'enabled'        => true,
-				'acf_field_name' => 'mc_section:mc_bidi_items',
+				'acf_field_name' => 'mc_section:mc_bidi_items:field_mc_bidi_items',
 				'holder_role'    => 'source',
 				'taxonomy'       => 'mc_flag',
 				'keep_in_sync'   => true,

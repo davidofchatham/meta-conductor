@@ -179,9 +179,80 @@ $check('claim_name unknown ⇒ contributing',  ConfigHelpers::claim_name('bogus'
 // ROWS back to the canonical {slug: mode} dict — is a storage-adapter concern,
 // not a field builder. It lives on OptionRuleStorage; see H9.
 
+// =============================================================================
+// ACF RELATIONSHIP FIELD OPTIONS (#25).
+//
+// The option KEY of this select is the value that gets STORED, so this builder
+// and the storage adapter have to agree on one string shape. They are in
+// different files with no shared constant, and a drift between them renders the
+// select empty and blanks the field on the next save — which is why the
+// agreement is asserted here rather than left to the eye.
+// =============================================================================
+
+if (!function_exists('acf_get_field_groups')) {
+    function acf_get_field_groups($args = []) {
+        $by_type = [
+            'post' => [['key' => 'group_post', 'title' => 'Post Links']],
+            // Two groups on ONE post type, each declaring a relationship field
+            // named `twin` — the #25 collision, which post-type qualification
+            // cannot separate.
+            'page' => [
+                ['key' => 'group_page_a', 'title' => 'Page Links A'],
+                ['key' => 'group_page_b', 'title' => 'Page Links B'],
+            ],
+            'dept' => [['key' => 'group_dept', 'title' => '']],
+        ];
+        return $by_type[$args['post_type'] ?? ''] ?? [];
+    }
+}
+
+if (!function_exists('acf_get_fields')) {
+    function acf_get_fields($group) {
+        $fields = [
+            'group_post'   => [
+                ['key' => 'field_rel', 'name' => 'linked', 'label' => 'Linked', 'type' => 'relationship'],
+                ['key' => 'field_txt', 'name' => 'note', 'label' => 'Note', 'type' => 'text'],
+            ],
+            'group_page_a' => [['key' => 'field_twin_a', 'name' => 'twin', 'label' => 'Twin A', 'type' => 'post_object']],
+            'group_page_b' => [['key' => 'field_twin_b', 'name' => 'twin', 'label' => 'Twin B', 'type' => 'post_object']],
+            'group_dept'   => [['key' => 'field_untitled', 'name' => 'head', 'label' => 'Head', 'type' => 'relationship']],
+        ];
+        return $fields[(string) $group] ?? [];
+    }
+}
+
+require_once dirname(__DIR__) . '/includes/storage/class-rule-storage.php';
+require_once dirname(__DIR__) . '/includes/storage/class-option-rule-storage.php';
+
+$acf_options = ConfigHelpers::acf_relationship_field_options();
+$acf_keys    = array_keys($acf_options);
+
+$check('only relationship/post-object fields are offered',
+    !in_array('post:note:field_txt', $acf_keys, true)
+    && in_array('post:linked:field_rel', $acf_keys, true));
+
+$check('the option key carries post type, name AND field key',
+    in_array('page:twin:field_twin_a', $acf_keys, true)
+    && in_array('page:twin:field_twin_b', $acf_keys, true));
+
+$check('two same-named fields are two DISTINCT options, not one',
+    count(array_filter($acf_keys, static fn($k) => str_starts_with((string) $k, 'page:twin:'))) === 2);
+
+$check('every option key parses back to exactly what it encodes',
+    \BWS\MetaConductor\Storage\OptionRuleStorage::split_acf_field_value('page:twin:field_twin_b')
+        === ['page', 'twin', 'field_twin_b']);
+
+$check('same-named fields are distinguishable by their labels',
+    $acf_options['page:twin:field_twin_a'] !== $acf_options['page:twin:field_twin_b']
+    && str_contains($acf_options['page:twin:field_twin_a'], 'Page Links A')
+    && str_contains($acf_options['page:twin:field_twin_b'], 'Page Links B'));
+
+$check('a group with no title leaves no dangling separator',
+    $acf_options['dept:head:field_untitled'] === 'Departments: Head (head)');
+
 // --- Report. ----------------------------------------------------------------
 
-$total = 26;
+$total = 32;
 if ($fail) {
     fwrite(STDERR, "\nCONFIG-HELPERS FAIL — " . count($fail) . "/$total assertions failed:\n");
     foreach ($fail as $f) {
@@ -190,5 +261,5 @@ if ($fail) {
     exit(1);
 }
 
-fwrite(STDOUT, "CONFIG-HELPERS OK — all $total assertions passed (builder collapse + id-lock + claim).\n");
+fwrite(STDOUT, "CONFIG-HELPERS OK — all $total assertions passed (builder collapse + id-lock + claim + ACF option/storage agreement).\n");
 exit(0);

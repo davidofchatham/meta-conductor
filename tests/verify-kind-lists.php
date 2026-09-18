@@ -684,6 +684,104 @@ $check('the combined acf_field_name is NOT split in storage',
 $check('the rewrite is flag-gated to one run',
     (new OptionRuleStorage())->maybe_migrate_acf_ref_storage() === false);
 
+// =============================================================================
+// ACF FIELD IDENTITY (#25) — the stored value carries the field KEY.
+//
+// `acf_get_field($name)` returns ONE arbitrary field when several share a bare
+// name, so the identity has to travel in the stored value. The value is also
+// the select's option key, which is why it stays ONE string and why parsing it
+// has to tolerate every shape a site may already hold.
+// =============================================================================
+
+$check('a three-part value splits into post type, name and key',
+    OptionRuleStorage::split_acf_field_value('event:related_team:field_abc')
+        === ['event', 'related_team', 'field_abc']);
+$check('a legacy two-part value yields an empty key, not a missing one',
+    OptionRuleStorage::split_acf_field_value('event:related_team')
+        === ['event', 'related_team', '']);
+$check('a bare name yields a null post type, so the row keeps its own',
+    OptionRuleStorage::split_acf_field_value('related_team') === [null, 'related_team', '']);
+$check('a name is never confused for a key',
+    OptionRuleStorage::split_acf_field_value('event:related_team')[2] === '');
+
+$acf_shaped = static fn(array $row): array => OptionRuleStorage::project_kind_rules([
+    ['type' => 'related_post_terms_rules', 'taxonomy' => 'sport'] + $row,
+])[0];
+
+$keyed = $acf_shaped([
+    'acf_field_name'         => 'event:related_team:field_fwd',
+    'reverse_acf_field_name' => 'team:related_events:field_rev',
+]);
+$check('the read splits the key out of both field values',
+    $keyed['post_type'] === 'event'
+    && $keyed['acf_field_name'] === 'related_team'
+    && $keyed['acf_field_key'] === 'field_fwd'
+    && $keyed['reverse_acf_field_name'] === 'related_events'
+    && $keyed['reverse_acf_field_key'] === 'field_rev');
+
+$legacy_read = $acf_shaped(['acf_field_name' => 'event:related_team']);
+$check('a legacy row reads with an empty key, which callers treat as "by name"',
+    $legacy_read['acf_field_name'] === 'related_team'
+    && $legacy_read['post_type'] === 'event'
+    && $legacy_read['acf_field_key'] === '');
+
+// ACF shims, declared inside a closure ON PURPOSE: a top-level function
+// declaration is hoisted at compile time, which would make ACF "present" for
+// the deferral block above — whose whole subject is what happens when it is
+// absent.
+(static function (): void {
+    $GLOBALS['mc_acf_fields'] = [
+        'group_a' => [
+            ['key' => 'field_alpha', 'name' => 'related_team', 'type' => 'relationship'],
+            ['key' => 'field_dupe_a', 'name' => 'twin', 'type' => 'relationship'],
+        ],
+        'group_b' => [
+            // The #25 shape: a SECOND field with the same bare name, on the
+            // same post type, in a different group.
+            ['key' => 'field_dupe_b', 'name' => 'twin', 'type' => 'relationship'],
+            ['key' => 'field_text', 'name' => 'related_team', 'type' => 'text'],
+        ],
+    ];
+
+    function acf_get_field_groups(array $args = []): array {
+        return [['key' => 'group_a', 'title' => 'A'], ['key' => 'group_b', 'title' => 'B']];
+    }
+
+    function acf_get_fields($group): array {
+        return $GLOBALS['mc_acf_fields'][(string) $group] ?? [];
+    }
+})();
+
+$GLOBALS['mc_options'] = [
+    'bws_meta_conductor_settings' => [
+        OptionRuleStorage::KIND_TERM => [
+            ['type' => 'related_post_terms_rules', 'taxonomy' => 'sport', 'holder_role' => 'target',
+             'acf_field_name' => 'event:related_team', 'reverse_acf_field_name' => 'event:related_team'],
+            ['type' => 'related_post_terms_rules', 'taxonomy' => 'sport', 'holder_role' => 'target',
+             'acf_field_name' => 'event:twin'],
+            ['type' => 'related_post_terms_rules', 'taxonomy' => 'sport', 'holder_role' => 'target',
+             'acf_field_name' => 'event:related_team:field_alpha'],
+        ],
+        OptionRuleStorage::KIND_FORMAT => [],
+    ],
+];
+
+$backfilled = (new OptionRuleStorage())->maybe_migrate_acf_ref_storage();
+$after      = $GLOBALS['mc_options']['bws_meta_conductor_settings'][OptionRuleStorage::KIND_TERM];
+
+$check('the one-shot reports the rewrite it performed', $backfilled === true);
+$check('an unambiguous name gains its key, in BOTH field values',
+    ($after[0]['acf_field_name'] ?? '') === 'event:related_team:field_alpha'
+    && ($after[0]['reverse_acf_field_name'] ?? '') === 'event:related_team:field_alpha');
+$check('a name matching two fields is LEFT two-part, never guessed',
+    ($after[1]['acf_field_name'] ?? '') === 'event:twin');
+$check('a row that already carries a key is untouched',
+    ($after[2]['acf_field_name'] ?? '') === 'event:related_team:field_alpha');
+$check('the backfill is flag-gated once ACF has actually been consulted',
+    (new OptionRuleStorage())->maybe_migrate_acf_ref_storage() === false
+    && (int) get_option(OptionRuleStorage::ACFREF_SCHEMA_FLAG, 0)
+        === OptionRuleStorage::ACFREF_SCHEMA_VERSION);
+
 // --- Report. ----------------------------------------------------------------
 
 if ($fail) {
@@ -694,5 +792,5 @@ if ($fail) {
     exit(1);
 }
 
-fwrite(STDOUT, "KIND-LISTS OK — all $total assertions passed (migration lossless + idempotent, upgrade-on-read never clobbers, every mutator on the kind list, no-op-equal is not failure; #56/#66).\n");
+fwrite(STDOUT, "KIND-LISTS OK — all $total assertions passed (migration lossless + idempotent, upgrade-on-read never clobbers, every mutator on the kind list, no-op-equal is not failure, ACF field identity by key; #56/#66/#25).\n");
 exit(0);

@@ -147,7 +147,7 @@ switch ( $step ) {
 		mc67ps_author( array( array(
 			'type'                 => 'related_post_terms_rules',
 			'enabled'              => true,
-			'acf_field_name'       => 'mc_section:mc_related_items',
+			'acf_field_name'       => 'mc_section:mc_related_items:field_mc_related_items',
 			'holder_role'          => 'source',
 			'taxonomy'             => 'mc_topic',
 			'keep_in_sync'         => true,
