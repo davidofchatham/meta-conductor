@@ -12,7 +12,7 @@
 
 return array(
 	'blueprint'   => 'mc-rules',
-	'version'     => 5, // 5: related_post_terms reverse-field coverage — explicit reverse (mc_parent_section, tier 1) on the existing rule + a native-bidi pair (mc_bidi_items/mc_bidi_sections on section-bidi/item-bidi, mc_flag, tier 2) for the #43 dependent-end sever. 4: section-child independent term moved native→ACF field (both channels agree; propagation ACF-merge no longer clobbers it). 3: item-solo-a/b clobber-free subjects. 2: composes_on two-key shape. 1: initial.
+	'version'     => 6, // 6: ACF field-identity decoy (#25) — group_mc_decoy_fields declares a SECOND `mc_related_items` relationship field on mc_section, pointing at a different target post type, so bare-name resolution is provably wrong and key resolution provably right. 5: related_post_terms reverse-field coverage — explicit reverse (mc_parent_section, tier 1) on the existing rule + a native-bidi pair (mc_bidi_items/mc_bidi_sections on section-bidi/item-bidi, mc_flag, tier 2) for the #43 dependent-end sever. 4: section-child independent term moved native→ACF field (both channels agree; propagation ACF-merge no longer clobbers it). 3: item-solo-a/b clobber-free subjects. 2: composes_on two-key shape. 1: initial.
 	// Family-standard shape — matches layout-states and view-structures.
 	// bin/seed-all.sh --only builds its dependency graph from this.
 	'composes_on' => array(
@@ -23,7 +23,7 @@ return array(
 	'defines' => array(
 		'post_types' => array( 'mc_item', 'mc_section' ),
 		'taxonomies' => array( 'mc_topic', 'mc_flag' ),
-		'acf_groups' => array( 'group_mc_fields', 'group_mc_section_fields' ),
+		'acf_groups' => array( 'group_mc_fields', 'group_mc_section_fields', 'group_mc_decoy_fields' ),
 	),
 
 	// ── mc_topic tree (hierarchical, 4 levels) + mc_flag (flat) ──────────
