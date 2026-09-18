@@ -621,8 +621,10 @@ class OptionRuleStorage implements RuleStorage {
      *
      * Current coercions:
      *   - Single-value term IDs: [N] array (from FormTokenField max=1) → int N
-     *   - ACF relationship field: "post_type:field_name" prefix → split into
-     *     scalar post_type + bare acf_field_name
+     *   - ACF relationship field: "post_type:field_name:field_key" → split into
+     *     scalar post_type + bare acf_field_name + acf_field_key (#25; a legacy
+     *     two-part value yields an empty key, which callers read as "resolve by
+     *     name", i.e. pre-#25 behavior)
      */
     private static function normalize_rule_shape(string $type, array $rule): array {
         $single_term_fields = [
@@ -656,30 +658,65 @@ class OptionRuleStorage implements RuleStorage {
 
         if ($type === 'related_post_terms_rules') {
             if (!empty($rule['acf_field_name'])) {
-                $raw = (string) $rule['acf_field_name'];
-                if (str_contains($raw, ':')) {
-                    [$pt, $bare]            = explode(':', $raw, 2);
-                    $rule['post_type']      = $pt;
-                    $rule['acf_field_name'] = $bare;
+                [$pt, $bare, $key]         = self::split_acf_field_value((string) $rule['acf_field_name']);
+                $rule['acf_field_name']    = $bare;
+                $rule['acf_field_key']     = $key;
+                if ($pt !== null) {
+                    $rule['post_type'] = $pt;
                 } elseif (!isset($rule['post_type'])) {
                     $rule['post_type'] = '';
                 }
             }
 
-            // Reverse field is stored in the same "post_type:field_name" option
-            // format; the handler wants the bare field name. (SPEC §V6)
+            // Reverse field is stored in the same option format; the handler
+            // wants the bare field name and, since #25, the key beside it.
+            // (SPEC §V6)
             if (!empty($rule['reverse_acf_field_name'])) {
-                $rraw = (string) $rule['reverse_acf_field_name'];
-                if (str_contains($rraw, ':')) {
-                    [, $rbare]                      = explode(':', $rraw, 2);
-                    $rule['reverse_acf_field_name'] = $rbare;
-                }
+                [, $rbare, $rkey]                 = self::split_acf_field_value((string) $rule['reverse_acf_field_name']);
+                $rule['reverse_acf_field_name']   = $rbare;
+                $rule['reverse_acf_field_key']    = $rkey;
             }
 
             $rule = self::migrate_related_post_terms_shape($rule);
         }
 
         return $rule;
+    }
+
+    /**
+     * Split a stored ACF relationship-field option value into its three parts.
+     *
+     * The select's option KEY is the stored value, so the value has to carry
+     * everything the handler needs and round-trip whole (don't #6). Shape,
+     * since #25: `post_type:field_name:field_key`.
+     *
+     *   - `post_type` cannot be re-derived from the key — an ACF field group
+     *     may be located on several post types, which is why the options list
+     *     emits one row per post type per field in the first place.
+     *   - `field_name` stays because the READ path is `get_field($name, $id)`,
+     *     which is post-scoped and therefore never ambiguous, and because it
+     *     is the fallback when a key no longer resolves (deleted field, a row
+     *     imported from another site).
+     *   - `field_key` is the only unambiguous identity: two separately-created
+     *     fields can share a bare name on the SAME post type, in which case
+     *     `acf_get_field($name)` returns one arbitrary match. (#25)
+     *
+     * Legacy two-part (`post_type:field_name`) and bare-name values parse to an
+     * empty key, which every caller treats as "fall back to the name" — exactly
+     * today's behavior, never worse.
+     *
+     * @since 0.8.3
+     * @param string $value Raw stored option value.
+     * @return array{0: ?string, 1: string, 2: string} [post_type|null, name, key]
+     */
+    public static function split_acf_field_value(string $value): array {
+        $parts = explode(':', $value, 3);
+
+        if (count($parts) === 1) {
+            return [null, $parts[0], ''];
+        }
+
+        return [$parts[0], $parts[1], $parts[2] ?? ''];
     }
 
     /**
@@ -751,8 +788,10 @@ class OptionRuleStorage implements RuleStorage {
      * Bumped whenever a future key-RENAMING migration is added that the admin
      * (raw get_option) can't see at read time. Re-running the rewrite is
      * idempotent, so the gate is purely to avoid a write on every admin load.
+     *
+     * 2 (#25): ACF field-key backfill — `post_type:name` → `post_type:name:key`.
      */
-    const ACFREF_SCHEMA_VERSION = 1;
+    const ACFREF_SCHEMA_VERSION = 2;
     const ACFREF_SCHEMA_FLAG    = 'bws_mc_acfref_schema';
 
     /**
@@ -767,11 +806,24 @@ class OptionRuleStorage implements RuleStorage {
      * resave PERSISTS that corruption. This rewrites the legacy rows in storage
      * once so the admin reads already-migrated data.
      *
-     * Applies ONLY the key-rename migration (migrate_related_post_terms_shape).
-     * Deliberately does NOT split acf_field_name "post:field" → that split is a
-     * SAFE directional adapter: the admin stores+round-trips the COMBINED value,
-     * the handler splits at read time. Persisting the split would break the
-     * admin select (its option keys are "post:field"). (SPEC §V16)
+     * Applies the key-rename migration (migrate_related_post_terms_shape) and,
+     * since #25, the ACF field-KEY backfill: a stored `post_type:field_name`
+     * becomes `post_type:field_name:field_key`. Deliberately does NOT split
+     * acf_field_name → that split is a SAFE directional adapter: the admin
+     * stores+round-trips the COMBINED value, the handler splits at read time.
+     * Persisting the split would break the admin select (its option keys are
+     * the combined value). (SPEC §V16)
+     *
+     * The backfill lives HERE and not in migrate_related_post_terms_shape,
+     * which also runs at READ time on every front-end and cron request: it has
+     * to scan the post type's field groups, and reads already degrade safely to
+     * name resolution when the key is absent. One-shot write, never per read.
+     *
+     * A name that resolves to MORE than one relationship/post-object field on
+     * its post type — the very ambiguity #25 is about — is left two-part on
+     * purpose. Guessing would pick a field the author never chose; the row
+     * keeps behaving exactly as it does today until it is re-picked in the UI,
+     * where the option labels now carry the field-group title.
      *
      * Idempotent: a row already in the new shape is unchanged. Runs once per
      * schema version via the option flag.
@@ -788,42 +840,114 @@ class OptionRuleStorage implements RuleStorage {
         $settings = $this->get_all_settings();
         $rows     = $settings[self::KIND_TERM] ?? [];
         $changed  = false;
+        $deferred = false;
 
         foreach ($rows as $i => $row) {
             if (!is_array($row) || ($row['type'] ?? '') !== 'related_post_terms_rules') {
                 continue;
             }
-            $migrated = self::migrate_related_post_terms_shape($row);
+            $migrated = self::backfill_acf_field_keys(
+                self::migrate_related_post_terms_shape($row),
+                $deferred
+            );
             if ($migrated !== $row) {
                 $rows[$i] = $migrated;
                 $changed  = true;
             }
         }
 
-        if (!$changed) {
-            // Nothing to migrate (fresh install / already-new data): no write
-            // was needed, so flag unconditionally to skip future scans.
+        if ($changed) {
+            $settings[self::KIND_TERM] = $rows;
+
+            // Flag iff the migrated rows are ACTUALLY in storage now. save_all_settings()
+            // reports true for a successful write AND for a no-op on equality (a
+            // concurrent writer got there first) — both mean the rows are stored, so
+            // both should flag. A genuine DB failure leaves the flag unset so the next
+            // load retries rather than permanently skipping and later corrupting on a
+            // raw resave (PR#24 round 2 #3 / round 4 #3), and reports false so a caller
+            // doesn't log "migration done" (round 8 #3).
+            if (!$this->save_all_settings($settings)) {
+                return false;
+            }
+        }
+
+        // Withhold the flag when a key could not be backfilled because ACF was
+        // not loaded on THIS request: flagging would retire the scan forever
+        // over rows it never actually looked at. An ambiguous name does not
+        // defer — that outcome is final, not pending.
+        if (!$deferred) {
             update_option(self::ACFREF_SCHEMA_FLAG, self::ACFREF_SCHEMA_VERSION);
-
-            return false;
         }
 
-        $settings[self::KIND_TERM] = $rows;
+        return $changed;
+    }
 
-        // Flag iff the migrated rows are ACTUALLY in storage now. save_all_settings()
-        // reports true for a successful write AND for a no-op on equality (a
-        // concurrent writer got there first) — both mean the rows are stored, so
-        // both should flag. A genuine DB failure leaves the flag unset so the next
-        // load retries rather than permanently skipping and later corrupting on a
-        // raw resave (PR#24 round 2 #3 / round 4 #3), and reports false so a caller
-        // doesn't log "migration done" (round 8 #3).
-        if (!$this->save_all_settings($settings)) {
-            return false;
+    /**
+     * Append the resolved ACF field key to a row's stored field values. (#25)
+     *
+     * Operates on the STORED shape — `acf_field_name` is still the combined
+     * option value here, not the split form the handler sees.
+     *
+     * @param array $row       Stored related_post_terms row.
+     * @param bool  $deferred  Set true when a key is missing and ACF cannot be
+     *                         consulted on this request (by reference).
+     * @return array The row, with keys appended where they resolved.
+     */
+    private static function backfill_acf_field_keys(array $row, bool &$deferred): array {
+        foreach (['acf_field_name', 'reverse_acf_field_name'] as $field) {
+            if (empty($row[$field])) {
+                continue;
+            }
+
+            [$post_type, $name, $key] = self::split_acf_field_value((string) $row[$field]);
+
+            if ($key !== '' || $post_type === null || $name === '') {
+                continue;
+            }
+
+            if (!function_exists('acf_get_field_groups') || !function_exists('acf_get_fields')) {
+                $deferred = true;
+                continue;
+            }
+
+            $resolved = self::resolve_acf_field_key($post_type, $name);
+
+            if ($resolved !== '') {
+                $row[$field] = $post_type . ':' . $name . ':' . $resolved;
+            }
         }
 
-        update_option(self::ACFREF_SCHEMA_FLAG, self::ACFREF_SCHEMA_VERSION);
+        return $row;
+    }
 
-        return true;
+    /**
+     * The one relationship/post-object field key matching $name on $post_type.
+     *
+     * '' when nothing matches OR when several do — the ambiguous case #25 is
+     * about, which callers must leave alone rather than resolve arbitrarily.
+     * Field types and nesting depth mirror the options list
+     * (`ConfigHelpers::acf_relationship_field_options()`), so a name that is
+     * offered there is a name this can resolve.
+     *
+     * @param string $post_type Post type whose field groups to scan.
+     * @param string $name      Bare ACF field name.
+     * @return string Field key, or ''.
+     */
+    private static function resolve_acf_field_key(string $post_type, string $name): string {
+        $matches = [];
+
+        foreach ((array) acf_get_field_groups(['post_type' => $post_type]) as $group) {
+            foreach ((array) acf_get_fields($group['key'] ?? '') as $field) {
+                if (!in_array($field['type'] ?? '', ['relationship', 'post_object'], true)) {
+                    continue;
+                }
+                if (($field['name'] ?? '') === $name && !empty($field['key'])) {
+                    $matches[(string) $field['key']] = true;
+                }
+            }
+        }
+
+        return count($matches) === 1 ? (string) array_key_first($matches) : '';
     }
 
     /**
