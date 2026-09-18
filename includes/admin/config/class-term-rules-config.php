@@ -662,11 +662,13 @@ class TermRulesConfig {
      * posts it relates to via an ACF relationship / post-object field.
      *
      * LIVE on a real site (#58). The `acf_field_name` select stores the
-     * COMBINED "post_type:field_name" value and must round-trip it whole:
-     * the option keys are combined, so persisting the split form would
+     * COMBINED "post_type:field_name:field_key" value and must round-trip it
+     * whole: the option keys are combined, so persisting the split form would
      * render the select empty and the next save would blank the field. The
      * handler splits at read time (`normalize_rule_shape`). Same for
-     * `reverse_acf_field_name`.
+     * `reverse_acf_field_name`. The trailing field key is what makes two
+     * same-named fields distinguishable (#25); a row stored before it existed
+     * keeps its two-part value until re-picked and resolves by name meanwhile.
      *
      * `taxonomy` and `post_status` come from the shared frame; the two
      * type-gated notes beside them carry this type's semantics.
@@ -682,7 +684,7 @@ class TermRulesConfig {
                 'id'          => 'acf_field_name',
                 'type'        => 'select',
                 'label'       => __('Monitored relationship field', 'meta-conductor'),
-                'description' => __('The post-object or relationship field connecting the two posts. Watched at both ends — a change to either post re-syncs. The post type that OWNS this field is the "field holder"; "Source" below decides which end\'s terms win. ⚠ Only top-level relationship/post-object fields are listed — fields nested inside an ACF Group, Repeater, or Flexible Content container are not shown and are not currently supported. ⚠ If two DIFFERENT field groups define separate relationship fields with the SAME field name, reverse-lookup and post-type detection may resolve the wrong one — give same-named fields distinct names, or set an explicit Reverse relationship field below.', 'meta-conductor'),
+                'description' => __('The post-object or relationship field connecting the two posts. Watched at both ends — a change to either post re-syncs. The post type that OWNS this field is the "field holder"; "Source" below decides which end\'s terms win. Each option names its field group, so two fields sharing a name can be told apart. ⚠ Only top-level relationship/post-object fields are listed — fields nested inside an ACF Group, Repeater, or Flexible Content container are not shown and are not currently supported.', 'meta-conductor'),
                 'default'     => '',
                 'required'    => true,
                 'columns'     => 12,
