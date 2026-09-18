@@ -256,9 +256,9 @@ The repo's gates are plain-PHP `tests/verify-*.php` scripts run on bare host PHP
 `OptionRuleStorage::normalize_rule_shape()` declares `related_rules.trigger_term_id` to be `int[]`, but nothing guarantees it at the boundary, so every consumer re-coerces defensively — `(array)`, `(int)`, `is_wp_error` guard. Forgetting one is silent: the term lookup fails and the rule quietly misbehaves, which is the class of mistake that produced B1.
 
 - **Detail home:** none. The issue that framed it was #20.
-- **Progress:** Mostly closed by attrition rather than by decision. #61 rewrote `RelatedHandler` into a pure applier and deleted `should_trigger_related_terms` / `apply_related_terms` / `process_acf_related_terms`, and the integration call sites are gone; of the original ~8 re-coercion sites, **3 remain**, all in `class-related-handler.php` (`trigger_resolvable`, `get_trigger_terms`, `validate_rule_internal`).
-- **Open:** the three survivors ask genuinely different questions — *any* id resolves, which resolved ids are on the post, *every* id resolves — so they are not one extracted helper's worth of duplication any more. What is actually left is the decision the issue's point 3 named and #61 never settled: **is `normalize_rule_shape()` the guaranteed `int[]` boundary or not?** If yes, the casts come out and the guarantee gets stated where the shape is declared; if no, that is worth one comment saying why a consumer must still re-coerce. Doing neither is what leaves the invariant declared and unenforced.
-- **Blocked by:** — • **Interacts with:** —
+- **Progress:** Mostly closed by attrition rather than by decision. #61 rewrote `RelatedHandler` into a pure applier and deleted `should_trigger_related_terms` / `apply_related_terms` / `process_acf_related_terms`, and the integration call sites are gone; of the original ~8 re-coercion sites, **3 remained** in `class-related-handler.php`. Fixing [#52](https://github.com/davidofchatham/meta-conductor/issues/52) routed all five of that file's term reads — those three plus the target resolutions — through one private `resolve_term()`, so the `(int)` cast and the "is this readable" test each exist once there. The `(array)` on `trigger_term_id` does not: its three readers still coerce.
+- **Open:** the surviving callers still ask genuinely different questions — *any* id resolves, which resolved ids are on the post, *every* id resolves — so they were never one helper's worth of duplication; what `resolve_term()` unified is the *answer*, not the question. The decision the issue's point 3 named and #61 never settled is untouched: **is `normalize_rule_shape()` the guaranteed `int[]` boundary or not?** If yes, the `(array)` casts come out and the guarantee gets stated where the shape is declared; if no, that is worth one comment saying why a consumer must still re-coerce. Doing neither is what leaves the invariant declared and unenforced.
+- **Blocked by:** — • **Interacts with:** FW-30
 
 ---
 
@@ -342,6 +342,18 @@ The trigger-term and target-term dropdowns list all terms across all taxonomies.
   - **The wording, per type.** The two hardcoded **owning** types are the ones that most need it, because owning is the claim that *removes* — e.g. on a time-based rule: "This rule **owns** the target term: it adds the term inside the window and removes it outside, whether this rule placed it or someone added it by hand. Terms other than the target are never touched." `hierarchical` deserves a second sentence, because its jurisdiction is **provenance-derived** (`_bws_auto_terms`) and it is the only type where that is true — it means hand-added terms are safe there in a way they are not under `time_based`.
   - **One naming overlap to settle with it:** `related_post_terms` already exposes this axis under a different name (`keep_in_sync`), so stating the claim there without reconciling the two names adds a second vocabulary rather than removing one.
 - **Blocked by:** — • **Interacts with:** FW-24, FW-25
+
+#### FW-30 — Rule validation has no author-visible surface
+
+Every handler carries a `validate_rule_internal()`, and `UnifiedHandlerBase` wraps it in a public `validate_rule()` that returns `['valid' => bool, 'errors' => string[]]`. Nothing in the plugin calls either on the save path: the settings page sanitizes through Wireframe's config-driven Sanitizer, and a dispatcher pass never validates — it just resolves what the row names and does nothing when that fails. So a rule that cannot work is stored, listed and run exactly like one that can, and the author is told nothing.
+
+- **Detail home:** none. Surfaced fixing [#52](https://github.com/davidofchatham/meta-conductor/issues/52), where the validator's own term resolution was too lax; tightening it changed no live behavior precisely because nothing calls it.
+- **Progress:** Not started. The validators themselves are live code and are kept correct — #52 tightened `related`'s — but their only caller today is `process_rule()`, the RuleEngine path that no converted handler uses, plus the #52 sweep step.
+- **Open:**
+  - **Decide what the surface is before wiring anything.** A REST-time rejection is the wrong instinct: a half-configured row is the normal state of a repeater being filled in, and failing the save would make the page unusable. The candidates are an advisory panel — the *Rule collisions* panel is the shipped precedent and already renders per-row warnings against a row number — or a per-row badge, or an admin notice on load.
+  - **Decide whether a failed rule stays silent at runtime.** A rule whose target term was deleted currently no-ops forever with nothing in the log at default settings. A debug-level line is cheap; a persistent per-row "last pass could not resolve X" is more useful and needs somewhere to store it.
+  - **The validators are not uniform.** They were written per handler against the pre-0.8.0 shapes; several predate `post_types` becoming an array and the ordered list. Any surface that shows their output will expose that unevenness, so an audit pass belongs in the same piece of work, not after it.
+- **Blocked by:** — • **Interacts with:** FW-29
 
 ---
 

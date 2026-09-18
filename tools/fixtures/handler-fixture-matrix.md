@@ -287,6 +287,17 @@ Covered by `sweep-61-appliers.php` step `related`.
   here would turn one deleted term into a rule stripping its target from every
   in-scope post on every pass. A rule listing several triggers still works off
   whichever survive (§3c's shape).
+- **§3g a term whose TAXONOMY is unregistered is not a resolved term** ✅ *(#52,
+  steps `ghost-setup` then `ghost` — two evals, because `register_taxonomy()` is
+  request-scoped and the term row is not).* `\get_term()` answers such an id
+  with `WP_Error('invalid_taxonomy')`, and an id of `0` with
+  `WP_Error('invalid_term')` — objects, so TRUTHY, so `if (!\get_term($id))`
+  read both as "resolves fine". `validate_rule_internal()` accepted a rule
+  pointing at one in either slot; the step asserts it is now rejected in both,
+  with a live-terms control beside it so the check cannot pass by rejecting
+  everything. The applier floor (§3f's shape, trigger term present but its
+  taxonomy gone) is asserted too, though it held before the fix — the appliers
+  already tested `is_wp_error()`; validation is what did not.
 - Note: apply is merge-add. Removal fires whenever the rule is bidirectional
   and NO trigger term is on the post — checked across ALL taxonomies, not just
   one. It used to require a trigger to have been removed *in that write*, which

@@ -41,6 +41,8 @@
  *   wp eval-file .../sweep-61-appliers.php cron        # §61e producer→consumer
  *   wp eval-file .../sweep-61-appliers.php cron-swap   # §61f order control
  *   wp eval-file .../sweep-61-appliers.php publish     # §61g
+ *   wp eval-file .../sweep-61-appliers.php ghost-setup # §52 setup (own eval)
+ *   wp eval-file .../sweep-61-appliers.php ghost       # §52
  *   wp eval-file .../sweep-61-appliers.php restore
  *
  * @package Meta_Conductor
@@ -278,6 +280,82 @@ switch ( $step ) {
 		mc_assert( '§61g  the post is published', get_post_status( $a ), 'publish' );
 		break;
 
+	case 'ghost-setup':
+		// §52 needs a term whose taxonomy is NOT registered at the moment the
+		// pass reads it. `register_taxonomy()` is request-scoped and term rows
+		// are not, so this step registers a throwaway taxonomy and creates one
+		// term in it; the NEXT eval — where nothing registers `mc52_ghost` — is
+		// the case under test. It has to be its own eval for that reason.
+		register_taxonomy( 'mc52_ghost', 'mc_item', array( 'public' => false ) );
+
+		$ghost = term_exists( 'mc52-ghost-trigger', 'mc52_ghost' );
+		if ( ! $ghost ) {
+			$ghost = wp_insert_term( 'MC52 Ghost Trigger', 'mc52_ghost', array( 'slug' => 'mc52-ghost-trigger' ) );
+		}
+		if ( is_wp_error( $ghost ) ) {
+			WP_CLI::error( 'could not create the ghost term: ' . $ghost->get_error_message() );
+		}
+
+		update_option( 'mc52_ghost_term', (int) $ghost['term_id'] );
+		WP_CLI::log( '[ghost-setup] ghost term ' . (int) $ghost['term_id'] . ' created in mc52_ghost. Run `ghost` next, then `restore`.' );
+		break;
+
+	case 'ghost':
+		$b   = mc_pid( 'item-solo-b' );
+		$tid = (int) get_option( 'mc52_ghost_term' );
+
+		if ( ! $tid ) {
+			WP_CLI::error( 'run `ghost-setup` in its own eval first.' );
+		}
+		if ( taxonomy_exists( 'mc52_ghost' ) ) {
+			WP_CLI::error( 'mc52_ghost is registered in THIS request — the step would prove nothing.' );
+		}
+
+		// THE PREMISE, asserted rather than assumed, because the whole bug is a
+		// truth test on this value: `get_term()` answers an id whose taxonomy is
+		// not registered with a WP_Error — which is an OBJECT, and therefore
+		// TRUTHY. `!\get_term($id)` reads that as "resolves fine".
+		$probe = get_term( $tid );
+		mc_assert( '§52  get_term() on a ghost id answers WP_Error…', is_wp_error( $probe ), true );
+		mc_assert( '§52  …which is TRUTHY — the laxity the bare test had', (bool) $probe, true );
+
+		$handler = \BWS\MetaConductor\TaxonomyManager::get_instance()->get_handler( 'related' );
+
+		// §52 — the fix's discriminating check. Validation is the surface that
+		// took the bare test, so this is what failed before it: a rule pointing
+		// at a term in an unregistered taxonomy validated CLEAN, in either slot.
+		$good = array(
+			// `type` is for the authored list below; `name` is what the generic
+			// half of validate_rule() insists on.
+			'type'            => 'related_rules',
+			'name'            => 'mc52 probe',
+			'enabled'         => true,
+			'post_types'      => array( 'mc_item' ),
+			'trigger_type'    => 'term',
+			'trigger_term_id' => array( mc_tid( 'topic-coastal' ) ),
+			'target_term_id'  => mc_tid( 'topic-featured' ),
+			'bidirectional'   => true,
+		);
+		mc_assert( '§52  control: a rule on two live terms still validates', $handler->validate_rule( $good )['valid'], true );
+
+		$ghost_trigger                    = $good;
+		$ghost_trigger['trigger_term_id'] = array( $tid );
+		mc_assert( '§52  a TRIGGER in an unregistered taxonomy is rejected', $handler->validate_rule( $ghost_trigger )['valid'], false );
+
+		$ghost_target                   = $good;
+		$ghost_target['target_term_id'] = $tid;
+		mc_assert( '§52  a TARGET in an unregistered taxonomy is rejected', $handler->validate_rule( $ghost_target )['valid'], false );
+
+		// And the applier floor, §61h's shape with the term EXISTING and only
+		// its taxonomy gone. `wp_get_object_terms()` refuses that taxonomy on
+		// every post, so "is the trigger on this post" is unanswerable in
+		// exactly the §61h way and must stay inert, not read as "no".
+		mc61_stage( $b, array( 'topic-featured' ) );
+		mc61_author( array( $ghost_trigger ) );
+		mc61_dispatcher()->run_pass( $b );
+		mc_assert( '§52  a trigger in an UNREGISTERED taxonomy removes nothing', mc61_slugs( $b ), array( 'featured' ) );
+		break;
+
 	case 'restore':
 		$a = mc_pid( 'item-solo-a' );
 		$b = mc_pid( 'item-solo-b' );
@@ -299,9 +377,18 @@ switch ( $step ) {
 		// order this sweep installed goes with them.
 		mc_restore( array( $a, $b ) );
 
+		// §52's ghost term. Deleting it needs the throwaway taxonomy registered
+		// for the length of THIS request — nothing else registers it.
+		$ghost = (int) get_option( 'mc52_ghost_term' );
+		if ( $ghost ) {
+			register_taxonomy( 'mc52_ghost', 'mc_item', array( 'public' => false ) );
+			wp_delete_term( $ghost, 'mc52_ghost' );
+			delete_option( 'mc52_ghost_term' );
+		}
+
 		WP_CLI::log( '[restore] rules rebuilt from manifest, subjects reset.' );
 		break;
 
 	default:
-		WP_CLI::error( "Unknown step '{$step}' — use related | cron | cron-swap | publish | restore." );
+		WP_CLI::error( "Unknown step '{$step}' — use related | cron | cron-swap | publish | ghost-setup | ghost | restore." );
 }

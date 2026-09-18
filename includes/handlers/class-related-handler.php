@@ -85,8 +85,8 @@ class RelatedHandler extends UnifiedHandlerBase {
 
         // Related writes the TARGET term's taxonomy, which may differ from any
         // trigger taxonomy — fingerprint that.
-        $target_term = \get_term((int) ($rule['target_term_id'] ?? 0));
-        if (!$target_term || \is_wp_error($target_term)) {
+        $target_term = $this->resolve_term($rule['target_term_id'] ?? 0);
+        if (!$target_term) {
             return false;
         }
 
@@ -149,8 +149,7 @@ class RelatedHandler extends UnifiedHandlerBase {
 
         if ($trigger_type === 'term') {
             foreach ((array) ($rule['trigger_term_id'] ?? []) as $tid) {
-                $term = \get_term((int) $tid);
-                if ($term && !\is_wp_error($term)) {
+                if ($this->resolve_term($tid)) {
                     return true;
                 }
             }
@@ -181,9 +180,8 @@ class RelatedHandler extends UnifiedHandlerBase {
         if ($rule['trigger_type'] === 'term') {
             $trigger_ids = (array) ($rule['trigger_term_id'] ?? []);
             foreach ($trigger_ids as $tid) {
-                $tid  = (int) $tid;
-                $term = \get_term($tid);
-                if (!$term || \is_wp_error($term)) {
+                $term = $this->resolve_term($tid);
+                if (!$term) {
                     continue;
                 }
                 if ($this->post_has_terms($post_id, $term->taxonomy, array($term->term_id))) {
@@ -228,7 +226,7 @@ class RelatedHandler extends UnifiedHandlerBase {
                 return false;
             }
             foreach ($trigger_ids as $tid) {
-                if (!\get_term((int) $tid)) {
+                if (!$this->resolve_term($tid)) {
                     return false;
                 }
             }
@@ -238,10 +236,59 @@ class RelatedHandler extends UnifiedHandlerBase {
             }
         }
 
-        if (empty($rule['target_term_id']) || !\get_term($rule['target_term_id'])) {
+        if (empty($rule['target_term_id']) || !$this->resolve_term($rule['target_term_id'])) {
             return false;
         }
 
         return true;
+    }
+
+    /**
+     * Resolve a term id STRICTLY: it must name a real term AND that term's
+     * taxonomy must still be REGISTERED (#52).
+     *
+     * `\get_term()` does not answer "no" the way a bare truth test assumes. An
+     * id of 0 answers `WP_Error('invalid_term')` and an id whose taxonomy is no
+     * longer registered — a deactivated CPT plugin, a renamed taxonomy — answers
+     * `WP_Error('invalid_taxonomy')`. Both are OBJECTS, so both are TRUTHY, and
+     * `if (!\get_term($id))` reads either as "resolves fine". That is the whole
+     * of #52: `validate_rule_internal()` accepted rules pointing at terms that
+     * cannot be read, in either slot, with no warning and no log.
+     *
+     * The `taxonomy_exists()` half is belt to that braces. Which of null /
+     * WP_Error / a bare `WP_Term` core returns for an unresolvable id has moved
+     * between releases; what every caller here actually needs is the property
+     * `post_has_terms()` needs — a term in a taxonomy `wp_get_object_terms()`
+     * will answer for — so the helper asserts that directly instead of encoding
+     * a core version's error shape.
+     *
+     * On this handler the distinction is not cosmetic. `wp_get_object_terms()`
+     * answers `WP_Error` (⇒ "no") for an unregistered taxonomy on EVERY post,
+     * and the live-state applier reads "no" as "trigger absent", which a
+     * `bidirectional` rule answers by REMOVING its target — from every in-scope
+     * post, on every pass. `trigger_resolvable()` is the floor that exists to
+     * stop exactly that (don't 6c / #61); it now asks the strict question at
+     * every one of this handler's five term reads rather than two of them.
+     *
+     * Note what is NOT checked: which taxonomy a trigger or target term
+     * belongs to. Both pickers list terms from every taxonomy on purpose — a
+     * trigger set may span taxonomies (see `get_trigger_terms()`) and the
+     * target's taxonomy is DERIVED from the term, there being no target
+     * taxonomy subfield to disagree with. `trigger_taxonomy` is the other
+     * trigger mode's field and is deliberately preserved while unused, so
+     * pinning term-mode triggers to it would invalidate live rows whose radio
+     * has been flipped.
+     *
+     * @param mixed $term_id Stored id (canonical shape is int; tolerant anyway).
+     * @return \WP_Term|null Null when the id resolves to nothing usable.
+     */
+    private function resolve_term($term_id): ?\WP_Term {
+        $term = \get_term((int) $term_id);
+
+        if (!$term instanceof \WP_Term || !\taxonomy_exists($term->taxonomy)) {
+            return null;
+        }
+
+        return $term;
     }
 }

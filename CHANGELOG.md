@@ -5,6 +5,12 @@ All notable changes to Meta Conductor are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.2] — 2026-09-18
+
+### Fixed
+
+- **A related-term rule pointing at a term that cannot be read no longer validates clean.** Validation asked WordPress for each trigger and target term and treated any answer as success — but the answer for a term id of `0`, or for a term whose taxonomy is no longer registered (a deactivated plugin, a renamed taxonomy), is an error object, which counts as an answer. Such a rule passed validation silently and then did nothing on every post it covered. Both slots now require a term that is actually readable in a registered taxonomy, and the handler asks that same question everywhere it resolves a term rather than in two places out of five.
+
 ## [0.8.1] — 2026-09-10
 
 ### Fixed
