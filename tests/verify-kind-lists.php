@@ -684,6 +684,14 @@ $check('the combined acf_field_name is NOT split in storage',
 $check('the rewrite is flag-gated to one run',
     (new OptionRuleStorage())->maybe_migrate_acf_ref_storage() === false);
 
+// ACF is not loaded in this file yet (the shims are declared further down, on
+// purpose), so the row above still has no field key. The flag must be WITHHELD:
+// setting it here would retire the backfill scan forever over a row it never
+// got to look at. (#25)
+$check('the flag is withheld while a key is still missing and ACF is absent',
+    (int) get_option(OptionRuleStorage::ACFREF_SCHEMA_FLAG, 0)
+        < OptionRuleStorage::ACFREF_SCHEMA_VERSION);
+
 // =============================================================================
 // ACF FIELD IDENTITY (#25) — the stored value carries the field KEY.
 //

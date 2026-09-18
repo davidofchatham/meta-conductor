@@ -825,11 +825,23 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
      *
      * NOT for reading a VALUE — `get_field($name, $post_id)` is post-scoped and
      * was never ambiguous. This is for the field's CONFIG.
+     *
+     * The key is VERIFIED before it is returned, and that verification is the
+     * whole fallback: a key that no longer resolves — the field was deleted and
+     * rebuilt, or the row was imported from a site where that key never existed
+     * — would otherwise make every lookup return nothing at all, which is worse
+     * than the ambiguous name this change replaced. Resolving twice costs one
+     * extra hit on ACF's own field store after the first call in a request.
      */
     private static function acf_selector(array $rule): string {
-        $key = (string) ($rule['acf_field_key'] ?? '');
+        $key  = (string) ($rule['acf_field_key'] ?? '');
+        $name = (string) ($rule['acf_field_name'] ?? '');
 
-        return $key !== '' ? $key : (string) ($rule['acf_field_name'] ?? '');
+        if ($key === '' || !function_exists('acf_get_field')) {
+            return $name;
+        }
+
+        return is_array(\acf_get_field($key)) ? $key : $name;
     }
 
     /**

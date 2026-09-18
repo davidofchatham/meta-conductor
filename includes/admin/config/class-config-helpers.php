@@ -11,6 +11,8 @@
 
 namespace BWS\MetaConductor\Admin\Config;
 
+use BWS\MetaConductor\Storage\OptionRuleStorage;
+
 if (!defined('ABSPATH')) {
     exit;
 }
@@ -354,7 +356,7 @@ class ConfigHelpers {
         $fields_cache = [];
 
         $post_types  = get_post_types(['public' => true], 'objects');
-        $field_types = ['relationship', 'post_object'];
+        $field_types = OptionRuleStorage::ACF_REFERENCE_FIELD_TYPES;
 
         foreach ($post_types as $post_type) {
             $groups = acf_get_field_groups(['post_type' => $post_type->name]);

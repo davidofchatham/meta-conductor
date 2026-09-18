@@ -418,6 +418,16 @@ terms first: `identity-a`'s own shutdown drain runs the row with the alias alrea
 repaired. A test that stages and passes together cannot see this bug at all, which
 is exactly why it survived to #25.
 
+**No sweep arm for a DEAD field key, deliberately.** A key that no longer
+resolves falls back to the bare name (`acf_selector()` verifies before it
+returns), but there is no behavioural assertion for it because none can fail:
+both consumers degrade permissively when a lookup finds nothing — empty target
+types mean "cannot narrow", an empty partner list means "fall to tier 3" — and
+the sever capture matches the forward field by NAME, not through the selector.
+The fallback buys the fast path and a real row-title label, not a different
+outcome. Two candidate arms were written, run, and deleted when a mutation of
+`acf_selector()` left both green.
+
 **Sweep trap #3 (§63h).** `mc63_stage()` now clears the `mc_topics` ACF mirror on
 all three posts as well as the native terms. `mc_reset_subject()` clears NATIVE
 only, and both post types mirror `mc_topic` into an ACF taxonomy field with

@@ -847,7 +847,12 @@ class WireframeBootstrap {
         [, $name, $key] = OptionRuleStorage::split_acf_field_value($raw);
 
         if (function_exists('acf_get_field')) {
-            $field = \acf_get_field($key !== '' ? $key : $name);
+            // Key first; the name is the fallback for a key that no longer
+            // resolves, so a stale row still shows a label rather than a blank.
+            $field = $key !== '' ? \acf_get_field($key) : null;
+            if (!is_array($field)) {
+                $field = \acf_get_field($name);
+            }
             if (is_array($field) && !empty($field['label'])) {
                 return (string) $field['label'];
             }

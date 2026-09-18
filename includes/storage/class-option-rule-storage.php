@@ -921,6 +921,20 @@ class OptionRuleStorage implements RuleStorage {
     }
 
     /**
+     * ACF field types a related_post_terms rule may point at. (#25)
+     *
+     * Shared with `ConfigHelpers::acf_relationship_field_options()`, which uses
+     * it to decide what to OFFER, so that the resolver below can resolve every
+     * name that was offered. Two independent lists would drift into a name the
+     * select shows and the backfill cannot key. It lives on storage, not on the
+     * config class, because storage is what runtime resolution may reach —
+     * pulling `Admin\Config` in the other direction is don't #4.
+     *
+     * @var string[]
+     */
+    const ACF_REFERENCE_FIELD_TYPES = ['relationship', 'post_object'];
+
+    /**
      * The one relationship/post-object field key matching $name on $post_type.
      *
      * '' when nothing matches OR when several do — the ambiguous case #25 is
@@ -938,7 +952,7 @@ class OptionRuleStorage implements RuleStorage {
 
         foreach ((array) acf_get_field_groups(['post_type' => $post_type]) as $group) {
             foreach ((array) acf_get_fields($group['key'] ?? '') as $field) {
-                if (!in_array($field['type'] ?? '', ['relationship', 'post_object'], true)) {
+                if (!in_array($field['type'] ?? '', self::ACF_REFERENCE_FIELD_TYPES, true)) {
                     continue;
                 }
                 if (($field['name'] ?? '') === $name && !empty($field['key'])) {
