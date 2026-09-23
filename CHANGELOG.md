@@ -5,6 +5,18 @@ All notable changes to Meta Conductor are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **An ACF-reference rule now points at the field you picked, even when another field shares its name.** The rule stored the field's name, and ACF resolves a bare name to whichever matching field it happens to return first — so on a site with two separately-created relationship fields sharing a name (the same post type is enough; so is the same field group), a rule could read the wrong field's configuration. The visible symptoms were a reverse lookup that found no partner and silently fell back to the slow scan, and posts skipped by the eligibility filter because the wrong field's target post types were consulted. It was also intermittent: ACF caches the first resolution of a name for the rest of the request, so whether the rule behaved depended on what else had touched that field beforehand.
+
+  Rules now store the field's key alongside its name and resolve by key. Existing rules are upgraded in place on the next admin page load — **except** a rule whose field name matches more than one field, which is left exactly as it behaves today rather than guessed at. To fix one of those, re-pick the field: every option in the two field dropdowns now names its field group, so two same-named fields can be told apart. The interim warning about same-named fields is gone from the *Monitored relationship field* help text.
+
+### Removed
+
+- Two unused admin AJAX endpoints (`bws_validate_acf_field`, `bws_get_acf_fields`). Nothing called them.
+
 ## [0.8.2] — 2026-09-18
 
 ### Fixed

@@ -149,8 +149,6 @@ class TaxonomyManager {
         // whose functionality is now in Wireframe's REST save path.
         add_action('wp_ajax_bws_get_taxonomy_terms', array($this, 'ajax_get_taxonomy_terms'));
         add_action('wp_ajax_bws_get_post_type_taxonomies', array($this, 'ajax_get_post_type_taxonomies'));
-		add_action('wp_ajax_bws_validate_acf_field', array($this, 'ajax_validate_acf_field'));
-		add_action('wp_ajax_bws_get_acf_fields', array($this, 'ajax_get_acf_fields'));
 		add_action('wp_ajax_bws_test_related_posts', array($this, 'ajax_test_related_posts'));
 		add_action('wp_ajax_bws_preview_level_restrictions', array($this, 'ajax_preview_level_restrictions'));
 
@@ -338,96 +336,6 @@ class TaxonomyManager {
         ));
     }
     
-	/**
-	 * AJAX handler for validating ACF fields
-	 */
-	public function ajax_validate_acf_field() {
-		check_ajax_referer('bws_meta_conductor_nonce', 'nonce');
-		
-		if (!current_user_can('manage_options')) {
-			wp_die(__('You do not have sufficient permissions to access this page.', 'meta-conductor'));
-		}
-		
-		$field_name = sanitize_text_field($_POST['field_name'] ?? '');
-		
-		if (empty($field_name)) {
-			wp_send_json_error(__('Field name is required.', 'meta-conductor'));
-		}
-		
-		if (!function_exists('acf_get_field')) {
-			wp_send_json_success(array(
-				'exists' => false,
-				'message' => __('ACF Pro not available for field validation.', 'meta-conductor')
-			));
-		}
-		
-		// Try to get the field
-		$field = acf_get_field($field_name);
-		
-		if ($field) {
-			$field_type = $field['type'] ?? 'unknown';
-			$is_relationship_field = in_array($field_type, array('post_object', 'relationship', 'page_link'));
-			
-			wp_send_json_success(array(
-				'exists' => true,
-				'field_type' => $field_type,
-				'is_relationship_field' => $is_relationship_field,
-				'field_label' => $field['label'] ?? $field_name
-			));
-		} else {
-			wp_send_json_success(array(
-				'exists' => false,
-				'message' => __('Field not found in ACF.', 'meta-conductor')
-			));
-		}
-	}
-	
-	/**
-	 * AJAX handler for getting ACF fields for a post type
-	 */
-	public function ajax_get_acf_fields() {
-		check_ajax_referer('bws_meta_conductor_nonce', 'nonce');
-		
-		if (!current_user_can('manage_options')) {
-			wp_die(__('You do not have sufficient permissions to access this page.', 'meta-conductor'));
-		}
-		
-		$post_type = sanitize_text_field($_POST['post_type'] ?? '');
-		$field_types = $_POST['field_types'] ?? array('post_object', 'relationship');
-		
-		if (!post_type_exists($post_type)) {
-			wp_send_json_error(__('Invalid post type.', 'meta-conductor'));
-		}
-		
-		$fields = array();
-		
-		if (function_exists('acf_get_field_groups')) {
-			// Get field groups for this post type
-			$field_groups = acf_get_field_groups(array(
-				'post_type' => $post_type
-			));
-			
-			foreach ($field_groups as $field_group) {
-				$group_fields = acf_get_fields($field_group['key']);
-				
-				if ($group_fields) {
-					foreach ($group_fields as $field) {
-						if (in_array($field['type'], $field_types)) {
-							$fields[] = array(
-								'name' => $field['name'],
-								'label' => $field['label'],
-								'type' => $field['type'],
-								'key' => $field['key']
-							);
-						}
-					}
-				}
-			}
-		}
-		
-		wp_send_json_success(array('fields' => $fields));
-	}
-	
 	/**
 	 * AJAX handler for testing related posts functionality
 	 */

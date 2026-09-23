@@ -774,7 +774,7 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
         // type), so union the reverse reads across all of them, not just the
         // first (PR#24 round 4 #1). Wrapped defensively; absent/old ACF or no
         // bidi config returns [].
-        $partners = $this->acf_bidirectional_partners((string) $rule['acf_field_name']);
+        $partners = $this->acf_bidirectional_partners(self::acf_selector($rule));
         if (!empty($partners)) {
             $holders = [];
             foreach ($partners as $partner) {
@@ -808,9 +808,40 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
         }
         return in_array(
             $field_name,
-            $this->acf_bidirectional_partners((string) ($rule['acf_field_name'] ?? '')),
+            $this->acf_bidirectional_partners(self::acf_selector($rule)),
             true
         );
+    }
+
+    /**
+     * What to hand `acf_get_field()` for this rule's forward field. (#25)
+     *
+     * The stored field KEY when the row has one — the only identity that
+     * separates two separately-created fields sharing a bare name, which
+     * `acf_get_field($name)` resolves to one arbitrary match. Falls back to the
+     * bare name for a row saved before #25, or one imported from another site
+     * whose key means nothing here: that is exactly the pre-#25 lookup, so a
+     * row is never worse off than it was.
+     *
+     * NOT for reading a VALUE — `get_field($name, $post_id)` is post-scoped and
+     * was never ambiguous. This is for the field's CONFIG.
+     *
+     * The key is VERIFIED before it is returned, and that verification is the
+     * whole fallback: a key that no longer resolves — the field was deleted and
+     * rebuilt, or the row was imported from a site where that key never existed
+     * — would otherwise make every lookup return nothing at all, which is worse
+     * than the ambiguous name this change replaced. Resolving twice costs one
+     * extra hit on ACF's own field store after the first call in a request.
+     */
+    private static function acf_selector(array $rule): string {
+        $key  = (string) ($rule['acf_field_key'] ?? '');
+        $name = (string) ($rule['acf_field_name'] ?? '');
+
+        if ($key === '' || !function_exists('acf_get_field')) {
+            return $name;
+        }
+
+        return is_array(\acf_get_field($key)) ? $key : $name;
     }
 
     /**
@@ -854,13 +885,15 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
      * post types has multiple partner fields — ALL are returned (PR#24 round 4
      * #1). Defensive: never fatals on old/absent ACF. (SPEC §V6 tier 2)
      *
+     * @param string $selector Field KEY where the row has one, else bare name
+     *                         (`acf_selector()`), NOT a raw rule value. (#25)
      * @return string[]
      */
-    private function acf_bidirectional_partners(string $field_name): array {
-        if ($field_name === '' || !function_exists('acf_get_field')) {
+    private function acf_bidirectional_partners(string $selector): array {
+        if ($selector === '' || !function_exists('acf_get_field')) {
             return [];
         }
-        $field = \acf_get_field($field_name);
+        $field = \acf_get_field($selector);
         if (!is_array($field) || empty($field['bidirectional'])) {
             return [];
         }
@@ -977,7 +1010,7 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
         }
 
         // push: consult the ACF field's target post types.
-        $targets = $this->acf_field_target_post_types((string) ($rule['acf_field_name'] ?? ''));
+        $targets = $this->acf_field_target_post_types(self::acf_selector($rule));
         if (empty($targets)) {
             return true; // unknown/unconstrained → can't narrow; stay correct
         }
@@ -1003,7 +1036,7 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
         }
 
         // pull: consult the ACF field's target post types (the related posts).
-        $targets = $this->acf_field_target_post_types((string) ($rule['acf_field_name'] ?? ''));
+        $targets = $this->acf_field_target_post_types(self::acf_selector($rule));
         if (empty($targets)) {
             return true; // unknown/unconstrained → can't narrow; stay correct
         }
@@ -1015,23 +1048,27 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
      * its `post_type` setting. Empty ⇒ unconstrained or ACF unavailable.
      * Defensive — never fatals on old/absent ACF.
      *
+     * @param string $selector Field KEY where the row has one, else bare name
+     *                         (`acf_selector()`), NOT a raw rule value. (#25)
      * @return string[]
      */
-    private function acf_field_target_post_types(string $field_name): array {
-        if ($field_name === '' || !function_exists('acf_get_field')) {
+    private function acf_field_target_post_types(string $selector): array {
+        if ($selector === '' || !function_exists('acf_get_field')) {
             return [];
         }
         // Per-request memo: this is called from both eligibility pre-filters,
         // once per rule, on every entity a pass touches. Field config is stable
-        // within a request. (PR#24 round 6 minor)
-        if (array_key_exists($field_name, $this->field_target_types_cache)) {
-            return $this->field_target_types_cache[$field_name];
+        // within a request. (PR#24 round 6 minor) Keyed by the SELECTOR, so a
+        // key-bearing row and a legacy name-only row for the same field are
+        // separate entries rather than one masquerading as the other.
+        if (array_key_exists($selector, $this->field_target_types_cache)) {
+            return $this->field_target_types_cache[$selector];
         }
-        $field  = \acf_get_field($field_name);
+        $field  = \acf_get_field($selector);
         $result = (is_array($field) && !empty($field['post_type']))
             ? array_values(array_filter((array) $field['post_type']))
             : [];
-        $this->field_target_types_cache[$field_name] = $result;
+        $this->field_target_types_cache[$selector] = $result;
         return $result;
     }
 }

@@ -66,6 +66,9 @@
  *   wp eval-file .../sweep-63-acf-reference.php pull         # §63f
  *   wp eval-file .../sweep-63-acf-reference.php cross-a      # §63g (stage)
  *   wp eval-file .../sweep-63-acf-reference.php cross-b      # §63g (sever)
+ *   wp eval-file .../sweep-63-acf-reference.php identity-a   # §63h (stage)
+ *   wp eval-file .../sweep-63-acf-reference.php identity-b   # §63h (legacy pass)
+ *   wp eval-file .../sweep-63-acf-reference.php identity-key # §63h (keyed pass)
  *   wp eval-file .../sweep-63-acf-reference.php restore
  *
  * `restore` puts both holders' relationship fields back to their manifest
@@ -128,8 +131,8 @@ function mc63_rule_a() {
 	return array(
 		'type'                   => 'related_post_terms_rules',
 		'enabled'                => true,
-		'acf_field_name'         => 'mc_section:mc_related_items',
-		'reverse_acf_field_name' => 'mc_item:mc_parent_section',
+		'acf_field_name'         => 'mc_section:mc_related_items:field_mc_related_items',
+		'reverse_acf_field_name' => 'mc_item:mc_parent_section:field_mc_parent_section',
 		'holder_role'            => 'source',
 		'taxonomy'               => 'mc_topic',
 		'keep_in_sync'           => true,
@@ -141,7 +144,7 @@ function mc63_rule_c() {
 	return array(
 		'type'           => 'related_post_terms_rules',
 		'enabled'        => true,
-		'acf_field_name' => 'mc_section:mc_bidi_items',
+		'acf_field_name' => 'mc_section:mc_bidi_items:field_mc_bidi_items',
 		'holder_role'    => 'source',
 		'taxonomy'       => 'mc_topic',
 		'keep_in_sync'   => true,
@@ -171,7 +174,7 @@ function mc63_rule_s() {
 	return array(
 		'type'           => 'related_post_terms_rules',
 		'enabled'        => true,
-		'acf_field_name' => 'mc_item:mc_parent_section',
+		'acf_field_name' => 'mc_item:mc_parent_section:field_mc_parent_section',
 		'holder_role'    => 'target',
 		'taxonomy'       => 'mc_topic',
 		'keep_in_sync'   => true,
@@ -219,6 +222,15 @@ function mc63_stage( array $rows ) {
 	mc_reset_subject( $subject );
 	mc_reset_subject( $holder );
 	mc_reset_subject( $bidi );
+
+	// mc_reset_subject() clears NATIVE terms only, and both post types mirror
+	// mc_topic into an ACF taxonomy field with save_terms on. A mirror left
+	// over from a previous step rewrites the native store on the next ACF
+	// write, so a step can inherit the terms the step before it produced and
+	// read as a pass. (CLAUDE.md don't 6d, sweep gotcha)
+	update_field( 'mc_topics', array(), $subject );
+	update_field( 'mc_topics', array(), $holder );
+	update_field( 'mc_topics', array(), $bidi );
 
 	// Relationships, written while nothing is live. Both holders keep their
 	// seeded dependents and gain the subject, so nothing else in the fixture
@@ -349,7 +361,7 @@ switch ( $step ) {
 			// that used to be row A's reverse. No reverse_acf_field_name and no
 			// native bidi on it ⇒ resolve_reverse falls to tier 3, which is the
 			// path the fan-out needs to find the holder from the source.
-			'acf_field_name' => 'mc_item:mc_parent_section',
+			'acf_field_name' => 'mc_item:mc_parent_section:field_mc_parent_section',
 			'holder_role'    => 'target',
 			'taxonomy'       => 'mc_topic',
 			'keep_in_sync'   => true,
@@ -365,6 +377,65 @@ switch ( $step ) {
 		mc63_dispatcher()->drain();
 
 		$check( '§63f fan-out re-synced the holder', mc63_slugs( $subject ), array( 'west' ) );
+		break;
+
+	// ---- §63h: field identity — the KEY decides, not the bare name --------
+	//
+	// `group_mc_decoy_fields` declares a SECOND relationship field named
+	// `mc_related_items` on mc_section (manifest v6), pointing at mc_section
+	// instead of mc_item. Registered last, so `acf_get_field('mc_related_items')`
+	// returns the DECOY — and the decoy's target post types exclude mc_item, so
+	// the eligibility pre-filter refuses to treat the item as a dependent and row
+	// A silently does nothing. That is #25, reproduced.
+	//
+	// THE LEGACY ARM NEEDS ITS OWN REQUEST, and the reason is the sharpest thing
+	// this sweep has to say about #25. `acf_get_field()` CACHES what it resolves,
+	// aliasing the bare name to that field's key for the rest of the request — so
+	// any post-scoped read or write of the field (`update_field('mc_related_items',
+	// …, $holder)`, which staging must do) repairs the alias to the REAL field,
+	// and a bare-name lookup later in the same request then happens to be right.
+	// The ambiguity is therefore request-state dependent: intermittent, invisible
+	// in any test that stages and passes together, and indistinguishable from
+	// correct behavior until the day it isn't. Staging and the pass are split so
+	// the pass runs in a request where nothing has touched the field.
+	case 'identity-a':
+		WP_CLI::log( '§63h — stage the graph and a LEGACY two-part row (pass runs in identity-b)' );
+		$legacy                   = mc63_rule_a();
+		$legacy['acf_field_name'] = 'mc_section:mc_related_items';
+		mc63_stage( array( $legacy ) );
+		break;
+
+	case 'identity-b':
+		WP_CLI::log( '§63h — the legacy row, passed in a request that never names the field' );
+		$subject = mc_pid( 'item-solo-a' );
+
+		// Before anything resolves the field: the bare name belongs to the decoy.
+		$resolved = acf_get_field( 'mc_related_items' );
+		$check( '§63h bare name resolves the decoy', $resolved['key'] ?? 'none', 'field_mc_decoy_related_items' );
+
+		// identity-a's OWN shutdown drain ran the legacy row with the alias
+		// already repaired by its staging writes — the flakiness this arm exists
+		// to document, arriving as state. Clear both stores so what is asserted
+		// below is this request's pass and not the previous request's.
+		wp_set_object_terms( $subject, array(), 'mc_topic' );
+		update_field( 'mc_topics', array(), $subject );
+
+		mc63_pass( $subject );
+
+		// The decoy's target post types exclude mc_item, so the eligibility
+		// pre-filter refuses the item as a dependent and the row writes nothing.
+		// That is pre-#25 behavior, preserved for a row that has no key yet.
+		$check( '§63h legacy row copies nothing', mc63_slugs( $subject ), array() );
+		break;
+
+	case 'identity-key':
+		WP_CLI::log( '§63h — the same row, keyed, resolves the REAL field' );
+		list( $subject ) = mc63_stage( array( mc63_rule_a() ) );
+		mc63_pass( $subject );
+
+		// Same decoy, same rule, same request shape; only the stored key differs.
+		// A key is immune to the alias state that makes the legacy arm flaky.
+		$check( '§63h keyed row copies the holder terms', mc63_slugs( $subject ), array( 'coastal' ) );
 		break;
 
 	// ---- §63g: a sever is the CUT ROW's licence, nobody else's (stage) -----

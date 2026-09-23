@@ -646,9 +646,21 @@ Fixed upstream in 1.0.6 (no longer quirks): single-page `App::boot()` honors `me
 
 ## Canonical shape adapter
 
-Wireframe writes some fields differently than handlers expect (e.g. a `multiple+max=1` FormTokenField writes `[id]` where a handler wants `int`; an ACF field select writes `"post_type:field_name"` where a handler wants the bare name plus a separate post type). The storage layer's `normalize_rule_shape()` coerces these on read.
+Wireframe writes some fields differently than handlers expect (e.g. a `multiple+max=1` FormTokenField writes `[id]` where a handler wants `int`; an ACF field select writes `"post_type:field_name:field_key"` where a handler wants the three parts separately). The storage layer's `normalize_rule_shape()` coerces these on read.
 
 Storage is the adapter boundary between writers (current: Wireframe REST) and handlers — future writers (CLI, import) plug in at the same boundary. **Caveat:** a key-RENAMING migration here is read-time-only and the Wireframe admin reads the option RAW, so a renamed/removed key must ALSO be persisted (one-time rewrite) or the admin renders defaults and corrupts on resave. (See the ACF-reference migration.)
+
+### ACF field identity (#25)
+
+An ACF field is identified by its **key**, never by its bare name. `acf_get_field($name)` resolves a name through a `get_posts()` lookup capped at one row, so two separately-created fields sharing a bare name — including two on the *same* post type, which is what real sites accumulate — resolve to whichever ACF returns first. Worse, the result is not even stable within a site: `acf_get_field()` caches what it resolves and aliases the name to that key for the rest of the request, so any post-scoped read or write of the field "repairs" the alias and a later bare-name lookup happens to be right. A bug that corrects itself depending on what else ran in the request is one that will be found in production, not in a test.
+
+The identity therefore travels in the stored value, which is also the select's option key and so must stay one round-tripping string: `post_type:field_name:field_key`.
+
+- **post_type** cannot be derived from the key — a field group may be located on several post types, which is why the options list emits one row per post-type/field pair.
+- **field_name** stays because reading a VALUE (`get_field($name, $post_id)`) is post-scoped and was never ambiguous, and because it is what a lookup falls back to when a key no longer resolves (deleted field, a row imported from another site). That fallback is a safeguard, not a correctness requirement: both consumers already degrade permissively when a lookup finds nothing — empty target types mean "cannot narrow", an empty partner list means "fall to the tier-3 scan" — so a dead key costs the slow path and a bare-name row title, never a wrong write. It is verified in `acf_selector()` rather than assumed.
+- **field_key** is what separates the twins.
+
+Three lookups consume it — the bidirectional partner resolution, the target-post-type eligibility pre-filter, and the row-title label — all through `$key ?: $name`. A legacy two-part value parses to an empty key and resolves by name: pre-#25 behavior, never worse. The one-shot `maybe_migrate_acf_ref_storage()` backfills keys where the name resolves to exactly one field, and **leaves an ambiguous name alone** rather than guessing at a field the author never chose; those rows keep working as they do today until re-picked, which the group-titled option labels finally make possible.
 
 ## Effect-kind rule lists
 

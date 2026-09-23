@@ -206,6 +206,36 @@ function bws_fixture_mc_rules_register_acf() {
 			),
 		)
 	);
+
+
+	// DECOY group (#25). A SECOND relationship field named `mc_related_items`,
+	// on the SAME post type as the real one, in a different group, pointing at
+	// a DIFFERENT target post type. This is the shape found on a real site: a
+	// bare-name `acf_get_field('mc_related_items')` returns ONE arbitrary match,
+	// so post-type qualification cannot separate the two — only the field key
+	// can. Registered LAST so the bare-name lookup resolves to the decoy, which
+	// makes the pre-fix failure deterministic rather than order-dependent.
+	//
+	// Never populated by the fixture: its only job is to exist and collide.
+	acf_add_local_field_group(
+		array(
+			'key'      => 'group_mc_decoy_fields',
+			'title'    => 'MC Decoy Fields',
+			'location' => array(
+				array( array( 'param' => 'post_type', 'operator' => '==', 'value' => 'mc_section' ) ),
+			),
+			'fields'   => array(
+				array(
+					'key'           => 'field_mc_decoy_related_items',
+					'name'          => 'mc_related_items',
+					'label'         => 'Related MC Items (decoy)',
+					'type'          => 'relationship',
+					'post_type'     => array( 'mc_section' ),
+					'return_format' => 'id',
+				),
+			),
+		)
+	);
 }
 
 // Runtime registration (mu-plugin stub path). During seeding the applier calls

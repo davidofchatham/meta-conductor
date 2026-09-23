@@ -393,11 +393,47 @@ is renamed by the title_slug rule on any real save).
   over one side has the other side as its reverse field. Both are severed, and
   correctly: they are two views of one link.
 
+- **§63h — the field key decides, not the bare name (#25).** `group_mc_decoy_fields`
+  (manifest v6) declares a SECOND relationship field named `mc_related_items` on
+  `mc_section`, targeting `mc_section` instead of `mc_item`, and is registered
+  last so `acf_get_field('mc_related_items')` resolves to it. `identity-a` stages
+  a LEGACY two-part row; `identity-b` passes it in a fresh request and gets
+  nothing copied (the decoy's targets exclude `mc_item`, so the eligibility
+  pre-filter refuses the dependent) — pre-#25 behavior, preserved; `identity-key`
+  runs the same rule with the three-part keyed value and copies `{coastal}`.
+
 **Sweep trap (recorded because it cost a red run).** The capture path reads
 rules through a request-lifetime memo, and `mc63_stage()` writes relationship
 fields while the rules are silenced — which fills that memo with the empty set.
 A sever later in the SAME eval is then captured against no rules and silently
 does nothing. Every sever step therefore runs in its own request.
+
+**Sweep trap #2 (§63h, and it is the bug's own shape).** `acf_get_field()` CACHES
+what it resolves, aliasing the bare name to that field's key for the rest of the
+request. So any post-scoped read or write of the field — `update_field('mc_related_items',
+…, $holder)`, which staging must do — repairs the alias to the REAL field, and a
+bare-name lookup later in the same request is then accidentally right. The legacy
+arm is therefore split across two evals, and `identity-b` clears the subject's
+terms first: `identity-a`'s own shutdown drain runs the row with the alias already
+repaired. A test that stages and passes together cannot see this bug at all, which
+is exactly why it survived to #25.
+
+**No sweep arm for a DEAD field key, deliberately.** A key that no longer
+resolves falls back to the bare name (`acf_selector()` verifies before it
+returns), but there is no behavioural assertion for it because none can fail:
+both consumers degrade permissively when a lookup finds nothing — empty target
+types mean "cannot narrow", an empty partner list means "fall to tier 3" — and
+the sever capture matches the forward field by NAME, not through the selector.
+The fallback buys the fast path and a real row-title label, not a different
+outcome. Two candidate arms were written, run, and deleted when a mutation of
+`acf_selector()` left both green.
+
+**Sweep trap #3 (§63h).** `mc63_stage()` now clears the `mc_topics` ACF mirror on
+all three posts as well as the native terms. `mc_reset_subject()` clears NATIVE
+only, and both post types mirror `mc_topic` into an ACF taxonomy field with
+`save_terms` on, so a mirror left over from the previous step rewrites the native
+store on the next ACF write — a step inherits the terms the step before it
+produced and reads as a pass.
 
 ### §5 propagation — results
 

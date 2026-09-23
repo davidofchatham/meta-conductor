@@ -104,8 +104,8 @@ class WireframeBootstrap {
     /**
      * ACF-reference title (architecture.md → The ordered rule repeaters).
      * Runs PRE-storage — `acf_field_name` is still the raw
-     * "post_type:field_name" option value (before the storage adapter splits
-     * it). No A→B arrow: same term, same taxonomy, moved across a
+     * "post_type:field_name:field_key" option value (before the storage adapter
+     * splits it). No A→B arrow: same term, same taxonomy, moved across a
      * relationship.
      *
      * Schema: {Copy|Sync} {Taxonomy} terms {to|from} {field_label}{ on {statuses}}
@@ -827,9 +827,14 @@ class WireframeBootstrap {
     }
 
     /**
-     * Resolve a raw "post_type:field_name" (or bare name) ACF relationship
-     * field to its clean human label via acf_get_field(). Falls back to the
-     * bare field name. (architecture.md → Canonical shape adapter)
+     * Resolve a raw "post_type:field_name:field_key" (or older two-part / bare
+     * name) ACF relationship field to its clean human label via acf_get_field().
+     * Falls back to the bare field name. (architecture.md → Canonical shape
+     * adapter)
+     *
+     * Resolves by KEY when the value carries one: two separately-created fields
+     * can share a bare name, and a row title showing the wrong field's label is
+     * how an author would be told the wrong thing about their own rule. (#25)
      *
      * @param string $stored Raw option value.
      * @return string Unescaped label.
@@ -839,11 +844,15 @@ class WireframeBootstrap {
         if ($raw === '') {
             return '';
         }
-        // Strip the "post_type:" prefix the option value carries.
-        $name = \str_contains($raw, ':') ? explode(':', $raw, 2)[1] : $raw;
+        [, $name, $key] = OptionRuleStorage::split_acf_field_value($raw);
 
         if (function_exists('acf_get_field')) {
-            $field = \acf_get_field($name);
+            // Key first; the name is the fallback for a key that no longer
+            // resolves, so a stale row still shows a label rather than a blank.
+            $field = $key !== '' ? \acf_get_field($key) : null;
+            if (!is_array($field)) {
+                $field = \acf_get_field($name);
+            }
             if (is_array($field) && !empty($field['label'])) {
                 return (string) $field['label'];
             }

@@ -11,6 +11,8 @@
 
 namespace BWS\MetaConductor\Admin\Config;
 
+use BWS\MetaConductor\Storage\OptionRuleStorage;
+
 if (!defined('ABSPATH')) {
     exit;
 }
@@ -354,7 +356,7 @@ class ConfigHelpers {
         $fields_cache = [];
 
         $post_types  = get_post_types(['public' => true], 'objects');
-        $field_types = ['relationship', 'post_object'];
+        $field_types = OptionRuleStorage::ACF_REFERENCE_FIELD_TYPES;
 
         foreach ($post_types as $post_type) {
             $groups = acf_get_field_groups(['post_type' => $post_type->name]);
@@ -373,10 +375,26 @@ class ConfigHelpers {
                         continue;
                     }
 
-                    $key                  = $post_type->name . ':' . $field['name'];
-                    $field_label          = $field['label'] ?? $field['name'];
-                    $label                = sprintf('%s: %s (%s)', $post_type->label, $field_label, $field['name']);
-                    $fields_cache[$key]   = $label;
+                    // Option key = the STORED value, "post_type:name:field_key"
+                    // (OptionRuleStorage::split_acf_field_value). The key is the
+                    // only part that separates two separately-created fields
+                    // sharing a bare name; the other two are there because the
+                    // key cannot yield them back — a group may be located on
+                    // several post types, and the read path wants the name. (#25)
+                    $option_key  = $post_type->name . ':' . $field['name'] . ':' . ($field['key'] ?? '');
+                    $field_label = $field['label'] ?? $field['name'];
+
+                    // Group title included ALWAYS, not only on collision: two
+                    // same-named fields render identical labels otherwise, and
+                    // an author cannot re-pick the right row without being able
+                    // to tell them apart. Detecting the collision first would be
+                    // a second code path that only runs on the sites already in
+                    // trouble. (#25)
+                    $group_title = (string) ($group['title'] ?? '');
+                    $label       = sprintf('%s: %s (%s)', $post_type->label, $field_label, $field['name'])
+                        . ($group_title !== '' ? ' — ' . $group_title : '');
+
+                    $fields_cache[$option_key] = $label;
                 }
             }
         }
