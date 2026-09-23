@@ -19,6 +19,8 @@
  *   4. Reach → statuses: `post_status` narrows for every type whose gate it
  *      is, NEVER for `related_post_terms` (don't 6e(b) — there it gates the
  *      source), and trash / auto-draft never make it into the set.
+ *   5. The disabled-row override: the enabled rows plus exactly the included
+ *      one, in authored order; with no override, today's enabled filter.
  *
  * Run:  php tests/verify-apply-existing.php   (local PHP CLI, no WP needed)
  *
@@ -54,10 +56,10 @@ $KIND_TERM   = OptionRuleStorage::KIND_TERM;
 $KIND_FORMAT = OptionRuleStorage::KIND_FORMAT;
 
 /** A fresh storage instance over the option — a real second READ, no shared cache. */
-$read = function (string $kind, array $option): array {
+$read = function (string $kind, array $option, array $filters = []): array {
     $GLOBALS['mc_options'] = [OptionRuleStorage::OPTION_NAME => $option];
 
-    return (new OptionRuleStorage())->get_kind_rules($kind);
+    return (new OptionRuleStorage())->get_kind_rules($kind, $filters);
 };
 
 $term_rows = [
@@ -200,6 +202,26 @@ foreach (['propagation_rules', 'related_rules', 'time_based_rules', 'hierarchica
 $check('related_post_terms never narrows — post_status gates the source there',
     RuleChoice::reach_statuses(['type' => 'related_post_terms_rules', 'post_status' => ['publish' => true]]) === $default);
 
+// --- 5. Disabled-row override (dispatcher pass rows). -----------------------
+
+$names = fn(array $rows) => array_column($rows, 'row_title');
+
+$over = $option;
+$over[$KIND_TERM][] = ['type' => 'hierarchical_rules', 'row_title' => 'H3', 'taxonomy' => 'post_tag', 'enabled' => false];
+$today = $read($KIND_TERM, $over, ['enabled' => true]);
+$all   = $read($KIND_TERM, $over);
+
+$check('no override equals today\'s enabled filter',
+    RuleChoice::pass_rows($all, null) === $today);
+$check('an included fingerprint adds exactly that row, in authored order',
+    $names(RuleChoice::pass_rows($all, RuleChoice::fingerprint($all[1]))) === ['H1', 'R1', 'H2']);
+$check('a row included at the end stays at the end',
+    $names(RuleChoice::pass_rows($all, RuleChoice::fingerprint($all[3]))) === ['H1', 'H2', 'H3']);
+$check('a fingerprint that matches nothing adds nothing',
+    RuleChoice::pass_rows($all, str_repeat('0', 32)) === $today);
+$check('including an enabled row does not duplicate it',
+    RuleChoice::pass_rows($all, RuleChoice::fingerprint($all[0])) === $today);
+
 // --- Report. ----------------------------------------------------------------
 
 if ($fail) {
@@ -210,4 +232,4 @@ if ($fail) {
     exit(1);
 }
 
-fwrite(STDOUT, "APPLY-EXISTING OK — all $total assertions passed (fingerprint, codec, stale check, reach statuses; FW-16).\n");
+fwrite(STDOUT, "APPLY-EXISTING OK — all $total assertions passed (fingerprint, codec, stale check, reach statuses, disabled-row override; FW-16).\n");

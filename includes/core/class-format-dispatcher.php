@@ -154,6 +154,13 @@ class FormatDispatcher {
     private static ?self $instance = null;
 
     /**
+     * Fingerprint of a disabled row passes run anyway; see `include_row()`.
+     *
+     * @var string|null
+     */
+    private static ?string $included = null;
+
+    /**
      * @param array<string,UnifiedHandlerBase> $handlers Handlers as built by
      *                                                   TaxonomyManager, keyed
      *                                                   by handler type.
@@ -399,12 +406,33 @@ class FormatDispatcher {
     }
 
     /**
-     * The enabled rules of this kind, in authored order.
+     * Run one disabled row in every pass until cleared — the one-time run
+     * over a disabled rule. It runs at its authored position, so it can win
+     * its type's first match. Request-scoped; the stored row is never
+     * written. Its caller must clear it in `finally`, so it cannot leak into
+     * a save later in the same request.
+     *
+     * @param string $fingerprint `RuleChoice::fingerprint()` of the row.
+     */
+    public static function include_row(string $fingerprint): void {
+        self::$included = $fingerprint;
+    }
+
+    /** Drop the `include_row()` override. */
+    public static function clear_included_row(): void {
+        self::$included = null;
+    }
+
+    /**
+     * The enabled rules of this kind, plus the included row if any, in
+     * authored order.
      *
      * @return array[] Rows carrying `type`.
      */
     private function ordered_rules(): array {
-        return StorageFactory::get_instance()
-            ->get_kind_rules(self::KIND, ['enabled' => true]);
+        return RuleChoice::pass_rows(
+            StorageFactory::get_instance()->get_kind_rules(self::KIND),
+            self::$included
+        );
     }
 }

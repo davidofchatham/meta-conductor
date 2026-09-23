@@ -134,6 +134,26 @@ final class RuleChoice {
     }
 
     /**
+     * The rows a pass runs: the enabled ones, plus the one row whose
+     * fingerprint is `$include` — a disabled rule a one-time run is over.
+     *
+     * Authored order, because the included row runs at its own position: on a
+     * format rule that is what lets it win its type's first match, exactly as
+     * it would once enabled. With `$include` null this is the storage layer's
+     * `['enabled' => true]` filter, and H15 holds it to that.
+     *
+     * @param array       $rows    A projected kind list, UNFILTERED.
+     * @param string|null $include Fingerprint of the row to run anyway.
+     * @return array[]
+     */
+    public static function pass_rows(array $rows, ?string $include): array {
+        return array_values(array_filter($rows, fn(array $row): bool =>
+            ($row['enabled'] ?? true) === true
+            || ($include !== null && self::fingerprint($row) === $include)
+        ));
+    }
+
+    /**
      * Which post statuses a run over this rule may touch.
      *
      * The rule's `post_status` where it gates the written post, else the
