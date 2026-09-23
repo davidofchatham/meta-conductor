@@ -487,17 +487,7 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
       queue removes. H13 pins the sequence, both halves: that the format pass is
       reached from the drain at all, and that it is reached *after* the term
       pass.
-    - **The format applier seam is data-in/data-out**, not `apply_to_post`. A
-      term rule's effect is a set of term relationships, so its applier writes
-      and reports a boolean; a format rule's effect is the post ROW, and several
-      rules can land on one row. So `apply_to_data(array, int, array): ?array`
-      hands post data along the list and the *dispatcher* performs the single
-      `wp_update_post()` at the end — one save, one row update, however many
-      rules matched. It is also the shape the deferred two-phase split needs:
-      when `field_transformation` lands, a pre-write phase can feed
-      `wp_insert_post_data`'s own `$data` to the same seam. `null` means "this
-      rule does not apply here", which is distinct from returning the data
-      unchanged, and the difference is what decides first-match-wins.
+    - **The format applier seam is data-in/data-out**, not `apply_to_post`. A term rule's effect is a set of term relationships, so its applier writes and reports a boolean; a format rule's effect is the post ROW, and several rules can land on one row. So `apply_to_data(array, int, array): ?array` hands post data along the list and the *dispatcher* performs the single `wp_update_post()` at the end — one save, one row update, however many rules matched. It is also the shape the deferred two-phase split needs: when `field_transformation` lands, a pre-write phase can feed `wp_insert_post_data`'s own `$data` to the same seam. `null` means "this rule does not apply here", which is distinct from returning the data unchanged, and the difference is what decides first-match-wins. The applier writes nothing at all, not even per-rule state: `FormatDispatcher::run_pass()` is `compute()` (runs the appliers, returns before/after, writes nothing — the format preview's entry point) then `write()`, which calls each answering rule's `commit_data()` (title/slug's idempotency meta and status record) before the row update.
     - **The pre-write phase could not survive the conversion.** `title_slug` ran
       half of itself on `wp_insert_post_data` so the editor saw final values
       without a second update. That half runs *before* terms land, so a

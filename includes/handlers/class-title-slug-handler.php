@@ -79,10 +79,9 @@ class TitleSlugHandler extends UnifiedHandlerBase {
      * Resolve this rule's title and slug patterns against the entity's live
      * state and hand the result on. THE format applier seam (#64).
      *
-     * Writes no post row: the dispatcher performs the single update at the end
-     * of the pass. It does write the two pieces of per-post state a title
-     * pattern needs to stay idempotent, plus the rule's status record, because
-     * both are consequences of THIS rule resolving and neither is post data.
+     * Writes nothing: the dispatcher performs the single row update at the end
+     * of the pass, and `commit_data()` the per-rule state. That is what lets
+     * the dispatcher's compute step run this for a preview (FW-16 03).
      *
      * @param array $data    Post data as the previous rule left it.
      * @param int   $post_id Entity being passed over.
@@ -99,24 +98,32 @@ class TitleSlugHandler extends UnifiedHandlerBase {
         // the title an earlier rule computed rather than the row's stored one.
         $post          = (object) $data;
         $current_title = (string) ($data['post_title'] ?? '');
-        $current_slug  = (string) ($data['post_name'] ?? '');
 
-        $resolved      = $this->resolve_rule_output($rule, $post_id, $post, $current_title);
-        $new_title     = $resolved['title'];
-        $new_slug      = $resolved['slug'];
-        $default_title = $resolved['default_title'];
+        $resolved = $this->resolve_rule_output($rule, $post_id, $post, $current_title);
+        $new_slug = $resolved['slug'];
 
         if ($new_slug !== null) {
             $new_slug = $this->make_unique_slug($new_slug, $post_id, $post, $rule);
         }
 
-        $changed = ($new_title !== $current_title)
-                   || ($new_slug !== null && $new_slug !== $current_slug);
-
-        $data['post_title'] = $new_title;
+        $data['post_title'] = $resolved['title'];
         if ($new_slug !== null) {
             $data['post_name'] = $new_slug;
         }
+
+        return $data;
+    }
+
+    /**
+     * The idempotency meta and status record for one `apply_to_data()` answer.
+     *
+     * @param array $before  Post data the applier was handed.
+     * @param array $after   Post data it returned.
+     * @param int   $post_id Entity being passed over.
+     * @param array $rule    The rule that answered.
+     */
+    public function commit_data(array $before, array $after, int $post_id, array $rule): void {
+        $new_title = (string) ($after['post_title'] ?? '');
 
         // Idempotency state, only when the pattern folds the existing title back
         // into itself. Stored UNCONDITIONALLY — the pass re-runs whether or not
@@ -127,21 +134,23 @@ class TitleSlugHandler extends UnifiedHandlerBase {
         // the submitted title of a post this rule has already renamed IS the
         // applied title, and storing that as the base would compound it.
         //
+        // The base is re-resolved from the data the applier was handed. Nothing
+        // it reads has been written since the applier ran — this IS the write —
+        // so it is the same base the applier resolved.
+        //
         // Both go through as_stored(), because the comparison they exist for is
         // against a value read back OUT of the post row — see that method.
         if (!empty($rule['title_pattern']) && $this->pattern_uses_default_title($rule['title_pattern'])) {
+            $default_title = $this->resolve_default_title($post_id, (object) $before, $rule);
             update_post_meta($post_id, '_bws_raw_title', $this->as_stored($default_title, $post_id));
             update_post_meta($post_id, '_bws_applied_title', $this->as_stored($new_title, $post_id));
         }
 
         // Status is a record of work done, so it is written only when the rule
         // actually moved something — an idempotent re-pass is not an event.
-        if ($changed) {
-            $rule_index = (int) ($rule['id'] ?? 0);
-            $this->write_rule_status($rule_index, $post_id, $new_title, $new_slug ?? $current_slug, []);
+        if ($after['post_title'] !== $before['post_title'] || $after['post_name'] !== $before['post_name']) {
+            $this->write_rule_status((int) ($rule['id'] ?? 0), $post_id, $new_title, (string) $after['post_name'], []);
         }
-
-        return $data;
     }
 
     /**
@@ -152,8 +161,8 @@ class TitleSlugHandler extends UnifiedHandlerBase {
      * and a real pass cannot report different things — including which side of
      * the duplicate-insertion guard each pattern lands on, which is a single
      * decision here rather than one per caller. Each caller keeps only its own
-     * tail: slug uniqueness and the idempotency meta on the write path, neither
-     * of which a preview wants.
+     * tail: slug uniqueness on the pass path (and the idempotency meta in
+     * `commit_data()`), neither of which a preview wants.
      *
      * @param array  $rule          One title/slug rule.
      * @param int    $post_id       Entity being resolved.

@@ -1019,14 +1019,49 @@ foreach (($fmt_converted ?? []) as $type) {
         );
         continue;
     }
-    foreach (['wp_update_post', 'wp_insert_post'] as $effect) {
+    // The meta and option writes too, since FW-16 03: the compute step runs the
+    // appliers for a preview, so anything an applier writes is written by a
+    // preview. Per-rule state belongs in commit_data(), which only write() calls.
+    foreach (['wp_update_post', 'wp_insert_post', 'update_post_meta', 'update_option', 'write_rule_status'] as $effect) {
         if (preg_match('/\b' . preg_quote($effect, '/') . '\s*\(/', $applier)) {
             $errors[] = sprintf(
-                '%s::apply_to_data() calls %s() — a format applier returns data and the dispatcher performs the single write (#64).',
+                '%s::apply_to_data() calls %s() — a format applier returns data; the dispatcher writes the row and commit_data() the per-rule state (#64, FW-16 03).',
                 $handler_files[$type],
                 $effect
             );
         }
+    }
+}
+
+// --- 12j. The pass is compute, then write (FW-16 03) ------------------------
+// Compute is the format preview's entry point, so it must be the ONLY caller of
+// apply() — a second one would let a preview and a pass disagree — and it must
+// write nothing: no row, no meta, no option, and no pass lock, since a preview
+// is not a pass. write() is where the per-rule state lands, via commit_data().
+if (isset($fsrc)) {
+    $compute = null;
+    if (!preg_match('/public\s+function\s+compute\s*\(\s*int\s+\$\w+\s*\)\s*:\s*\?array\s*\{(.*?)\n    \}/s', $fsrc, $cm)) {
+        $errors[] = 'FormatDispatcher::compute(int $post_id): ?array not found — the format preview needs the pass without its write (FW-16 03).';
+    } else {
+        $compute = $cm[1];
+        if (substr_count($fsrc, 'self::apply(') !== 1 || strpos($compute, 'self::apply(') === false) {
+            $errors[] = 'FormatDispatcher::apply() must be called exactly once, from compute() — a preview and a pass must run the same rules the same way.';
+        }
+        foreach (['wp_update_post', 'update_post_meta', 'update_option', 'commit_data', '$this->write(', 'take_pass'] as $effect) {
+            if (strpos($compute, $effect) !== false) {
+                $errors[] = sprintf('FormatDispatcher::compute() reaches %s — compute must write nothing, or a preview writes (FW-16 03).', $effect);
+            }
+        }
+    }
+    if (isset($frm[1])) {
+        $compute_at = strpos($frm[1], '$this->compute(');
+        $write_at   = strpos($frm[1], '$this->write(');
+        if ($compute_at === false || $write_at === false || $write_at < $compute_at) {
+            $errors[] = 'FormatDispatcher::run_pass() is not compute() then write() — the pass and its preview would diverge (FW-16 03).';
+        }
+    }
+    if (isset($write_body) && strpos($write_body, 'commit_data(') === false) {
+        $errors[] = 'FormatDispatcher::write() does not call commit_data() — the idempotency meta and rule status would never be written (FW-16 03).';
     }
 }
 

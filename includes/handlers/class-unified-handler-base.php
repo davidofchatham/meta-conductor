@@ -699,6 +699,26 @@ abstract class UnifiedHandlerBase {
     }
 
     /**
+     * Persist the per-rule state of one `apply_to_data()` answer, as the pass
+     * writes. Called by `FormatDispatcher::write()` for every rule that
+     * answered non-null, before the row update.
+     *
+     * Split off the applier so the dispatcher's compute step writes nothing
+     * (FW-16 03): the format preview runs the appliers, and any write in one
+     * would be a write from a preview. What belongs here is state that is a
+     * consequence of the rule resolving but is not post data — idempotency
+     * meta, a status record.
+     *
+     * No-op by default.
+     *
+     * @param array $before  Post data the applier was handed.
+     * @param array $after   Post data it returned.
+     * @param int   $post_id Entity being passed over.
+     * @param array $rule    The rule that answered.
+     */
+    public function commit_data(array $before, array $after, int $post_id, array $rule): void {}
+
+    /**
      * The OTHER entities this rule's effect reaches from $post_id. THE declared
      * fan-out seam (#62).
      *

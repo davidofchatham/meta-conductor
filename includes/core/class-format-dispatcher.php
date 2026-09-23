@@ -225,13 +225,10 @@ class FormatDispatcher {
     /**
      * One full ordered pass over one entity's format rules.
      *
-     * Every enabled rule of this kind, in AUTHORED order, each handed the
-     * post data the previous one returned. One write at the end, and only when
-     * the data actually differs from what the row holds.
-     *
-     * The lock is `TermDispatcher`'s, keyed on THIS kind — so a format write
-     * cannot re-enter a format pass, while the term marks that write
-     * legitimately raises are still heard (they are keyed on the term kind).
+     * `compute()`, then `write()`. The lock is `TermDispatcher`'s, keyed on
+     * THIS kind — so a format write cannot re-enter a format pass, while the
+     * term marks that write legitimately raises are still heard (they are
+     * keyed on the term kind).
      *
      * @param int $post_id Entity to pass over.
      * @return int Rules that changed the post data.
@@ -244,60 +241,84 @@ class FormatDispatcher {
             return 0;
         }
 
-        $post = get_post($post_id);
-        if (!$post instanceof \WP_Post) {
-            return 0;
-        }
-        // An autosave/revision is not the entity, and an auto-draft or trashed
-        // post is not one an author is looking at — renaming either produces a
-        // title nobody asked for on a row nobody sees.
-        if (\wp_is_post_autosave($post_id) || \wp_is_post_revision($post_id)) {
-            return 0;
-        }
-        if (in_array($post->post_status, ['auto-draft', 'trash'], true)) {
-            return 0;
-        }
-
         TermDispatcher::take_pass(self::KIND, $post_id);
         $changed = 0;
 
         try {
-            $before  = $this->post_data($post);
-            $data    = $before;
-            $claimed = [];
-
-            foreach ($this->ordered_rules() as $rule) {
-                $type = (string) ($rule['type'] ?? '');
-
-                if (!in_array($type, self::CONVERTED_TYPES, true)) {
-                    continue;
+            $result = $this->compute($post_id);
+            if ($result !== null) {
+                $this->write($post_id, $result);
+                foreach ($result['applied'] as $step) {
+                    if ($step['after'] !== $step['before']) {
+                        $changed++;
+                    }
                 }
-                if (isset($claimed[$type])) {
-                    continue;
-                }
-                $handler = $this->handlers[$type] ?? null;
-                if (!$handler) {
-                    continue;
-                }
-
-                $next = self::apply($post_id, $data, $rule, $handler);
-                if ($next === null) {
-                    continue;
-                }
-
-                $claimed[$type] = true;
-                if ($next !== $data) {
-                    $changed++;
-                }
-                $data = $next;
             }
-
-            $this->write($post_id, $before, $data);
         } finally {
             TermDispatcher::release_pass(self::KIND, $post_id);
         }
 
         return $changed;
+    }
+
+    /**
+     * What a pass over this entity would produce, writing nothing.
+     *
+     * Every enabled rule of this kind, in AUTHORED order, each handed the
+     * post data the previous one returned. The pass writes the result; the
+     * format preview only shows it (FW-16 03). No pass lock is taken, because
+     * nothing here writes.
+     *
+     * @param int $post_id Entity to compute for.
+     * @return array{before: array, after: array, applied: array[]}|null Null
+     *         when the entity takes no format pass. `applied` holds one
+     *         `{rule, before, after}` per rule that answered, in order.
+     */
+    public function compute(int $post_id): ?array {
+        $post = $post_id > 0 ? get_post($post_id) : null;
+        if (!$post instanceof \WP_Post) {
+            return null;
+        }
+        // An autosave/revision is not the entity, and an auto-draft or trashed
+        // post is not one an author is looking at — renaming either produces a
+        // title nobody asked for on a row nobody sees.
+        if (\wp_is_post_autosave($post_id) || \wp_is_post_revision($post_id)) {
+            return null;
+        }
+        if (in_array($post->post_status, ['auto-draft', 'trash'], true)) {
+            return null;
+        }
+
+        $before  = $this->post_data($post);
+        $data    = $before;
+        $applied = [];
+        $claimed = [];
+
+        foreach ($this->ordered_rules() as $rule) {
+            $type = (string) ($rule['type'] ?? '');
+
+            if (!in_array($type, self::CONVERTED_TYPES, true)) {
+                continue;
+            }
+            if (isset($claimed[$type])) {
+                continue;
+            }
+            $handler = $this->handlers[$type] ?? null;
+            if (!$handler) {
+                continue;
+            }
+
+            $next = self::apply($post_id, $data, $rule, $handler);
+            if ($next === null) {
+                continue;
+            }
+
+            $claimed[$type] = true;
+            $applied[]      = ['rule' => $rule, 'before' => $data, 'after' => $next];
+            $data           = $next;
+        }
+
+        return ['before' => $before, 'after' => $data, 'applied' => $applied];
     }
 
     /**
@@ -319,7 +340,11 @@ class FormatDispatcher {
     }
 
     /**
-     * Write the pass's result, if it differs from what the row holds.
+     * Write a `compute()` result: each answering rule's `commit_data()`, then
+     * the row, if it differs from what the row holds.
+     *
+     * The per-rule state goes first because it did when the appliers wrote it
+     * themselves, and the row update below can drain a re-pass that reads it.
      *
      * ONE UPDATE FOR THE WHOLE LIST — the appliers do not write, so however
      * many rules matched, an author's save costs at most one extra row update.
@@ -329,10 +354,15 @@ class FormatDispatcher {
      * difference is a rule's own output is noise in a history the author reads.
      *
      * @param int   $post_id Entity.
-     * @param array $before  Post data as the row holds it.
-     * @param array $after   Post data as the pass left it.
+     * @param array $result  What `compute()` returned for it.
      */
-    private function write(int $post_id, array $before, array $after): void {
+    private function write(int $post_id, array $result): void {
+        foreach ($result['applied'] as $step) {
+            $this->handlers[$step['rule']['type']]->commit_data($step['before'], $step['after'], $post_id, $step['rule']);
+        }
+
+        $before = $result['before'];
+        $after  = $result['after'];
         $update = ['ID' => $post_id];
 
         // SLASHED, because `wp_update_post()` expects it. It slashes only the
