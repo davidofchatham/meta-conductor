@@ -13,6 +13,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
   Rules now store the field's key alongside its name and resolve by key. Existing rules are upgraded in place on the next admin page load — **except** a rule whose field name matches more than one field, which is left exactly as it behaves today rather than guessed at. To fix one of those, re-pick the field: every option in the two field dropdowns now names its field group, so two same-named fields can be told apart. The interim warning about same-named fields is gone from the *Monitored relationship field* help text.
 
+- **A title/slug rule no longer leaves a revision when it renames a post that had none.** The rename's own revision was only suppressed once the post already had a revision history, so the first rule-driven rename of a post always added one.
+
 ### Removed
 
 - Two unused admin AJAX endpoints (`bws_validate_acf_field`, `bws_get_acf_fields`). Nothing called them.

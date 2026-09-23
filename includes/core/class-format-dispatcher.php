@@ -352,6 +352,10 @@ class FormatDispatcher {
      * The extra revision that update would otherwise create is suppressed: it
      * is our write, not the author's, and a revision per save whose only
      * difference is a rule's own output is noise in a history the author reads.
+     * Through `wp_revisions_to_keep`, not `wp_save_post_revision_post_has_changed`:
+     * WP consults the latter only when the post already HAS a revision, so a
+     * post with none still got one per write — one per post on a bulk run
+     * (FW-16 04). Zero-to-keep returns before WP saves or prunes anything.
      *
      * @param int   $post_id Entity.
      * @param array $result  What `compute()` returned for it.
@@ -384,11 +388,11 @@ class FormatDispatcher {
             return;
         }
 
-        add_filter('wp_save_post_revision_post_has_changed', '__return_false');
+        add_filter('wp_revisions_to_keep', '__return_zero');
         try {
             wp_update_post($update);
         } finally {
-            remove_filter('wp_save_post_revision_post_has_changed', '__return_false');
+            remove_filter('wp_revisions_to_keep', '__return_zero');
         }
     }
 
@@ -424,11 +428,12 @@ class FormatDispatcher {
      * existing user of it — imports, the conversion tool, the fixture seeder's
      * empty-rules window — means it here too; `meta_conductor_format_pass_enabled`
      * is the finer control for a site that wants term passes without renames.
+     * Public for the same reason as the term dispatcher's.
      *
      * @param int $post_id Entity a pass is about to run for.
      * @return bool
      */
-    private function pass_enabled(int $post_id): bool {
+    public function pass_enabled(int $post_id): bool {
         $default = !(defined('WP_IMPORTING') && WP_IMPORTING);
         $default = (bool) apply_filters('meta_conductor_acf_reapply_enabled', $default, $post_id);
 

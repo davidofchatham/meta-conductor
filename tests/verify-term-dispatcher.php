@@ -57,6 +57,10 @@
  *      handler back on its own hook orders itself against the term pass by
  *      priority again; an applier called outside a pass writes nothing at all,
  *      which reads as an unconfigured rule.
+ *  13. The EXISTING-POSTS APPLIER (FW-16 04) is a provocation, not a pass: it
+ *      calls `drain_post()` per post and `drain()` once, never an `apply()`,
+ *      an applier seam or a write primitive, and clears its one-time row
+ *      override in a `finally`.
  *
  * Run:  php tests/verify-term-dispatcher.php
  *
@@ -863,10 +867,13 @@ if (!is_file($format_file)) {
         // The ADD, specifically: `remove_filter` on the same name lives two
         // lines below, so a plain substring search still matches a write whose
         // suppression has been deleted.
-        if (!preg_match('/add_filter\(\s*[\'"]wp_save_post_revision_post_has_changed[\'"]/', $write_body)) {
+        // `wp_revisions_to_keep`, not `wp_save_post_revision_post_has_changed`:
+        // WP asks the latter only once a revision exists, so a post with none
+        // still got one per write (FW-16 04).
+        if (!preg_match('/add_filter\(\s*[\'"]wp_revisions_to_keep[\'"]/', $write_body)) {
             $errors[] = 'FormatDispatcher::write() does not suppress the revision its update creates — every save would leave an extra revision whose only difference is a rule\'s own output.';
         }
-        if (!preg_match('/remove_filter\(\s*[\'"]wp_save_post_revision_post_has_changed[\'"]/', $write_body)) {
+        if (!preg_match('/remove_filter\(\s*[\'"]wp_revisions_to_keep[\'"]/', $write_body)) {
             $errors[] = 'FormatDispatcher::write() suppresses the revision and never lifts the suppression — every later save in the request would silently stop creating revisions.';
         }
     }
@@ -1098,6 +1105,34 @@ foreach (['drain', 'drain_post'] as $entry) {
             '%s() does not go through run_entity() — it would run the term pass alone, so a post drained by that path keeps the previous save\'s title (#64).',
             $entry
         );
+    }
+}
+
+// --- 13. The existing-posts applier goes through the queue (FW-16 04) -------
+// Bulk and save cannot disagree only if bulk IS a save's pass: it names posts
+// and asks the drain for them, and never reaches an applier or a write itself.
+// A one-time run's override must be cleared in a `finally`, or a throwing batch
+// leaves a disabled rule running in every save for the rest of the request.
+$applier_file = $root . '/includes/core/class-existing-posts-applier.php';
+if (!is_file($applier_file)) {
+    $errors[] = 'includes/core/class-existing-posts-applier.php not found — bulk apply has no single path through the queue (FW-16 04).';
+} else {
+    $asrc  = $strip_comments((string) file_get_contents($applier_file));
+    $batch = $method_body($asrc, 'run_batch');
+    if ($batch === null) {
+        $errors[] = 'ExistingPostsApplier::run_batch() not found (FW-16 04).';
+    } else {
+        if (strpos($batch, '->drain_post(') === false || strpos($batch, '->drain()') === false) {
+            $errors[] = 'run_batch() must pass each post with drain_post() and then drain() once, so fan-out and capture marks settle before the report (FW-16 04).';
+        }
+        if (!preg_match('/\}\s*finally\s*\{[^}]*clear_included_row\(/s', $batch)) {
+            $errors[] = 'run_batch() does not clear the one-time row override in a `finally` — a throwing batch would leave a disabled rule running in every later pass of the request (FW-16 04).';
+        }
+    }
+    foreach (array_merge(['::apply(', 'apply_to_data', 'run_pass(', 'wp_update_post', 'update_post_meta'], $write_primitives) as $effect) {
+        if (strpos($asrc, $effect) !== false) {
+            $errors[] = sprintf('The existing-posts applier reaches %s — it may only name posts to the queue; the pass does the work, or bulk and save can diverge (FW-16 04).', rtrim($effect, '('));
+        }
     }
 }
 

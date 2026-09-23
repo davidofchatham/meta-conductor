@@ -740,11 +740,13 @@ class TermDispatcher {
      * Bulk apply is gated too, unlike its unconverted-handler path. A site that
      * has turned recomputation off has turned it off; a bulk button that
      * quietly recomputed anyway would be the surprise, not the restriction.
+     * Public so the existing-posts applier can ask BEFORE a batch and refuse
+     * outright, rather than run a batch of no-op passes and report it done.
      *
      * @param int $post_id Entity a pass is about to run for.
      * @return bool
      */
-    private function pass_enabled(int $post_id): bool {
+    public function pass_enabled(int $post_id): bool {
         $default = !(defined('WP_IMPORTING') && WP_IMPORTING);
         $default = (bool) apply_filters('meta_conductor_acf_reapply_enabled', $default, $post_id);
 
