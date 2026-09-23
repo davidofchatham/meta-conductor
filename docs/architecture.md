@@ -707,7 +707,7 @@ Invariants asserted by H10 (`tests/verify-kind-lists.php`):
 
 [includes/conversion/](../includes/conversion/)
 
-Multi-step wizard for ACF → taxonomy data migration. Lives at the `meta-conductor-conversion` admin subpage under the Meta Conductor menu. Phase 7 of the [ROADMAP](../ROADMAP.md) absorbs this into a unified Migration / Preview tool that also hosts Title/Slug bulk-apply and future field transforms.
+Multi-step wizard for ACF → taxonomy data migration. Lives at the `meta-conductor-conversion` admin subpage under the Meta Conductor menu. Phase 7 of the [ROADMAP](../ROADMAP.md) replaces it with an *Apply to existing posts* page that runs configured rules over existing content, and deletes this subsystem; its Copy / Map flows return as rule types.
 
 ## Diagnostics page
 

@@ -2,7 +2,7 @@
 
 Pre-release `0.x` line — unstable until the first production-ready cut graduates to `1.0.0`. Runtime version is **not** tracked here (drifts too fast); source of truth is the plugin header + `META_CONDUCTOR_VERSION` in `meta-conductor.php`.
 
-The refactor is an **incremental migration, not a rewrite** — the core business logic works. The structural work has landed: PSR-4 (2a), rename (2b), handler unification (3), and the ordered rule list + dispatchers (4). What remains is integrations (6a, 6b) and the migration / preview tool (7). This document tracks the phased plan and the decisions behind it.
+The refactor is an **incremental migration, not a rewrite** — the core business logic works. The structural work has landed: PSR-4 (2a), rename (2b), handler unification (3), and the ordered rule list + dispatchers (4). What remains is integrations (6a, 6b) and the apply-rules-to-existing-posts page (7). This document tracks the phased plan and the decisions behind it.
 
 ---
 
@@ -20,12 +20,12 @@ Phase numbers are **stable IDs, not execution order** — work has landed out of
 | 3 | Migrate 5 legacy handlers → UnifiedHandlerBase. All 7 handlers on `UnifiedHandlerBase`; legacy `BWS_Handler_Base` deleted; redundant `on_post_save` loop removed | ✅ done (0.6.0) | 2a ✅ | legacy handler base; dual-base divergence; `on_post_save` loop double-run |
 | 2b | Rename sweep — text domain, constants, nonces, core hooks, log table + migration all done (PR #48; real-Athletics verified). JS object + conversion cron/AJAX/transients deferred to P7; internal fn names deferred | ✅ done (shipped 0.7.0) | 2a ✅ | mixed text domains |
 | 4 | Ordered rule list + central dispatcher — *was config page split; was CPT storage before that* | ✅ done (shipped 0.8.0) | 3 ✅ | #35; both instantiation-order dependencies; 7-array storage shape; ~~dead `class-settings.php` + AJAX bodies~~ ✅ #55 |
-| 7 | Unified migration / preview tool | queued | — (ungated; can run anytime) | `lib/` classes instantiated but never called; tab-aware save bug; conversion `error_log` spam; **rename remainder** (conversion JS global/cron/AJAX/transients — #13 closed, remainder tracked here) |
+| 7 | Apply rules to existing posts — *was the unified migration / preview tool* | queued | — (ungated; can run anytime) | #31's missing UI trigger; the unused `Support\` classes, conversion `error_log` spam and **rename remainder** (conversion JS global/cron/AJAX/transients) all close by deletion with the Data Conversion page |
 | 6a | Options-compatible integrations | queued | 3 | — |
 | 6b | BWS User Based Terms (→ a `type` in `term_rules`) | queued | 4 | UBT merge; needs the unified rule list from P4 |
-| ~~5~~ | ~~Settings refactor~~ | cancelled | — | absorbed by 2c; lib delegation folded into 7 |
+| ~~5~~ | ~~Settings refactor~~ | cancelled | — | absorbed by 2c; its lib delegation went to 7, then dropped with the 7 restart |
 
-**Recommended run order:** ~~2a~~ ✅ → ~~3~~ ✅ → ~~2b~~ ✅ → ~~4~~ ✅ → (6a, 7) → 6b. Phase 3 landed before 2b so the rename sweep touches already-migrated handlers once. Phase 7 is unblocked and can slot in whenever Conversion is needed.
+**Recommended run order:** ~~2a~~ ✅ → ~~3~~ ✅ → ~~2b~~ ✅ → ~~4~~ ✅ → (6a, 7) → 6b. Phase 3 landed before 2b so the rename sweep touches already-migrated handlers once. Phase 7 is unblocked and can slot in whenever a bulk apply is needed.
 
 **Not phases — shipped bugfix waves.** 0.6.0 fixed the Admin Columns Pro **v7** integration ([#37](https://github.com/davidofchatham/meta-conductor/issues/37)) via a shared `reapply_for_post` seam. 0.7.0 landed both AC v7 follow-ups — [#42](https://github.com/davidofchatham/meta-conductor/issues/42) (`Core\AcfWriteQueue` drives term sync from ACF's own `acf/update_value`, covering bare `update_field()`, WP-CLI/cron and REST; guard H8) and [#43](https://github.com/davidofchatham/meta-conductor/issues/43) (dependent-end sever) — plus [#31](https://github.com/davidofchatham/meta-conductor/issues/31) (bulk apply no longer inert; **still no UI trigger**, that stays with P7), [#45](https://github.com/davidofchatham/meta-conductor/issues/45)/[#47](https://github.com/davidofchatham/meta-conductor/issues/47) (propagation removals stick on descendants), and the Data Conversion AJAX endpoint-shadowing fix. Full detail in [CHANGELOG.md](CHANGELOG.md).
 
@@ -45,8 +45,8 @@ Status column: ✅ = actioned · Pn = pending in that phase · standing = ongoin
 | **Abstracts directory** | Co-locate with implementations | ✅ (0.4.0) | `Storage\RuleStorage`, `Handlers\UnifiedHandlerBase` — `includes/abstracts/` eliminated |
 | **Interface file naming** | Use `class-` prefix for all | ✅ (0.4.0) | Autoloader generates `class-{name}.php`; interfaces follow same convention |
 | **lib/ classes** | Absorb into `Support\` namespace | ✅ (0.4.0) | BatchProcessor, FieldConverter, ValueMapper, TermMigrator → `includes/support/` (renamed from `lib/` to avoid collision with vendored `libs/`; not `Conversion\` as originally planned) |
-| **lib/ integration** | Complete in Phase 7 | P7 | `Conversion\DataProcessor` delegates to `Support\` classes during the migration-tool build (was Phase 5, cancelled). |
-| **Conversion tool** | Keep in this plugin | ✅ decided | Operates on same entities/fields |
+| **lib/ integration** | ~~Complete in Phase 7~~ Dropped | ✅ superseded (2026-09-23) | Nothing outside `includes/conversion/` uses `includes/support/`; both are deleted with the Data Conversion page in the Phase 7 restart rather than wired together. |
+| **Conversion tool** | ~~Keep in this plugin~~ Replace with rules | ✅ superseded (2026-09-23) | Copy / Map come back as rule types (`related`, `field_transformation`) applied through the Phase 7 page, not as one-shot recipes. |
 | **CPT vs options** | ~~Options + page split~~; CPT deferred | ⚠️ superseded by the row below | Storage choice is **per Wireframe page**, not per rule type. Page split (P4) splits the blob; CPT only if a type needs a draft/test lifecycle. See [storage-model.md](docs/storage-model.md). |
 | **CPT structure** | Deferred | — | `bws_mc_rule` shared-CPT design preserved in storage-model.md if/when a type needs it. Not scheduled. |
 | **Config storage boundary** | Effect kind, not page | ✅ reassessed (2026-08-13) | Page split abandoned as the mechanism — it doesn't shrink the hot blob. One page, three tabs; storage is one ordered list per **effect kind**; clobber is a version-token guard. See [ADR 0003](docs/adr/0003-ordered-rule-list-and-dispatcher.md). |
@@ -54,7 +54,6 @@ Status column: ✅ = actioned · Pn = pending in that phase · standing = ongoin
 | **Option key rename** | Yes — with data migration, tested on InstaWP | ✅ (2c) | New key: `bws_meta_conductor_settings` |
 | **Handler migration order** | Simplest first | P3 | Related → Level Restriction → Propagation → Related Post Terms → Time Based |
 | **Legacy BWS_Handler_Base** | Delete after last handler migrates | P3 | No deprecation shim needed — private plugin |
-| **Tab-aware save bug** | Fix during the Phase 7 tool build | P7 | Latent, not actively causing loss (was Phase 5, cancelled). |
 | **CLAUDE.md updates** | End of each phase | standing | Reflects completed architecture, not planned work |
 | **Version number** | 0.x → 1.0.0 | ✅ in effect | Pre-release line is `0.x`; breaking changes (file rename, class names, option key) are free pre-1.0. First production-ready cut is `1.0.0`. |
 
@@ -87,13 +86,13 @@ Per-phase detail lives in [CHANGELOG.md](CHANGELOG.md) and the PRs; the invarian
 
 - **Phase 0** — Title/Slug rules (token engine, idempotency, slug collision avoidance) + the ACF conversion tooling (ConversionManager, DataProcessor, FieldMapper, PreviewSystem, ConversionCLI). First handler on the unified base.
 - **Phase 1** — three bug fixes (commit `f16091e`).
-- **Phase 2c** — the hand-rolled ~5,000-line settings UI replaced by WP Wireframe; option key migrated to `bws_meta_conductor_settings`; `normalize_rule_shape()` adapter landed. Descoped **for good**: custom client-side field types — Wireframe has no client-side extension API (CLAUDE.md don't 5). Deferred to P7: the Title/Slug inline Preview / Apply buttons.
+- **Phase 2c** — the hand-rolled ~5,000-line settings UI replaced by WP Wireframe; option key migrated to `bws_meta_conductor_settings`; `normalize_rule_shape()` adapter landed. Descoped **for good**: custom client-side field types — Wireframe has no client-side extension API (CLAUDE.md don't 5). Deferred: the Title/Slug inline Preview / Apply buttons — P7 ships them page-level, the rule-adjacent form is FW-31.
 - **0.3.1 review pass** — established the **site-time invariant** (`{pub_*}` tokens bound to `wp_timezone()`), now locked in CONTEXT.md → *Site time*.
 - **Phase 2a (0.4.0)** — PSR-4 under `BWS\MetaConductor\`, root `autoload.php`, `includes/lib/` → `Support\`, abstracts co-located. The two traps it discovered (namespace before the ABSPATH guard; leading-backslash every global class ref) are CLAUDE.md don't 0, enforced by H1/H2.
 - **Phase 2b (0.7.0)** — rename sweep: text domain, `META_CONDUCTOR_*` constants (no aliases), nonces, core hooks, log table + migration. Verified against real production data.
 - **Phase 3 (0.6.0)** — all 7 handlers on `UnifiedHandlerBase`, `HandlerBase` deleted, the redundant `on_post_save` loop removed, and the `apply_to_post()` bulk seam introduced ([#31](https://github.com/davidofchatham/meta-conductor/issues/31)).
 
-**Still open from these phases**, all carried by Phase 7 below: the conversion-subsystem rename remainder, its ~137 unconditional `error_log()` calls, and the tab-URL builder that targets `admin_url('tools.php')` when the menu registers elsewhere. Internal function names (`bws_meta_manager_init`, `bws_taxonomy_manager_activate/deactivate/uninstall`) stay deferred — not user-facing, no BC pressure, rename opportunistically.
+**Still open from these phases**, all closed by Phase 7 deleting the conversion subsystem: its rename remainder, its ~137 unconditional `error_log()` calls, and its tab-URL builder that targets `admin_url('tools.php')` when the menu registers elsewhere. Internal function names (`bws_meta_manager_init`, `bws_taxonomy_manager_activate/deactivate/uninstall`) stay deferred — not user-facing, no BC pressure, rename opportunistically.
 
 ---
 
@@ -132,52 +131,40 @@ Per-phase detail lives in [CHANGELOG.md](CHANGELOG.md) and the PRs; the invarian
 
 Cancelled by **Phase 2c (Wireframe swap)**. The legacy `BWS_Settings` god class is fully replaced by Wireframe-driven config classes under `includes/admin/config/`; the old `class-bws-settings.php`, `admin.js`, and `admin.css` are scheduled for deletion. JS unification moot — the new UI has no custom JS to namespace.
 
-Conversion integration completion (lib class delegation in `BWS_Data_Processor`) folds into **Phase 7 (Migration / Preview tool)** below.
+Conversion integration completion (lib class delegation in `BWS_Data_Processor`) folded into Phase 7, then was dropped when Phase 7 restarted as a rule-apply page that deletes the conversion subsystem.
 
 ---
 
-### Phase 7: Unified Migration / Preview Tool
+### Phase 7: Apply Rules to Existing Posts
 
-Reframes the existing ACF "Data Conversion" page as a general-purpose Migration / Preview tool that hosts any one-time data transformation.
+A dedicated admin page that runs any configured rule over the posts that already exist. Rules otherwise act only when a post is saved, so a new or changed rule leaves every existing post as it was until someone re-saves it. Restarted 2026-09-23 from the "Unified Migration / Preview tool" plan, which hosted one-shot recipes behind a `bws_meta_conductor_migrations` filter. That recipe engine is dropped: it existed to host the Data Conversion flows, and those come back as rules.
 
-**Why now:** Wireframe v1.0.5 has no JS-side field-type extension API. Inline Preview / Apply-to-Existing buttons inside a Wireframe repeater row are blocked. Routing those actions to a dedicated migration page sidesteps the blocker and provides a permanent home for bulk operations across rule types.
+**Why a page:** Wireframe 1.0.6's `action` field renders a real button that posts to a server hook, so page-level Preview / Apply needs no custom JS. What it cannot do yet is say which repeater row fired it, so a button *inside* a rule row stays deferred ([FW-31](docs/future-work.md#fw-31--rule-adjacent-preview--apply)). The page is the first entry point, not the only one.
 
-**Architecture:**
+**Shape:**
 
-- Single admin subpage under Meta Conductor menu — replaces (or absorbs) the current Data Conversion subpage.
-- Recipes registered via filter `bws_meta_conductor_migrations`. Each recipe declares:
-  - `id`, `label`, `description`
-  - `source_query` callback — yields post IDs in chunks
-  - `transform` callback — computes the new state for one post
-  - `preview` renderer — shows before/after
-  - `commit` callback — writes the change
-- UI: recipe picker → parameter form → preview sample → run with chunked progress bar → completion summary.
-- Reuses existing infrastructure: `Support\BatchProcessor`, `Support\TermMigrator`, `Support\FieldConverter`, `Support\ValueMapper` (moved from `lib/` → `Support\` in 2a). Lib-class delegation (cancelled Phase 5 carry-over) happens here.
+- One Wireframe subpage, "Apply to existing posts", taking the Data Conversion submenu slot.
+- A **rule dropdown** listing every row of both kind lists (`term_rules`, `format_rules`) by row title, disabled rows included and marked "(disabled)", plus **"All enabled rules"**. The option value carries the row's position and a content fingerprint; a run refuses and asks for a reload if the stored list no longer matches, because a row has no stable id.
+- **A run is a full ordered pass, not a single-rule apply.** The chosen rule picks the posts; the pass applies every enabled rule to them, in authored order — the same one-caller invariant H13 holds for `process_existing_posts()`. Bulk is one more provocation, so a bulk run and a save over the same rules cannot diverge.
+- **Scope:** the post types from `CollisionDetector::written_post_types()`, narrowed by the rule's `post_status` where it has one, else publish / draft / private / future. Never trash or auto-draft.
+- **A disabled rule runs as a one-time run:** it is treated as enabled for that pass only, at its authored position, and stays disabled in storage. Later saves neither maintain nor undo what it wrote. For format rules this doubles as "preview before enabling" — which is also why a disabled row can change which `title_slug` rule wins first-match on a post.
+- **The applier takes a rule array, not a page request,** so a future in-row button (FW-31) is a second entry point onto the same code.
 
-**Recipes to ship at launch:**
+**Preview and safety:**
 
-1. ACF → taxonomy term (current Copy Data flow)
-2. Field A → Field B value mapping (current Map Data flow)
-3. Apply Title/Slug rule to existing posts (replaces the inline button blocked in Phase 2c)
+- Format rules: a before/after title/slug sample, computed without writing — `apply_to_data()` already returns data rather than writing it.
+- Term rules: in-scope post count and a sample list only. A true dry-run needs a compute-only path through every term applier ([FW-32](docs/future-work.md#fw-32--term-rule-dry-run)).
+- An optional **limit** (first N in-scope posts), a **change report** (per-post terms before/after, captured during the real run; fan-out writes to other posts are not included and the report says so), and the `action` field's built-in `confirm` stating the run writes and cannot be undone.
 
-**Recipes for future phases:**
+**Progress:** time-boxed batches — each click processes ~20s of posts, stores a cursor per user + rule, and returns "412 / 1,300 — Continue". No cron dependency. A background WP-Cron job is [FW-33](docs/future-work.md#fw-33--background-bulk-apply), wanted only if Continue proves tedious; if Wireframe gains action continuation upstream, the Continue click goes away instead.
 
-- Re-walk hierarchical inheritance against existing posts
-- Enforce level restriction across existing posts
-- Standardize date fields
-- Merge name fields
-- Format phone numbers
+**Retires the Data Conversion page.** In the same release: delete `includes/conversion/`, its assets, its `wp_ajax_*` registrations in `TaxonomyManager`, and `includes/support/` (nothing else uses it). That closes, by deletion, the conversion rename remainder (`bwsMetaManager` JS global, `*_conversion_*` cron / AJAX / transients), the ~137 unconditional `error_log()` calls, and the `tools.php` tab-URL bug. Copy Data and Map Data return as rule types — term-to-term copy is `related`, field-to-field copy and value mapping are `field_transformation` (Phase 6a) — applied to existing posts through this page. If a site needs either before 6a ships, restore it from git.
 
-**Storage:** none new. Recipes are registered code, not user-saved config.
+**Not in this phase:** the post type converter ([FW-15](docs/future-work.md#fw-15--post-type-converter)). It is a true one-shot transform with no rule behind it, so it gets its own tool.
 
-**Debug-log cleanup (deferred from the 0.7.0 conversion AJAX fix):** the conversion subsystem carries ~137 unconditional `error_log()` calls across `class-data-processor.php`, `class-preview-system.php`, `class-field-mapper.php`, `class-conversion-ui.php` — dev-tracing leftovers (`=== DEBUG ===`, `print_r` dumps, `(UPDATED)`/`(SIMPLIFIED)` tags) that fire on every op in production logs regardless of `WP_DEBUG`. Redundant: genuine errors already surface via `wp_send_json_error` / `$batch_result['errors']`. Strip them when this code is reworked. **Keep** the one operational log — the cron-cleanup summary at `class-conversion-manager.php` (`Meta Conductor Conversion Cleanup: Deleted…`). Also drop the `debug_info` block + `error_log` spam from `handle_estimate_conversion_size_ajax`.
+**Storage:** none new.
 
-**Rename remainder (carried from 2b; [#13](https://github.com/davidofchatham/meta-conductor/issues/13) is closed — this list is now the only tracker):** the conversion subsystem's identifiers were deferred here because renaming them in isolation would churn code this phase rewrites. When the conversion code is reworked, finish:
-- JS global `bwsMetaManager` → `bwsMetaConductor` (26 refs in `assets/js/conversion-admin.js`) + the PHP `wp_localize_script()` object name
-- Conversion cron `*_conversion_cleanup`, AJAX actions `wp_ajax_*_conversion_*`, transient keys `*_conversion_*`
-- Verify conversion AJAX succeeds under the unified JS global + nonce. (The endpoint-shadowing bug behind the broken selectors was fixed separately in 0.7.0 — the remaining work here is naming, not correctness.)
-
-**End of phase**: Update CLAUDE.md, drop legacy Data Conversion submenu in favor of the unified one.
+**End of phase**: Update CLAUDE.md.
 
 ---
 
