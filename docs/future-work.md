@@ -217,7 +217,7 @@ A dedicated admin page that runs a chosen configured rule — or all enabled rul
 
 - **Detail home:** [ROADMAP.md](../ROADMAP.md) Phase 7.
 - **Progress:** Not started. Shape settled 2026-09-23: rule dropdown (disabled rows included as one-time runs, plus "All enabled rules"), full-pass semantics, format-rule preview, term-rule limit + change report, time-boxed Continue batches, Data Conversion + `includes/support/` deleted in the same release. The Wireframe `action` field (1.0.6) carries the page's buttons, so no custom JS.
-- **Open:** a spec at `.scratch/apply-existing/spec.md` when the build starts.
+- **Open:** build contract written as `.scratch/apply-existing/spec.md` (2026-09-23); tickets not yet cut.
 - **Blocked by:** — • **Interacts with:** FW-4, FW-15, FW-23, FW-31, FW-32, FW-33
 - **Phase:** 7
 
