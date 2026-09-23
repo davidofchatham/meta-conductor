@@ -216,7 +216,7 @@ Take a defined group of posts — all descendants of a page, or all posts in a t
 A dedicated migration page hosting one-shot data transformations across rule types, with recipes registered via a `bws_meta_conductor_migrations` filter. Each recipe declares source_query / transform / preview / commit callbacks; the UI is recipe picker → parameter form → preview sample → run with chunked progress.
 
 - **Detail home:** [ROADMAP.md](../ROADMAP.md) Phase 7.
-- **Progress:** Not started. Storage: none — recipes are registered code. This page is what **sidesteps** the Wireframe client-side field-type blocker (FW-23) rather than waiting on it: inline Preview / Apply-to-Existing buttons in rule rows are blocked, so bulk operations route here instead. That is by design, not a stopgap.
+- **Progress:** Not started. Storage: none — recipes are registered code. Buttons themselves are no longer blocked — Wireframe 1.0.6's `action` field renders a real button that posts to a server hook (FW-23), so this page's Preview / Apply controls use it. What stays blocked is the *inline* per-row button: `action` carries no repeater-row context (FW-23 Gap B, upstream's to fix, not ours), so a button in row N cannot say which rule fired. Bulk operations therefore route here instead of into rule rows. That is by design, not a stopgap.
 - **Open:** launch recipes — ACF → taxonomy term (absorbs the current Copy Data flow), Field A → Field B value mapping (absorbs Map Data), apply a title/slug rule to existing posts (replaces the blocked inline button), and FW-15.
 - **Blocked by:** — • **Interacts with:** FW-15, FW-23
 - **Phase:** 7
