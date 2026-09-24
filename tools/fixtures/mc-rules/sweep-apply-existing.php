@@ -557,10 +557,12 @@ switch ( $step ) {
 		$second = ExistingPostsApplier::run_batch( $choice );
 		$t( '§ae9 batch 2 resumes at the next ID', mcae_passed( $reach ), array_slice( $reach, 0, 2 ) );
 
-		// The highest free ID inside the reach's span; run on until the
-		// cursor is past it.
+		// The highest free ID below the reach's second-to-last post; run on
+		// until the cursor is past it. Searching below the LAST post instead
+		// lands in the gap right under it whenever one exists, and passing
+		// that one post finishes the run.
 		$below = 0;
-		for ( $id = end( $reach ) - 1; $id > $reach[0]; $id-- ) {
+		for ( $id = $reach[ count( $reach ) - 2 ] - 1; $id > $reach[0]; $id-- ) {
 			if ( ! get_post( $id ) ) {
 				$below = $id;
 				break;
