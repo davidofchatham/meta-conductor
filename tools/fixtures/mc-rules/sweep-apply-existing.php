@@ -35,6 +35,7 @@
  *   wp eval-file .../sweep-apply-existing.php first     # disabled row wins first match, preview + run
  *   wp eval-file .../sweep-apply-existing.php pterm     # term preview: count + posts; stale refused
  *   wp eval-file .../sweep-apply-existing.php pall      # All enabled: count, format sample
+ *   wp eval-file .../sweep-apply-existing.php page      # Apply page buttons + Save, via REST
  *   wp eval-file .../sweep-apply-existing.php restore
  *
  * @package Meta_Conductor
@@ -42,6 +43,8 @@
 
 require_once __DIR__ . '/sweep-lib.php';
 
+use BWS\MetaConductor\Admin\ApplyPage;
+use BWS\MetaConductor\Admin\WireframeBootstrap;
 use BWS\MetaConductor\Core\ExistingPostsApplier;
 use BWS\MetaConductor\Core\FormatDispatcher;
 use BWS\MetaConductor\Core\RuleChoice;
@@ -748,6 +751,126 @@ switch ( $step ) {
 		mcae_put_back( $snap );
 		break;
 
+	// ---------------------------------------------------------------- page
+	// The Apply page, end to end through Wireframe's REST routes: each button's
+	// action filter for a term choice, a format choice and "All enabled rules",
+	// and a Save that persists only the page's own values (FW-16 08).
+	case 'page':
+		$snap = mcae_snapshot();
+		mcae_author( array( mcae_hier_row( false ) ), array( mcae_title_row( 'PG' ) ) );
+		$admins = get_users( array( 'role' => 'administrator', 'number' => 1, 'fields' => 'ID' ) );
+		wp_set_current_user( (int) $admins[0] );
+		mcae_quiet( function () use ( $solo, $harbor ) {
+			mc_reset_subject( $solo );
+			mcae_set_topics( $solo, array( $harbor ) );
+		} );
+
+		// Boot Wireframe as a REST request would; CLI skips it.
+		$_SERVER['REQUEST_URI'] = '/' . rest_get_url_prefix() . '/';
+		WireframeBootstrap::boot();
+		if ( did_action( 'rest_api_init' ) ) {
+			\Wireframe\Rest\SettingsController::register();
+			\Wireframe\Rest\ActionController::register();
+		}
+		$page = current( array_filter( \Wireframe\App::pages(), fn( $p ) => ApplyPage::PAGE_ID === $p['page_id'] ) );
+		$t( '§ae15 page registered under the menu, own option key',
+			array( $page['parent'] ?? '', $page['option_key'] ?? '' ),
+			array( 'meta-conductor', ApplyPage::OPTION_KEY ) );
+
+		// The submenu, its render callback and the page's settings read, with
+		// any notice raised from this plugin's files counted.
+		$notices = array();
+		set_error_handler( function ( $no, $str, $file ) use ( &$notices ) {
+			if ( false !== strpos( $file, 'meta-conductor' ) ) {
+				$notices[] = $str;
+			}
+			return false;
+		} );
+		require_once ABSPATH . 'wp-admin/includes/plugin.php';
+		do_action( 'admin_menu' );
+		global $submenu;
+		ob_start();
+		do_action( get_plugin_page_hookname( 'meta-conductor-apply', 'meta-conductor' ) );
+		$rendered = ob_get_clean();
+		$got      = rest_do_request( new WP_REST_Request( 'GET', '/bws-meta-conductor/v1/settings/apply' ) )->get_data();
+		restore_error_handler();
+		$t( '§ae15 the submenu is under Meta Conductor', in_array( 'meta-conductor-apply', array_column( $submenu['meta-conductor'] ?? array(), 2 ), true ), true );
+		$t( '§ae15 the page renders', '' !== $rendered, true );
+		$t( '§ae15 settings read carries choice + limit', array_keys( $got['values'] ?? array() ), array( 'choice', 'limit', 'run' ) );
+		$t( '§ae15 no PHP notices from this plugin', $notices, array() );
+
+		$rest = function ( $route, array $body ) {
+			$req = new WP_REST_Request( 'POST', '/bws-meta-conductor/v1/' . $route );
+			$req->set_header( 'content-type', 'application/json' );
+			$req->set_body( wp_json_encode( $body ) );
+			return rest_do_request( $req )->get_data();
+		};
+		$act = fn( $button, $choice, $limit = 0 ) => $rest( 'action/apply/run/' . $button, array( 'values' => array( 'choice' => $choice, 'limit' => $limit ) ) );
+
+		$term   = mcae_choice( OptionRuleStorage::KIND_TERM, 0 );
+		$format = mcae_choice( OptionRuleStorage::KIND_FORMAT, 0 );
+		$stored = get_option( mc_sweep_option() );
+		ExistingPostsApplier::start_over( $term );
+
+		$t( '§ae15 no choice → choose first', $act( 'preview', '' )['status'], 'error' );
+
+		$digest = mcae_digest();
+		$pv     = array( $act( 'preview', $term ), $act( 'preview', $format ), $act( 'preview', RuleChoice::ALL_ENABLED ) );
+		$t( '§ae15 previews succeed (term, format, all)', array_column( $pv, 'status' ), array( 'success', 'success', 'success' ) );
+		$t( '§ae15 term preview lists posts with edit links', false !== strpos( $pv[0]['html'], 'post.php?post=' ), true );
+		$t( '§ae15 format preview shows the resulting title', false !== strpos( $pv[1]['html'], ' PG' ), true );
+		$t( '§ae15 previews write nothing', mcae_digest(), $digest );
+
+		$t( '§ae15 Continue with no run in progress is refused', $act( 'continue', $term )['status'], 'error' );
+
+		// One post per batch, so Apply leaves a run for Continue to finish.
+		add_filter( 'meta_conductor_apply_time_box', '__return_zero' );
+		$first = $act( 'apply', $term );
+		$t( '§ae15 a partial batch is info, offering Continue', array( $first['status'], false !== strpos( $first['html'], 'Continue' ) ), array( 'info', true ) );
+		$last = $first;
+		for ( $i = 0; $i < 50 && 'info' === $last['status']; $i++ ) {
+			$last = $act( 'continue', $term );
+		}
+		WP_CLI::log( '[page] ' . $last['message'] );
+		$t( '§ae15 Continue drives the run to done', array( $last['status'], false !== strpos( $last['html'], 'Run complete' ) ), array( 'success', true ) );
+		$t( '§ae15 the disabled term row ran once', mcae_slugs( $solo ), $expected );
+		$t( '§ae15 the report carries the fan-out caveat', false !== strpos( $last['html'], 'fan-out' ), true );
+		$t( '§ae15 rules storage unchanged', get_option( mc_sweep_option() ), $stored );
+		remove_filter( 'meta_conductor_apply_time_box', '__return_zero' );
+
+		$fmt = $act( 'apply', $format, 1 );
+		$t( '§ae15 format apply with limit 1', array( $fmt['status'], false !== strpos( $fmt['message'], '1 / 1' ) ), array( 'success', true ) );
+		$all = $act( 'apply', RuleChoice::ALL_ENABLED, 1 );
+		$t( '§ae15 All enabled rules apply', array( $all['status'], false !== strpos( $all['message'], '1 / 1' ) ), array( 'success', true ) );
+
+		$act( 'apply', $term, 1 );
+		ExistingPostsApplier::start_over( $term );
+		add_filter( 'meta_conductor_apply_time_box', '__return_zero' );
+		$act( 'apply', $term );
+		remove_filter( 'meta_conductor_apply_time_box', '__return_zero' );
+		$t( '§ae15 Start over clears the run', array( $act( 'start_over', $term )['status'], ExistingPostsApplier::in_progress( $term ) ), array( 'success', false ) );
+
+		add_filter( 'meta_conductor_term_pass_enabled', '__return_false' );
+		$off = $act( 'apply', $term );
+		remove_filter( 'meta_conductor_term_pass_enabled', '__return_false' );
+		$t( '§ae15 passes off → a clear error, never done', array( $off['status'], false !== strpos( $off['message'], 'switched off' ) ), array( 'error', true ) );
+
+		$edited                      = mcae_hier_row( false );
+		$edited['inheritance_depth'] = 'immediate';
+		mcae_author( array( $edited ), array( mcae_title_row( 'PG' ) ) );
+		$stale = $act( 'apply', $term );
+		$t( '§ae15 stale choice → reload', array( $stale['status'], false !== strpos( $stale['message'], 'reload' ) ), array( 'error', true ) );
+
+		// Save posts a rule key too; only the page's own fields persist.
+		$stored = get_option( mc_sweep_option() );
+		$saved  = $rest( 'settings/apply', array( 'choice' => $term, 'limit' => 3, 'term_rules' => array() ) );
+		$t( '§ae15 Save persists only choice + limit', array( ! empty( $saved['success'] ), get_option( ApplyPage::OPTION_KEY ) ), array( true, array( 'choice' => $term, 'limit' => 3 ) ) );
+		$t( '§ae15 Save changes no rule', get_option( mc_sweep_option() ), $stored );
+
+		delete_option( ApplyPage::OPTION_KEY );
+		mcae_put_back( $snap );
+		break;
+
 	// ------------------------------------------------------------- restore
 	case 'restore':
 		mcae_quiet( function () {
@@ -762,7 +885,7 @@ switch ( $step ) {
 		break;
 
 	default:
-		WP_CLI::error( "Unknown step '$step' — enabled|disabled|stale|off|fanout|rpt|revisions|limit|continue|restart|preview|first|pterm|pall|restore." );
+		WP_CLI::error( "Unknown step '$step' — enabled|disabled|stale|off|fanout|rpt|revisions|limit|continue|restart|preview|first|pterm|pall|page|restore." );
 }
 
 // Hold passes down for the rest of this request: the ACF write queue flushes at

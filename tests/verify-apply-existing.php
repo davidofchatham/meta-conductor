@@ -21,6 +21,9 @@
  *      source), and trash / auto-draft never make it into the set.
  *   5. The disabled-row override: the enabled rows plus exactly the included
  *      one, in authored order; with no override, today's enabled filter.
+ *   6. The Apply page dropdown: every row of both kinds, grouped, each value
+ *      decoding back to its own row; labels re-derive position and the
+ *      "(disabled)" marker from the row, not from its stored title.
  *
  * Run:  php tests/verify-apply-existing.php   (local PHP CLI, no WP needed)
  *
@@ -38,10 +41,12 @@ $GLOBALS['mc_options'] = [];
 
 if (!function_exists('get_option'))    { function get_option($n, $d = false) { return $GLOBALS['mc_options'][$n] ?? $d; } }
 if (!function_exists('update_option')) { function update_option($n, $v, $a = null) { $GLOBALS['mc_options'][$n] = $v; return true; } }
+if (!function_exists('__'))            { function __($s, $d = null) { return $s; } }
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 require dirname(__DIR__) . '/autoload.php';
 
+use BWS\MetaConductor\Admin\ApplyPage;
 use BWS\MetaConductor\Core\RuleChoice;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 
@@ -222,6 +227,38 @@ $check('a fingerprint that matches nothing adds nothing',
 $check('including an enabled row does not duplicate it',
     RuleChoice::pass_rows($all, RuleChoice::fingerprint($all[0])) === $today);
 
+// --- 6. Apply page dropdown. ------------------------------------------------
+
+$titled = $option;
+$titled[$KIND_TERM][1]['row_title']   = '#2 [Disabled] Tags &amp; more';
+$titled[$KIND_FORMAT][0]['row_title'] = '#1 T1 (Posts)';
+$terms   = $read($KIND_TERM, $titled);
+$formats = $read($KIND_FORMAT, $titled);
+$options = ApplyPage::choice_options($terms, $formats);
+$values  = array_keys($options);
+
+$check('options: placeholder, All enabled rules, term rows, then format rows',
+    $values === [
+        '',
+        RuleChoice::ALL_ENABLED,
+        RuleChoice::encode($KIND_TERM, 0, $terms[0]),
+        RuleChoice::encode($KIND_TERM, 1, $terms[1]),
+        RuleChoice::encode($KIND_TERM, 2, $terms[2]),
+        RuleChoice::encode($KIND_FORMAT, 0, $formats[0]),
+    ]);
+$check('every row value decodes back to its own row',
+    RuleChoice::resolve(RuleChoice::decode($values[3]), $terms) === $terms[1]);
+$check('a disabled row is prefixed (disabled), its stored marker dropped and entities decoded',
+    $options[$values[3]] === 'Term rules: #2 (disabled) Tags & more');
+$check('an enabled row carries its kind and position',
+    $options[$values[2]] === 'Term rules: #1 H1'
+    && $options[$values[5]] === 'Format rules: #1 T1 (Posts)');
+$check('a stale stored position is replaced by the real one',
+    ApplyPage::choice_options([], [['type' => 'title_slug_rules', 'row_title' => '#9 X']] )[RuleChoice::encode($KIND_FORMAT, 0, ['type' => 'title_slug_rules', 'row_title' => '#9 X'])]
+    === 'Format rules: #1 X');
+$check('an untitled row is labeled by its type',
+    in_array('Format rules: #1 title_slug_rules', ApplyPage::choice_options([], [['type' => 'title_slug_rules']]), true));
+
 // --- Report. ----------------------------------------------------------------
 
 if ($fail) {
@@ -232,4 +269,4 @@ if ($fail) {
     exit(1);
 }
 
-fwrite(STDOUT, "APPLY-EXISTING OK — all $total assertions passed (fingerprint, codec, stale check, reach statuses, disabled-row override; FW-16).\n");
+fwrite(STDOUT, "APPLY-EXISTING OK — all $total assertions passed (fingerprint, codec, stale check, reach statuses, disabled-row override, Apply page dropdown; FW-16).\n");

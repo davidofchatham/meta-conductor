@@ -7,6 +7,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Apply to existing posts** — a new page under the Meta Conductor menu. Pick any configured rule (term or format, disabled ones included, or "All enabled rules"), optionally limit the run to the first N posts, then Preview or Apply. A run passes every enabled rule, in your order, over the posts the chosen rule can reach — the same pass a save runs. Choosing a disabled rule runs it once without enabling it. Large runs stop after about 20 seconds; Continue picks up where the last batch stopped, and Start over begins again. Each batch reports "processed / total" and the first 20 posts it changed. Apply asks for confirmation first: a run writes to posts and cannot be undone, so take a backup.
+
 ### Fixed
 
 - **An ACF-reference rule now points at the field you picked, even when another field shares its name.** The rule stored the field's name, and ACF resolves a bare name to whichever matching field it happens to return first — so on a site with two separately-created relationship fields sharing a name (the same post type is enough; so is the same field group), a rule could read the wrong field's configuration. The visible symptoms were a reverse lookup that found no partner and silently fell back to the slow scan, and posts skipped by the eligibility filter because the wrong field's target post types were consulted. It was also intermittent: ACF caches the first resolution of a name for the rest of the request, so whether the rule behaved depended on what else had touched that field beforehand.

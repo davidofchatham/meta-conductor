@@ -61,6 +61,9 @@ class WireframeBootstrap {
         // from the detector itself rather than here — they are its hooks, and
         // both fire on requests that never reach `boot()`'s admin gate.
         CollisionDetector::init();
+
+        // The Apply page's button filters — REST requests, like the re-check.
+        ApplyPage::init();
     }
 
     /**
@@ -1139,6 +1142,20 @@ class WireframeBootstrap {
                     'config'        => \BWS\MetaConductor\Admin\Config\WireframeConfig::build(),
                 ],
             ],
+        ]);
+
+        // Apply to existing posts, a submenu of the page above (FW-16). Its
+        // OWN boot call, not a second `pages[]` entry: Wireframe 1.0.6 merges
+        // the boot-level option key OVER a page's (`$perBoot + [...]` in
+        // `App::resolvePages()`), so as a sibling entry this page would save
+        // into `bws_meta_conductor_settings`. Built after the repair above,
+        // so its dropdown reads the rows the settings repeater renders.
+        \Wireframe\App::boot([
+            'prefix'     => 'bws-meta-conductor',
+            'capability' => 'manage_options',
+            'version'    => defined('META_CONDUCTOR_VERSION') ? META_CONDUCTOR_VERSION : '0.3.0',
+            'option_key' => ApplyPage::OPTION_KEY,
+            'pages'      => [ApplyPage::page()],
         ]);
     }
 }

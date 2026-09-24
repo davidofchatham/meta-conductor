@@ -310,7 +310,7 @@ final class ExistingPostsApplier {
 
         $row = RuleChoice::resolve($choice, $storage->get_kind_rules($choice['kind']));
         if ($row === null) {
-            return self::error(__('Rules changed since this page loaded — reload.', 'meta-conductor'));
+            return self::error(__('Rules changed since this page loaded — reload the page and choose the rule again.', 'meta-conductor'));
         }
 
         return ['choice' => $choice, 'row' => $row, 'rows' => [$row]];
@@ -325,6 +325,16 @@ final class ExistingPostsApplier {
      */
     public static function start_over(string $value): void {
         delete_transient(self::state_key($value));
+    }
+
+    /**
+     * Whether this user has a run of a choice waiting for its next batch.
+     *
+     * @param string $value A `RuleChoice` dropdown value.
+     * @return bool
+     */
+    public static function in_progress(string $value): bool {
+        return is_array(get_transient(self::state_key($value)));
     }
 
     /**
