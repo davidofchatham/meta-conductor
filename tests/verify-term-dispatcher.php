@@ -60,7 +60,8 @@
  *  13. The EXISTING-POSTS APPLIER (FW-16 04) is a provocation, not a pass: it
  *      calls `drain_post()` per post and `drain()` once, never an `apply()`,
  *      an applier seam or a write primitive, and clears its one-time row
- *      override in a `finally`.
+ *      override in a `finally`. Its preview (FW-16 06) reads the format pass
+ *      through `compute()`, never drains, and clears the override the same way.
  *
  * Run:  php tests/verify-term-dispatcher.php
  *
@@ -1127,6 +1128,22 @@ if (!is_file($applier_file)) {
         }
         if (!preg_match('/\}\s*finally\s*\{[^}]*clear_included_row\(/s', $batch)) {
             $errors[] = 'run_batch() does not clear the one-time row override in a `finally` — a throwing batch would leave a disabled rule running in every later pass of the request (FW-16 04).';
+        }
+    }
+    // The preview shows what the pass WOULD produce, so it asks the format
+    // dispatcher's compute step — never a pass, which writes (FW-16 06).
+    $preview = $method_body($asrc, 'preview');
+    if ($preview === null) {
+        $errors[] = 'ExistingPostsApplier::preview() not found (FW-16 06).';
+    } else {
+        if (strpos($preview, '->compute(') === false) {
+            $errors[] = 'preview() must read the format result through FormatDispatcher::compute() — the one path that shows a pass without writing it (FW-16 06).';
+        }
+        if (strpos($preview, 'drain') !== false) {
+            $errors[] = 'preview() reaches the drain — a drained post is a WRITTEN post; the preview must write nothing (FW-16 06).';
+        }
+        if (!preg_match('/\}\s*finally\s*\{[^}]*clear_included_row\(/s', $preview)) {
+            $errors[] = 'preview() does not clear the one-time row override in a `finally` — a throwing preview would leave a disabled rule running in every later pass of the request (FW-16 06).';
         }
     }
     foreach (array_merge(['::apply(', 'apply_to_data', 'run_pass(', 'wp_update_post', 'update_post_meta'], $write_primitives) as $effect) {

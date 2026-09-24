@@ -45,6 +45,9 @@ if (!defined('ABSPATH')) {
  * edited between batches neither shift nor duplicate the sequence. The choice
  * value carries the row's fingerprint, so an edited rule starts a fresh run.
  *
+ * A PREVIEW WRITES NOTHING. It never drains; a format rule's result comes from
+ * `FormatDispatcher::compute()`, the pass minus its write.
+ *
  * Takes a rule choice (`RuleChoice` value), not a page request, so the Apply
  * page and any later entry point share it. Knows nothing about Wireframe.
  */
@@ -55,6 +58,12 @@ final class ExistingPostsApplier {
 
     /** Seconds a batch runs before it stops at the next post boundary. */
     public const TIME_BOX = 20;
+
+    /** Posts a format preview computes. */
+    public const PREVIEW_SAMPLE = 5;
+
+    /** Posts a term preview lists. */
+    public const PREVIEW_POSTS = 10;
 
     /**
      * Pass the next batch of posts in the choice's reach.
@@ -76,33 +85,16 @@ final class ExistingPostsApplier {
      *               (its first REPORT_ROWS changes, see diff()) and `note`.
      */
     public static function run_batch(string $value, int $limit = 0): array {
-        $choice = RuleChoice::decode($value);
-        if ($choice === null) {
-            return self::error(__('Unknown rule choice — reload the page.', 'meta-conductor'));
+        $chosen = self::choose($value);
+        if (isset($chosen['status'])) {
+            return $chosen;
         }
+        ['choice' => $choice, 'row' => $row, 'rows' => $rows] = $chosen;
 
         $terms  = TermDispatcher::instance();
         $format = FormatDispatcher::instance();
         if ($terms === null) {
             return self::error(__('Rule passes are not running on this request, so nothing was applied.', 'meta-conductor'));
-        }
-
-        $storage = StorageFactory::get_instance();
-        $row     = null;
-        if ($choice['all']) {
-            $rows = array_merge(
-                RuleChoice::pass_rows($storage->get_kind_rules(OptionRuleStorage::KIND_TERM), null),
-                RuleChoice::pass_rows($storage->get_kind_rules(OptionRuleStorage::KIND_FORMAT), null)
-            );
-            if ($rows === []) {
-                return self::error(__('There are no enabled rules to apply.', 'meta-conductor'));
-            }
-        } else {
-            $row = RuleChoice::resolve($choice, $storage->get_kind_rules($choice['kind']));
-            if ($row === null) {
-                return self::error(__('Rules changed since this page loaded — reload.', 'meta-conductor'));
-            }
-            $rows = [$row];
         }
 
         $key   = self::state_key($value);
@@ -197,6 +189,131 @@ final class ExistingPostsApplier {
             'rows'      => $state['rows'],
             'note'      => __('Changes the run made to other posts through fan-out (children, dependents) are not listed.', 'meta-conductor'),
         ];
+    }
+
+    /**
+     * What a run on this choice would touch, writing nothing.
+     *
+     * A format rule's result is shown, not described: `FormatDispatcher::compute()`
+     * over the newest PREVIEW_SAMPLE posts in reach, with a disabled chosen row
+     * included exactly as a run includes it — so a disabled title/slug row
+     * ordered before an enabled one wins first match here as it would in the
+     * run. A term rule has no dry run (FW-32), so it gets the size of the run
+     * and the posts it would start from. "All enabled rules" gets the size,
+     * plus the format sample when any format rule is enabled.
+     *
+     * @param string $value A `RuleChoice` dropdown value.
+     * @return array `{status: 'success'|'error', message}`, plus on success
+     *               `total` (posts in reach), `posts` (term choice: the newest
+     *               PREVIEW_POSTS as `{post_id, title, edit_link}`), `sample`
+     *               (format: `{post_id, title: [current, result], slug:
+     *               [current, result]}`) and `note` ('' without a sample).
+     */
+    public static function preview(string $value): array {
+        $chosen = self::choose($value);
+        if (isset($chosen['status'])) {
+            return $chosen;
+        }
+        ['choice' => $choice, 'row' => $row, 'rows' => $rows] = $chosen;
+
+        $statuses = RuleChoice::reach_statuses($row);
+        $post_ids = self::reach($rows, $statuses, 0, 0);
+        $result   = [
+            'status'  => 'success',
+            'message' => sprintf(
+                /* translators: %d: posts a run would pass */
+                _n('%d post in reach.', '%d posts in reach.', count($post_ids), 'meta-conductor'),
+                count($post_ids)
+            ),
+            'total'   => count($post_ids),
+            'posts'   => [],
+            'sample'  => [],
+            'note'    => '',
+        ];
+
+        if ($row !== null && $choice['kind'] === OptionRuleStorage::KIND_TERM) {
+            foreach (array_slice(array_reverse($post_ids), 0, self::PREVIEW_POSTS) as $post_id) {
+                $result['posts'][] = [
+                    'post_id'   => $post_id,
+                    'title'     => get_the_title($post_id),
+                    'edit_link' => (string) get_edit_post_link($post_id, 'raw'),
+                ];
+            }
+            return $result;
+        }
+
+        $format_rows = array_values(array_filter($rows, fn(array $rule): bool => FormatDispatcher::owns((string) ($rule['type'] ?? ''))));
+        if ($format_rows === []) {
+            return $result;
+        }
+        $format = FormatDispatcher::instance();
+        if ($format === null) {
+            return self::error(__('Rule passes are not running on this request, so nothing can be previewed.', 'meta-conductor'));
+        }
+
+        try {
+            if ($row !== null) {
+                FormatDispatcher::include_row($choice['fingerprint']);
+            }
+
+            // For "All enabled rules" the sample is the format rules' own
+            // reach: a post only a term rule reaches would show no change.
+            $sample_ids = $row !== null ? $post_ids : self::reach($format_rows, $statuses, 0, 0);
+            foreach (array_slice(array_reverse($sample_ids), 0, self::PREVIEW_SAMPLE) as $post_id) {
+                $computed = $format->compute($post_id);
+                if ($computed === null) {
+                    continue;
+                }
+                $result['sample'][] = [
+                    'post_id' => $post_id,
+                    'title'   => [$computed['before']['post_title'], $computed['after']['post_title']],
+                    'slug'    => [$computed['before']['post_name'], $computed['after']['post_name']],
+                ];
+            }
+        } finally {
+            FormatDispatcher::clear_included_row();
+        }
+
+        if ($result['sample'] === []) {
+            return $result;
+        }
+        $result['note'] = __('Slugs are checked against posts as stored now, not against each other, so a run may number a slug differently. Terms are read as the posts hold them now; a run passes term rules first, and a pattern that reads terms sees their result.', 'meta-conductor');
+
+        return $result;
+    }
+
+    /**
+     * Decode a choice and re-read the rows it names.
+     *
+     * @param string $value A `RuleChoice` dropdown value.
+     * @return array `{choice, row, rows}` — `row` the chosen row, null for "All
+     *               enabled rules"; `rows` those whose reach the choice covers —
+     *               or an error result when the choice is malformed or stale.
+     */
+    private static function choose(string $value): array {
+        $choice = RuleChoice::decode($value);
+        if ($choice === null) {
+            return self::error(__('Unknown rule choice — reload the page.', 'meta-conductor'));
+        }
+
+        $storage = StorageFactory::get_instance();
+        if ($choice['all']) {
+            $rows = array_merge(
+                RuleChoice::pass_rows($storage->get_kind_rules(OptionRuleStorage::KIND_TERM), null),
+                RuleChoice::pass_rows($storage->get_kind_rules(OptionRuleStorage::KIND_FORMAT), null)
+            );
+            if ($rows === []) {
+                return self::error(__('There are no enabled rules.', 'meta-conductor'));
+            }
+            return ['choice' => $choice, 'row' => null, 'rows' => $rows];
+        }
+
+        $row = RuleChoice::resolve($choice, $storage->get_kind_rules($choice['kind']));
+        if ($row === null) {
+            return self::error(__('Rules changed since this page loaded — reload.', 'meta-conductor'));
+        }
+
+        return ['choice' => $choice, 'row' => $row, 'rows' => [$row]];
     }
 
     /**

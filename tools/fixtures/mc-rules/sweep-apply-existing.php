@@ -1,6 +1,6 @@
 <?php
 /**
- * mc-rules — FW-16 04 existing-posts applier sweep.
+ * mc-rules — FW-16 04–06 existing-posts applier sweep.
  *
  * Proves on real posts what H13 group 13 can only read off the source: that
  * `ExistingPostsApplier::run_batch()` is a save's pass, provoked in bulk.
@@ -31,6 +31,10 @@
  *   wp eval-file .../sweep-apply-existing.php limit     # limit N = exactly N, across batches
  *   wp eval-file .../sweep-apply-existing.php continue  # resumes by ID; below/above-cursor insert
  *   wp eval-file .../sweep-apply-existing.php restart   # start over; per-user run state
+ *   wp eval-file .../sweep-apply-existing.php preview   # format preview: sample, writes nothing
+ *   wp eval-file .../sweep-apply-existing.php first     # disabled row wins first match, preview + run
+ *   wp eval-file .../sweep-apply-existing.php pterm     # term preview: count + posts; stale refused
+ *   wp eval-file .../sweep-apply-existing.php pall      # All enabled: count, format sample
  *   wp eval-file .../sweep-apply-existing.php restore
  *
  * @package Meta_Conductor
@@ -39,6 +43,7 @@
 require_once __DIR__ . '/sweep-lib.php';
 
 use BWS\MetaConductor\Core\ExistingPostsApplier;
+use BWS\MetaConductor\Core\FormatDispatcher;
 use BWS\MetaConductor\Core\RuleChoice;
 use BWS\MetaConductor\Core\TermDispatcher;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
@@ -191,6 +196,53 @@ function mcae_arm_batching( $harbor ) {
 /** Reach posts the run has passed (Harbor expanded), ascending. */
 function mcae_passed( array $ids ) {
 	return array_values( array_filter( $ids, fn( $id ) => mcae_slugs( $id ) !== array( 'harbor' ) ) );
+}
+
+/** A title/slug row over mc_item that appends $suffix to the title. */
+function mcae_title_row( $suffix, $enabled = true ) {
+	return array(
+		'type'          => 'title_slug_rules',
+		'enabled'       => $enabled,
+		'name'          => 'Sweep apply-existing ' . $suffix,
+		'post_type'     => 'mc_item',
+		'title_pattern' => '{default_title} ' . $suffix,
+	);
+}
+
+/** Every fixture-type post row and all their meta, hashed — "byte-identical". */
+function mcae_digest() {
+	global $wpdb;
+	$ids = implode( ',', array_map( 'intval', mcae_fixture_posts() ) );
+	return md5( serialize( array(
+		$wpdb->get_results( "SELECT * FROM {$wpdb->posts} WHERE ID IN ($ids) ORDER BY ID", ARRAY_A ),
+		$wpdb->get_results( "SELECT * FROM {$wpdb->postmeta} WHERE post_id IN ($ids) ORDER BY meta_id", ARRAY_A ),
+	) ) );
+}
+
+/** Whether every report / sample row's resulting title ends in $suffix (and there is one). */
+function mcae_titled( array $rows, $suffix ) {
+	return array() !== $rows
+		&& array() === array_filter( $rows, fn( $r ) => ! str_ends_with( (string) ( $r['title'][1] ?? '' ), ' ' . $suffix ) );
+}
+
+/** Post IDs a preview sample / list shows, in its order. */
+function mcae_shown( array $rows ) {
+	return array_map( 'intval', array_column( $rows, 'post_id' ) );
+}
+
+/**
+ * Whether a preview shows exactly the $n newest mc_item posts in reach, in
+ * that order. A bool, because mc_assert() sorts arrays before comparing.
+ */
+function mcae_shows_newest( array $shown, $n ) {
+	$reach = array_map( 'intval', get_posts( array(
+		'post_type'   => 'mc_item',
+		'post_status' => RuleChoice::DEFAULT_STATUSES,
+		'numberposts' => -1,
+		'fields'      => 'ids',
+	) ) );
+	rsort( $reach );
+	return array_slice( $reach, 0, $n ) === $shown;
 }
 
 $pass = 0;
@@ -438,15 +490,7 @@ switch ( $step ) {
 			return $n;
 		};
 
-		mcae_author( array(), array(
-			array(
-				'type'          => 'title_slug_rules',
-				'enabled'       => true,
-				'name'          => 'Sweep apply-existing title',
-				'post_type'     => 'mc_item',
-				'title_pattern' => '{default_title} AE',
-			),
-		) );
+		mcae_author( array(), array( mcae_title_row( 'AE' ) ) );
 
 		$before = $count();
 		$result = ExistingPostsApplier::run_batch( mcae_choice( OptionRuleStorage::KIND_FORMAT, 0 ) );
@@ -591,6 +635,119 @@ switch ( $step ) {
 		mcae_put_back( $snap );
 		break;
 
+	// ------------------------------------------------------------- preview
+	// A format preview shows the pass's result on the newest posts in reach
+	// and writes nothing: post rows and every meta row, `_bws_raw_title`
+	// included, hash the same before and after, and so does the rule status.
+	case 'preview':
+		$snap   = mcae_snapshot();
+		$status = get_option( 'bws_title_slug_rule_status' );
+		mcae_author( array(), array( mcae_title_row( 'PV' ) ) );
+
+		$digest = mcae_digest();
+		$result = ExistingPostsApplier::preview( mcae_choice( OptionRuleStorage::KIND_FORMAT, 0 ) );
+		$shown  = mcae_shown( $result['sample'] );
+		WP_CLI::log( '[preview] ' . $result['message'] );
+
+		$t( '§ae11 preview succeeds', $result['status'], 'success' );
+		$t( '§ae11 samples min(5, reach) posts', count( $shown ), min( ExistingPostsApplier::PREVIEW_SAMPLE, $result['total'] ) );
+		$t( '§ae11 …the newest in reach, newest first', mcae_shows_newest( $shown, ExistingPostsApplier::PREVIEW_SAMPLE ), true );
+		$t( '§ae11 shows the resulting title', mcae_titled( $result['sample'], 'PV' ), true );
+		$t( '§ae11 carries the uniqueness / terms note', '' !== $result['note'], true );
+		$t( '§ae11 post rows + meta byte-identical', mcae_digest(), $digest );
+		$t( '§ae11 rule status untouched', get_option( 'bws_title_slug_rule_status' ), $status );
+
+		mcae_put_back( $snap );
+		break;
+
+	// --------------------------------------------------------------- first
+	// A disabled title/slug row ordered before an enabled one wins first match
+	// — in the preview AND in the run — and storage never changes.
+	case 'first':
+		$snap   = mcae_snapshot();
+		$status = get_option( 'bws_title_slug_rule_status' );
+		mcae_author( array(), array( mcae_title_row( 'FIRST', false ), mcae_title_row( 'SECOND' ) ) );
+		$stored = get_option( mc_sweep_option() );
+
+		$pv_off = ExistingPostsApplier::preview( mcae_choice( OptionRuleStorage::KIND_FORMAT, 0 ) );
+		$pv_on  = ExistingPostsApplier::preview( mcae_choice( OptionRuleStorage::KIND_FORMAT, 1 ) );
+		$run    = ExistingPostsApplier::run_batch( mcae_choice( OptionRuleStorage::KIND_FORMAT, 0 ) );
+		WP_CLI::log( '[first] ' . $run['message'] );
+
+		$t( '§ae12 preview of the disabled row: it wins first match', mcae_titled( $pv_off['sample'], 'FIRST' ), true );
+		$t( '§ae12 preview of the enabled row: the disabled one sits out', mcae_titled( $pv_on['sample'], 'SECOND' ), true );
+		$t( '§ae12 run of the disabled row: it wins first match', mcae_titled( $run['rows'], 'FIRST' ), true );
+
+		// The override is gone once the run returns: a pass now computes the
+		// enabled row, as a save would.
+		$later = FormatDispatcher::instance()->compute( mcae_shown( $run['rows'] )[0] );
+		$t( '§ae12 …and a later pass runs the enabled row', str_ends_with( $later['after']['post_title'], ' SECOND' ), true );
+		$t( '§ae12 rules storage unchanged', get_option( mc_sweep_option() ), $stored );
+
+		mcae_put_back( $snap );
+		false === $status ? delete_option( 'bws_title_slug_rule_status' ) : update_option( 'bws_title_slug_rule_status', $status, false );
+		break;
+
+	// --------------------------------------------------------------- pterm
+	// A term preview is the size of the run plus the newest posts in reach,
+	// with edit links; no dry run (FW-32), no writes. A stale choice is
+	// refused as a run refuses it.
+	case 'pterm':
+		$snap = mcae_snapshot();
+		mcae_author( array( mcae_hier_row() ) );
+		$admins = get_users( array( 'role' => 'administrator', 'number' => 1, 'fields' => 'ID' ) );
+		wp_set_current_user( (int) $admins[0] );
+		$reach = get_posts( array(
+			'post_type'   => 'mc_item',
+			'post_status' => RuleChoice::DEFAULT_STATUSES,
+			'numberposts' => -1,
+			'fields'      => 'ids',
+		) );
+
+		$choice = mcae_choice( OptionRuleStorage::KIND_TERM, 0 );
+		$digest = mcae_digest();
+		$result = ExistingPostsApplier::preview( $choice );
+		$shown  = mcae_shown( $result['posts'] );
+		WP_CLI::log( '[pterm] ' . $result['message'] );
+
+		$t( '§ae13 total = the rule\'s reach', $result['total'], count( $reach ) );
+		$t( '§ae13 lists min(10, reach) posts', count( $shown ), min( ExistingPostsApplier::PREVIEW_POSTS, count( $reach ) ) );
+		$t( '§ae13 …the newest in reach, newest first', mcae_shows_newest( $shown, ExistingPostsApplier::PREVIEW_POSTS ), true );
+		$t( '§ae13 …with titles and edit links', array_filter( $result['posts'], fn( $p ) => '' === $p['title'] || false === strpos( $p['edit_link'], 'post=' . $p['post_id'] ) ), array() );
+		$t( '§ae13 no format sample', $result['sample'], array() );
+		$t( '§ae13 nothing written', mcae_digest(), $digest );
+
+		$edited                      = mcae_hier_row();
+		$edited['inheritance_depth'] = 'immediate';
+		mcae_author( array( $edited ) );
+		$stale = ExistingPostsApplier::preview( $choice );
+		$t( '§ae13 stale choice refused, asking reload', array( $stale['status'], false !== strpos( $stale['message'], 'reload' ) ), array( 'error', true ) );
+
+		mcae_put_back( $snap );
+		break;
+
+	// ---------------------------------------------------------------- pall
+	// "All enabled rules": the count, plus the format sample only while a
+	// format rule is enabled.
+	case 'pall':
+		$snap = mcae_snapshot();
+		mcae_author( array( mcae_hier_row() ), array( mcae_title_row( 'ALL' ) ) );
+		$digest = mcae_digest();
+		$with   = ExistingPostsApplier::preview( RuleChoice::ALL_ENABLED );
+		mcae_author( array( mcae_hier_row() ), array( mcae_title_row( 'ALL', false ) ) );
+		$without = ExistingPostsApplier::preview( RuleChoice::ALL_ENABLED );
+		WP_CLI::log( '[pall] ' . $with['message'] );
+
+		$t( '§ae14 counts the union reach', $with['total'] > 0, true );
+		$t( '§ae14 samples the enabled format rule', mcae_titled( $with['sample'], 'ALL' ), true );
+		$t( '§ae14 lists no term posts', $with['posts'], array() );
+		$t( '§ae14 a disabled format rule gives no sample', $without['sample'], array() );
+		$t( '§ae14 …and the same count', $without['total'], $with['total'] );
+		$t( '§ae14 nothing written', mcae_digest(), $digest );
+
+		mcae_put_back( $snap );
+		break;
+
 	// ------------------------------------------------------------- restore
 	case 'restore':
 		mcae_quiet( function () {
@@ -605,7 +762,7 @@ switch ( $step ) {
 		break;
 
 	default:
-		WP_CLI::error( "Unknown step '$step' — enabled|disabled|stale|off|fanout|rpt|revisions|limit|continue|restart|restore." );
+		WP_CLI::error( "Unknown step '$step' — enabled|disabled|stale|off|fanout|rpt|revisions|limit|continue|restart|preview|first|pterm|pall|restore." );
 }
 
 // Hold passes down for the rest of this request: the ACF write queue flushes at
