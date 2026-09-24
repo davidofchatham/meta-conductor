@@ -214,16 +214,6 @@ Take a defined group of posts — all descendants of a page, or all posts in a t
 - **Blocked by:** — • **Interacts with:** FW-16
 - **Phase:** none. It was a candidate launch recipe inside FW-16 until that restarted as a rule-apply page (2026-09-23); a post type flip has no rule behind it, so it needs its own tool.
 
-#### FW-16 — Apply rules to existing posts
-
-A dedicated admin page that runs a chosen configured rule — or all enabled rules — over the posts that already exist, as a full ordered pass. Rules otherwise act only on save, so this is how a new or changed rule reaches existing content. Replaces the Data Conversion page; was the "Unified Migration / Preview tool" with a recipe engine until restarted 2026-09-23.
-
-- **Detail home:** `.scratch/apply-existing/spec.md` (lifts to [design-history](design-history/) at merge). Built-state summary: [architecture.md → Apply to existing posts](architecture.md#apply-to-existing-posts).
-- **Progress:** Built on branch `claude/apply-existing-7`, unmerged (2026-09-24): all nine tickets under `.scratch/apply-existing/issues/`. Rule choice codec + reach, the dispatchers' one-time row override, the format pass split into compute + write, the applier (one batch, then time-boxed Continue batches, then format preview), `process_existing_posts()` and the title/slug AJAX endpoints retired, the Wireframe Apply page, and Data Conversion + `includes/support/` deleted with the upgrade unscheduling its cron event and dropping its tables. H-gate `tests/verify-apply-existing.php`; behavior sweep `sweep-apply-existing.php`.
-- **Open:** merge the branch, release (version bump + tag), then lift the spec into `docs/design-history/`. Copy / Map return as rule types (`related`, FW-4 `field_transformation`).
-- **Blocked by:** — • **Interacts with:** FW-4, FW-15, FW-23, FW-31, FW-32, FW-33
-- **Phase:** 7
-
 #### FW-17 — CPT storage backend
 
 Implement `Storage\CptRuleStorage` against the existing `Storage\RuleStorage` interface — a single shared CPT `bws_mc_rule` differentiated by `rule_type` meta, with per-type routing in `Storage\StorageFactory` — for a rule type that genuinely needs a list table, a draft/active lifecycle, or standard WP query power.
@@ -267,7 +257,7 @@ The repo's gates are plain-PHP `tests/verify-*.php` scripts run on bare host PHP
 
 A compute-only path through the term pass, so FW-16 can preview what a term rule would write before it writes. The format pass already has one — `apply_to_data()` returns data and the dispatcher writes — but every term applier writes as it goes.
 
-- **Detail home:** `.scratch/apply-existing/spec.md` → *Preview* (FW-16's spec).
+- **Detail home:** [design-history/apply-existing.md](design-history/apply-existing.md) → *Preview* (FW-16's spec).
 - **Progress:** Not started. FW-16 launches without it: term rules get an in-scope count, a sample list, a post limit and a post-run change report instead.
 - **Open:** `TermOperations::compute_end_state()` is the natural seam, since it already encodes merge / replace / skip for every write. A rolled-back DB transaction was considered and set aside — other plugins' hooks and the object cache fire during the pass and do not roll back.
 - **Blocked by:** — • **Interacts with:** FW-16
@@ -389,7 +379,7 @@ Every handler carries a `validate_rule_internal()`, and `UnifiedHandlerBase` wra
 
 A Preview / Apply-to-existing button inside each rule row, so an author can check or apply a rule without leaving it for the FW-16 page. Deferred, not out of scope: FW-16 ships the page first, and this is a second entry point onto the same applier, which takes a rule array rather than a page request so either caller can supply one.
 
-- **Detail home:** `.scratch/apply-existing/spec.md` (FW-16's spec, *Out of Scope*); the Wireframe gap is in `.scratch/plans/wireframe-js-field-type-extension-blocker.md` → Gap B.
+- **Detail home:** [design-history/apply-existing.md](design-history/apply-existing.md) (FW-16's spec, *Out of Scope*); the Wireframe gap is in `.scratch/plans/wireframe-js-field-type-extension-blocker.md` → Gap B.
 - **Progress:** Not started.
 - **Open:** when it starts — build Gap B on our Wireframe fork if upstream has not shipped row context, or fall back to one `action` button beside the repeater with a rule dropdown (saved rules only; stale after a reorder until reload). The in-row form has to handle unsaved edits: the button posts in-flight values, so it either previews those or refuses until saved.
 - **Blocked by:** `code:Wireframe's action field carries no repeater-row context` • **Interacts with:** FW-16, FW-23
@@ -402,6 +392,7 @@ Shipped or cut items retire here, densely — a closed item is read in bulk and 
 
 | Id | Item | Outcome |
 |---|---|---|
+| FW-16 | Apply rules to existing posts | **Merged in [#75](https://github.com/davidofchatham/meta-conductor/pull/75)** (2026-09-24, Phase 7). Added the *Apply to existing posts* page: a bulk run is a full ordered pass over the chosen rule's reach, and a disabled rule can run once. Data Conversion and `includes/support/` were deleted. Spec: [design-history/apply-existing.md](design-history/apply-existing.md). Deferred parts are still open as FW-31 (in-row buttons), FW-32 (term dry run) and FW-33 (background runs); Copy / Map return as rule types through FW-4. |
 | FW-18 | Text-domain string sweep | **Shipped in 0.7.0** (Phase 2b rename sweep, [#48](https://github.com/davidofchatham/meta-conductor/pull/48)) — the row survived the 2026-09-11 migration describing work already done. Every `__()` / `_e()` / `_x()` / `_n()` call site now passes `'meta-conductor'`; `'bws-meta-manager'` survives only as the Composer package name in `vendor/`. The *conversion* subsystem's identifiers (JS object, cron / AJAX / transient names) were never part of this row — they were the 2b remainder, closed by deletion with the Data Conversion page in FW-16. |
 
 ---

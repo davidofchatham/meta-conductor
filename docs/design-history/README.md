@@ -24,3 +24,4 @@ A file here is **not** an ADR. An ADR states a decision and its consequences in 
 |---|---|---|
 | [title-slug-rules.md](title-slug-rules.md) | `title_slug_rules` — token vocabulary, idempotency, slug collision | 2026-09-11 |
 | [acf-reference-rework.md](acf-reference-rework.md) | `related_post_terms` rework + Phase 3 migration | 2026-09-11 |
+| [apply-existing.md](apply-existing.md) | *Apply to existing posts* page (FW-16), replacing Data Conversion | 2026-09-24 |
