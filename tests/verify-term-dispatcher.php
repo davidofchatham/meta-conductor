@@ -62,6 +62,9 @@
  *      an applier seam or a write primitive, and clears its one-time row
  *      override in a `finally`. Its preview (FW-16 06) reads the format pass
  *      through `compute()`, never drains, and clears the override the same way.
+ *  14. Each dispatcher's `apply()` has ONE caller, its own pass: `run_pass()`
+ *      for terms, `compute()` for formats. Nothing outside a dispatcher names
+ *      either (FW-16 07, which retired the per-handler bulk path).
  *
  * Run:  php tests/verify-term-dispatcher.php
  *
@@ -1151,6 +1154,32 @@ if (!is_file($applier_file)) {
             $errors[] = sprintf('The existing-posts applier reaches %s — it may only name posts to the queue; the pass does the work, or bulk and save can diverge (FW-16 04).', rtrim($effect, '('));
         }
     }
+}
+
+// --- 14. Each dispatcher's apply() has ONE caller: its own pass (FW-16 07) --
+// Group 5 pins the applier seam to apply(); this pins apply() to the pass. The
+// retired per-handler bulk path called TermDispatcher::apply() one rule at a
+// time, outside any ordered pass — a bulk run that could disagree with a save.
+// The format side's pass path is compute() (group 12j), which run_pass() and
+// the applier's preview both go through.
+$foreign_apply = [];
+foreach ($php_files as $file) {
+    $rel = str_replace($normalized_root, '', $file);
+    foreach (preg_split('/\R/', $strip_comments((string) file_get_contents($file))) as $n => $line) {
+        if (preg_match('/\b(?:Term|Format)Dispatcher::apply\s*\(/', $line)) {
+            $foreign_apply[] = $rel . ':' . ($n + 1);
+        }
+    }
+}
+if ($foreign_apply) {
+    $errors[] = sprintf(
+        'A dispatcher apply() is called from outside its own pass (%s) — bulk goes through the existing-posts applier and the drain (FW-16 07).',
+        implode(', ', $foreign_apply)
+    );
+}
+$term_pass = $method_body($src, 'run_pass');
+if (preg_match_all('/\b(?:self|static)::apply\s*\(/', $src) !== 1 || $term_pass === null || !preg_match('/\bself::apply\s*\(/', $term_pass)) {
+    $errors[] = 'TermDispatcher::apply() must be called exactly once, from run_pass() — anything else executes a rule outside the ordered pass (FW-16 07).';
 }
 
 if ($errors) {

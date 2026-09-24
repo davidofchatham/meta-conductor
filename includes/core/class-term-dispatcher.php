@@ -302,9 +302,9 @@ class TermDispatcher {
      * Pass locks, `"kind|entity"` => true.
      *
      * STATIC because the lock is a property of the request, not of the
-     * dispatcher instance: `apply()` is a static choke point that bulk apply
-     * routes through without holding a dispatcher, and a per-instance lock
-     * would let those two paths run concurrent passes over one entity.
+     * dispatcher instance: `FormatDispatcher` takes it through `take_pass()`
+     * without holding this dispatcher, and `pass_active()` answers callers
+     * that hold neither.
      *
      * @var array<string,true>
      */
@@ -320,10 +320,10 @@ class TermDispatcher {
     /**
      * The registered dispatcher, for callers that hold no reference to it.
      *
-     * `process_existing_posts()` is the one that matters: it lives on the
-     * handler base, runs long after boot, and needs to ask for a pass rather
-     * than loop its own rules. Set at register() rather than construction, so
-     * "the live dispatcher" means one that actually owns the triggers.
+     * The existing-posts applier and the time-based cron sweep both run long
+     * after boot and need to ask for a pass rather than run rules themselves.
+     * Set at register() rather than construction, so "the live dispatcher"
+     * means one that actually owns the triggers.
      *
      * @var self|null
      */
@@ -786,44 +786,17 @@ class TermDispatcher {
     /**
      * Apply ONE rule to ONE entity. The sole caller of `apply_to_post()`.
      *
-     * Static, and taking its handler explicitly, so the paths that hold a rule
-     * and a handler but not a dispatcher — `process_existing_posts()`, the bulk
-     * primitive — route through the same choke point rather than reaching past
-     * it. That is the property H13 checks: one call site in the whole plugin.
-     *
-     * Takes the pass lock when none is held, so a bulk apply's own writes are
-     * suppressed exactly as a pass's are. When a pass IS in progress the lock
-     * is already held and this leaves it alone — releasing it here would open
-     * the rest of the pass to its own echo.
+     * Private, and called only from `run_pass()`, which already holds the pass
+     * lock — so every execution is inside an ordered pass. H13 checks both call
+     * sites: this one, and `apply_to_post()`'s single one in here.
      *
      * @param int                $post_id Entity to apply to.
      * @param array              $rule    One enabled rule (canonical shape).
      * @param UnifiedHandlerBase $handler The rule type's handler.
      * @return bool Whether the rule actually changed the entity.
      */
-    public static function apply(int $post_id, array $rule, UnifiedHandlerBase $handler): bool {
-        // Key the lock on the handler's OWN kind, not this dispatcher's. The
-        // base bulk path routes any handler through here, and locking a
-        // non-term apply under `term_rules` would suppress the term enqueues
-        // its write legitimately causes. `title_slug` no longer arrives this
-        // way — it overrides bulk onto `FormatDispatcher::run_pass()` (#64) —
-        // but the derivation stays, because it is the general statement and the
-        // next non-term kind would otherwise reintroduce the bug.
-        $kind = StorageFactory::get_instance()->get_kind_for_type($handler->rule_type());
-        $key  = self::pass_key($kind !== '' ? $kind : self::KIND, $post_id);
-        $held = isset(self::$passes[$key]);
-
-        if (!$held) {
-            self::$passes[$key] = true;
-        }
-
-        try {
-            return $handler->apply_to_post($post_id, $rule);
-        } finally {
-            if (!$held) {
-                unset(self::$passes[$key]);
-            }
-        }
+    private static function apply(int $post_id, array $rule, UnifiedHandlerBase $handler): bool {
+        return $handler->apply_to_post($post_id, $rule);
     }
 
     // ------------------------------------------------------------------- lock

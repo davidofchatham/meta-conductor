@@ -17,7 +17,6 @@ if (!defined('ABSPATH')) {
 
 use BWS\MetaConductor\Core\RuleEngine;
 use BWS\MetaConductor\Core\Entity;
-use BWS\MetaConductor\Core\TermDispatcher;
 use BWS\MetaConductor\Storage\StorageFactory;
 
 abstract class UnifiedHandlerBase {
@@ -611,7 +610,8 @@ abstract class UnifiedHandlerBase {
      * so the base process_post (which routes through RuleEngine) must NOT run
      * for them. That left the bulk "process existing posts" tool inert: it
      * looped process_post, which did nothing, yet counted every post as
-     * processed (the "lying button"). Bulk loops THIS instead.
+     * processed (the "lying button"). Bulk looped THIS instead, until the
+     * existing-posts applier made bulk a provocation of the pass (FW-16).
      *
      * What it became (#60): the seam a CONVERTED handler is reduced to. A
      * converted handler registers no hooks at all; `TermDispatcher` owns the
@@ -621,9 +621,6 @@ abstract class UnifiedHandlerBase {
      * whether or not that rule's own trigger fired. It must NOT carry a
      * re-entrancy boolean: the pass lock is the only guard, and a second one
      * silently suppresses the author's own chain (ADR 0003, rejected option).
-     *
-     * Handlers still awaiting conversion keep their hooks and their overrides
-     * of this as the bulk primitive only — see TermDispatcher::UNCONVERTED_TYPES.
      *
      * ONLY `TermDispatcher::apply()` may call this. H13 asserts the single call
      * site; that is what makes "every execution went through a pass" checkable
@@ -845,171 +842,6 @@ abstract class UnifiedHandlerBase {
         return [
             'valid' => empty($errors),
             'errors' => $errors
-        ];
-    }
-
-    /**
-     * Process existing posts in batches (backward compatibility method)
-     *
-     * @param int $batch_size Number of posts to process per batch
-     * @param int $offset Starting offset
-     * @return array Processing results
-     */
-    public function process_existing_posts($batch_size = 50, $offset = 0) {
-        $rules = $this->get_enabled_rules();
-
-        if (empty($rules)) {
-            return [
-                'processed' => 0,
-                'total' => 0,
-                'complete' => true,
-                'message' => __('No rules configured for this handler.', 'meta-conductor')
-            ];
-        }
-
-        // Get post types from rules. The migrated handlers store the plural
-        // `post_types` Wireframe checkbox map (empty ⇒ all); fall back to the
-        // legacy scalar source_filters['post_type'] for any rule shape that
-        // predates it. Flatten the map via the canonical extractor so this
-        // matches should_process_post's gate.
-        $post_types = [];
-        foreach ($rules as $rule) {
-            if (isset($rule['post_types'])) {
-                $slugs = \BWS\MetaConductor\Admin\Config\ConfigHelpers::selected_checkbox_slugs($rule['post_types']);
-                // Empty ⇒ "all" for this rule (matches the gate); widen to every
-                // public type and stop narrowing.
-                if (empty($slugs) || (isset($slugs[0]) && $slugs[0] === 'any')) {
-                    $post_types = get_post_types(['public' => true]);
-                    break;
-                }
-                $post_types = array_merge($post_types, $slugs);
-                continue;
-            }
-
-            $source_filters = $rule['source_filters'] ?? [];
-            $post_type = $source_filters['post_type'] ?? 'post';
-
-            if ($post_type === 'any') {
-                $post_types = get_post_types(['public' => true]);
-                break;
-            }
-
-            if (is_array($post_type)) {
-                $post_types = array_merge($post_types, $post_type);
-            } else {
-                $post_types[] = $post_type;
-            }
-        }
-
-        $post_types = array_unique($post_types);
-
-        if (empty($post_types)) {
-            return [
-                'processed' => 0,
-                'total' => 0,
-                'complete' => true,
-                'message' => __('No applicable post types found.', 'meta-conductor')
-            ];
-        }
-
-        // Get total count
-        $total_query = new \WP_Query([
-            'post_type' => $post_types,
-            'post_status' => 'any',
-            'posts_per_page' => -1,
-            'fields' => 'ids',
-            'no_found_rows' => false
-        ]);
-
-        $total = $total_query->found_posts;
-
-        // Get batch of posts
-        $query = new \WP_Query([
-            'post_type' => $post_types,
-            'post_status' => 'any',
-            'posts_per_page' => $batch_size,
-            'offset' => $offset,
-            'fields' => 'ids'
-        ]);
-
-        $processed = 0;
-
-        // Loop rules × posts through the applier seam, NOT process_post — the
-        // hook-driven handlers no-op process_post (#31). Count a post as
-        // processed only when at least one rule actually applied to it, so the
-        // reported total reflects work done, not just posts iterated (the old
-        // loop counted every iteration → "Processed N of N" while writing
-        // nothing).
-        //
-        // The call goes through TermDispatcher::apply() rather than straight to
-        // $this->apply_to_post(): the dispatcher is the sole caller of that seam
-        // (#60), which is what lets H13 prove by inspection that nothing
-        // executes a rule outside it. It also means bulk apply takes the same
-        // pass lock a hook-driven pass does, so the writes a rule makes here
-        // don't enqueue this post for a redundant second pass at shutdown.
-        //
-        // A CONVERTED type takes the pass instead. Looping this handler's own
-        // rules would apply them in isolation, so bulk would produce a
-        // different end state than a save over the same rule set whenever a
-        // rule of another type sits between two of this one's — which is
-        // exactly the arrangement the ordered list exists to allow. A pass is
-        // the same pass however it was provoked (CONTEXT.md → Pass), so bulk
-        // provokes one. Handlers still owning their hooks keep the per-rule
-        // loop; the branch goes away with the last of them (#66).
-        $dispatcher   = TermDispatcher::instance();
-        $run_full_pass = $dispatcher !== null && TermDispatcher::owns($this->get_rule_type());
-
-        foreach ($query->posts as $post_id) {
-            if (!get_post($post_id)) {
-                continue;
-            }
-            $applied = false;
-            if ($run_full_pass) {
-                $applied = $dispatcher->run_pass((int) $post_id) > 0;
-            } else {
-                foreach ($rules as $rule) {
-                    if (TermDispatcher::apply($post_id, $rule, $this)) {
-                        $applied = true;
-                    }
-                }
-            }
-            if ($applied) {
-                $processed++;
-            }
-        }
-
-        $complete = ($offset + $batch_size) >= $total;
-
-        return [
-            'processed' => $processed,
-            'total' => $total,
-            'offset' => $offset + $batch_size,
-            'complete' => $complete,
-            // Report posts ACTUALLY changed out of those scanned THIS batch, not
-            // raw iteration count — an applicable-to-none rule set now reads
-            // "Applied to 0 of N" instead of a false "Processed N of N" (#31).
-            // Both numerator and denominator are per-batch: $processed counts
-            // this batch's changed posts, count($query->posts) is this batch's
-            // scanned posts — mixing per-batch numerator with a cumulative
-            // denominator would misreport under pagination.
-            //
-            // On the pass path the count means "posts some rule in the ordered
-            // list changed", not "posts THIS rule type changed", and the posts
-            // scanned are still the ones this handler's rules name. Both are
-            // consequences of bulk provoking a real pass, so the message says
-            // which of the two it is rather than reporting the wider number
-            // under the narrower sentence.
-            'message' => $run_full_pass
-                ? sprintf(
-                    __('Ran the ordered rule list over %2$d posts; %1$d changed.', 'meta-conductor'),
-                    $processed,
-                    count($query->posts)
-                )
-                : sprintf(
-                __('Applied to %d of %d posts scanned.', 'meta-conductor'),
-                $processed,
-                count($query->posts)
-            )
         ];
     }
 }

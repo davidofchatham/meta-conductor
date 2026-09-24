@@ -156,13 +156,11 @@ class TitleSlugHandler extends UnifiedHandlerBase {
     /**
      * Resolve one rule's title and slug for one post, writing nothing.
      *
-     * The ONE encoding of the pattern -> title -> slug chain. `apply_to_data()`
-     * writes what this returns and `preview_rule()` displays it, so a dry run
-     * and a real pass cannot report different things — including which side of
-     * the duplicate-insertion guard each pattern lands on, which is a single
-     * decision here rather than one per caller. Each caller keeps only its own
-     * tail: slug uniqueness on the pass path (and the idempotency meta in
-     * `commit_data()`), neither of which a preview wants.
+     * The ONE encoding of the pattern -> title -> slug chain, including which
+     * side of the duplicate-insertion guard each pattern lands on.
+     * `apply_to_data()` is its caller; the existing-posts preview reaches it
+     * through `FormatDispatcher::compute()`, so a dry run and a real pass cannot
+     * report different things.
      *
      * @param array  $rule          One title/slug rule.
      * @param int    $post_id       Entity being resolved.
@@ -695,99 +693,5 @@ class TitleSlugHandler extends UnifiedHandlerBase {
         }
 
         update_option('bws_title_slug_rule_status', $status, false); // autoload=false
-    }
-
-    // -------------------------------------------------------------------------
-    // Public API (stubs)
-    // -------------------------------------------------------------------------
-
-    public function preview_rule(array $rule): array {
-        $args = ['post_type' => $rule['post_type'], 'posts_per_page' => 1,
-                 'post_status' => 'publish', 'orderby' => 'date', 'order' => 'DESC'];
-        $posts = get_posts($args);
-        if (empty($posts)) return ['error' => 'No published posts found for this post type'];
-
-        $post    = $posts[0];
-        $post_id = $post->ID;
-
-        // Dry-run: the same resolution the pass runs, minus the write and the
-        // uniqueness suffix (which depends on what else is stored at the time).
-        $resolved  = $this->resolve_rule_output($rule, $post_id, $post, (string) $post->post_title);
-        $new_title = $resolved['title'];
-        $new_slug  = $resolved['slug'] ?? $post->post_name;
-
-        return [
-            'post_id'       => $post_id,
-            'post_url'      => get_edit_post_link($post_id),
-            'current_title' => $post->post_title,
-            'preview_title' => $new_title,
-            'current_slug'  => $post->post_name,
-            'preview_slug'  => $new_slug,
-            'warnings'      => [],
-        ];
-    }
-
-    /**
-     * Bulk apply.
-     *
-     * Provokes a full ordered FORMAT pass per post rather than applying this
-     * handler's rules itself — the same inversion `UnifiedHandlerBase`'s bulk
-     * path took for converted term types (#60). Bulk is a provocation: it names
-     * posts, and what happens to them is the pass's job, so a bulk run and a
-     * save over the same rule set cannot diverge. It is also what keeps
-     * `apply_to_data()` to the single call site H13 checks.
-     *
-     * @param int $batch_size Posts per rule per batch.
-     * @param int $offset     Batch offset.
-     * @return array
-     */
-    public function process_existing_posts($batch_size = 50, $offset = 0): array {
-        $rules      = $this->get_enabled_rules();
-        $dispatcher = \BWS\MetaConductor\Core\FormatDispatcher::instance();
-        $processed  = 0;
-        $errors     = [];
-
-        foreach ($rules as $rule) {
-            if (empty($rule['post_type'])) continue;
-
-            $posts = get_posts([
-                'post_type'      => $rule['post_type'],
-                'post_status'    => ['publish', 'draft', 'private'],
-                'posts_per_page' => $batch_size,
-                'offset'         => $offset,
-                'fields'         => 'all',
-            ]);
-
-            // No dispatcher means no pass ran, so nothing was applied. Counting
-            // the post anyway is the "lying button" #31 removed: the caller
-            // reports "processed N of N, done" having written nothing.
-            if ($dispatcher === null) {
-                $errors[] = __('No format dispatcher is registered — nothing was applied.', 'meta-conductor');
-                break;
-            }
-
-            foreach ($posts as $post) {
-                try {
-                    $dispatcher->run_pass((int) $post->ID);
-                    $processed++;
-                } catch (\Exception $e) {
-                    $errors[] = "Post {$post->ID}: " . $e->getMessage();
-                }
-            }
-        }
-
-        $total = (int) (new \WP_Query([
-            'post_type'      => array_column($rules, 'post_type'),
-            'post_status'    => ['publish', 'draft', 'private'],
-            'posts_per_page' => -1,
-            'fields'         => 'ids',
-        ]))->found_posts;
-
-        return [
-            'processed' => $processed,
-            'total'     => $total,
-            'done'      => ($offset + $batch_size) >= $total,
-            'errors'    => $errors,
-        ];
     }
 }

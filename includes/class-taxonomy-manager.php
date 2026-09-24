@@ -16,7 +16,6 @@ use BWS\MetaConductor\Handlers\HierarchicalLevelRestrictionHandler;
 use BWS\MetaConductor\Handlers\TitleSlugHandler;
 use BWS\MetaConductor\Conversion\ConversionManager;
 use BWS\MetaConductor\Conversion\ConversionCli;
-use BWS\MetaConductor\Storage\StorageFactory;
 use BWS\MetaConductor\Core\AcfWriteQueue;
 use BWS\MetaConductor\Core\TermDispatcher;
 use BWS\MetaConductor\Core\FormatDispatcher;
@@ -168,8 +167,6 @@ class TaxonomyManager {
 		add_action('wp_ajax_bws_meta_manager_conversion_process_chunk', array($this, 'ajax_conversion_process_chunk'));
 		add_action('wp_ajax_bws_meta_manager_conversion_process', array($this, 'ajax_conversion_process'));
 		add_action('wp_ajax_bws_meta_manager_conversion_preview', array($this, 'ajax_conversion_preview'));
-        add_action('wp_ajax_bws_title_slug_preview',          array($this, 'ajax_title_slug_preview'));
-        add_action('wp_ajax_bws_title_slug_process_existing', array($this, 'ajax_title_slug_process_existing'));
 
     }
     
@@ -814,32 +811,4 @@ class TaxonomyManager {
 	public function ajax_conversion_preview() {
 		$this->conversion_manager->get_conversion_ui()->handle_preview_ajax();
 	}
-
-    public function ajax_title_slug_preview() {
-        check_ajax_referer('bws_meta_conductor_nonce', 'nonce');
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(['message' => __('Insufficient permissions', 'meta-conductor')]);
-        }
-        $rule_index = intval($_POST['rule_index'] ?? -1);
-        $storage    = StorageFactory::get_instance();
-        $rules      = $storage->get_rules('title_slug_rules');
-        $rule       = $rules[$rule_index] ?? null;
-        if (!$rule) {
-            wp_send_json_error(['message' => __('Rule not found', 'meta-conductor')]);
-        }
-        $result = $this->handlers['title_slug']->preview_rule($rule);
-        isset($result['error']) ? wp_send_json_error($result) : wp_send_json_success($result);
-    }
-
-    public function ajax_title_slug_process_existing() {
-        check_ajax_referer('bws_meta_conductor_nonce', 'nonce');
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(['message' => __('Insufficient permissions', 'meta-conductor')]);
-        }
-        $batch_size = intval($_POST['batch_size'] ?? 50);
-        $offset     = intval($_POST['offset'] ?? 0);
-        $result     = $this->handlers['title_slug']->process_existing_posts($batch_size, $offset);
-        wp_send_json_success($result);
-    }
-
 }

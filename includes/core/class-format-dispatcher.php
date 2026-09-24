@@ -324,10 +324,8 @@ class FormatDispatcher {
     /**
      * Apply ONE rule to ONE entity's data. The sole caller of `apply_to_data()`.
      *
-     * Static and taking its handler explicitly, mirroring
-     * `TermDispatcher::apply()`, so any path that holds a rule and a handler
-     * but not a dispatcher routes through the same choke point. That single
-     * call site is what H13 checks.
+     * Private, and called only from `compute()` — the pass and its preview —
+     * so every format execution is one of those two. H13 checks the call site.
      *
      * @param int                $post_id Entity being passed over.
      * @param array              $data    Post data as the previous rule left it.
@@ -335,7 +333,7 @@ class FormatDispatcher {
      * @param UnifiedHandlerBase $handler The rule type's handler.
      * @return array|null Post data, or null when the rule does not apply here.
      */
-    public static function apply(int $post_id, array $data, array $rule, UnifiedHandlerBase $handler): ?array {
+    private static function apply(int $post_id, array $data, array $rule, UnifiedHandlerBase $handler): ?array {
         return $handler->apply_to_data($data, $post_id, $rule);
     }
 
