@@ -131,7 +131,6 @@ if (!function_exists('bws_meta_manager_init')) {
 				'hierarchical_level_restriction_rules' => array(),
 				'title_slug_rules' => array(),
 				'conflict_handling' => array(),
-				'manual_processing_enabled' => true,
 			));
 		}
 
@@ -373,6 +372,14 @@ if (!function_exists('bws_meta_manager_init')) {
 			// have no reader left. Both idempotent.
 			wp_clear_scheduled_hook('bws_meta_manager_conversion_cleanup');
 			bws_meta_conductor_drop_conversion_tables();
+
+			// The General tab's bulk-actions toggle was deleted: nothing ever
+			// read it. Drop its stored value. Idempotent.
+			$settings = get_option('bws_meta_conductor_settings');
+			if (is_array($settings) && array_key_exists('manual_processing_enabled', $settings)) {
+				unset($settings['manual_processing_enabled']);
+				update_option('bws_meta_conductor_settings', $settings);
+			}
 
 			update_option('bws_meta_conductor_version', META_CONDUCTOR_VERSION);
 			bws_taxonomy_manager_clear_caches();

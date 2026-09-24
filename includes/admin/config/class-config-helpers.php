@@ -20,6 +20,34 @@ if (!defined('ABSPATH')) {
 class ConfigHelpers {
 
     /**
+     * The Apply page's admin slug. Here rather than on ApplyPage so the rule
+     * tabs can link to it without config depending on the page controller.
+     */
+    public const APPLY_PAGE_SLUG = 'meta-conductor-apply';
+
+    /**
+     * Notice below an ordered rule list pointing at the Apply page, which
+     * is where these rules run over posts that already exist.
+     *
+     * The href is relative on purpose: both pages live under wp-admin/, and
+     * it keeps the config buildable without WP loaded (H11/H12).
+     *
+     * @param string $id Field id, unique within the section.
+     */
+    public static function apply_page_note(string $id): array {
+        return [
+            'id'      => $id,
+            'type'    => 'html',
+            'columns' => 12,
+            'args'    => [
+                'variant' => 'info',
+                'content' => '<p>' . esc_html__('Rules run automatically when a post is saved. To run them over posts that already exist, use', 'meta-conductor')
+                           . ' <a href="' . esc_url('admin.php?page=' . self::APPLY_PAGE_SLUG) . '">' . esc_html__('Apply to existing posts', 'meta-conductor') . '</a>.</p>',
+            ],
+        ];
+    }
+
+    /**
      * slug => label for a list of registered WP objects (taxonomies, post
      * types, post statuses) — the ONE loop behind every option builder here.
      *

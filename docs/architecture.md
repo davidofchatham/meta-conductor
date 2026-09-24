@@ -592,7 +592,7 @@ The settings UI is a React app provided by `tdrayson/wp-wireframe`. Config class
 |---|---|
 | Auto-Set & Restrict | The collision advisory (#65), then **the ordered term-rule list** ([TermRulesConfig](../includes/admin/config/class-term-rules-config.php)) — all six term rule types (#57, #58) |
 | Format & Transform | The collision advisory (#65), then **the ordered format-rule list** ([FormatRulesConfig](../includes/admin/config/class-format-rules-config.php)) — `title_slug` today (#59). Future: date / name / phone field transforms |
-| General | Per-taxonomy claim overrides, manual processing toggle |
+| General | Per-taxonomy claim overrides |
 
 Boot path: [class-wireframe-bootstrap.php](../includes/admin/class-wireframe-bootstrap.php) calls `\Wireframe\App::boot()` on `init` priority 10 with the assembled config.
 

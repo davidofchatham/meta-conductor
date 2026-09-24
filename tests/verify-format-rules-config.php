@@ -38,6 +38,7 @@ if (!function_exists('__'))         { function __($t, $d = 'default') { return $
 if (!function_exists('esc_html'))   { function esc_html($t) { return $t; } }
 if (!function_exists('esc_html__')) { function esc_html__($t, $d = 'default') { return $t; } }
 if (!function_exists('esc_attr__')) { function esc_attr__($t, $d = 'default') { return $t; } }
+if (!function_exists('esc_url'))    { function esc_url($u) { return $u; } }
 if (!function_exists('add_action')) { function add_action() {} }
 if (!function_exists('add_filter')) { function add_filter() {} }
 if (!function_exists('_n'))         { function _n($s, $p, $n, $d = 'default') { return $n === 1 ? $s : $p; } }
@@ -391,9 +392,8 @@ $check('the collision advisory leads the tab (#65)',
     $fmt_tab['sections'][0]['id'] === $KIND . '_collisions');
 $check('and the ordered format list follows it',
     $fmt_tab['sections'][1]['fields'][0]['id'] === $KIND);
-// The Preview/Apply note survived the collapse — it is the only thing telling
-// an author those buttons are coming rather than missing.
-$check('the deferred Preview/Apply note is still on the tab',
+// The note under the list is the tab's only pointer to the Apply page.
+$check('the Apply page note is still on the tab',
     ($section['fields'][1]['id'] ?? '') === 'title_slug_actions_note');
 
 // --- No bare {token} in any description, on EITHER ordered list. ------------

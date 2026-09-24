@@ -22,7 +22,6 @@ class GeneralConfig {
             'title'    => __('General', 'meta-conductor'),
             'sections' => [
                 self::conflict_handling_section(),
-                self::processing_section(),
             ],
         ];
     }
@@ -87,27 +86,6 @@ class GeneralConfig {
                             ],
                         ],
                     ],
-                ],
-            ],
-        ];
-    }
-
-    /**
-     * Global processing toggles.
-     */
-    private static function processing_section(): array {
-        return [
-            'id'          => 'processing',
-            'title'       => __('Processing options', 'meta-conductor'),
-            'description' => __('Bulk-operation safeguards.', 'meta-conductor'),
-            'fields'      => [
-                [
-                    'id'          => 'manual_processing_enabled',
-                    'type'        => 'toggle',
-                    'label'       => __('Enable bulk "Apply to Existing Posts" actions', 'meta-conductor'),
-                    'description' => __('When off, bulk-apply buttons are hidden — useful on production sites to prevent accidental sweeping changes.', 'meta-conductor'),
-                    'default'     => true,
-                    'columns'     => 12,
                 ],
             ],
         ];

@@ -8,6 +8,7 @@
 
 namespace BWS\MetaConductor\Admin;
 
+use BWS\MetaConductor\Admin\Config\ConfigHelpers;
 use BWS\MetaConductor\Core\ExistingPostsApplier;
 use BWS\MetaConductor\Core\RuleChoice;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
@@ -86,7 +87,7 @@ final class ApplyPage {
             'option_key' => self::OPTION_KEY,
             'page_title' => __('Apply to existing posts', 'meta-conductor'),
             'menu_title' => __('Apply to existing posts', 'meta-conductor'),
-            'menu_slug'  => 'meta-conductor-apply',
+            'menu_slug'  => ConfigHelpers::APPLY_PAGE_SLUG,
             'parent'     => 'meta-conductor',
             'config'     => self::config(self::choice_options(
                 $storage->get_kind_rules(OptionRuleStorage::KIND_TERM),

@@ -177,16 +177,7 @@ class FormatRulesConfig {
                         'subfields'      => self::subfields(),
                     ],
                 ],
-                [
-                    'id'      => 'title_slug_actions_note',
-                    'type'    => 'html',
-                    'columns' => 12,
-                    'args'    => [
-                        'variant' => 'info',
-                        'content' => '<p><strong>' . esc_html__('Preview & Apply to Existing Posts:', 'meta-conductor') . '</strong> '
-                                   . esc_html__('Coming as part of the unified Migration / Preview tool. Active rules still apply automatically when posts are saved.', 'meta-conductor') . '</p>',
-                    ],
-                ],
+                ConfigHelpers::apply_page_note('title_slug_actions_note'),
             ],
         ];
     }

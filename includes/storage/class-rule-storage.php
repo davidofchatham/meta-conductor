@@ -53,7 +53,7 @@ interface RuleStorage {
 
     /**
      * Get the raw, cached settings option, including non-rule global keys
-     * (conflict_handling_overrides, manual_processing_enabled, etc.). Served
+     * (conflict_handling_overrides, etc.). Served
      * from the same request cache as get_rules() so callers avoid a second
      * get_option() round-trip.
      *

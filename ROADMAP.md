@@ -121,7 +121,7 @@ Per-phase detail lives in [CHANGELOG.md](CHANGELOG.md) and the PRs; the invarian
 
 **Carry-overs — real work, not scheduled to any phase:**
 
-- **The per-taxonomy claim default is stored and flattened but read by nobody** — a rule that omits its own claim still falls back to a hard-coded `merge` in each handler. Deciding rule-level-vs-taxonomy-level precedence and wiring the lookup is what's left. Two orphans wait on it: `RuleStorage::get_raw_settings()` (the seam the wiring reads through) and write-only `manual_processing_enabled` (gates the bulk-apply buttons, which are P7).
+- **The per-taxonomy claim default is stored and flattened but read by nobody** — a rule that omits its own claim still falls back to a hard-coded `merge` in each handler. Deciding rule-level-vs-taxonomy-level precedence and wiring the lookup is what's left. `RuleStorage::get_raw_settings()` is the seam the wiring reads through, and has no other reader until then.
 - **PHPUnit for the snapshot label helpers** — [#68](https://github.com/davidofchatham/meta-conductor/issues/68). `WireframeBootstrap::term_label()` / `scope_label()` / `taxonomy_label()` / `snapshot_related_labels()` are near-pure functions of WP data covered only by manual sweeps; `composer.json` still has no `require-dev`. Standing PHPUnit up also gives the reach/collision work somewhere to land unit tests.
 - **Deferred by design:** full reach/component collision detector (define reach once the non-term effect kinds are real); stable rule `_id` (order is array position — ADR 0002 rejected provenance); CPT storage; rule-type renaming; sub-scope for restricting rules. The format dispatcher goes two-phase when `field_transformation` lands (`wp_insert_post_data` vs `acf/save_post` p20) — CLAUDE.md don't 6f(c).
 

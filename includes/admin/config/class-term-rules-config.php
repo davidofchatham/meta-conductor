@@ -180,6 +180,7 @@ class TermRulesConfig {
                         'subfields'      => self::subfields(),
                     ],
                 ],
+                ConfigHelpers::apply_page_note('term_rules_apply_note'),
             ],
         ];
     }
