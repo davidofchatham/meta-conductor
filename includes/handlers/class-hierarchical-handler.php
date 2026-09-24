@@ -43,20 +43,11 @@ class HierarchicalHandler extends UnifiedHandlerBase {
         return 'hierarchical_rules';
     }
 
-    // Not the applier — apply_to_post() is. The base process_post routes
-    // through RuleEngine, which expects action/source_type keys these flat
-    // Wireframe rules do not carry, so it must stay a no-op here.
-    public function process_post($post_id, $post, $update) {}
-
     /**
      * Apply ONE hierarchical rule to ONE post. The whole of what `on_terms_set`
      * used to do, minus the taxonomy filtering the hook signature gave it for
      * free: a pass hands over rules, not taxonomies, so the rule's own
      * `taxonomy` is the one to expand.
-     *
-     * Overrides the base default deliberately. That default routes through
-     * RuleEngine, which this handler has never used — inheriting it would have
-     * made the dispatcher call a no-op and silently retire the rule type.
      *
      * No re-entrancy boolean: the `private $processing` flag that used to wrap
      * the write is deleted, because the pass lock already suppresses the

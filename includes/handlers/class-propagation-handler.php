@@ -130,11 +130,6 @@ class PropagationHandler extends UnifiedHandlerBase {
         add_action('deleted_term_relationships', array($this, 'capture_removed_terms'), 10, 3);
     }
 
-    // Intentional no-op (not a forgotten implementation). apply_to_post() is
-    // the applier; the base process_post routes through RuleEngine, which
-    // propagation does not use.
-    public function process_post($post_id, $post, $update) {}
-
     /**
      * Apply ONE propagation rule to ONE post: reconcile this post against its
      * parent's terms. Writes this post and nothing else.

@@ -221,11 +221,6 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
         add_action('before_delete_post', [$this, 'capture_deleted_post'], 10, 1);
     }
 
-    // Intentional no-op (not a forgotten implementation). apply_to_post() is
-    // the applier; the base process_post routes through RuleEngine, which this
-    // handler does not use.
-    public function process_post($post_id, $post, $update) {}
-
     // ---------------------------------------------------------------------
     // Applier (#63)
     // ---------------------------------------------------------------------

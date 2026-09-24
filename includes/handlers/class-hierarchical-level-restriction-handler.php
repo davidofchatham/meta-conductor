@@ -39,10 +39,6 @@ class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
      */
     protected function init_hooks() {}
 
-    // Not the applier — apply_to_post() is. The base process_post routes
-    // through RuleEngine, which this handler does not use.
-    public function process_post($post_id, $post, $update) {}
-
     /**
      * Apply ONE level-restriction rule to ONE post. The whole of what both
      * hooks used to do.

@@ -53,11 +53,6 @@ class TitleSlugHandler extends UnifiedHandlerBase {
         return !empty($rule['enabled']);
     }
 
-    // Title/slug rules run from the format dispatcher's ordered pass, on the
-    // apply_to_data() seam. The base class process_post routes through the
-    // generic rule engine which expects action/source_type keys we don't have.
-    public function process_post($post_id, $post, $update) {}
-
     // -------------------------------------------------------------------------
     // Hook registration
     // -------------------------------------------------------------------------

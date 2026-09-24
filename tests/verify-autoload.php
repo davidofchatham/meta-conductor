@@ -59,9 +59,6 @@ $classes = [
     'BWS\\MetaConductor\\TaxonomyManager',
     // Core\
     'BWS\\MetaConductor\\Core\\Entity',
-    'BWS\\MetaConductor\\Core\\ConditionEvaluator',
-    'BWS\\MetaConductor\\Core\\ActionExecutor',
-    'BWS\\MetaConductor\\Core\\RuleEngine',
     'BWS\\MetaConductor\\Core\\AcfWriteQueue',
     'BWS\\MetaConductor\\Core\\TermDispatcher',
     'BWS\\MetaConductor\\Core\\FormatDispatcher',

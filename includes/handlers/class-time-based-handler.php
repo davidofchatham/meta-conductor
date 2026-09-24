@@ -39,19 +39,10 @@ class TimeBasedHandler extends UnifiedHandlerBase {
      */
     protected function init_hooks() {}
 
-    // Intentional no-op AS OF #61 — it used to be this handler's work method,
-    // called by its own save_post/publish_post hooks. Those hooks are gone and
-    // apply_to_post() is the applier; the base process_post routes through
-    // RuleEngine, which time-based does not use, so it must not be inherited.
-    public function process_post($post_id, $post, $update) {}
-
     /**
      * Apply ONE time-based rule to ONE post. The whole of what `on_post_save`
      * and `on_post_publish` used to do for a single rule (#61), and still the
      * bulk-apply primitive it was added as (#31).
-     *
-     * Overrides the base default (which routes RuleEngine) because time-based's
-     * real work is the date-range apply, not RuleEngine.
      *
      * Idempotent by construction, which is what lets a pass re-run it whether
      * or not anything time-based provoked the pass: both branches are guarded

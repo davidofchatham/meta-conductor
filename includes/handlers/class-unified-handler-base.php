@@ -15,8 +15,6 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-use BWS\MetaConductor\Core\RuleEngine;
-use BWS\MetaConductor\Core\Entity;
 use BWS\MetaConductor\Storage\StorageFactory;
 
 abstract class UnifiedHandlerBase {
@@ -30,25 +28,11 @@ abstract class UnifiedHandlerBase {
     use TermOperations, AcfBridge;
 
     /**
-     * Rule engine instance
-     *
-     * @var RuleEngine
-     */
-    protected $rule_engine;
-
-    /**
      * Handler type identifier
      *
      * @var string
      */
     protected $handler_type;
-
-    /**
-     * Memoized plugin settings option, loaded once per request.
-     *
-     * @var array|null
-     */
-    private $settings_option_cache = null;
 
     /**
      * Constructor
@@ -60,7 +44,6 @@ abstract class UnifiedHandlerBase {
      * after the Phase 3 migration.
      */
     public function __construct() {
-        $this->rule_engine = new RuleEngine();
         $this->handler_type = $this->get_handler_type();
         $this->init_hooks();
     }
@@ -104,38 +87,6 @@ abstract class UnifiedHandlerBase {
     }
 
     /**
-     * Process a rule using unified engine
-     *
-     * @param array $rule Rule configuration
-     * @return array Processing results
-     */
-    public function process_rule($rule) {
-        // Validate rule
-        if (!$this->validate_rule_internal($rule)) {
-            return [
-                'processed' => 0,
-                'updated' => 0,
-                'skipped' => 0,
-                'errors' => ['Rule validation failed'],
-            ];
-        }
-
-        // Pre-process hook
-        do_action("bws_meta_conductor_before_process_{$this->handler_type}", $rule);
-
-        // Process via unified engine
-        $results = $this->rule_engine->process_rule($rule);
-
-        // Post-process hook
-        do_action("bws_meta_conductor_after_process_{$this->handler_type}", $rule, $results);
-
-        // Log results
-        $this->log_results($rule, $results);
-
-        return $results;
-    }
-
-    /**
      * Validate rule configuration (internal method)
      * Can be overridden by child handlers for specific validation
      *
@@ -143,28 +94,7 @@ abstract class UnifiedHandlerBase {
      * @return bool Valid
      */
     protected function validate_rule_internal($rule) {
-        // Basic validation
-        if (!isset($rule['enabled']) || !$rule['enabled']) {
-            return false;
-        }
-
-        if (!isset($rule['action']['type'])) {
-            return false;
-        }
-
-        // Validate source type
-        $valid_source_types = ['post', 'term', 'user', 'comment', 'both'];
-        if (!in_array($rule['source_type'] ?? 'post', $valid_source_types)) {
-            return false;
-        }
-
-        // Validate target type
-        $valid_target_types = ['self', 'post', 'term', 'user', 'comment', 'both'];
-        if (!in_array($rule['target_type'] ?? 'self', $valid_target_types)) {
-            return false;
-        }
-
-        return true;
+        return !empty($rule['enabled']);
     }
 
     /**
@@ -257,154 +187,6 @@ abstract class UnifiedHandlerBase {
     }
 
     /**
-     * Process a single entity against a rule
-     *
-     * Useful for processing individual posts/terms on save
-     *
-     * @param Entity $entity Entity to process
-     * @param array $rule Rule configuration
-     * @return array Processing results
-     */
-    protected function process_entity($entity, $rule) {
-        // Modify rule to target this specific entity
-        $single_rule = $rule;
-        $single_rule['source_type'] = $entity->get_type();
-        $single_rule['source_filters'] = ['ids' => [$entity->get_id()]];
-
-        return $this->process_rule($single_rule);
-    }
-
-    /**
-     * Process all enabled rules
-     *
-     * @return array Combined results
-     */
-    public function process_all_rules() {
-        $rules = $this->get_enabled_rules();
-        $combined_results = [
-            'processed' => 0,
-            'updated' => 0,
-            'skipped' => 0,
-            'errors' => [],
-        ];
-
-        foreach ($rules as $rule_id => $rule) {
-            $results = $this->process_rule($rule);
-
-            $combined_results['processed'] += $results['processed'];
-            $combined_results['updated'] += $results['updated'];
-            $combined_results['skipped'] += $results['skipped'];
-            $combined_results['errors'] = array_merge($combined_results['errors'], $results['errors']);
-        }
-
-        return $combined_results;
-    }
-
-    /**
-     * Bulk process a specific rule
-     *
-     * @param string $rule_id Rule ID
-     * @return array Processing results
-     */
-    public function bulk_process($rule_id) {
-        $rule = $this->get_rule($rule_id);
-
-        if (!$rule) {
-            return [
-                'processed' => 0,
-                'updated' => 0,
-                'skipped' => 0,
-                'errors' => ['Rule not found'],
-            ];
-        }
-
-        return $this->process_rule($rule);
-    }
-
-    /**
-     * Log processing results
-     *
-     * @param array $rule Rule configuration
-     * @param array $results Processing results
-     */
-    protected function log_results($rule, $results) {
-        // Only log if debugging is enabled or if there are errors
-        if ((!defined('WP_DEBUG') || !WP_DEBUG) && empty($results['errors'])) {
-            return;
-        }
-
-        $rule_name = $rule['name'] ?? 'Unnamed rule';
-
-        $message = sprintf(
-            '[Meta Conductor - %s] Rule: %s | Processed: %d | Updated: %d | Skipped: %d',
-            $this->handler_type,
-            $rule_name,
-            $results['processed'],
-            $results['updated'],
-            $results['skipped']
-        );
-
-        if (!empty($results['errors'])) {
-            $message .= ' | Errors: ' . implode(', ', $results['errors']);
-        }
-
-        error_log($message);
-
-        // Optionally store in database. Memoized to avoid a fresh option read
-        // on every rule run when the object cache is unavailable.
-        if ($this->get_settings_option()['enable_logging'] ?? false) {
-            $this->store_log_entry($rule, $results);
-        }
-    }
-
-    /**
-     * Read the plugin settings option once per request.
-     *
-     * @return array Settings option (empty array if unset).
-     */
-    private function get_settings_option() {
-        if ($this->settings_option_cache === null) {
-            $this->settings_option_cache = get_option('bws_meta_conductor_settings', []);
-        }
-        return $this->settings_option_cache;
-    }
-
-    /**
-     * Store log entry in database
-     *
-     * @param array $rule Rule configuration
-     * @param array $results Processing results
-     */
-    protected function store_log_entry($rule, $results) {
-        global $wpdb;
-
-        $table = $wpdb->prefix . 'bws_meta_conductor_log';
-
-        // Store summary entry
-        $wpdb->insert(
-            $table,
-            [
-                'rule_id' => $rule['id'] ?? 'unknown',
-                'handler_type' => $this->handler_type,
-                'source_entity_type' => $rule['source_type'] ?? 'post',
-                'source_entity_id' => 0, // Summary entry
-                'target_entity_type' => $rule['target_type'] ?? 'self',
-                'target_entity_id' => 0,
-                'action_type' => $rule['action']['type'] ?? 'unknown',
-                'action_data' => wp_json_encode([
-                    'processed' => $results['processed'],
-                    'updated' => $results['updated'],
-                    'skipped' => $results['skipped'],
-                    'errors' => $results['errors'],
-                ]),
-                'result' => empty($results['errors']) ? 'success' : 'error',
-                'applied_at' => current_time('mysql'),
-            ],
-            ['%s', '%s', '%s', '%d', '%s', '%d', '%s', '%s', '%s', '%s']
-        );
-    }
-
-    /**
      * Log a debug message when WP_DEBUG is on.
      *
      * Ported from legacy HandlerBase (V10).
@@ -494,124 +276,13 @@ abstract class UnifiedHandlerBase {
     }
 
     /**
-     * Get processing statistics for this handler
-     *
-     * @return array Statistics
-     */
-    public function get_statistics() {
-        global $wpdb;
-
-        $table = $wpdb->prefix . 'bws_meta_conductor_log';
-
-        $stats = $wpdb->get_row($wpdb->prepare(
-            "SELECT
-                COUNT(*) as total_runs,
-                SUM(CASE WHEN result = 'success' THEN 1 ELSE 0 END) as successful_runs,
-                SUM(CASE WHEN result = 'error' THEN 1 ELSE 0 END) as failed_runs,
-                MAX(applied_at) as last_run
-            FROM {$table}
-            WHERE handler_type = %s
-            AND source_entity_id = 0",
-            $this->handler_type
-        ), ARRAY_A);
-
-        return $stats ?: [
-            'total_runs' => 0,
-            'successful_runs' => 0,
-            'failed_runs' => 0,
-            'last_run' => null,
-        ];
-    }
-
-    /**
-     * Clear handler cache (if applicable)
-     */
-    public function clear_cache() {
-        // Base implementation - override in child classes if needed
-        delete_transient("bws_meta_conductor_{$this->handler_type}_cache");
-
-        do_action("bws_meta_conductor_clear_{$this->handler_type}_cache");
-    }
-
-    /**
-     * Get handler configuration defaults
-     *
-     * Can be overridden by child handlers
-     *
-     * @return array Default configuration
-     */
-    public function get_defaults() {
-        return [
-            'enabled' => true,
-            'source_type' => 'post',
-            'source_filters' => [],
-            'condition' => [],
-            'action' => [],
-            'target_type' => 'self',
-            'target_filters' => [],
-        ];
-    }
-
-    /**
-     * Convert legacy (pre-unified-framework) rule to unified format
-     *
-     * @param array $legacy_rule Legacy rule configuration
-     * @return array Unified rule configuration
-     */
-    public function convert_legacy_rule($legacy_rule) {
-        // Base implementation - should be overridden by child handlers
-        // for handler-specific conversion logic
-
-        $unified_rule = $this->get_defaults();
-        $unified_rule['enabled'] = $legacy_rule['enabled'] ?? true;
-        $unified_rule['name'] = $legacy_rule['name'] ?? '';
-
-        return $unified_rule;
-    }
-
-    /**
-     * Process a single post (backward compatibility method)
-     *
-     * This method provides backward compatibility with the legacy HandlerBase interface.
-     * It processes a single post through all enabled rules.
-     *
-     * @param int $post_id Post ID
-     * @param WP_Post $post Post object
-     * @param bool $update Whether this is an update
-     */
-    public function process_post($post_id, $post, $update) {
-        // Get all enabled rules
-        $rules = $this->get_enabled_rules();
-
-        if (empty($rules)) {
-            return;
-        }
-
-        // Create entity for this post
-        $entity = new Entity('post', $post_id);
-
-        // Process each rule
-        foreach ($rules as $rule_id => $rule) {
-            // Check if rule applies to this post
-            if (!$this->should_process_post($post_id, $rule)) {
-                continue;
-            }
-
-            // Process using unified engine
-            $this->process_entity($entity, $rule);
-        }
-    }
-
-    /**
      * Apply ONE rule to ONE post. THE applier seam.
      *
-     * Why it exists (#31): the hook-driven handlers made process_post a no-op —
-     * their real work fired from their own set_object_terms/save_post/acf hooks,
-     * so the base process_post (which routes through RuleEngine) must NOT run
-     * for them. That left the bulk "process existing posts" tool inert: it
-     * looped process_post, which did nothing, yet counted every post as
-     * processed (the "lying button"). Bulk looped THIS instead, until the
-     * existing-posts applier made bulk a provocation of the pass (FW-16).
+     * Why it exists (#31): the hook-driven handlers made process_post a no-op,
+     * which left the bulk "process existing posts" tool inert: it looped
+     * process_post, which did nothing, yet counted every post as processed (the
+     * "lying button"). Bulk looped THIS instead, until the existing-posts
+     * applier made bulk a provocation of the pass (FW-16).
      *
      * What it became (#60): the seam a CONVERTED handler is reduced to. A
      * converted handler registers no hooks at all; `TermDispatcher` owns the
@@ -633,21 +304,11 @@ abstract class UnifiedHandlerBase {
      *              already in the target state). Callers count only true — so the
      *              bulk tool reports posts genuinely touched, not merely scanned
      *              (#31: the honest-count contract is "changed", not "applicable").
+     *              False by default, like `apply_to_data()`'s null: every term
+     *              handler overrides it.
      */
     public function apply_to_post(int $post_id, array $rule): bool {
-        if (!$this->should_process_post($post_id, $rule)) {
-            return false;
-        }
-
-        // RuleEngine handlers (hierarchical) write the rule's own taxonomy;
-        // fingerprint it across the apply so a no-op re-apply reports false.
-        $taxonomy = $rule['taxonomy'] ?? '';
-        $before   = $this->terms_fingerprint($post_id, $taxonomy);
-
-        $entity = new Entity('post', $post_id);
-        $this->process_entity($entity, $rule);
-
-        return $this->terms_fingerprint($post_id, $taxonomy) !== $before;
+        return false;
     }
 
     /**

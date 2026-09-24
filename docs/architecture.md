@@ -4,16 +4,18 @@ How Meta Conductor's pieces fit together. For planned work see [future-work.md](
 
 > **Scope note.** This file is intentionally conceptual. Per-class detail (exact class names, method lists, file paths) drifts every phase and is NOT mirrored here — the code is the source of truth for that. PHPDoc on the enforcing class carries the load-bearing invariants.
 
-## Three-layer rule engine
+## Layers
 
 ```
-WordPress hooks (save_post, etc.)
+WordPress hooks (save_post, set_object_terms, etc.)
     ↓
-Handlers (one per rule type)
+Term dispatcher (marks entities dirty, drains the queue)
     ↓
-Rule Engine (orchestrator)  ←→  Condition Evaluator + Action Executor
+Per entity: term pass, then format pass (each rule in authored order)
     ↓
-Entity Abstraction (Core\Entity)
+Handlers (one per rule type, appliers only)
+    ↓
+Entity Abstraction (Core\Entity) + TermOperations / AcfBridge
     ↓
 WordPress core (posts, terms, users, comments)
 ```

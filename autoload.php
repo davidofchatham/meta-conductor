@@ -28,14 +28,14 @@ spl_autoload_register(function ($class) {
 		return;
 	}
 
-	// Relative class name, e.g. "Core\RuleEngine" or "TaxonomyManager".
+	// Relative class name, e.g. "Core\TermDispatcher" or "TaxonomyManager".
 	$relative_class = substr($class, $prefix_len);
 
 	// Namespace separators -> directory separators.
 	$path_parts = explode('\\', $relative_class);
 
 	// Last part is the class/interface name -> WordPress file naming.
-	// Examples: RuleEngine -> class-rule-engine.php, WireframeBootstrap -> class-wireframe-bootstrap.php
+	// Examples: TermDispatcher -> class-term-dispatcher.php, WireframeBootstrap -> class-wireframe-bootstrap.php
 	$class_name = array_pop($path_parts);
 	$filename   = 'class-' . strtolower(preg_replace('/([a-z])([A-Z])/', '$1-$2', $class_name)) . '.php';
 
