@@ -42,7 +42,7 @@ class ConfigHelpers {
             'args'    => [
                 'variant' => 'info',
                 'content' => '<p>' . esc_html__('Rules run automatically when a post is saved. To run them over posts that already exist, use', 'meta-conductor')
-                           . ' <a href="' . esc_url('admin.php?page=' . self::APPLY_PAGE_SLUG) . '">' . esc_html__('Apply to existing posts', 'meta-conductor') . '</a>.</p>',
+                           . ' <a href="' . esc_url('admin.php?page=' . self::APPLY_PAGE_SLUG) . '">' . esc_html__('Apply to Existing Posts', 'meta-conductor') . '</a>.</p>',
             ],
         ];
     }

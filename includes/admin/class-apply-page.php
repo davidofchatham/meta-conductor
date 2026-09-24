@@ -1,6 +1,6 @@
 <?php
 /**
- * Apply to existing posts — the author-facing page over the existing-posts
+ * Apply to Existing Posts — the author-facing page over the existing-posts
  * applier.
  *
  * @since 0.9.0
@@ -85,8 +85,8 @@ final class ApplyPage {
         return [
             'id'         => self::PAGE_ID,
             'option_key' => self::OPTION_KEY,
-            'page_title' => __('Apply to existing posts', 'meta-conductor'),
-            'menu_title' => __('Apply to existing posts', 'meta-conductor'),
+            'page_title' => __('Apply to Existing Posts', 'meta-conductor'),
+            'menu_title' => __('Apply to Existing Posts', 'meta-conductor'),
             'menu_slug'  => ConfigHelpers::APPLY_PAGE_SLUG,
             'parent'     => 'meta-conductor',
             'config'     => self::config(self::choice_options(
@@ -157,7 +157,7 @@ final class ApplyPage {
      */
     private static function config(array $options): array {
         return [
-            'title'    => __('Apply to existing posts', 'meta-conductor'),
+            'title'    => __('Apply to Existing Posts', 'meta-conductor'),
             'subtitle' => __('Run the rules over posts that already exist, as re-saving each one would.', 'meta-conductor'),
             'sections' => [
                 [
@@ -202,7 +202,7 @@ final class ApplyPage {
                                         'label'   => __('Apply', 'meta-conductor'),
                                         'variant' => 'primary',
                                         'confirm' => [
-                                            'title'        => __('Apply to existing posts', 'meta-conductor'),
+                                            'title'        => __('Apply to Existing Posts', 'meta-conductor'),
                                             'message'      => __('This writes to every post in the chosen rule\'s reach and cannot be undone. Take a backup first. If the chosen rule is disabled, this is a one-time run: the rule stays disabled, and later saves neither maintain nor undo what it did.', 'meta-conductor'),
                                             'button_label' => __('Apply', 'meta-conductor'),
                                         ],

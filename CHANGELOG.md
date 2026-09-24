@@ -9,7 +9,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- **Apply to existing posts** — a new page under the Meta Conductor menu. Pick a rule (term or format, disabled ones included) or "All enabled rules", optionally cap the run at the first N posts, then Preview or Apply. A run passes every enabled rule, in your order, over the posts the chosen rule can reach — the same pass a save runs; a disabled rule runs once without being enabled. Batches stop after about 20 seconds and report "processed / total" plus the first 20 posts changed; Continue resumes, Start over restarts. Apply asks for confirmation first: writes cannot be undone, so take a backup. Both rule tabs link to the page, replacing the format tab's "coming soon" notice.
+- **Apply to Existing Posts** — a new page under the Meta Conductor menu. Pick a rule (term or format, disabled ones included) or "All enabled rules", optionally cap the run at the first N posts, then Preview or Apply. A run passes every enabled rule, in your order, over the posts the chosen rule can reach — the same pass a save runs; a disabled rule runs once without being enabled. Batches stop after about 20 seconds and report "processed / total" plus the first 20 posts changed; Continue resumes, Start over restarts. Apply asks for confirmation first: writes cannot be undone, so take a backup. Both rule tabs link to the page, replacing the format tab's "coming soon" notice.
+
+### Changed
+
+- The rules page's entry under the Meta Conductor menu is now labeled *Configure Rules*. The top-level menu keeps the plugin name, and the page's URL is unchanged.
 
 ### Fixed
 
@@ -21,7 +25,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Removed
 
-- **The Data Conversion page and the `wp bws-conversion` WP-CLI command**, superseded by *Apply to existing posts*; Copy and Map return later as rule types applied through that page. The update unschedules the page's hourly cleanup event and drops its two scratch tables (`bws_acf_conversion_preview`, `bws_acf_conversion_sessions`), which held only previews and in-flight sessions. The unused `includes/support/` classes went with it.
+- **The Data Conversion page and the `wp bws-conversion` WP-CLI command**, superseded by *Apply to Existing Posts*; Copy and Map return later as rule types applied through that page. The update unschedules the page's hourly cleanup event and drops its two scratch tables (`bws_acf_conversion_preview`, `bws_acf_conversion_sessions`), which held only previews and in-flight sessions. The unused `includes/support/` classes went with it.
 - **The plugin's three other database tables** (`bws_meta_conductor_log`, `bws_relationship_log`, `bws_batch_queue`). Nothing read or wrote them. Activation no longer creates them and the update drops them; uninstall, which used to leave the last two behind, now drops every table the plugin has ever created.
 - The *Enable bulk "Apply to Existing Posts" actions* toggle on the General tab. Nothing read it; the update deletes its saved value.
 - The unused generic rule engine (`RuleEngine`, `ConditionEvaluator`, `ActionExecutor`, `Entity`) and the handler-base methods that fed it — `process_rule()`, `process_all_rules()`, `bulk_process()`, `process_post()`, `get_statistics()`, `clear_cache()`, `get_defaults()`, `convert_legacy_rule()` — with their run logging. No rule type had used it since the dispatcher took over, and its rule-shape check silently rejected every related-post-terms and title/slug rule (#26). The `bws_meta_conductor_before_process_*` / `after_process_*` / `clear_*_cache` actions no longer fire.

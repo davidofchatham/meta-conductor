@@ -695,7 +695,7 @@ Invariants asserted by H10 (`tests/verify-kind-lists.php`):
 - **`KIND_TYPES` is the enumeration.** `all_types()` flattens it and `get_kind_for_type()` inverts it, so there is no second list for it to drift out of step with — which is what lets `get_enabled_rules()` carry no fallback.
 - **A write that was not needed is not a failure** (#27): `save_rule()` / `import_rules()` / `bulk_toggle_rules()` report success when the data already matches storage, and failure only when a re-read shows it did not persist.
 
-## Apply to existing posts
+## Apply to Existing Posts
 
 [includes/core/class-existing-posts-applier.php](../includes/core/class-existing-posts-applier.php) · [includes/admin/class-apply-page.php](../includes/admin/class-apply-page.php)
 

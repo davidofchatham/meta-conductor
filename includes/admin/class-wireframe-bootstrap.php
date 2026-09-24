@@ -27,6 +27,17 @@ class WireframeBootstrap {
     public static function init(): void {
         add_action('init', [self::class, 'boot'], 10);
 
+        // WP repeats the top-level title as the first submenu item; relabel
+        // it. Late priority, so it runs after every page has registered.
+        add_action('admin_menu', static function (): void {
+            global $submenu;
+            foreach ($submenu['meta-conductor'] ?? [] as $i => $item) {
+                if ($item[2] === 'meta-conductor') {
+                    $submenu['meta-conductor'][$i][0] = __('Configure Rules', 'meta-conductor');
+                }
+            }
+        }, 999);
+
         // Snapshot every row title in the ordered term-rule list
         // (architecture.md → The ordered rule repeaters).
         // One hook for the whole repeater, dispatching on each row's `type` —
@@ -1092,7 +1103,7 @@ class WireframeBootstrap {
             ],
         ]);
 
-        // Apply to existing posts, a submenu of the page above (FW-16). Its
+        // Apply to Existing Posts, a submenu of the page above (FW-16). Its
         // OWN boot call, not a second `pages[]` entry: Wireframe 1.0.6 merges
         // the boot-level option key OVER a page's (`$perBoot + [...]` in
         // `App::resolvePages()`), so as a sibling entry this page would save
