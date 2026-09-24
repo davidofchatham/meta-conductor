@@ -4,7 +4,7 @@ Tags: taxonomy, meta, acf, automation, hierarchical
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 0.8.2
+Stable tag: 0.9.0
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -35,7 +35,7 @@ Rules are authored as two ordered lists — one for rules that write terms, one 
 
 == Upgrade Notes ==
 
-= Unreleased =
+= 0.9.0 =
 
 **The Data Conversion page and the `wp bws-conversion` WP-CLI command are gone.** The new *Apply to Existing Posts* page under the Meta Conductor menu replaces it: pick a rule, preview, apply. The Copy and Map jobs come back later as rule types applied through that page; until then, a conversion you still need has no in-plugin replacement. The update removes the page's scheduled cleanup and its two scratch tables automatically.
 
@@ -65,7 +65,7 @@ See CHANGELOG.md in the plugin directory for the full release log.
 
 == Upgrade Notice ==
 
-= Unreleased =
+= 0.9.0 =
 Data Conversion and `wp bws-conversion` are removed. The new Apply to Existing Posts page replaces them; Copy / Map return later as rule types.
 
 = 0.8.1 =

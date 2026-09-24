@@ -705,7 +705,7 @@ class OptionRuleStorage implements RuleStorage {
      * empty key, which every caller treats as "fall back to the name" — exactly
      * today's behavior, never worse.
      *
-     * @since 0.8.3
+     * @since 0.9.0
      * @param string $value Raw stored option value.
      * @return array{0: ?string, 1: string, 2: string} [post_type|null, name, key]
      */
