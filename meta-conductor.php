@@ -144,9 +144,6 @@ if (!function_exists('bws_meta_manager_init')) {
 			wp_schedule_event(time(), 'daily', 'bws_taxonomy_manager_cleanup');
 		}
 		
-		// Create database tables if needed (for future extensions)
-		bws_taxonomy_manager_create_tables();
-		
 		// Set activation flag for welcome screen
 		set_transient('bws_taxonomy_manager_activated', true, 30);
 		
@@ -188,155 +185,10 @@ if (!function_exists('bws_meta_manager_init')) {
 		wp_clear_scheduled_hook('bws_taxonomy_manager_cleanup');
 		
 		// Remove database tables if they exist
-		bws_taxonomy_manager_drop_tables();
+		bws_meta_conductor_drop_unused_tables();
 		
 		// Clear all caches
 		bws_taxonomy_manager_clear_caches();
-	}
-	
-	/**
-	 * Create database tables for unified system
-	 *
-	 * @return array Array with 'success' bool and 'errors' array if any failures
-	 */
-	function bws_taxonomy_manager_create_tables() {
-		global $wpdb;
-
-		$charset_collate = $wpdb->get_charset_collate();
-		$errors = [];
-
-		// Enhanced log table with entity support (unified-framework layer)
-		$log_table = $wpdb->prefix . 'bws_meta_conductor_log';
-		$log_sql = "CREATE TABLE $log_table (
-			id bigint(20) NOT NULL AUTO_INCREMENT,
-			rule_id varchar(100) NOT NULL,
-			handler_type varchar(50) NOT NULL,
-			source_entity_type varchar(20) NOT NULL,
-			source_entity_id bigint(20) NOT NULL,
-			target_entity_type varchar(20) NOT NULL,
-			target_entity_id bigint(20) NOT NULL,
-			action_type varchar(50) NOT NULL,
-			action_data text,
-			result varchar(20) NOT NULL,
-			applied_at datetime DEFAULT CURRENT_TIMESTAMP,
-			PRIMARY KEY (id),
-			KEY rule_id (rule_id),
-			KEY handler_type (handler_type),
-			KEY source_entity (source_entity_type, source_entity_id),
-			KEY target_entity (target_entity_type, target_entity_id),
-			KEY applied_at (applied_at)
-		) $charset_collate;";
-
-		// Relationship tracking table
-		$relationship_table = $wpdb->prefix . 'bws_relationship_log';
-		$relationship_sql = "CREATE TABLE $relationship_table (
-			id bigint(20) NOT NULL AUTO_INCREMENT,
-			post_id bigint(20) NOT NULL,
-			parent_id bigint(20),
-			child_ids text,
-			updated_at datetime DEFAULT CURRENT_TIMESTAMP,
-			PRIMARY KEY (id),
-			KEY post_id (post_id),
-			KEY parent_id (parent_id),
-			KEY updated_at (updated_at)
-		) $charset_collate;";
-
-		// Batch queue table
-		$queue_table = $wpdb->prefix . 'bws_batch_queue';
-		$queue_sql = "CREATE TABLE $queue_table (
-			id bigint(20) NOT NULL AUTO_INCREMENT,
-			job_id varchar(32) NOT NULL,
-			job_type varchar(50) NOT NULL,
-			job_data longtext NOT NULL,
-			status varchar(20) NOT NULL DEFAULT 'pending',
-			progress int(11) DEFAULT 0,
-			total int(11) DEFAULT 0,
-			created_at datetime NOT NULL,
-			started_at datetime,
-			completed_at datetime,
-			PRIMARY KEY (id),
-			UNIQUE KEY job_id (job_id),
-			KEY status (status),
-			KEY created_at (created_at)
-		) $charset_collate;";
-
-		// Execute dbDelta to create tables
-		require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
-		dbDelta($log_sql);
-		dbDelta($relationship_sql);
-		dbDelta($queue_sql);
-
-		// Verify all tables were created successfully
-		$required_tables = [
-			'bws_meta_conductor_log' => 'Enhanced log table with entity support',
-			'bws_relationship_log' => 'Relationship tracking',
-			'bws_batch_queue' => 'Background job queue',
-		];
-
-		foreach ($required_tables as $table => $description) {
-			$table_name = $wpdb->prefix . $table;
-			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
-			if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table_name)) !== $table_name) {
-				$error_msg = sprintf('Failed to create table: %s (%s)', $table, $description);
-				$errors[] = $error_msg;
-				error_log('Meta Conductor: ' . $error_msg);
-			}
-		}
-
-		// Show admin notice if there were errors
-		if (!empty($errors)) {
-			set_transient('bws_meta_manager_table_errors', $errors, 300); // Store for 5 minutes
-			add_action('admin_notices', 'bws_meta_manager_table_creation_notice');
-
-			return [
-				'success' => false,
-				'errors' => $errors,
-			];
-		}
-
-		return [
-			'success' => true,
-			'errors' => [],
-		];
-	}
-
-	/**
-	 * Display admin notice if table creation failed
-	 */
-	function bws_meta_manager_table_creation_notice() {
-		$errors = get_transient('bws_meta_manager_table_errors');
-		if (!$errors) {
-			return;
-		}
-
-		echo '<div class="notice notice-error is-dismissible"><p>';
-		echo '<strong>' . esc_html__('Meta Conductor: Database table creation failed', 'meta-conductor') . '</strong><br>';
-		echo esc_html__('The following tables could not be created. Some features may not work correctly:', 'meta-conductor') . '<br>';
-		echo '<ul style="list-style: disc; margin-left: 20px;">';
-		foreach ($errors as $error) {
-			echo '<li>' . esc_html($error) . '</li>';
-		}
-		echo '</ul>';
-		echo esc_html__('Please check your database permissions and try reactivating the plugin.', 'meta-conductor');
-		echo '</p></div>';
-
-		// Clear the transient after displaying
-		delete_transient('bws_meta_manager_table_errors');
-	}
-	
-	/**
-	 * Drop database tables
-	 */
-	function bws_taxonomy_manager_drop_tables() {
-		global $wpdb;
-
-		// Core log table (renamed in 2b) + its legacy predecessor and the
-		// pre-2b name, so uninstall leaves nothing behind regardless of which
-		// version the table was created under.
-		foreach (['bws_meta_conductor_log', 'bws_meta_manager_log', 'bws_taxonomy_manager_log'] as $t) {
-			$table_name = $wpdb->prefix . $t;
-			$wpdb->query("DROP TABLE IF EXISTS `$table_name`");
-		}
 	}
 	
 	/**
@@ -360,18 +212,13 @@ if (!function_exists('bws_meta_manager_init')) {
 		$current_version = get_option('bws_meta_conductor_version');
 
 		if ($current_version !== META_CONDUCTOR_VERSION) {
-			// Phase 2b (shipped 0.7.0): rename the core log table to the new brand.
-			// Idempotent — only renames when the old table exists and the new
-			// one does not, so re-runs and fresh installs are both safe. Uses
-			// RENAME TABLE to preserve existing log rows.
-			bws_meta_conductor_migrate_log_table();
-
 			// The Data Conversion page was deleted with the Apply page's arrival.
 			// Its hourly cleanup event would otherwise keep firing into a hook
-			// nothing listens on, and its two scratch tables (previews, sessions)
-			// have no reader left. Both idempotent.
+			// nothing listens on. Idempotent.
 			wp_clear_scheduled_hook('bws_meta_manager_conversion_cleanup');
-			bws_meta_conductor_drop_conversion_tables();
+
+			// No table the plugin ever created has a reader or writer left. Idempotent.
+			bws_meta_conductor_drop_unused_tables();
 
 			// The General tab's bulk-actions toggle was deleted: nothing ever
 			// read it. Drop its stored value. Idempotent.
@@ -387,42 +234,32 @@ if (!function_exists('bws_meta_manager_init')) {
 	}
 
 	/**
-	 * Drop the deleted Data Conversion tool's scratch tables.
+	 * Drop every table the plugin has ever created.
 	 *
-	 * They held only previews and in-flight sessions, which the tool's own
-	 * hourly cron already expired — nothing durable is lost.
+	 * None has a reader or writer left: the conversion tool's scratch tables
+	 * went with that tool, the run log with the deleted rule engine (#26), and
+	 * the relationship log and batch queue never had either. Legacy names are
+	 * included so an install from any past version is left clean. Called from
+	 * the upgrade routine and from uninstall.
 	 */
-	function bws_meta_conductor_drop_conversion_tables() {
+	function bws_meta_conductor_drop_unused_tables() {
 		global $wpdb;
 
-		foreach (['bws_acf_conversion_preview', 'bws_acf_conversion_sessions'] as $t) {
+		$tables = [
+			'bws_acf_conversion_preview',
+			'bws_acf_conversion_sessions',
+			'bws_meta_conductor_log',
+			'bws_meta_manager_log',
+			'bws_taxonomy_manager_log',
+			'bws_relationship_log',
+			'bws_batch_queue',
+		];
+		foreach ($tables as $t) {
 			$table_name = $wpdb->prefix . $t;
 			$wpdb->query("DROP TABLE IF EXISTS `$table_name`"); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 		}
 	}
 
-	/**
-	 * Rename {prefix}bws_meta_manager_log -> {prefix}bws_meta_conductor_log.
-	 *
-	 * Guarded so it runs at most once: renames only if the old table is
-	 * present and the new name is not yet taken. Preserves all rows.
-	 */
-	function bws_meta_conductor_migrate_log_table() {
-		global $wpdb;
-
-		$old = $wpdb->prefix . 'bws_meta_manager_log';
-		$new = $wpdb->prefix . 'bws_meta_conductor_log';
-
-		// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
-		$old_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $old)) === $old;
-		$new_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $new)) === $new;
-
-		if ($old_exists && !$new_exists) {
-			$wpdb->query("RENAME TABLE `$old` TO `$new`");
-		}
-		// phpcs:enable
-	}
-	
 	/**
 	 * Register activation/deactivation hooks
 	 */
