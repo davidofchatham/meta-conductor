@@ -38,6 +38,13 @@ if (!defined('ABSPATH')) {
  * stored row is never written, so a later save neither re-applies nor undoes
  * what the run did.
  *
+ * A RUN SPANS REQUESTS. Each batch stops at a post boundary once the time box
+ * has elapsed, and its state (cursor, counts, report sample, limit) waits in a
+ * transient keyed by user + choice value for the next Continue. The cursor is
+ * the last post ID passed, never an offset, so posts created, trashed or
+ * edited between batches neither shift nor duplicate the sequence. The choice
+ * value carries the row's fingerprint, so an edited rule starts a fresh run.
+ *
  * Takes a rule choice (`RuleChoice` value), not a page request, so the Apply
  * page and any later entry point share it. Knows nothing about Wireframe.
  */
@@ -46,22 +53,29 @@ final class ExistingPostsApplier {
     /** Changed posts a report lists; the count covers the rest. */
     public const REPORT_ROWS = 20;
 
+    /** Seconds a batch runs before it stops at the next post boundary. */
+    public const TIME_BOX = 20;
+
     /**
-     * Pass every post in the choice's reach.
+     * Pass the next batch of posts in the choice's reach.
      *
-     * Refuses — writing nothing — when the choice is malformed or stale, or
-     * when either pass's off switch would refuse any post in reach: a batch of
-     * no-op passes reported as done is the "lying button" #31 removed.
+     * Starts a run when none is in progress for this user and choice, else
+     * resumes the one that is. Refuses — writing nothing — when the choice is
+     * malformed or stale, or when either pass's off switch would refuse any
+     * post left in the run: a batch of no-op passes reported as done is the
+     * "lying button" #31 removed.
      *
      * No revision per post: term writes create none, and the format pass
      * suppresses the one its row update would create.
      *
      * @param string $value A `RuleChoice` dropdown value.
+     * @param int    $limit Posts the run stops after, 0 for all. Read when a
+     *                      run starts; a Continue keeps the run's own limit.
      * @return array `{status: 'success'|'error', message}`, plus on success
-     *               `processed`, `changed`, `rows` (the first REPORT_ROWS
-     *               changes, see diff()) and `note`.
+     *               the run's `processed` / `total`, `done`, `changed`, `rows`
+     *               (its first REPORT_ROWS changes, see diff()) and `note`.
      */
-    public static function run_batch(string $value): array {
+    public static function run_batch(string $value, int $limit = 0): array {
         $choice = RuleChoice::decode($value);
         if ($choice === null) {
             return self::error(__('Unknown rule choice — reload the page.', 'meta-conductor'));
@@ -91,16 +105,36 @@ final class ExistingPostsApplier {
             $rows = [$row];
         }
 
-        $post_ids = self::reach($rows, RuleChoice::reach_statuses($row));
+        $key   = self::state_key($value);
+        $state = get_transient($key);
+        $fresh = !is_array($state);
+        if ($fresh) {
+            $state = ['cursor' => 0, 'processed' => 0, 'total' => 0, 'changed' => 0, 'rows' => [], 'limit' => max(0, $limit)];
+        }
 
+        // A stored run is always short of its limit: reaching it completes
+        // the run, and completion deletes the state.
+        $post_ids = self::reach(
+            $rows,
+            RuleChoice::reach_statuses($row),
+            $state['cursor'],
+            $state['limit'] > 0 ? $state['limit'] - $state['processed'] : 0
+        );
+        if ($fresh) {
+            $state['total'] = count($post_ids);
+        }
+
+        // ponytail: gates the run's whole remaining tail, outside the time box
+        // (one ID fetch + one filter call per post). Chunk the fetch if a
+        // reach ever grows large enough for that to matter.
         foreach ($post_ids as $post_id) {
             if (!$terms->pass_enabled($post_id) || ($format !== null && !$format->pass_enabled($post_id))) {
                 return self::error(__('Rule passes are switched off (an import, a filter or the fixture seeder), so nothing was applied.', 'meta-conductor'));
             }
         }
 
-        $changed = 0;
-        $report  = [];
+        $deadline = microtime(true) + (float) apply_filters('meta_conductor_apply_time_box', self::TIME_BOX);
+        $done     = true;
 
         try {
             if ($row !== null) {
@@ -111,15 +145,24 @@ final class ExistingPostsApplier {
                 }
             }
 
-            foreach ($post_ids as $post_id) {
+            foreach ($post_ids as $i => $post_id) {
+                // Between posts only, and never before the first: a batch
+                // always moves the run on.
+                if ($i > 0 && microtime(true) >= $deadline) {
+                    $done = false;
+                    break;
+                }
+
                 $before = self::snapshot($post_id);
                 $terms->drain_post($post_id);
                 $diff = self::diff($post_id, $before, self::snapshot($post_id));
 
+                $state['cursor'] = $post_id;
+                $state['processed']++;
                 if ($diff !== null) {
-                    $changed++;
-                    if (count($report) < self::REPORT_ROWS) {
-                        $report[] = $diff;
+                    $state['changed']++;
+                    if (count($state['rows']) < self::REPORT_ROWS) {
+                        $state['rows'][] = $diff;
                     }
                 }
             }
@@ -132,23 +175,51 @@ final class ExistingPostsApplier {
             FormatDispatcher::clear_included_row();
         }
 
+        if ($done) {
+            delete_transient($key);
+        } else {
+            set_transient($key, $state, DAY_IN_SECONDS);
+        }
+
         return [
             'status'    => 'success',
             'message'   => sprintf(
-                /* translators: 1: posts processed, 2: posts changed */
-                __('%1$d posts processed, %2$d changed.', 'meta-conductor'),
-                count($post_ids),
-                $changed
+                /* translators: 1: posts processed so far, 2: posts in the run, 3: posts changed */
+                __('%1$d / %2$d posts processed, %3$d changed.', 'meta-conductor'),
+                $state['processed'],
+                $state['total'],
+                $state['changed']
             ),
-            'processed' => count($post_ids),
-            'changed'   => $changed,
-            'rows'      => $report,
+            'processed' => $state['processed'],
+            'total'     => $state['total'],
+            'done'      => $done,
+            'changed'   => $state['changed'],
+            'rows'      => $state['rows'],
             'note'      => __('Changes the run made to other posts through fan-out (children, dependents) are not listed.', 'meta-conductor'),
         ];
     }
 
     /**
-     * Post IDs in the reach of these rows, ascending.
+     * Discard this user's run of a choice, so the next batch starts from the
+     * first post.
+     *
+     * @param string $value A `RuleChoice` dropdown value.
+     * @return void
+     */
+    public static function start_over(string $value): void {
+        delete_transient(self::state_key($value));
+    }
+
+    /**
+     * @param string $value A `RuleChoice` dropdown value.
+     * @return string Transient name for this user's run of it.
+     */
+    private static function state_key(string $value): string {
+        return 'mc_apply_run_' . md5(get_current_user_id() . '|' . $value);
+    }
+
+    /**
+     * Post IDs in the reach of these rows, ascending from the cursor.
      *
      * Post types are each row's `CollisionDetector::written_post_types()` —
      * empty means every public type. Deliberately conservative (CONTEXT.md →
@@ -156,10 +227,12 @@ final class ExistingPostsApplier {
      *
      * @param array[]  $rows     Projected rows.
      * @param string[] $statuses `RuleChoice::reach_statuses()`.
+     * @param int      $after    Cursor: only IDs above it.
+     * @param int      $limit    At most this many, 0 for all.
      * @return int[]
      */
-    private static function reach(array $rows, array $statuses): array {
-        // [] reaches nothing; handed to get_posts it would read as "publish".
+    private static function reach(array $rows, array $statuses, int $after, int $limit): array {
+        // [] reaches nothing (and `IN ()` is not SQL).
         if ($statuses === []) {
             return [];
         }
@@ -174,14 +247,20 @@ final class ExistingPostsApplier {
             $types = array_merge($types, $written);
         }
 
-        return array_map('intval', get_posts([
-            'post_type'   => array_values(array_unique($types)),
-            'post_status' => $statuses,
-            'numberposts' => -1,
-            'fields'      => 'ids',
-            'orderby'     => 'ID',
-            'order'       => 'ASC',
-        ]));
+        global $wpdb;
+        $types = array_values(array_unique($types));
+        $sql   = sprintf(
+            "SELECT ID FROM {$wpdb->posts} WHERE post_type IN (%s) AND post_status IN (%s) AND ID > %%d ORDER BY ID ASC",
+            implode(',', array_fill(0, count($types), '%s')),
+            implode(',', array_fill(0, count($statuses), '%s'))
+        );
+        $args = array_merge($types, $statuses, [$after]);
+        if ($limit > 0) {
+            $sql   .= ' LIMIT %d';
+            $args[] = $limit;
+        }
+
+        return array_map('intval', $wpdb->get_col($wpdb->prepare($sql, $args)));
     }
 
     /**

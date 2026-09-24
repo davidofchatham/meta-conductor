@@ -28,6 +28,9 @@
  *   wp eval-file .../sweep-apply-existing.php fanout    # propagation children
  *   wp eval-file .../sweep-apply-existing.php rpt       # draft dependent reached
  *   wp eval-file .../sweep-apply-existing.php revisions # a format run leaves none
+ *   wp eval-file .../sweep-apply-existing.php limit     # limit N = exactly N, across batches
+ *   wp eval-file .../sweep-apply-existing.php continue  # resumes by ID; below/above-cursor insert
+ *   wp eval-file .../sweep-apply-existing.php restart   # start over; per-user run state
  *   wp eval-file .../sweep-apply-existing.php restore
  *
  * @package Meta_Conductor
@@ -157,6 +160,37 @@ function mcae_reported( array $result ) {
 	$ids = array_map( 'intval', array_column( $result['rows'] ?? array(), 'post_id' ) );
 	sort( $ids );
 	return $ids;
+}
+
+/**
+ * Arm a batching step: the hierarchical rule over mc_item, one post per batch
+ * (a zero time box still passes one post), and every in-reach mc_item holding
+ * Harbor alone, so "was this post passed" reads straight off its terms.
+ *
+ * @return int[] The rule's reach, ascending.
+ */
+function mcae_arm_batching( $harbor ) {
+	mcae_author( array( mcae_hier_row() ) );
+	add_filter( 'meta_conductor_apply_time_box', '__return_zero' );
+	$reach = array_map( 'intval', get_posts( array(
+		'post_type'   => 'mc_item',
+		'post_status' => RuleChoice::DEFAULT_STATUSES,
+		'numberposts' => -1,
+		'fields'      => 'ids',
+		'orderby'     => 'ID',
+		'order'       => 'ASC',
+	) ) );
+	mcae_quiet( function () use ( $reach, $harbor ) {
+		foreach ( $reach as $id ) {
+			mcae_set_topics( $id, array( $harbor ) );
+		}
+	} );
+	return $reach;
+}
+
+/** Reach posts the run has passed (Harbor expanded), ascending. */
+function mcae_passed( array $ids ) {
+	return array_values( array_filter( $ids, fn( $id ) => mcae_slugs( $id ) !== array( 'harbor' ) ) );
 }
 
 $pass = 0;
@@ -430,6 +464,133 @@ switch ( $step ) {
 		}
 		break;
 
+	// --------------------------------------------------------------- limit
+	// A limit caps the run at exactly N posts in total, across batches.
+	case 'limit':
+		$snap   = mcae_snapshot();
+		$reach  = mcae_arm_batching( $harbor );
+		$choice = mcae_choice( OptionRuleStorage::KIND_TERM, 0 );
+		ExistingPostsApplier::start_over( $choice );
+
+		$first  = ExistingPostsApplier::run_batch( $choice, 3 );
+		$second = ExistingPostsApplier::run_batch( $choice, 99 ); // a Continue: the run's own limit holds
+		$third  = ExistingPostsApplier::run_batch( $choice );
+		WP_CLI::log( '[limit] ' . $third['message'] );
+
+		$t( '§ae8 batch 1 passes one post', array( $first['processed'], $first['done'] ), array( 1, false ) );
+		$t( '§ae8 total is the limit', $first['total'], 3 );
+		$t( '§ae8 batch 2 continues', array( $second['processed'], $second['done'] ), array( 2, false ) );
+		$t( '§ae8 batch 3 completes at N', array( $third['processed'], $third['done'] ), array( 3, true ) );
+		$t( '§ae8 exactly the first N posts were passed', mcae_passed( $reach ), array_slice( $reach, 0, 3 ) );
+		$t( '§ae8 changed accumulates across batches', $third['changed'], 3 );
+		$t( '§ae8 the sample fills across batches', mcae_reported( $third ), array_slice( $reach, 0, 3 ) );
+
+		// Completion deleted the run state: the next batch starts a fresh run.
+		mcae_quiet( function () use ( $reach, $harbor ) {
+			mcae_set_topics( $reach[0], array( $harbor ) );
+		} );
+		$fresh = ExistingPostsApplier::run_batch( $choice );
+		$t( '§ae8 a completed run starts afresh', array( $fresh['processed'], $fresh['total'] ), array( 1, count( $reach ) ) );
+		ExistingPostsApplier::start_over( $choice );
+
+		mcae_put_back( $snap );
+		break;
+
+	// ------------------------------------------------------------ continue
+	// Continue resumes by ID: a post created between batches below the cursor
+	// is never passed, one above it is, and total stays what it was at start.
+	case 'continue':
+		$snap   = mcae_snapshot();
+		$reach  = mcae_arm_batching( $harbor );
+		$choice = mcae_choice( OptionRuleStorage::KIND_TERM, 0 );
+		ExistingPostsApplier::start_over( $choice );
+
+		$first = ExistingPostsApplier::run_batch( $choice );
+		$t( '§ae9 batch 1 passes the lowest ID only', mcae_passed( $reach ), array( $reach[0] ) );
+		$second = ExistingPostsApplier::run_batch( $choice );
+		$t( '§ae9 batch 2 resumes at the next ID', mcae_passed( $reach ), array_slice( $reach, 0, 2 ) );
+
+		// The highest free ID inside the reach's span; run on until the
+		// cursor is past it.
+		$below = 0;
+		for ( $id = end( $reach ) - 1; $id > $reach[0]; $id-- ) {
+			if ( ! get_post( $id ) ) {
+				$below = $id;
+				break;
+			}
+		}
+		$t( '§ae9 precondition: a free ID inside the reach', $below > 0, true );
+		$last = $second;
+		while ( ! $last['done'] && max( mcae_passed( $reach ) ) < $below ) {
+			$last = ExistingPostsApplier::run_batch( $choice );
+		}
+		$t( '§ae9 precondition: the run is mid-way', $last['done'], false );
+
+		$added = array();
+		mcae_quiet( function () use ( $below, $harbor, &$added ) {
+			foreach ( array( 'below' => $below, 'above' => 0 ) as $name => $import ) {
+				$added[ $name ] = wp_insert_post( array(
+					'post_type'   => 'mc_item',
+					'post_status' => 'publish',
+					'post_title'  => "Sweep AE $name",
+					'import_id'   => $import,
+				) );
+				mcae_set_topics( $added[ $name ], array( $harbor ) );
+			}
+		} );
+		$t( '§ae9 the below post landed below the cursor', $added['below'], $below );
+
+		for ( $i = 0; $i < 50 && ! $last['done']; $i++ ) {
+			$last = ExistingPostsApplier::run_batch( $choice );
+		}
+		WP_CLI::log( '[continue] ' . $last['message'] );
+
+		$t( '§ae9 batch 2 counted two', $second['processed'], 2 );
+		$t( '§ae9 total counted once, at the start', array( $first['total'], $last['total'] ), array( count( $reach ), count( $reach ) ) );
+		$t( '§ae9 every original post passed', mcae_passed( $reach ), $reach );
+		$t( '§ae9 the post below the cursor was not passed', mcae_slugs( $added['below'] ), array( 'harbor' ) );
+		$t( '§ae9 the post above it was', mcae_slugs( $added['above'] ), $expected );
+		$t( '§ae9 processed counts the run, not the batch', $last['processed'], count( $reach ) + 1 );
+		$t( '§ae9 changed accumulates across batches', $last['changed'], count( $reach ) + 1 );
+		$t( '§ae9 the sample fills to the cap across batches', count( $last['rows'] ), min( ExistingPostsApplier::REPORT_ROWS, count( $reach ) + 1 ) );
+
+		foreach ( $added as $id ) {
+			wp_delete_post( $id, true );
+		}
+		mcae_put_back( $snap );
+		break;
+
+	// ------------------------------------------------------------ restart
+	// Start over discards progress: the next batch passes the first post again.
+	case 'restart':
+		$snap   = mcae_snapshot();
+		$reach  = mcae_arm_batching( $harbor );
+		$choice = mcae_choice( OptionRuleStorage::KIND_TERM, 0 );
+		ExistingPostsApplier::start_over( $choice );
+
+		ExistingPostsApplier::run_batch( $choice );
+		mcae_quiet( function () use ( $reach, $harbor ) {
+			mcae_set_topics( $reach[0], array( $harbor ) );
+		} );
+
+		ExistingPostsApplier::start_over( $choice );
+		$again = ExistingPostsApplier::run_batch( $choice );
+
+		$t( '§ae10 start over restarts from the first post', mcae_passed( $reach ), array( $reach[0] ) );
+		$t( '§ae10 …with fresh counts', array( $again['processed'], $again['changed'] ), array( 1, 1 ) );
+
+		// Another user's run of the same choice is its own.
+		$user = wp_get_current_user()->ID;
+		wp_set_current_user( $user + 1 );
+		$other = ExistingPostsApplier::run_batch( $choice );
+		ExistingPostsApplier::start_over( $choice );
+		wp_set_current_user( $user );
+		$t( '§ae10 another user gets separate run state', $other['processed'], 1 );
+
+		ExistingPostsApplier::start_over( $choice );
+		mcae_put_back( $snap );
+		break;
+
 	// ------------------------------------------------------------- restore
 	case 'restore':
 		mcae_quiet( function () {
@@ -444,7 +605,7 @@ switch ( $step ) {
 		break;
 
 	default:
-		WP_CLI::error( "Unknown step '$step' — enabled|disabled|stale|off|fanout|rpt|revisions|restore." );
+		WP_CLI::error( "Unknown step '$step' — enabled|disabled|stale|off|fanout|rpt|revisions|limit|continue|restart|restore." );
 }
 
 // Hold passes down for the rest of this request: the ACF write queue flushes at
