@@ -35,7 +35,7 @@ set -uo pipefail
 # it is the densest caller of .scratch/plans/ in the tree, and when a plan moves its
 # links rot exactly like a tracked file's. Private authorship does not make a dead
 # link resolve. Scanning it costs one pathspec entry.
-SCOPE=(includes docs tools tests scripts README.md readme.txt CHANGELOG.md CONTEXT.md ROADMAP.md CLAUDE.md)
+SCOPE=(includes docs tools tests scripts README.md readme.txt CHANGELOG.md CONTEXT.md CLAUDE.md)
 
 # A literal path: no '<', no '*'. Anchored on a .md so a bare directory mention
 # ("plans live in .scratch/plans/") is prose, not a pointer. Matches any .claude/

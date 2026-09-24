@@ -28,7 +28,7 @@ Each item is a `#### FW-N — <title>` heading followed by a fixed set of labele
 - **Progress:** where the work actually stands. Always present, even if just "Not started."
 - **Open:** what is still undecided or unbuilt, when there is a real done/open split. Omitted when there is nothing beyond Progress worth stating.
 - **Blocked by:** hard prerequisite, typed (below). **Interacts with:** soft coupling — reshapes, or is reshaped by — as `FW-N` ids, never a gate. Both on one line; `—` means none.
-- **Phase:** only where [ROADMAP.md](../ROADMAP.md) has actually assigned one.
+- **Phase:** a scheduling preference, never a gate. The phase ids come from the retired `ROADMAP.md` (2026-09-24): **6a** = options-compatible integrations (FW-1, FW-4); **6b** = the UBT merge (FW-8), the largest integration, taken after 6a; **7** = FW-16. Omitted when nothing has been scheduled.
 
 ### Progress, not status
 
@@ -90,7 +90,7 @@ Combine multiple source fields into one formatted output field — merge first/m
 - **Detail home:** `.scratch/plans/field-transformation-token-gap.md` — token-gap analysis of two real template helpers against the existing resolver, plus the repeater-scope blockers. Reachability ≈ 50% / 70% with the resolver alone (post-level); the shortfall is conditional/transform logic, markup emission, and row-scoped read/write.
 - **Progress:** Not started. Already declared in `KIND_TYPES` ahead of its subfields — that separation is what lets it be fanned in and read before its config exists (CLAUDE.md don't 6). ~60–70% of the engine exists as the TitleSlugHandler token engine (`resolve_token()`, pattern→segments→resolve-or-drop→reassemble, with empty-token + dangling-separator dropping). Net-new: a **target-field write path** (arbitrary meta/ACF key, not just `post_title`/`post_slug`), a **raw-vs-sanitize output policy** flag so literal HTML survives, and new token classes (value-filter `{term:TAX|exclude:…}`, conditional `{if_term:…}`, optional format-transform). The repeater *write* is cheap and verified (2026-06-26): `update_sub_field(['rep', $row, 'sub'], $val, $post_id)` on `acf/save_post` pri 20 maintains ACF's field-key reference meta and needs **no re-entrancy guard** — it does not re-fire `acf/save_post`/`save_post`; only `wp_update_post` would.
 - **Open:** must work **inside ACF repeater rows, not just post-level** — each row composes from its own sibling subfields into a per-row output subfield. The cost is **row-scoped token reads** (the flat resolver's `get_post_meta($post_id, KEY)` must become `get_sub_field()` in row context) plus a `have_rows()` loop. Storage TBD — run [storage-model.md](storage-model.md) when designed; likely Options + indirection unless a per-recipe draft/test lifecycle is wanted. ⚠️ **Scalar effect target**: per [ADR 0002](adr/0002-cross-rule-composition.md) two rules writing one field can only be last-writer-wins, so they **always** collide — there is no contributing mode for a scalar. Lands in the Format & Transform list where **ordering is real**: title/slug reads `{meta:field}`, so a field rule writing a key a title rule then reads is a producer→consumer pair *within* one list, and the reverse is equally possible, so the order is genuinely ambiguous and the author sequences it ([ADR 0003](adr/0003-ordered-rule-list-and-dispatcher.md)). This is also what returns the format dispatcher to **two-phase**: title/slug pre-write, this post-write on `acf/save_post` pri 20.
-- **Blocked by:** — • **Interacts with:** FW-5, FW-13
+- **Blocked by:** `decision:storage for field_transformation, via storage-model.md` • **Interacts with:** FW-5, FW-13, FW-16
 - **Phase:** 6a
 
 #### FW-5 — `relationship_field_rules`: Set a field across a relationship
@@ -130,7 +130,10 @@ Pre-set terms in a taxonomy based on the current user (role or ID), or lock a ta
 - **Axes:** basis **ambient** (the acting user and their role — attached to the request, not to the post), effect target **terms** for *both* variants, claim *owning* for auto-set and *restricting* for the lock variant.
 - **Detail home:** `.scratch/plans/ubt-merger.md`. Storage rationale: [storage-model.md](storage-model.md). Source: the external `../bws-user-based-terms/` repo.
 - **Progress:** Not started. Storage settled: Options, a `type` within `term_rules` — changed from CPT (2026-06-23), then from a dedicated `bws_mc_personalize` page option (2026-08-13, [ADR 0003](adr/0003-ordered-rule-list-and-dispatcher.md)). Role/user is the *target*, not the owner, so there is a single author and no concurrent writes; per-user explosion is solved by indirection (a profile field plus one rule), not N per-user rules. UBT's own `priority` field maps onto **list position**. The handler registers **no hooks of its own** — the dispatcher owns them; it exposes `apply_to_post()` like every other handler. **Ambient basis, but no sweep**: the acting user only matters at the instant of a write, so the dispatcher's save trigger suffices — contrast FW-3, whose ambient "now" moves on its own and therefore needs cron.
-- **Open:** ⚠️ type-key name unsettled — `user_based_terms_rules` (ubt-merger plan) vs `user_based_rules` (here and [storage-model.md](storage-model.md)). Under the unified list this is a `type` value, not an option key, so it is cheap to settle at build time — but settle it deliberately.
+- **Open:**
+  - ⚠️ type-key name unsettled — `user_based_terms_rules` (ubt-merger plan) vs `user_based_rules` (here and [storage-model.md](storage-model.md)). Under the unified list this is a `type` value, not an option key, so it is cheap to settle at build time — but settle it deliberately.
+  - **Port:** UBT's rule engine, applicator, cache and ACF integration become one MC handler extending `UnifiedHandlerBase`. The UBT CPT editor is dropped in favor of a row in the Wireframe term repeater.
+  - **Migration:** UBT CPT posts (`bws_user_term_rule`) become rows appended to `term_rules` with the right `type`, with a dry run first. UBT's `priority` field decides where each row goes in the list.
 - **Blocked by:** — • **Interacts with:** FW-25
 - **Phase:** 6b
 
@@ -209,16 +212,16 @@ Take a defined group of posts — all descendants of a page, or all posts in a t
 - **Progress:** Not started. Feasibility mapped against what moves with the row: the `wp_posts.post_type` flip is the easy part; meta and ACF data stay (keyed by post_id, post-type-agnostic in the DB); term assignments stay only if the target type has the same taxonomies registered, else they need a mapping or drop strategy; `post_parent` survives the flip but only renders correctly if the target type is hierarchical; permalink structure changes, so old URLs need redirect entries.
 - **Open:** UX shape is sketched — source picker (descendants-of-page / posts-in-taxonomy / `WP_Query` args / hand-picked IDs) → target post type → preview rows with per-taxonomy mapping decisions and warnings → dry-run report → commit with optional redirect generation. ⚠️ The flip is destructive to query results elsewhere, so preview plus dry-run are mandatory, not optional.
 - **Blocked by:** — • **Interacts with:** FW-16
-- **Phase:** candidate launch recipe inside FW-16 (Phase 7). The recipe shape fits cleanly: source_query, transform = post_type flip plus side-effects, preview = before/after row, commit = batched UPDATE plus redirect insert.
+- **Phase:** none. It was a candidate launch recipe inside FW-16 until that restarted as a rule-apply page (2026-09-23); a post type flip has no rule behind it, so it needs its own tool.
 
-#### FW-16 — Unified Migration / Preview tool
+#### FW-16 — Apply rules to existing posts
 
-A dedicated migration page hosting one-shot data transformations across rule types, with recipes registered via a `bws_meta_conductor_migrations` filter. Each recipe declares source_query / transform / preview / commit callbacks; the UI is recipe picker → parameter form → preview sample → run with chunked progress.
+A dedicated admin page that runs a chosen configured rule — or all enabled rules — over the posts that already exist, as a full ordered pass. Rules otherwise act only on save, so this is how a new or changed rule reaches existing content. Replaces the Data Conversion page; was the "Unified Migration / Preview tool" with a recipe engine until restarted 2026-09-23.
 
-- **Detail home:** [ROADMAP.md](../ROADMAP.md) Phase 7.
-- **Progress:** Not started. Storage: none — recipes are registered code. Buttons themselves are no longer blocked — Wireframe 1.0.6's `action` field renders a real button that posts to a server hook (FW-23), so this page's Preview / Apply controls use it. What stays blocked is the *inline* per-row button: `action` carries no repeater-row context (FW-23 Gap B, upstream's to fix, not ours), so a button in row N cannot say which rule fired. Bulk operations therefore route here instead of into rule rows. That is by design, not a stopgap.
-- **Open:** launch recipes — ACF → taxonomy term (absorbs the current Copy Data flow), Field A → Field B value mapping (absorbs Map Data), apply a title/slug rule to existing posts (replaces the blocked inline button), and FW-15.
-- **Blocked by:** — • **Interacts with:** FW-15, FW-23
+- **Detail home:** `.scratch/apply-existing/spec.md` (lifts to [design-history](design-history/) at merge). Built-state summary: [architecture.md → Apply to existing posts](architecture.md#apply-to-existing-posts).
+- **Progress:** Built on branch `claude/apply-existing-7`, unmerged (2026-09-24): all nine tickets under `.scratch/apply-existing/issues/`. Rule choice codec + reach, the dispatchers' one-time row override, the format pass split into compute + write, the applier (one batch, then time-boxed Continue batches, then format preview), `process_existing_posts()` and the title/slug AJAX endpoints retired, the Wireframe Apply page, and Data Conversion + `includes/support/` deleted with the upgrade unscheduling its cron event and dropping its tables. H-gate `tests/verify-apply-existing.php`; behavior sweep `sweep-apply-existing.php`.
+- **Open:** merge the branch, release (version bump + tag), then lift the spec into `docs/design-history/`. Copy / Map return as rule types (`related`, FW-4 `field_transformation`).
+- **Blocked by:** — • **Interacts with:** FW-4, FW-15, FW-23, FW-31, FW-32, FW-33
 - **Phase:** 7
 
 #### FW-17 — CPT storage backend
@@ -260,6 +263,33 @@ The repo's gates are plain-PHP `tests/verify-*.php` scripts run on bare host PHP
 - **Open:** the surviving callers still ask genuinely different questions — *any* id resolves, which resolved ids are on the post, *every* id resolves — so they were never one helper's worth of duplication; what `resolve_term()` unified is the *answer*, not the question. The decision the issue's point 3 named and #61 never settled is untouched: **is `normalize_rule_shape()` the guaranteed `int[]` boundary or not?** If yes, the `(array)` casts come out and the guarantee gets stated where the shape is declared; if no, that is worth one comment saying why a consumer must still re-coerce. Doing neither is what leaves the invariant declared and unenforced.
 - **Blocked by:** — • **Interacts with:** FW-30
 
+#### FW-32 — Term-rule dry run
+
+A compute-only path through the term pass, so FW-16 can preview what a term rule would write before it writes. The format pass already has one — `apply_to_data()` returns data and the dispatcher writes — but every term applier writes as it goes.
+
+- **Detail home:** `.scratch/apply-existing/spec.md` → *Preview* (FW-16's spec).
+- **Progress:** Not started. FW-16 launches without it: term rules get an in-scope count, a sample list, a post limit and a post-run change report instead.
+- **Open:** `TermOperations::compute_end_state()` is the natural seam, since it already encodes merge / replace / skip for every write. A rolled-back DB transaction was considered and set aside — other plugins' hooks and the object cache fire during the pass and do not roll back.
+- **Blocked by:** — • **Interacts with:** FW-16
+
+#### FW-33 — Background bulk apply
+
+Run an FW-16 apply as a chunked WP-Cron job — state in an option, a lock, cancel and status controls — so a large run survives closing the tab and needs no repeated Continue clicks.
+
+- **Detail home:** none.
+- **Progress:** Not started; deliberately not in FW-16's launch, which uses time-boxed Continue batches with no cron dependency.
+- **Open:** wanted only if Continue proves tedious on a real site. An upstream action-continuation feature ([wp-wireframe#39](https://github.com/tdrayson/wp-wireframe/issues/39), FW-23) would remove the clicking without a background job, and would make this row moot.
+- **Blocked by:** `decision:Continue batches prove tedious in real use` • **Interacts with:** FW-16, FW-23
+
+#### FW-34 — Full reach-based collision detector
+
+Replace the minimal pairwise collision warning (#65) with an analysis over **reach**: build the rule-interaction graph from the conjunctive predicate — reaches intersect on an effect target *and* jurisdictions overlap (ADR 0004's second conjunct) — and warn per connected component instead of per pair. This would catch the pairings the shipped detector skips on purpose. Example: a taxonomy-wide rule and a term-pairing rule whose term is in that taxonomy, like a restricting rule pruning a term another rule applied.
+
+- **Detail home:** [ADR 0003](adr/0003-ordered-rule-list-and-dispatcher.md) → Consequences, where it was deferred; the component model is in [ADR 0002](adr/0002-cross-rule-composition.md) → Consequences (its tie to the ordering UI is superseded). The *What it deliberately does NOT do* PHPDoc on `Admin\CollisionDetector` says where the current detector stops. Vocabulary: [CONTEXT.md](../CONTEXT.md) → *Reach*, *Collision*.
+- **Progress:** Not started. The pairwise advisory shipped in 0.8.0: equal effect targets plus overlapping written post types, claim not consulted. `CollisionDetector::written_post_types()` already gives post-type-level reach, and FW-16 reuses it.
+- **Open:** defining reach once for **every** effect kind, not just terms — which is why it waits for a real field or rendered kind. Also whether to consult the claim, since two purely contributing rules cannot actually fight. With the repeater as the ordering UI, the result is advisory only: components no longer decide which rules get ordering control.
+- **Blocked by:** `code:the only effect kinds are term and title/slug` — cleared by FW-4 landing • **Interacts with:** FW-4, FW-6, FW-12, FW-25
+
 ---
 
 ## UX polish
@@ -299,18 +329,18 @@ Wireframe 1.0.6 (#13) added the conditions DSL to repeater subfields client-side
 Wireframe has no JS-side field-type *extension* API: a custom type declared via the `wp-wireframe/field_types` filter registers server-side sanitize/validate but renders as nothing in React.
 
 - **Detail home:** `.scratch/plans/wireframe-js-field-type-extension-blocker.md` (full plan).
-- **Progress:** **Partially unblocked in 1.0.6.** Its `action` field is a built-in escape hatch for the button case — a real React button that posts in-flight form values to a server hook and returns `{status, message, html}` — so the button case no longer needs the extension API. Page-level Title/Slug Preview and bulk Apply are implementable now via `action` on the FW-16 migration page. Upstream PR direction as of 2026-06-11 is *extending* the action mechanism, not adding the extension API, which is exactly why the fork path matters.
+- **Progress:** **Partially unblocked in 1.0.6.** Its `action` field is a built-in escape hatch for the button case — a real React button that posts in-flight form values to a server hook and returns `{status, message, html}` — so the button case no longer needs the extension API. Page-level Preview and bulk Apply are implementable now via `action` on the FW-16 page. Upstream PR direction as of 2026-06-11 is *extending* the action mechanism, not adding the extension API, which is exactly why the fork path matters.
 - **Open:** two gaps.
   - **Gap A — no JS field-type extension API (the root)** — **buildable by us, fork-releasable.** Three read sites all do `customEditComponents[type]` (`SettingsSection.js`, `mapConfig.js`, `RepeaterEdit.js`); the PR adds a registry plus a `registerFieldType()` global mirroring the existing PHP `field_types` filter. Additive, low risk. The **fork-release path** — fork Wireframe, build, tag, repoint our composer VCS dep, vendor the built fork — ships it without waiting on the upstream maintainer to merge.
-  - **Gap B — the `action` field has no repeater-row context** — **file upstream, do not build.** `ActionButton` posts page-level `useSettings()` values and routes by `fieldId` only (`action/{pageId}/{fieldId}/{actionId}`, no row index), so a button in row N cannot tell the handler which row fired. Changing the payload or route is a JS+PHP data-contract change the maintainer owns, and it collides with in-flight action PRs. **We do not need it**: inline Apply-to-Existing is covered by FW-16 *by design*.
-- **Blocked by:** — • **Interacts with:** FW-16, FW-26
+  - **Gap B — the `action` field has no repeater-row context** — **file upstream first; build on our fork only when FW-31 starts.** `ActionButton` posts page-level `useSettings()` values and routes by `fieldId` only (`action/{pageId}/{fieldId}/{actionId}`, no row index), so a button in row N cannot tell the handler which row fired. Changing the payload or route is a JS+PHP data-contract change the maintainer owns, and it collides with in-flight action PRs (#21 upload, #23 downloads — both touch the same two files, neither adds row context; upstream quiet since 2026-06). FW-16 ships without it; the in-row entry point it would enable is deferred as FW-31, not dropped. The upstream ask ([wp-wireframe#39](https://github.com/tdrayson/wp-wireframe/issues/39), filed 2026-09-23) proposes an optional request `context` carrying both row identity and action continuation — the latter is what would retire FW-33. If Gap A is forked first, Gap B rides the same fork.
+- **Blocked by:** — • **Interacts with:** FW-16, FW-26, FW-31, FW-33
 
 #### FW-24 — Claim option propagation
 
 Per-rule claim overrides (stored `conflict_handling`) default to `merge` regardless of the General-tab per-taxonomy default, but authors reasonably expect rule-level to inherit from taxonomy-level unless explicitly set. Sharper now that the two surfaces share wording — both read "Claim on terms" / "Default claim on terms", so one appears to feed the other.
 
 - **Detail home:** none. Claim semantics: [ADR 0004](adr/0004-claim-axis-and-jurisdiction.md).
-- **Progress:** Not started. Small enough to take ad-hoc.
+- **Progress:** Not started. Small enough to take ad-hoc. The per-taxonomy default is already stored and flattened, but nothing reads it: a rule that omits its claim falls back to a hard-coded `merge` in each handler. `RuleStorage::get_raw_settings()` is the seam for the lookup and has no other reader.
 - **Open:** the handler reads the General-tab default for `$taxonomy` when the rule's own value is empty. Wants an explicit "inherit" placeholder option rather than a silent fallback, so the config shows which default is in force.
 - **Blocked by:** — • **Interacts with:** FW-25
 
@@ -355,6 +385,15 @@ Every handler carries a `validate_rule_internal()`, and `UnifiedHandlerBase` wra
   - **The validators are not uniform.** They were written per handler against the pre-0.8.0 shapes; several predate `post_types` becoming an array and the ordered list. Any surface that shows their output will expose that unevenness, so an audit pass belongs in the same piece of work, not after it.
 - **Blocked by:** — • **Interacts with:** FW-29
 
+#### FW-31 — Rule-adjacent Preview / Apply
+
+A Preview / Apply-to-existing button inside each rule row, so an author can check or apply a rule without leaving it for the FW-16 page. Deferred, not out of scope: FW-16 ships the page first, and this is a second entry point onto the same applier, which takes a rule array rather than a page request so either caller can supply one.
+
+- **Detail home:** `.scratch/apply-existing/spec.md` (FW-16's spec, *Out of Scope*); the Wireframe gap is in `.scratch/plans/wireframe-js-field-type-extension-blocker.md` → Gap B.
+- **Progress:** Not started.
+- **Open:** when it starts — build Gap B on our Wireframe fork if upstream has not shipped row context, or fall back to one `action` button beside the repeater with a rule dropdown (saved rules only; stale after a reorder until reload). The in-row form has to handle unsaved edits: the button posts in-flight values, so it either previews those or refuses until saved.
+- **Blocked by:** `code:Wireframe's action field carries no repeater-row context` • **Interacts with:** FW-16, FW-23
+
 ---
 
 ## Closed / retired
@@ -363,13 +402,13 @@ Shipped or cut items retire here, densely — a closed item is read in bulk and 
 
 | Id | Item | Outcome |
 |---|---|---|
-| FW-18 | Text-domain string sweep | **Shipped in 0.7.0** (Phase 2b rename sweep, [#48](https://github.com/davidofchatham/meta-conductor/pull/48)) — the row survived the 2026-09-11 migration describing work already done. Every `__()` / `_e()` / `_x()` / `_n()` call site now passes `'meta-conductor'`; `'bws-meta-manager'` survives only as the Composer package name in `vendor/`. The *conversion* subsystem's identifiers (JS object, cron / AJAX / transient names) were never part of this row — they are the 2b remainder deferred to Phase 7, tracked in [ROADMAP.md](../ROADMAP.md) § Phase 7. |
+| FW-18 | Text-domain string sweep | **Shipped in 0.7.0** (Phase 2b rename sweep, [#48](https://github.com/davidofchatham/meta-conductor/pull/48)) — the row survived the 2026-09-11 migration describing work already done. Every `__()` / `_e()` / `_x()` / `_n()` call site now passes `'meta-conductor'`; `'bws-meta-manager'` survives only as the Composer package name in `vendor/`. The *conversion* subsystem's identifiers (JS object, cron / AJAX / transient names) were never part of this row — they were the 2b remainder, closed by deletion with the Data Conversion page in FW-16. |
 
 ---
 
 ## Maintenance
 
-**Where this list comes from.** [ROADMAP.md](../ROADMAP.md) Phase 6+ assignments; Phase 2c session planning (the strategic roadmap it produced now lives in ROADMAP.md, its working plan file is gone); deleted standalone plugins under `plugins-to-integrate/`, captured at deletion time so the intent was not lost; session discussion that did not fit a phase; and — since 2026-09-11 — the non-bug GitHub issues, which moved here wholesale when the split in [docs/agents/issue-tracker.md](agents/issue-tracker.md) took effect. An issue that names an item is cited as the thing that *framed* it, not as a live home: it is closed, and this file is the home now.
+**Where this list comes from.** The Phase 6+ assignments of `ROADMAP.md`, retired 2026-09-24 once Phase 7 was built. Its completed-phase record is in [CHANGELOG.md](../CHANGELOG.md) and git history, its naming convention in [architecture.md](architecture.md#naming-surface), and its open items were folded into rows here. Other sources: deleted standalone plugins under `plugins-to-integrate/`, captured at deletion time so the intent was not lost; session discussion that did not fit a phase; and — since 2026-09-11 — the non-bug GitHub issues, which moved here wholesale when the split in [docs/agents/issue-tracker.md](agents/issue-tracker.md) took effect. An issue that names an item is cited as the thing that *framed* it, not as a live home: it is closed, and this file is the home now.
 
 **When an item becomes work in flight**, point its `Detail home:` at the spec and put the real build state in `Progress:` — do not move it to a separate section, and do not write a percentage.
 

@@ -79,10 +79,9 @@ class TitleSlugHandler extends UnifiedHandlerBase {
      * Resolve this rule's title and slug patterns against the entity's live
      * state and hand the result on. THE format applier seam (#64).
      *
-     * Writes no post row: the dispatcher performs the single update at the end
-     * of the pass. It does write the two pieces of per-post state a title
-     * pattern needs to stay idempotent, plus the rule's status record, because
-     * both are consequences of THIS rule resolving and neither is post data.
+     * Writes nothing: the dispatcher performs the single row update at the end
+     * of the pass, and `commit_data()` the per-rule state. That is what lets
+     * the dispatcher's compute step run this for a preview (FW-16 03).
      *
      * @param array $data    Post data as the previous rule left it.
      * @param int   $post_id Entity being passed over.
@@ -99,24 +98,32 @@ class TitleSlugHandler extends UnifiedHandlerBase {
         // the title an earlier rule computed rather than the row's stored one.
         $post          = (object) $data;
         $current_title = (string) ($data['post_title'] ?? '');
-        $current_slug  = (string) ($data['post_name'] ?? '');
 
-        $resolved      = $this->resolve_rule_output($rule, $post_id, $post, $current_title);
-        $new_title     = $resolved['title'];
-        $new_slug      = $resolved['slug'];
-        $default_title = $resolved['default_title'];
+        $resolved = $this->resolve_rule_output($rule, $post_id, $post, $current_title);
+        $new_slug = $resolved['slug'];
 
         if ($new_slug !== null) {
             $new_slug = $this->make_unique_slug($new_slug, $post_id, $post, $rule);
         }
 
-        $changed = ($new_title !== $current_title)
-                   || ($new_slug !== null && $new_slug !== $current_slug);
-
-        $data['post_title'] = $new_title;
+        $data['post_title'] = $resolved['title'];
         if ($new_slug !== null) {
             $data['post_name'] = $new_slug;
         }
+
+        return $data;
+    }
+
+    /**
+     * The idempotency meta and status record for one `apply_to_data()` answer.
+     *
+     * @param array $before  Post data the applier was handed.
+     * @param array $after   Post data it returned.
+     * @param int   $post_id Entity being passed over.
+     * @param array $rule    The rule that answered.
+     */
+    public function commit_data(array $before, array $after, int $post_id, array $rule): void {
+        $new_title = (string) ($after['post_title'] ?? '');
 
         // Idempotency state, only when the pattern folds the existing title back
         // into itself. Stored UNCONDITIONALLY — the pass re-runs whether or not
@@ -127,33 +134,33 @@ class TitleSlugHandler extends UnifiedHandlerBase {
         // the submitted title of a post this rule has already renamed IS the
         // applied title, and storing that as the base would compound it.
         //
+        // The base is re-resolved from the data the applier was handed. Nothing
+        // it reads has been written since the applier ran — this IS the write —
+        // so it is the same base the applier resolved.
+        //
         // Both go through as_stored(), because the comparison they exist for is
         // against a value read back OUT of the post row — see that method.
         if (!empty($rule['title_pattern']) && $this->pattern_uses_default_title($rule['title_pattern'])) {
+            $default_title = $this->resolve_default_title($post_id, (object) $before, $rule);
             update_post_meta($post_id, '_bws_raw_title', $this->as_stored($default_title, $post_id));
             update_post_meta($post_id, '_bws_applied_title', $this->as_stored($new_title, $post_id));
         }
 
         // Status is a record of work done, so it is written only when the rule
         // actually moved something — an idempotent re-pass is not an event.
-        if ($changed) {
-            $rule_index = (int) ($rule['id'] ?? 0);
-            $this->write_rule_status($rule_index, $post_id, $new_title, $new_slug ?? $current_slug, []);
+        if ($after['post_title'] !== $before['post_title'] || $after['post_name'] !== $before['post_name']) {
+            $this->write_rule_status((int) ($rule['id'] ?? 0), $post_id, $new_title, (string) $after['post_name'], []);
         }
-
-        return $data;
     }
 
     /**
      * Resolve one rule's title and slug for one post, writing nothing.
      *
-     * The ONE encoding of the pattern -> title -> slug chain. `apply_to_data()`
-     * writes what this returns and `preview_rule()` displays it, so a dry run
-     * and a real pass cannot report different things — including which side of
-     * the duplicate-insertion guard each pattern lands on, which is a single
-     * decision here rather than one per caller. Each caller keeps only its own
-     * tail: slug uniqueness and the idempotency meta on the write path, neither
-     * of which a preview wants.
+     * The ONE encoding of the pattern -> title -> slug chain, including which
+     * side of the duplicate-insertion guard each pattern lands on.
+     * `apply_to_data()` is its caller; the existing-posts preview reaches it
+     * through `FormatDispatcher::compute()`, so a dry run and a real pass cannot
+     * report different things.
      *
      * @param array  $rule          One title/slug rule.
      * @param int    $post_id       Entity being resolved.
@@ -686,99 +693,5 @@ class TitleSlugHandler extends UnifiedHandlerBase {
         }
 
         update_option('bws_title_slug_rule_status', $status, false); // autoload=false
-    }
-
-    // -------------------------------------------------------------------------
-    // Public API (stubs)
-    // -------------------------------------------------------------------------
-
-    public function preview_rule(array $rule): array {
-        $args = ['post_type' => $rule['post_type'], 'posts_per_page' => 1,
-                 'post_status' => 'publish', 'orderby' => 'date', 'order' => 'DESC'];
-        $posts = get_posts($args);
-        if (empty($posts)) return ['error' => 'No published posts found for this post type'];
-
-        $post    = $posts[0];
-        $post_id = $post->ID;
-
-        // Dry-run: the same resolution the pass runs, minus the write and the
-        // uniqueness suffix (which depends on what else is stored at the time).
-        $resolved  = $this->resolve_rule_output($rule, $post_id, $post, (string) $post->post_title);
-        $new_title = $resolved['title'];
-        $new_slug  = $resolved['slug'] ?? $post->post_name;
-
-        return [
-            'post_id'       => $post_id,
-            'post_url'      => get_edit_post_link($post_id),
-            'current_title' => $post->post_title,
-            'preview_title' => $new_title,
-            'current_slug'  => $post->post_name,
-            'preview_slug'  => $new_slug,
-            'warnings'      => [],
-        ];
-    }
-
-    /**
-     * Bulk apply.
-     *
-     * Provokes a full ordered FORMAT pass per post rather than applying this
-     * handler's rules itself — the same inversion `UnifiedHandlerBase`'s bulk
-     * path took for converted term types (#60). Bulk is a provocation: it names
-     * posts, and what happens to them is the pass's job, so a bulk run and a
-     * save over the same rule set cannot diverge. It is also what keeps
-     * `apply_to_data()` to the single call site H13 checks.
-     *
-     * @param int $batch_size Posts per rule per batch.
-     * @param int $offset     Batch offset.
-     * @return array
-     */
-    public function process_existing_posts($batch_size = 50, $offset = 0): array {
-        $rules      = $this->get_enabled_rules();
-        $dispatcher = \BWS\MetaConductor\Core\FormatDispatcher::instance();
-        $processed  = 0;
-        $errors     = [];
-
-        foreach ($rules as $rule) {
-            if (empty($rule['post_type'])) continue;
-
-            $posts = get_posts([
-                'post_type'      => $rule['post_type'],
-                'post_status'    => ['publish', 'draft', 'private'],
-                'posts_per_page' => $batch_size,
-                'offset'         => $offset,
-                'fields'         => 'all',
-            ]);
-
-            // No dispatcher means no pass ran, so nothing was applied. Counting
-            // the post anyway is the "lying button" #31 removed: the caller
-            // reports "processed N of N, done" having written nothing.
-            if ($dispatcher === null) {
-                $errors[] = __('No format dispatcher is registered — nothing was applied.', 'meta-conductor');
-                break;
-            }
-
-            foreach ($posts as $post) {
-                try {
-                    $dispatcher->run_pass((int) $post->ID);
-                    $processed++;
-                } catch (\Exception $e) {
-                    $errors[] = "Post {$post->ID}: " . $e->getMessage();
-                }
-            }
-        }
-
-        $total = (int) (new \WP_Query([
-            'post_type'      => array_column($rules, 'post_type'),
-            'post_status'    => ['publish', 'draft', 'private'],
-            'posts_per_page' => -1,
-            'fields'         => 'ids',
-        ]))->found_posts;
-
-        return [
-            'processed' => $processed,
-            'total'     => $total,
-            'done'      => ($offset + $batch_size) >= $total,
-            'errors'    => $errors,
-        ];
     }
 }

@@ -302,21 +302,28 @@ class TermDispatcher {
      * Pass locks, `"kind|entity"` => true.
      *
      * STATIC because the lock is a property of the request, not of the
-     * dispatcher instance: `apply()` is a static choke point that bulk apply
-     * routes through without holding a dispatcher, and a per-instance lock
-     * would let those two paths run concurrent passes over one entity.
+     * dispatcher instance: `FormatDispatcher` takes it through `take_pass()`
+     * without holding this dispatcher, and `pass_active()` answers callers
+     * that hold neither.
      *
      * @var array<string,true>
      */
     private static array $passes = [];
 
     /**
+     * Fingerprint of a disabled row passes run anyway; see `include_row()`.
+     *
+     * @var string|null
+     */
+    private static ?string $included = null;
+
+    /**
      * The registered dispatcher, for callers that hold no reference to it.
      *
-     * `process_existing_posts()` is the one that matters: it lives on the
-     * handler base, runs long after boot, and needs to ask for a pass rather
-     * than loop its own rules. Set at register() rather than construction, so
-     * "the live dispatcher" means one that actually owns the triggers.
+     * The existing-posts applier and the time-based cron sweep both run long
+     * after boot and need to ask for a pass rather than run rules themselves.
+     * Set at register() rather than construction, so "the live dispatcher"
+     * means one that actually owns the triggers.
      *
      * @var self|null
      */
@@ -719,8 +726,8 @@ class TermDispatcher {
      * TWO FILTERS, DELIBERATELY. `meta_conductor_acf_reapply_enabled` is
      * consulted first because it is the established "do not recompute rules
      * for this post" switch, and every existing user of it means that here
-     * too: WordPress imports (via `WP_IMPORTING`), the conversion tool's bulk
-     * field writes, and the fixture seeder's empty-rules-then-restore window —
+     * too: WordPress imports (via `WP_IMPORTING`) and the fixture seeder's
+     * empty-rules-then-restore window —
      * which would otherwise be reopened by this dispatcher, since the pass now
      * happens on a drain that lands after the seeder restores the rules. It
      * was named for the queue because the queue was the only thing that
@@ -733,11 +740,13 @@ class TermDispatcher {
      * Bulk apply is gated too, unlike its unconverted-handler path. A site that
      * has turned recomputation off has turned it off; a bulk button that
      * quietly recomputed anyway would be the surprise, not the restriction.
+     * Public so the existing-posts applier can ask BEFORE a batch and refuse
+     * outright, rather than run a batch of no-op passes and report it done.
      *
      * @param int $post_id Entity a pass is about to run for.
      * @return bool
      */
-    private function pass_enabled(int $post_id): bool {
+    public function pass_enabled(int $post_id): bool {
         $default = !(defined('WP_IMPORTING') && WP_IMPORTING);
         $default = (bool) apply_filters('meta_conductor_acf_reapply_enabled', $default, $post_id);
 
@@ -745,56 +754,49 @@ class TermDispatcher {
     }
 
     /**
-     * The enabled rules of this kind, in authored order.
+     * Run one disabled row in every pass until cleared — the one-time run
+     * over a disabled rule. Request-scoped; the stored row is never written.
+     * Its caller must clear it in `finally`, so it cannot leak into a save
+     * later in the same request.
+     *
+     * @param string $fingerprint `RuleChoice::fingerprint()` of the row.
+     */
+    public static function include_row(string $fingerprint): void {
+        self::$included = $fingerprint;
+    }
+
+    /** Drop the `include_row()` override. */
+    public static function clear_included_row(): void {
+        self::$included = null;
+    }
+
+    /**
+     * The enabled rules of this kind, plus the included row if any, in
+     * authored order.
      *
      * @return array[] Rows carrying `type`.
      */
     private function ordered_rules(): array {
-        return StorageFactory::get_instance()
-            ->get_kind_rules(self::KIND, ['enabled' => true]);
+        return RuleChoice::pass_rows(
+            StorageFactory::get_instance()->get_kind_rules(self::KIND),
+            self::$included
+        );
     }
 
     /**
      * Apply ONE rule to ONE entity. The sole caller of `apply_to_post()`.
      *
-     * Static, and taking its handler explicitly, so the paths that hold a rule
-     * and a handler but not a dispatcher — `process_existing_posts()`, the bulk
-     * primitive — route through the same choke point rather than reaching past
-     * it. That is the property H13 checks: one call site in the whole plugin.
-     *
-     * Takes the pass lock when none is held, so a bulk apply's own writes are
-     * suppressed exactly as a pass's are. When a pass IS in progress the lock
-     * is already held and this leaves it alone — releasing it here would open
-     * the rest of the pass to its own echo.
+     * Private, and called only from `run_pass()`, which already holds the pass
+     * lock — so every execution is inside an ordered pass. H13 checks both call
+     * sites: this one, and `apply_to_post()`'s single one in here.
      *
      * @param int                $post_id Entity to apply to.
      * @param array              $rule    One enabled rule (canonical shape).
      * @param UnifiedHandlerBase $handler The rule type's handler.
      * @return bool Whether the rule actually changed the entity.
      */
-    public static function apply(int $post_id, array $rule, UnifiedHandlerBase $handler): bool {
-        // Key the lock on the handler's OWN kind, not this dispatcher's. The
-        // base bulk path routes any handler through here, and locking a
-        // non-term apply under `term_rules` would suppress the term enqueues
-        // its write legitimately causes. `title_slug` no longer arrives this
-        // way — it overrides bulk onto `FormatDispatcher::run_pass()` (#64) —
-        // but the derivation stays, because it is the general statement and the
-        // next non-term kind would otherwise reintroduce the bug.
-        $kind = StorageFactory::get_instance()->get_kind_for_type($handler->rule_type());
-        $key  = self::pass_key($kind !== '' ? $kind : self::KIND, $post_id);
-        $held = isset(self::$passes[$key]);
-
-        if (!$held) {
-            self::$passes[$key] = true;
-        }
-
-        try {
-            return $handler->apply_to_post($post_id, $rule);
-        } finally {
-            if (!$held) {
-                unset(self::$passes[$key]);
-            }
-        }
+    private static function apply(int $post_id, array $rule, UnifiedHandlerBase $handler): bool {
+        return $handler->apply_to_post($post_id, $rule);
     }
 
     // ------------------------------------------------------------------- lock

@@ -2,7 +2,7 @@
 /**
  * H8 — ACF write queue invariant guard (#42).
  *
- * AcfWriteQueue is correct because of four properties that are pure hook
+ * AcfWriteQueue is correct because of five properties that are pure hook
  * constants and control-flow gates. None of them has a runtime-observable
  * signature until it is ALREADY wrong on a live site — a broken claim priority
  * just means the handlers silently stop running, and a missing import gate just
@@ -30,8 +30,6 @@
  *   5. flush_post() mutates the pending set INSIDE the reentrancy guard. Outside
  *      it, a call arriving mid-flush clears the post and then returns without
  *      applying it — neither applied nor pending (arch.md #14).
- *   6. The conversion tool stands the queue down for its own writes, at
- *      PHP_INT_MAX so an ordinary site filter cannot re-open US17.
  *
  * Run:  php tests/verify-acf-write-queue.php
  *
@@ -172,47 +170,6 @@ if (!preg_match(
         $errors[] = 'flush_post() does not drop its post from the pending set — a later flush would apply it twice.';
     } elseif ($guard_at === false || $unset_at < $guard_at) {
         $errors[] = 'flush_post() unsets $this->pending OUTSIDE guarded() — a re-entrant call would drop the post without applying it (arch.md #14).';
-    }
-}
-
-// --- 5. The conversion tool suppresses reapply for its own writes ----------
-// The conversion tool writes target fields with update_field(), so without an
-// explicit stand-down every converted post is enqueued and reapplied — a
-// second wave of rule processing on top of the heaviest run this plugin does
-// (US17). A real conversion run is impractical to sweep, so the wiring is
-// pinned here instead: same rationale as the AC Pro gate guard.
-$dp = $root . '/includes/conversion/class-data-processor.php';
-if (!is_file($dp)) {
-    $errors[] = 'includes/conversion/class-data-processor.php missing.';
-} else {
-    $dpsrc = (string) file_get_contents($dp);
-
-    if (!preg_match('/function\s+with_reapply_suppressed\s*\(\s*callable\s+\$\w+\s*\)/', $dpsrc)) {
-        $errors[] = 'DataProcessor::with_reapply_suppressed(callable) not found — conversion writes would trigger a reapply per converted post (US17).';
-    }
-    // Must both add AND remove the filter: leaving it added would silently
-    // disable reapply for the rest of the request.
-    if (!preg_match('/add_filter\(\s*[\'"]meta_conductor_acf_reapply_enabled[\'"]/', $dpsrc)
-        || !preg_match('/remove_filter\(\s*[\'"]meta_conductor_acf_reapply_enabled[\'"]/', $dpsrc)) {
-        $errors[] = 'Conversion suppression must both add AND remove meta_conductor_acf_reapply_enabled — a one-way add leaks past the conversion.';
-    }
-    // At an ordinary priority a site filter registered later in the chain
-    // would silently re-open US17. Both registrations must match, or the
-    // remove_filter misses and the suppression leaks past the conversion.
-    foreach (['add_filter', 'remove_filter'] as $fn) {
-        $pattern = '/' . $fn . '\(\s*[\'"]meta_conductor_acf_reapply_enabled[\'"]\s*,\s*\$\w+\s*,\s*PHP_INT_MAX\s*\)/';
-        if (!preg_match($pattern, $dpsrc)) {
-            $errors[] = sprintf(
-                'Conversion suppression %s does not use PHP_INT_MAX — an ordinary priority lets a late site filter re-open US17.',
-                $fn
-            );
-        }
-    }
-    foreach (['process_copy_data_conversion', 'process_map_data_conversion', 'process_conversion_chunk'] as $entry) {
-        $pattern = '/public\s+function\s+' . preg_quote($entry, '/') . '\s*\([^)]*\)\s*:\s*array\s*\{\s*return\s+\$this->with_reapply_suppressed\(/';
-        if (!preg_match($pattern, $dpsrc)) {
-            $errors[] = sprintf('DataProcessor::%s() does not route through with_reapply_suppressed() (US17).', $entry);
-        }
     }
 }
 

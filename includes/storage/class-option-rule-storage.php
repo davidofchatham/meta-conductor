@@ -223,7 +223,7 @@ class OptionRuleStorage implements RuleStorage {
 
     /**
      * Read the raw, cached settings option — including non-rule global keys
-     * (e.g. conflict_handling_overrides, manual_processing_enabled) that the
+     * (e.g. conflict_handling_overrides) that the
      * rule-typed accessors don't expose. Served from the same request cache as
      * get_rules(), so callers needn't issue a second get_option().
      *

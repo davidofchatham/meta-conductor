@@ -41,8 +41,11 @@
 
 require_once __DIR__ . '/sweep-lib.php';
 
+use BWS\MetaConductor\Core\ExistingPostsApplier;
+use BWS\MetaConductor\Core\RuleChoice;
 use BWS\MetaConductor\Core\TermDispatcher;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
+use BWS\MetaConductor\Storage\StorageFactory;
 
 $step = $args[0] ?? 'order';
 
@@ -177,14 +180,13 @@ switch ( $step ) {
 		mc60_dispatcher()->drain();
 		$by_save = mc60_slugs( $subject );
 
-		// (3) bulk apply → the handler's own bulk entry point, which asks the
-		//     dispatcher for a full pass rather than looping its own rules.
+		// (3) bulk apply → the existing-posts applier on the hierarchy row
+		//     (authored first), which drains each post in reach.
 		mc60_arm( $subject );
-		$handlers = \BWS\MetaConductor\TaxonomyManager::get_instance();
-		$ref      = new ReflectionProperty( $handlers, 'handlers' );
-		$ref->setAccessible( true );
-		$hier = $ref->getValue( $handlers )['hierarchical'];
-		$hier->process_existing_posts( 200, 0 );
+		$rows   = StorageFactory::get_instance()->get_kind_rules( OptionRuleStorage::KIND_TERM );
+		$choice = RuleChoice::encode( OptionRuleStorage::KIND_TERM, 0, $rows[0] );
+		ExistingPostsApplier::start_over( $choice );
+		ExistingPostsApplier::run_batch( $choice );
 		$by_bulk = mc60_slugs( $subject );
 
 		WP_CLI::log( '[term write] ' . implode( ', ', $by_terms ) );

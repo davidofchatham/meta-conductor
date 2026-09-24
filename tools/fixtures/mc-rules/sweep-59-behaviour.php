@@ -261,7 +261,7 @@ try {
         $keeps->invoke($handler, ['slug_mode' => 'replace', 'slug_pattern' => '{default_slug}-x']) === true);
 
     // The title half of that decision is pattern_uses_default_title(), and it is
-    // what apply_to_data()/preview_rule() feed the guard flag from — so assert
+    // what resolve_rule_output() feeds the guard flag from — so assert
     // the WIRING, not just the flag's semantics. Without this the sweep proves
     // the guard parameter behaves and says nothing about which value production
     // hands it, which is exactly where the flip-flop lived.

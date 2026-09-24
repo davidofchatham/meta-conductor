@@ -1,6 +1,6 @@
 name: Committed-content guards
 
-# Tracked prose accretes -- docs/future-work.md, ROADMAP.md and CHANGELOG.md are
+# Tracked prose accretes -- docs/future-work.md, docs/architecture.md and CHANGELOG.md are
 # committed and edited continuously, and this repo is public. A rule that lives only
 # in prose fails silently; the guards here are rules that already failed that way and
 # became scanners. Each step names its own why, and each is paired with a step that

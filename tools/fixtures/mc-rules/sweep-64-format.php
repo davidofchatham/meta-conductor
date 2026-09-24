@@ -47,8 +47,11 @@
 
 require_once __DIR__ . '/sweep-lib.php';
 
+use BWS\MetaConductor\Core\ExistingPostsApplier;
+use BWS\MetaConductor\Core\RuleChoice;
 use BWS\MetaConductor\Core\TermDispatcher;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
+use BWS\MetaConductor\Storage\StorageFactory;
 
 $step = $args[0] ?? 'terms';
 
@@ -242,18 +245,17 @@ switch ( $step ) {
 		break;
 
 	// ----------------------------------------------------------------- bulk
-	// Bulk apply provokes a full ordered FORMAT pass per post rather than
-	// applying the handler's rules itself, so a bulk run and a save over the
-	// same rule set cannot diverge WITHIN the kind. It is deliberately the
-	// format pass ALONE — the title/slug button reconciles titles, the term
-	// list's own button reconciles terms — so the subject is armed with the
-	// term state already settled, and the cross-kind order is left to the
-	// `terms` step where it belongs.
+	// Bulk is the existing-posts applier on the title rule: a drain per post,
+	// so a bulk run and a save over the same rule set cannot diverge. No term
+	// rule is kept — the drain would run it over every other mc_item too, and
+	// only titles are put back — so the subject is armed with the term state
+	// already settled, and the cross-kind order is left to the `terms` step
+	// where it belongs.
 	//
 	// Bulk legitimately reaches every mc_item, so the others are snapshotted
 	// and put back.
 	case 'bulk':
-		mc64_setup( array( $HIER ), mc64_title_rule() );
+		mc64_setup( array(), mc64_title_rule() );
 		mc64_arm( $subject, array(
 			mc_tid( 'topic-harbor' ),
 			mc_tid( 'topic-coastal' ),
@@ -272,9 +274,12 @@ switch ( $step ) {
 			}
 		}
 
-		$handler = \BWS\MetaConductor\TaxonomyManager::get_instance()->get_handler( 'title_slug' );
-		$handler->process_existing_posts( 200, 0 );
+		$rows   = StorageFactory::get_instance()->get_kind_rules( OptionRuleStorage::KIND_FORMAT );
+		$choice = RuleChoice::encode( OptionRuleStorage::KIND_FORMAT, 0, $rows[0] );
+		ExistingPostsApplier::start_over( $choice );
+		$run     = ExistingPostsApplier::run_batch( $choice );
 		$by_bulk = mc64_title( $subject );
+		WP_CLI::log( '[bulk apply] ' . $run['message'] );
 
 		foreach ( $others as $id => $pair ) {
 			mc64_rename_back( $id, $pair[0], $pair[1] );

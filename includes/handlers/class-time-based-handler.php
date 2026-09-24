@@ -330,30 +330,6 @@ class TimeBasedHandler extends UnifiedHandlerBase {
     }
     
     /**
-     * Process existing posts for testing/manual application
-     */
-    public function process_existing_posts($batch_size = 50, $offset = 0) {
-        $result = parent::process_existing_posts($batch_size, $offset);
-        
-        // Add specific message for time-based processing
-        if ($result['processed'] > 0) {
-            $current_date = current_time('Y-m-d');
-            $active_rules_count = count($this->get_active_rules($current_date));
-            
-            $result['message'] = sprintf(
-                __('Processed %d posts for time-based rules (date: %s, %d active rules). %d of %d total posts complete.', 'meta-conductor'),
-                $result['processed'],
-                $current_date,
-                $active_rules_count,
-                min($offset + $batch_size, $result['total']),
-                $result['total']
-            );
-        }
-        
-        return $result;
-    }
-    
-    /**
      * Get rules summary for admin display
      */
     public function get_rules_summary() {

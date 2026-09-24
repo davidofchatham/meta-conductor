@@ -7,15 +7,24 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Apply to existing posts** — a new page under the Meta Conductor menu. Pick any configured rule (term or format, disabled ones included, or "All enabled rules"), optionally limit the run to the first N posts, then Preview or Apply. A run passes every enabled rule, in your order, over the posts the chosen rule can reach — the same pass a save runs. Choosing a disabled rule runs it once without enabling it. Large runs stop after about 20 seconds; Continue picks up where the last batch stopped, and Start over begins again. Each batch reports "processed / total" and the first 20 posts it changed. Apply asks for confirmation first: a run writes to posts and cannot be undone, so take a backup. A notice under the rule lists on both rule tabs links to it, replacing the "coming soon" notice on the format tab.
+
 ### Fixed
 
 - **An ACF-reference rule now points at the field you picked, even when another field shares its name.** The rule stored the field's name, and ACF resolves a bare name to whichever matching field it happens to return first — so on a site with two separately-created relationship fields sharing a name (the same post type is enough; so is the same field group), a rule could read the wrong field's configuration. The visible symptoms were a reverse lookup that found no partner and silently fell back to the slow scan, and posts skipped by the eligibility filter because the wrong field's target post types were consulted. It was also intermittent: ACF caches the first resolution of a name for the rest of the request, so whether the rule behaved depended on what else had touched that field beforehand.
 
   Rules now store the field's key alongside its name and resolve by key. Existing rules are upgraded in place on the next admin page load — **except** a rule whose field name matches more than one field, which is left exactly as it behaves today rather than guessed at. To fix one of those, re-pick the field: every option in the two field dropdowns now names its field group, so two same-named fields can be told apart. The interim warning about same-named fields is gone from the *Monitored relationship field* help text.
 
+- **A title/slug rule no longer leaves a revision when it renames a post that had none.** The rename's own revision was only suppressed once the post already had a revision history, so the first rule-driven rename of a post always added one.
+
 ### Removed
 
 - Two unused admin AJAX endpoints (`bws_validate_acf_field`, `bws_get_acf_fields`). Nothing called them.
+- The per-handler bulk path: `process_existing_posts()` on the handler base and its time-based and title/slug overrides, `TitleSlugHandler::preview_rule()`, and the two title/slug admin AJAX endpoints built on them (`bws_title_slug_preview`, `bws_title_slug_process_existing`). No screen called the endpoints. The existing-posts applier is the one bulk path now: it drains each post, so a bulk run is the same ordered pass a save runs.
+- **The Data Conversion page and the `wp bws-conversion` WP-CLI command.** The *Apply to existing posts* page replaces it; the Copy and Map jobs come back later as rule types you apply through that page. The upgrade unschedules the page's hourly cleanup event and drops its two scratch tables (`bws_acf_conversion_preview`, `bws_acf_conversion_sessions`), which held only previews and in-flight sessions. The unused `includes/support/` classes (batch processor, field converter, value mapper, term migrator) went with it.
+- The *Enable bulk "Apply to Existing Posts" actions* toggle on the General tab. Nothing read it, so turning it off never hid anything. The update deletes its saved value.
 
 ## [0.8.2] — 2026-09-18
 

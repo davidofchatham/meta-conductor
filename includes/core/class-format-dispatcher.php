@@ -154,6 +154,13 @@ class FormatDispatcher {
     private static ?self $instance = null;
 
     /**
+     * Fingerprint of a disabled row passes run anyway; see `include_row()`.
+     *
+     * @var string|null
+     */
+    private static ?string $included = null;
+
+    /**
      * @param array<string,UnifiedHandlerBase> $handlers Handlers as built by
      *                                                   TaxonomyManager, keyed
      *                                                   by handler type.
@@ -218,13 +225,10 @@ class FormatDispatcher {
     /**
      * One full ordered pass over one entity's format rules.
      *
-     * Every enabled rule of this kind, in AUTHORED order, each handed the
-     * post data the previous one returned. One write at the end, and only when
-     * the data actually differs from what the row holds.
-     *
-     * The lock is `TermDispatcher`'s, keyed on THIS kind — so a format write
-     * cannot re-enter a format pass, while the term marks that write
-     * legitimately raises are still heard (they are keyed on the term kind).
+     * `compute()`, then `write()`. The lock is `TermDispatcher`'s, keyed on
+     * THIS kind — so a format write cannot re-enter a format pass, while the
+     * term marks that write legitimately raises are still heard (they are
+     * keyed on the term kind).
      *
      * @param int $post_id Entity to pass over.
      * @return int Rules that changed the post data.
@@ -237,55 +241,19 @@ class FormatDispatcher {
             return 0;
         }
 
-        $post = get_post($post_id);
-        if (!$post instanceof \WP_Post) {
-            return 0;
-        }
-        // An autosave/revision is not the entity, and an auto-draft or trashed
-        // post is not one an author is looking at — renaming either produces a
-        // title nobody asked for on a row nobody sees.
-        if (\wp_is_post_autosave($post_id) || \wp_is_post_revision($post_id)) {
-            return 0;
-        }
-        if (in_array($post->post_status, ['auto-draft', 'trash'], true)) {
-            return 0;
-        }
-
         TermDispatcher::take_pass(self::KIND, $post_id);
         $changed = 0;
 
         try {
-            $before  = $this->post_data($post);
-            $data    = $before;
-            $claimed = [];
-
-            foreach ($this->ordered_rules() as $rule) {
-                $type = (string) ($rule['type'] ?? '');
-
-                if (!in_array($type, self::CONVERTED_TYPES, true)) {
-                    continue;
+            $result = $this->compute($post_id);
+            if ($result !== null) {
+                $this->write($post_id, $result);
+                foreach ($result['applied'] as $step) {
+                    if ($step['after'] !== $step['before']) {
+                        $changed++;
+                    }
                 }
-                if (isset($claimed[$type])) {
-                    continue;
-                }
-                $handler = $this->handlers[$type] ?? null;
-                if (!$handler) {
-                    continue;
-                }
-
-                $next = self::apply($post_id, $data, $rule, $handler);
-                if ($next === null) {
-                    continue;
-                }
-
-                $claimed[$type] = true;
-                if ($next !== $data) {
-                    $changed++;
-                }
-                $data = $next;
             }
-
-            $this->write($post_id, $before, $data);
         } finally {
             TermDispatcher::release_pass(self::KIND, $post_id);
         }
@@ -294,12 +262,70 @@ class FormatDispatcher {
     }
 
     /**
+     * What a pass over this entity would produce, writing nothing.
+     *
+     * Every enabled rule of this kind, in AUTHORED order, each handed the
+     * post data the previous one returned. The pass writes the result; the
+     * format preview only shows it (FW-16 03). No pass lock is taken, because
+     * nothing here writes.
+     *
+     * @param int $post_id Entity to compute for.
+     * @return array{before: array, after: array, applied: array[]}|null Null
+     *         when the entity takes no format pass. `applied` holds one
+     *         `{rule, before, after}` per rule that answered, in order.
+     */
+    public function compute(int $post_id): ?array {
+        $post = $post_id > 0 ? get_post($post_id) : null;
+        if (!$post instanceof \WP_Post) {
+            return null;
+        }
+        // An autosave/revision is not the entity, and an auto-draft or trashed
+        // post is not one an author is looking at — renaming either produces a
+        // title nobody asked for on a row nobody sees.
+        if (\wp_is_post_autosave($post_id) || \wp_is_post_revision($post_id)) {
+            return null;
+        }
+        if (in_array($post->post_status, ['auto-draft', 'trash'], true)) {
+            return null;
+        }
+
+        $before  = $this->post_data($post);
+        $data    = $before;
+        $applied = [];
+        $claimed = [];
+
+        foreach ($this->ordered_rules() as $rule) {
+            $type = (string) ($rule['type'] ?? '');
+
+            if (!in_array($type, self::CONVERTED_TYPES, true)) {
+                continue;
+            }
+            if (isset($claimed[$type])) {
+                continue;
+            }
+            $handler = $this->handlers[$type] ?? null;
+            if (!$handler) {
+                continue;
+            }
+
+            $next = self::apply($post_id, $data, $rule, $handler);
+            if ($next === null) {
+                continue;
+            }
+
+            $claimed[$type] = true;
+            $applied[]      = ['rule' => $rule, 'before' => $data, 'after' => $next];
+            $data           = $next;
+        }
+
+        return ['before' => $before, 'after' => $data, 'applied' => $applied];
+    }
+
+    /**
      * Apply ONE rule to ONE entity's data. The sole caller of `apply_to_data()`.
      *
-     * Static and taking its handler explicitly, mirroring
-     * `TermDispatcher::apply()`, so any path that holds a rule and a handler
-     * but not a dispatcher routes through the same choke point. That single
-     * call site is what H13 checks.
+     * Private, and called only from `compute()` — the pass and its preview —
+     * so every format execution is one of those two. H13 checks the call site.
      *
      * @param int                $post_id Entity being passed over.
      * @param array              $data    Post data as the previous rule left it.
@@ -307,12 +333,16 @@ class FormatDispatcher {
      * @param UnifiedHandlerBase $handler The rule type's handler.
      * @return array|null Post data, or null when the rule does not apply here.
      */
-    public static function apply(int $post_id, array $data, array $rule, UnifiedHandlerBase $handler): ?array {
+    private static function apply(int $post_id, array $data, array $rule, UnifiedHandlerBase $handler): ?array {
         return $handler->apply_to_data($data, $post_id, $rule);
     }
 
     /**
-     * Write the pass's result, if it differs from what the row holds.
+     * Write a `compute()` result: each answering rule's `commit_data()`, then
+     * the row, if it differs from what the row holds.
+     *
+     * The per-rule state goes first because it did when the appliers wrote it
+     * themselves, and the row update below can drain a re-pass that reads it.
      *
      * ONE UPDATE FOR THE WHOLE LIST — the appliers do not write, so however
      * many rules matched, an author's save costs at most one extra row update.
@@ -320,12 +350,21 @@ class FormatDispatcher {
      * The extra revision that update would otherwise create is suppressed: it
      * is our write, not the author's, and a revision per save whose only
      * difference is a rule's own output is noise in a history the author reads.
+     * Through `wp_revisions_to_keep`, not `wp_save_post_revision_post_has_changed`:
+     * WP consults the latter only when the post already HAS a revision, so a
+     * post with none still got one per write — one per post on a bulk run
+     * (FW-16 04). Zero-to-keep returns before WP saves or prunes anything.
      *
      * @param int   $post_id Entity.
-     * @param array $before  Post data as the row holds it.
-     * @param array $after   Post data as the pass left it.
+     * @param array $result  What `compute()` returned for it.
      */
-    private function write(int $post_id, array $before, array $after): void {
+    private function write(int $post_id, array $result): void {
+        foreach ($result['applied'] as $step) {
+            $this->handlers[$step['rule']['type']]->commit_data($step['before'], $step['after'], $post_id, $step['rule']);
+        }
+
+        $before = $result['before'];
+        $after  = $result['after'];
         $update = ['ID' => $post_id];
 
         // SLASHED, because `wp_update_post()` expects it. It slashes only the
@@ -347,11 +386,11 @@ class FormatDispatcher {
             return;
         }
 
-        add_filter('wp_save_post_revision_post_has_changed', '__return_false');
+        add_filter('wp_revisions_to_keep', '__return_zero');
         try {
             wp_update_post($update);
         } finally {
-            remove_filter('wp_save_post_revision_post_has_changed', '__return_false');
+            remove_filter('wp_revisions_to_keep', '__return_zero');
         }
     }
 
@@ -384,14 +423,15 @@ class FormatDispatcher {
      * Same two-filter shape and the same reasoning as
      * `TermDispatcher::pass_enabled()`: `meta_conductor_acf_reapply_enabled` is
      * the established "do not recompute rules for this post" switch and every
-     * existing user of it — imports, the conversion tool, the fixture seeder's
+     * existing user of it — imports and the fixture seeder's
      * empty-rules window — means it here too; `meta_conductor_format_pass_enabled`
      * is the finer control for a site that wants term passes without renames.
+     * Public for the same reason as the term dispatcher's.
      *
      * @param int $post_id Entity a pass is about to run for.
      * @return bool
      */
-    private function pass_enabled(int $post_id): bool {
+    public function pass_enabled(int $post_id): bool {
         $default = !(defined('WP_IMPORTING') && WP_IMPORTING);
         $default = (bool) apply_filters('meta_conductor_acf_reapply_enabled', $default, $post_id);
 
@@ -399,12 +439,33 @@ class FormatDispatcher {
     }
 
     /**
-     * The enabled rules of this kind, in authored order.
+     * Run one disabled row in every pass until cleared — the one-time run
+     * over a disabled rule. It runs at its authored position, so it can win
+     * its type's first match. Request-scoped; the stored row is never
+     * written. Its caller must clear it in `finally`, so it cannot leak into
+     * a save later in the same request.
+     *
+     * @param string $fingerprint `RuleChoice::fingerprint()` of the row.
+     */
+    public static function include_row(string $fingerprint): void {
+        self::$included = $fingerprint;
+    }
+
+    /** Drop the `include_row()` override. */
+    public static function clear_included_row(): void {
+        self::$included = null;
+    }
+
+    /**
+     * The enabled rules of this kind, plus the included row if any, in
+     * authored order.
      *
      * @return array[] Rows carrying `type`.
      */
     private function ordered_rules(): array {
-        return StorageFactory::get_instance()
-            ->get_kind_rules(self::KIND, ['enabled' => true]);
+        return RuleChoice::pass_rows(
+            StorageFactory::get_instance()->get_kind_rules(self::KIND),
+            self::$included
+        );
     }
 }

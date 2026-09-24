@@ -57,6 +57,14 @@
  *      handler back on its own hook orders itself against the term pass by
  *      priority again; an applier called outside a pass writes nothing at all,
  *      which reads as an unconfigured rule.
+ *  13. The EXISTING-POSTS APPLIER (FW-16 04) is a provocation, not a pass: it
+ *      calls `drain_post()` per post and `drain()` once, never an `apply()`,
+ *      an applier seam or a write primitive, and clears its one-time row
+ *      override in a `finally`. Its preview (FW-16 06) reads the format pass
+ *      through `compute()`, never drains, and clears the override the same way.
+ *  14. Each dispatcher's `apply()` has ONE caller, its own pass: `run_pass()`
+ *      for terms, `compute()` for formats. Nothing outside a dispatcher names
+ *      either (FW-16 07, which retired the per-handler bulk path).
  *
  * Run:  php tests/verify-term-dispatcher.php
  *
@@ -189,7 +197,7 @@ if (!preg_match('/function\s+pass_enabled\s*\(\s*int\s+\$\w+\s*\)\s*:\s*bool\s*\
     foreach (
         [
             'WP_IMPORTING'                        => 'the import stand-down',
-            'meta_conductor_acf_reapply_enabled'  => "the established off switch (the seeder and conversion tool use it, and the pass now runs after the seeder restores its rules)",
+            'meta_conductor_acf_reapply_enabled'  => "the established off switch (the seeder uses it, and the pass now runs after the seeder restores its rules)",
             'meta_conductor_term_pass_enabled'    => 'the pass-specific override',
         ] as $needle => $what
     ) {
@@ -839,7 +847,7 @@ if (!is_file($format_file)) {
         foreach (
             [
                 'WP_IMPORTING'                       => 'the import stand-down',
-                'meta_conductor_acf_reapply_enabled' => 'the established off switch (the seeder and conversion tool ride on it)',
+                'meta_conductor_acf_reapply_enabled' => 'the established off switch (the seeder rides on it)',
                 'meta_conductor_format_pass_enabled' => 'the format-specific override',
             ] as $needle => $what
         ) {
@@ -863,10 +871,13 @@ if (!is_file($format_file)) {
         // The ADD, specifically: `remove_filter` on the same name lives two
         // lines below, so a plain substring search still matches a write whose
         // suppression has been deleted.
-        if (!preg_match('/add_filter\(\s*[\'"]wp_save_post_revision_post_has_changed[\'"]/', $write_body)) {
+        // `wp_revisions_to_keep`, not `wp_save_post_revision_post_has_changed`:
+        // WP asks the latter only once a revision exists, so a post with none
+        // still got one per write (FW-16 04).
+        if (!preg_match('/add_filter\(\s*[\'"]wp_revisions_to_keep[\'"]/', $write_body)) {
             $errors[] = 'FormatDispatcher::write() does not suppress the revision its update creates — every save would leave an extra revision whose only difference is a rule\'s own output.';
         }
-        if (!preg_match('/remove_filter\(\s*[\'"]wp_save_post_revision_post_has_changed[\'"]/', $write_body)) {
+        if (!preg_match('/remove_filter\(\s*[\'"]wp_revisions_to_keep[\'"]/', $write_body)) {
             $errors[] = 'FormatDispatcher::write() suppresses the revision and never lifts the suppression — every later save in the request would silently stop creating revisions.';
         }
     }
@@ -1019,14 +1030,49 @@ foreach (($fmt_converted ?? []) as $type) {
         );
         continue;
     }
-    foreach (['wp_update_post', 'wp_insert_post'] as $effect) {
+    // The meta and option writes too, since FW-16 03: the compute step runs the
+    // appliers for a preview, so anything an applier writes is written by a
+    // preview. Per-rule state belongs in commit_data(), which only write() calls.
+    foreach (['wp_update_post', 'wp_insert_post', 'update_post_meta', 'update_option', 'write_rule_status'] as $effect) {
         if (preg_match('/\b' . preg_quote($effect, '/') . '\s*\(/', $applier)) {
             $errors[] = sprintf(
-                '%s::apply_to_data() calls %s() — a format applier returns data and the dispatcher performs the single write (#64).',
+                '%s::apply_to_data() calls %s() — a format applier returns data; the dispatcher writes the row and commit_data() the per-rule state (#64, FW-16 03).',
                 $handler_files[$type],
                 $effect
             );
         }
+    }
+}
+
+// --- 12j. The pass is compute, then write (FW-16 03) ------------------------
+// Compute is the format preview's entry point, so it must be the ONLY caller of
+// apply() — a second one would let a preview and a pass disagree — and it must
+// write nothing: no row, no meta, no option, and no pass lock, since a preview
+// is not a pass. write() is where the per-rule state lands, via commit_data().
+if (isset($fsrc)) {
+    $compute = null;
+    if (!preg_match('/public\s+function\s+compute\s*\(\s*int\s+\$\w+\s*\)\s*:\s*\?array\s*\{(.*?)\n    \}/s', $fsrc, $cm)) {
+        $errors[] = 'FormatDispatcher::compute(int $post_id): ?array not found — the format preview needs the pass without its write (FW-16 03).';
+    } else {
+        $compute = $cm[1];
+        if (substr_count($fsrc, 'self::apply(') !== 1 || strpos($compute, 'self::apply(') === false) {
+            $errors[] = 'FormatDispatcher::apply() must be called exactly once, from compute() — a preview and a pass must run the same rules the same way.';
+        }
+        foreach (['wp_update_post', 'update_post_meta', 'update_option', 'commit_data', '$this->write(', 'take_pass'] as $effect) {
+            if (strpos($compute, $effect) !== false) {
+                $errors[] = sprintf('FormatDispatcher::compute() reaches %s — compute must write nothing, or a preview writes (FW-16 03).', $effect);
+            }
+        }
+    }
+    if (isset($frm[1])) {
+        $compute_at = strpos($frm[1], '$this->compute(');
+        $write_at   = strpos($frm[1], '$this->write(');
+        if ($compute_at === false || $write_at === false || $write_at < $compute_at) {
+            $errors[] = 'FormatDispatcher::run_pass() is not compute() then write() — the pass and its preview would diverge (FW-16 03).';
+        }
+    }
+    if (isset($write_body) && strpos($write_body, 'commit_data(') === false) {
+        $errors[] = 'FormatDispatcher::write() does not call commit_data() — the idempotency meta and rule status would never be written (FW-16 03).';
     }
 }
 
@@ -1064,6 +1110,76 @@ foreach (['drain', 'drain_post'] as $entry) {
             $entry
         );
     }
+}
+
+// --- 13. The existing-posts applier goes through the queue (FW-16 04) -------
+// Bulk and save cannot disagree only if bulk IS a save's pass: it names posts
+// and asks the drain for them, and never reaches an applier or a write itself.
+// A one-time run's override must be cleared in a `finally`, or a throwing batch
+// leaves a disabled rule running in every save for the rest of the request.
+$applier_file = $root . '/includes/core/class-existing-posts-applier.php';
+if (!is_file($applier_file)) {
+    $errors[] = 'includes/core/class-existing-posts-applier.php not found — bulk apply has no single path through the queue (FW-16 04).';
+} else {
+    $asrc  = $strip_comments((string) file_get_contents($applier_file));
+    $batch = $method_body($asrc, 'run_batch');
+    if ($batch === null) {
+        $errors[] = 'ExistingPostsApplier::run_batch() not found (FW-16 04).';
+    } else {
+        if (strpos($batch, '->drain_post(') === false || strpos($batch, '->drain()') === false) {
+            $errors[] = 'run_batch() must pass each post with drain_post() and then drain() once, so fan-out and capture marks settle before the report (FW-16 04).';
+        }
+        if (!preg_match('/\}\s*finally\s*\{[^}]*clear_included_row\(/s', $batch)) {
+            $errors[] = 'run_batch() does not clear the one-time row override in a `finally` — a throwing batch would leave a disabled rule running in every later pass of the request (FW-16 04).';
+        }
+    }
+    // The preview shows what the pass WOULD produce, so it asks the format
+    // dispatcher's compute step — never a pass, which writes (FW-16 06).
+    $preview = $method_body($asrc, 'preview');
+    if ($preview === null) {
+        $errors[] = 'ExistingPostsApplier::preview() not found (FW-16 06).';
+    } else {
+        if (strpos($preview, '->compute(') === false) {
+            $errors[] = 'preview() must read the format result through FormatDispatcher::compute() — the one path that shows a pass without writing it (FW-16 06).';
+        }
+        if (strpos($preview, 'drain') !== false) {
+            $errors[] = 'preview() reaches the drain — a drained post is a WRITTEN post; the preview must write nothing (FW-16 06).';
+        }
+        if (!preg_match('/\}\s*finally\s*\{[^}]*clear_included_row\(/s', $preview)) {
+            $errors[] = 'preview() does not clear the one-time row override in a `finally` — a throwing preview would leave a disabled rule running in every later pass of the request (FW-16 06).';
+        }
+    }
+    foreach (array_merge(['::apply(', 'apply_to_data', 'run_pass(', 'wp_update_post', 'update_post_meta'], $write_primitives) as $effect) {
+        if (strpos($asrc, $effect) !== false) {
+            $errors[] = sprintf('The existing-posts applier reaches %s — it may only name posts to the queue; the pass does the work, or bulk and save can diverge (FW-16 04).', rtrim($effect, '('));
+        }
+    }
+}
+
+// --- 14. Each dispatcher's apply() has ONE caller: its own pass (FW-16 07) --
+// Group 5 pins the applier seam to apply(); this pins apply() to the pass. The
+// retired per-handler bulk path called TermDispatcher::apply() one rule at a
+// time, outside any ordered pass — a bulk run that could disagree with a save.
+// The format side's pass path is compute() (group 12j), which run_pass() and
+// the applier's preview both go through.
+$foreign_apply = [];
+foreach ($php_files as $file) {
+    $rel = str_replace($normalized_root, '', $file);
+    foreach (preg_split('/\R/', $strip_comments((string) file_get_contents($file))) as $n => $line) {
+        if (preg_match('/\b(?:Term|Format)Dispatcher::apply\s*\(/', $line)) {
+            $foreign_apply[] = $rel . ':' . ($n + 1);
+        }
+    }
+}
+if ($foreign_apply) {
+    $errors[] = sprintf(
+        'A dispatcher apply() is called from outside its own pass (%s) — bulk goes through the existing-posts applier and the drain (FW-16 07).',
+        implode(', ', $foreign_apply)
+    );
+}
+$term_pass = $method_body($src, 'run_pass');
+if (preg_match_all('/\b(?:self|static)::apply\s*\(/', $src) !== 1 || $term_pass === null || !preg_match('/\bself::apply\s*\(/', $term_pass)) {
+    $errors[] = 'TermDispatcher::apply() must be called exactly once, from run_pass() — anything else executes a rule outside the ordered pass (FW-16 07).';
 }
 
 if ($errors) {

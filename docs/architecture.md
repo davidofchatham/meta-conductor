@@ -1,6 +1,6 @@
 # Architecture
 
-How Meta Conductor's pieces fit together. For project status and phase plan see [ROADMAP.md](../ROADMAP.md). For release log see [CHANGELOG.md](../CHANGELOG.md).
+How Meta Conductor's pieces fit together. For planned work see [future-work.md](future-work.md). For release log see [CHANGELOG.md](../CHANGELOG.md).
 
 > **Scope note.** This file is intentionally conceptual. Per-class detail (exact class names, method lists, file paths) drifts every phase and is NOT mirrored here — the code is the source of truth for that. PHPDoc on the enforcing class carries the load-bearing invariants.
 
@@ -283,11 +283,11 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
     queue cannot tell a user edit from a bulk rewrite; both are `update_field()`.
     So a bulk writer that does not want one full rule recompute per post has to
     say so, via `meta_conductor_acf_reapply_enabled`, scoped to the call rather
-    than the request. Three known cases: WordPress imports (automatic, via
-    `WP_IMPORTING`), the conversion tool, and the fixture seeder — which learned
-    it the hard way, its "empty the rules → write content → restore the rules"
-    model silently broken by a flush that now runs AFTER the restore. The
-    plugin's own bulk apply action is exempt: it does not write through ACF.
+    than the request. Two known cases: WordPress imports (automatic, via
+    `WP_IMPORTING`) and the fixture seeder — which learned it the hard way, its
+    "empty the rules → write content → restore the rules" model silently broken
+    by a flush that now runs AFTER the restore. The plugin's own bulk apply is
+    exempt: it does not write through ACF.
 
 17. **A converted handler owns no hooks, and the dispatcher is the only caller
     of `apply_to_post`.** This INVERTS the rule every hook-driven handler was
@@ -487,17 +487,7 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
       queue removes. H13 pins the sequence, both halves: that the format pass is
       reached from the drain at all, and that it is reached *after* the term
       pass.
-    - **The format applier seam is data-in/data-out**, not `apply_to_post`. A
-      term rule's effect is a set of term relationships, so its applier writes
-      and reports a boolean; a format rule's effect is the post ROW, and several
-      rules can land on one row. So `apply_to_data(array, int, array): ?array`
-      hands post data along the list and the *dispatcher* performs the single
-      `wp_update_post()` at the end — one save, one row update, however many
-      rules matched. It is also the shape the deferred two-phase split needs:
-      when `field_transformation` lands, a pre-write phase can feed
-      `wp_insert_post_data`'s own `$data` to the same seam. `null` means "this
-      rule does not apply here", which is distinct from returning the data
-      unchanged, and the difference is what decides first-match-wins.
+    - **The format applier seam is data-in/data-out**, not `apply_to_post`. A term rule's effect is a set of term relationships, so its applier writes and reports a boolean; a format rule's effect is the post ROW, and several rules can land on one row. So `apply_to_data(array, int, array): ?array` hands post data along the list and the *dispatcher* performs the single `wp_update_post()` at the end — one save, one row update, however many rules matched. It is also the shape the deferred two-phase split needs: when `field_transformation` lands, a pre-write phase can feed `wp_insert_post_data`'s own `$data` to the same seam. `null` means "this rule does not apply here", which is distinct from returning the data unchanged, and the difference is what decides first-match-wins. The applier writes nothing at all, not even per-rule state: `FormatDispatcher::run_pass()` is `compute()` (runs the appliers, returns before/after, writes nothing — the format preview's entry point) then `write()`, which calls each answering rule's `commit_data()` (title/slug's idempotency meta and status record) before the row update.
     - **The pre-write phase could not survive the conversion.** `title_slug` ran
       half of itself on `wp_insert_post_data` so the editor saw final values
       without a second update. That half runs *before* terms land, so a
@@ -602,7 +592,7 @@ The settings UI is a React app provided by `tdrayson/wp-wireframe`. Config class
 |---|---|
 | Auto-Set & Restrict | The collision advisory (#65), then **the ordered term-rule list** ([TermRulesConfig](../includes/admin/config/class-term-rules-config.php)) — all six term rule types (#57, #58) |
 | Format & Transform | The collision advisory (#65), then **the ordered format-rule list** ([FormatRulesConfig](../includes/admin/config/class-format-rules-config.php)) — `title_slug` today (#59). Future: date / name / phone field transforms |
-| General | Per-taxonomy claim overrides, manual processing toggle |
+| General | Per-taxonomy claim overrides |
 
 Boot path: [class-wireframe-bootstrap.php](../includes/admin/class-wireframe-bootstrap.php) calls `\Wireframe\App::boot()` on `init` priority 10 with the assembled config.
 
@@ -703,11 +693,11 @@ Invariants asserted by H10 (`tests/verify-kind-lists.php`):
 - **`KIND_TYPES` is the enumeration.** `all_types()` flattens it and `get_kind_for_type()` inverts it, so there is no second list for it to drift out of step with — which is what lets `get_enabled_rules()` carry no fallback.
 - **A write that was not needed is not a failure** (#27): `save_rule()` / `import_rules()` / `bulk_toggle_rules()` report success when the data already matches storage, and failure only when a re-read shows it did not persist.
 
-## Data conversion tool
+## Apply to existing posts
 
-[includes/conversion/](../includes/conversion/)
+[includes/core/class-existing-posts-applier.php](../includes/core/class-existing-posts-applier.php) · [includes/admin/class-apply-page.php](../includes/admin/class-apply-page.php)
 
-Multi-step wizard for ACF → taxonomy data migration. Lives at the `meta-conductor-conversion` admin subpage under the Meta Conductor menu. Phase 7 of the [ROADMAP](../ROADMAP.md) absorbs this into a unified Migration / Preview tool that also hosts Title/Slug bulk-apply and future field transforms.
+The plugin's one bulk mechanism. A Wireframe subpage under the Meta Conductor menu picks a rule (or *All enabled rules*) and hands the choice to `ExistingPostsApplier`, which names every post in that rule's reach to the term dispatcher and drains it — the same full ordered pass a save runs, never a separate apply. A disabled choice is a one-time run for that batch only; large runs proceed in time-boxed batches behind Continue. It replaced the Data Conversion page, whose Copy / Map jobs return as rule types applied through it.
 
 ## Diagnostics page
 
@@ -715,15 +705,17 @@ Multi-step wizard for ACF → taxonomy data migration. Lives at the `meta-conduc
 
 Subpage under Meta Conductor menu. Visible when `WP_DEBUG` is on, or via filter `bws_meta_conductor_show_diagnostics`. Dev-only Storage section dumps the raw option contents; future user-level sections (rule counts, handler status) will hang here without dev mode.
 
-## Spec lifecycle
+## Naming surface
 
-**Specs live in GitHub Issues.** A substantive feature gets an issue written by the `to-spec` skill — problem statement, user stories, implementation and testing decisions — and that issue is the spec for as long as the work is in flight. Decisions taken mid-build are recorded as comments on it, so the issue stays the single account of what was agreed and why.
+The rename splits by layer: anything users, translators or the WP admin UI see drops `BWS`; anything stored in a global PHP / JS / DB namespace where another plugin could collide keeps it.
 
-Post-ship, the durable parts move to where the next person will actually look:
+| Layer | Value |
+|---|---|
+| Plugin display name | `Meta Conductor` |
+| Plugin folder / main file / text domain | `meta-conductor` / `meta-conductor.php` / `meta-conductor` |
+| Plugin constants | `META_CONDUCTOR_*` (no `BWS_META_MANAGER_*` / `BWS_TAX_MANAGER_*` aliases — no external consumer) |
+| PHP namespace | `BWS\MetaConductor\` |
+| Option keys, nonce actions, hook/filter prefix | `bws_meta_conductor_*` |
+| JS localized object | `bwsMetaConductor` |
 
-1. Load-bearing invariants migrate into PHPDoc on the enforcing function (closest to the code), or into this file when conceptual — as the ACF write queue's did, above.
-2. Behaviour changes and new filters go to CHANGELOG.
-3. Anything still open becomes its own Issue.
-4. The spec issue closes with the PR.
-
-**A root `SPEC.md` is no longer used** (retired 2026-08-12, at 0.7.0). It duplicated the issue, drifted from it, and its `§Vn` numbering restarted every feature — so a citation like "§V14" means a different invariant depending on which retired spec it came from. Historic `SPEC §Vn` references surviving in code comments are dead links; read them as "there was once a spec section here", and prefer the invariant list above. Replace them opportunistically as each file is touched, rather than in one sweep.
+The internal function names `bws_meta_manager_init` and `bws_taxonomy_manager_activate` / `_deactivate` / `_uninstall` still carry the old prefix. They are not user-facing and nothing depends on them, so rename them when you are already touching that code.

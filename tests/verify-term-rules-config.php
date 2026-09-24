@@ -41,6 +41,7 @@ if (!function_exists('__'))         { function __($t, $d = 'default') { return $
 if (!function_exists('esc_html'))   { function esc_html($t) { return $t; } }
 if (!function_exists('esc_html__')) { function esc_html__($t, $d = 'default') { return $t; } }
 if (!function_exists('esc_attr__')) { function esc_attr__($t, $d = 'default') { return $t; } }
+if (!function_exists('esc_url'))    { function esc_url($u) { return $u; } }
 if (!function_exists('add_action')) { function add_action() {} }
 if (!function_exists('add_filter')) { function add_filter() {} }
 if (!function_exists('_n'))         { function _n($s, $p, $n, $d = 'default') { return $n === 1 ? $s : $p; } }
@@ -546,6 +547,9 @@ $check('the collision advisory leads the term tab (#65)',
     $auto_set['sections'][0]['id'] === $KIND . '_collisions');
 $check('and the ordered term list follows it',
     $auto_set['sections'][1]['fields'][0]['id'] === $KIND);
+// The note under the list is the tab's only pointer to the Apply page.
+$check('the Apply page note is on the tab',
+    ($auto_set['sections'][1]['fields'][1]['id'] ?? '') === 'term_rules_apply_note');
 
 // --- Report. ----------------------------------------------------------------
 

@@ -17,7 +17,7 @@
  *                           title/slug is its only member today; the list
  *                           shape landed in #59 so the second format rule
  *                           type is an addition, not a restructure.
- *   - General             — default claim per taxonomy, processing options.
+ *   - General             — default claim per taxonomy.
  *
  * Both rule tabs are now one ordered repeater bound to their effect kind's
  * persisted list, which is the whole of ADR 0003 decision 1 on the config
