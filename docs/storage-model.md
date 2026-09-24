@@ -1,6 +1,6 @@
 # Storage Model — Options vs CPT
 
-**Source of truth + working doc for how Meta Conductor stores rules.** Tracked (human-facing). The ROADMAP "Storage Model Decision Framework" points here.
+**Source of truth + working doc for how Meta Conductor stores rules.** Tracked (human-facing).
 
 Run every new rule type through this before implementing it. Record the decision + reasoning in the [Assignments](#assignments) table.
 

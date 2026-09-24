@@ -1,6 +1,6 @@
 # Architecture
 
-How Meta Conductor's pieces fit together. For project status and phase plan see [ROADMAP.md](../ROADMAP.md). For release log see [CHANGELOG.md](../CHANGELOG.md).
+How Meta Conductor's pieces fit together. For planned work see [future-work.md](future-work.md). For release log see [CHANGELOG.md](../CHANGELOG.md).
 
 > **Scope note.** This file is intentionally conceptual. Per-class detail (exact class names, method lists, file paths) drifts every phase and is NOT mirrored here — the code is the source of truth for that. PHPDoc on the enforcing class carries the load-bearing invariants.
 
@@ -705,15 +705,17 @@ The plugin's one bulk mechanism. A Wireframe subpage under the Meta Conductor me
 
 Subpage under Meta Conductor menu. Visible when `WP_DEBUG` is on, or via filter `bws_meta_conductor_show_diagnostics`. Dev-only Storage section dumps the raw option contents; future user-level sections (rule counts, handler status) will hang here without dev mode.
 
-## Spec lifecycle
+## Naming surface
 
-**Specs live in GitHub Issues.** A substantive feature gets an issue written by the `to-spec` skill — problem statement, user stories, implementation and testing decisions — and that issue is the spec for as long as the work is in flight. Decisions taken mid-build are recorded as comments on it, so the issue stays the single account of what was agreed and why.
+The rename splits by layer: anything users, translators or the WP admin UI see drops `BWS`; anything stored in a global PHP / JS / DB namespace where another plugin could collide keeps it.
 
-Post-ship, the durable parts move to where the next person will actually look:
+| Layer | Value |
+|---|---|
+| Plugin display name | `Meta Conductor` |
+| Plugin folder / main file / text domain | `meta-conductor` / `meta-conductor.php` / `meta-conductor` |
+| Plugin constants | `META_CONDUCTOR_*` (no `BWS_META_MANAGER_*` / `BWS_TAX_MANAGER_*` aliases — no external consumer) |
+| PHP namespace | `BWS\MetaConductor\` |
+| Option keys, nonce actions, hook/filter prefix | `bws_meta_conductor_*` |
+| JS localized object | `bwsMetaConductor` |
 
-1. Load-bearing invariants migrate into PHPDoc on the enforcing function (closest to the code), or into this file when conceptual — as the ACF write queue's did, above.
-2. Behaviour changes and new filters go to CHANGELOG.
-3. Anything still open becomes its own Issue.
-4. The spec issue closes with the PR.
-
-**A root `SPEC.md` is no longer used** (retired 2026-08-12, at 0.7.0). It duplicated the issue, drifted from it, and its `§Vn` numbering restarted every feature — so a citation like "§V14" means a different invariant depending on which retired spec it came from. Historic `SPEC §Vn` references surviving in code comments are dead links; read them as "there was once a spec section here", and prefer the invariant list above. Replace them opportunistically as each file is touched, rather than in one sweep.
+The internal function names `bws_meta_manager_init` and `bws_taxonomy_manager_activate` / `_deactivate` / `_uninstall` still carry the old prefix. They are not user-facing and nothing depends on them, so rename them when you are already touching that code.
