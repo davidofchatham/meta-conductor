@@ -185,12 +185,10 @@ A rule whose **claim** is *restricting* (today only level-restriction) declares 
 
 - **Detail home:** none yet. Context: CLAUDE.md don't 6f(e), [architecture.md](architecture.md) invariant 18, fixture matrix §7 restore gotcha.
 - **Progress:** Not started. Documented as accepted behavior in [CHANGELOG.md](../CHANGELOG.md) under the live-rule-type policy.
-- **Open:** two independent halves, worth separating.
-  - **Scope.** A format rule has no way to say *which* provocations it answers — everything or nothing. The honest shape is **not** a per-rule "only on save" toggle: that recreates exactly the provocation-dependent behavior the dispatcher exists to remove ([CONTEXT.md](../CONTEXT.md) → **Pass**). More promising is making the **effect** conditional rather than the pass. A rule already recomputes from live state on every pass; what it could gain is a declared *stability* — "compute the slug once, then leave it" (`slug_locked_after_publish`) — which is a property of the rule's meaning rather than of how it was provoked, and composes with any provocation set. Title and slug want different answers: a title is cheap to change, a published slug is not.
-  - **Slug safety.** A rule-driven `post_name` change has no redirect and no audit trail, whoever provoked it. A term edit on a parent can rename a published child's slug and **WordPress leaves no redirect behind**, so an indexed URL 404s from an edit made on a different post. The reach is wider than it looks: on the mc-rules testbed, `sweep-63-acf-reference.php restore` writes a relationship field on the holder, which marks the referenced item dirty, which gives it a format pass, which renames it — nothing there is a save. Fix: write a `301` when a rule changes a published post's `post_name`, into a redirect plugin's store where one exists or a small owned table. Also worth a **dry-run** — the diagnostics page listing what the current rule set *would* rename, which is what an author actually wants before enabling a slug pattern on a live site.
-- **Blocked by:** — • **Interacts with:** FW-4, FW-6
+- **Open:** a format rule has no way to say *which* provocations it answers — everything or nothing. The honest shape is **not** a per-rule "only on save" toggle: that recreates exactly the provocation-dependent behavior the dispatcher exists to remove ([CONTEXT.md](../CONTEXT.md) → **Pass**). More promising is making the **effect** conditional rather than the pass. A rule already recomputes from live state on every pass; what it could gain is a declared *stability* — "compute the slug once, then leave it" (`slug_locked_after_publish`) — which is a property of the rule's meaning rather than of how it was provoked, and composes with any provocation set. Title and slug want different answers: a title is cheap to change, a published slug is not. What a slug change costs once it happens is FW-36.
+- **Blocked by:** — • **Interacts with:** FW-4, FW-6, FW-36
 
-**Why this is not a bug.** Both behaviors are documented, and the alternative — gating the format pass to save-shaped provocations — reintroduces the staleness #64 removed. This is a feature the model now has room for, not a regression to undo.
+**Why this is not a bug.** The behavior is documented, and the alternative — gating the format pass to save-shaped provocations — reintroduces the staleness #64 removed. This is a feature the model now has room for, not a regression to undo.
 
 #### FW-14 — Rule-type renaming on the domain axes
 
@@ -199,6 +197,19 @@ Current rule-type names conflate **basis**, **effect target** and **claim** into
 - **Detail home:** [ADR 0002](adr/0002-cross-rule-composition.md), where it was deferred. Axis definitions: [CONTEXT.md](../CONTEXT.md).
 - **Progress:** Not started. Storage keys (`related_rules`, `time_based_rules`, …) are unaffected — this is domain and UI vocabulary only.
 - **Blocked by:** `code:the Effect axis carries only term values` — renaming before it carries field, title and body-class values means minting names twice • **Interacts with:** FW-4, FW-5, FW-6
+
+#### FW-36 — Slug-change safety for format rules
+
+A format rule that changes a published post's `post_name` moves its URL. Since #64 that can follow from an edit to a *different* post — a parent's terms, a holder's relationship field — and since FW-16 from one bulk run across every post in a rule's reach. Every moved URL has to keep resolving, and the author has to be able to see what will move before it does.
+
+- **Detail home:** none yet.
+- **Progress:** Not started. Redirects are mostly covered by WordPress core already: the format dispatcher writes through `wp_update_post()`, so `wp_check_for_changed_slugs()` records the old slug as `_wp_old_slug` and `wp_old_slug_redirect()` answers the old URL's 404 with a `301`. Verified on the testbed (2026-09-24) for renames no save provoked. No redirect store and no redirect-plugin dependency are needed. The Apply page's format preview already shows the resulting slug for sample posts in one rule's reach.
+- **Open:**
+  - **Hierarchical post types.** Core skips them in `wp_check_for_changed_slugs()`, so a rule renaming a page or a hierarchical CPT leaves no redirect. Worth code only if a slug rule actually targets one — record and resolve the old slug the way core does. Until then a redirect plugin's slug monitor, enabled per post type, covers it per site.
+  - **Old-slug ambiguity.** `_wp_old_slug` is not unique: a pattern whose output churns can leave the same old slug on several posts, and core redirects to whichever it finds first. A diagnostics check at most, unless it shows up on a real site.
+  - **Full dry-run.** The Apply preview is a sample for one chosen rule. What an author wants before enabling a slug pattern on a live site is the whole list the current rule set *would* rename, including posts that only an indirect provocation would reach.
+  - **Audit trail.** A rule-driven rename leaves only the old-slug meta; nothing records which rule did it, or what provoked the pass.
+- **Blocked by:** — • **Interacts with:** FW-13, FW-16
 
 ---
 

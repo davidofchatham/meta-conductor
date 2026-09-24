@@ -151,7 +151,7 @@ Prior art: `verify-kind-lists.php` (option shim, projection), `verify-collision-
 - The post type converter — FW-15, its own tool.
 - Undo / rollback of a run. The confirm step recommends a backup instead.
 - Choosing posts by hand, by taxonomy, or by arbitrary query. The chosen rule's reach is the only selector, plus the limit.
-- Redirects for slugs a format run changes — already filed in FW-13.
+- Redirects for slugs a format run changes — already filed in FW-36.
 - Hiding the Wireframe Save button (upstream wp-wireframe#36).
 
 ## Further Notes
