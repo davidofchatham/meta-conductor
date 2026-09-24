@@ -15,14 +15,14 @@ Per entity: term pass, then format pass (each rule in authored order)
     ↓
 Handlers (one per rule type, appliers only)
     ↓
-Entity Abstraction (Core\Entity) + TermOperations / AcfBridge
+Shared primitives (TermOperations / AcfBridge)
     ↓
 WordPress core (posts, terms, users, comments)
 ```
 
 Key boundaries (the rules that matter, regardless of class names):
 
-- **Handlers never touch `get_post()` / `get_term()` / `get_user_meta()` directly** — they go through `Core\Entity`, the polymorphic wrapper over WP entities. Rule logic stays agnostic about the underlying WP storage.
+- **Handlers call WordPress core directly** for posts and terms. The shared primitives are `TermOperations` (apply / remove / membership, and `compute_end_state()` as the only encoding of merge / replace / skip) and `AcfBridge` (ACF taxonomy-field read / write). The old `Core\Entity` wrapper was never adopted by the dispatcher-era handlers and is deleted.
 - **Handlers never call `get_option()` directly** — they read/write through the storage layer (`Storage\StorageFactory`), which is also the canonical-shape adapter (see below).
 - **One `wp_options` key** (`bws_meta_conductor_settings`) holds every rule type, each an array of rule rows, plus a few global keys (per-taxonomy conflict overrides, manual-processing toggle).
 - **One handler base**: `UnifiedHandlerBase` (typed PHP 8.1 helpers, storage-backed), composing the `TermOperations` and `AcfBridge` traits. All 7 handlers extend it; the legacy `HandlerBase` was deleted in 0.6.0 when the last handler migrated.

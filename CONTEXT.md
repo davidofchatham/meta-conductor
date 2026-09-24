@@ -19,7 +19,7 @@ A named family of rules with shared structure and a dedicated handler (e.g. Temp
 The code that processes all rules of one rule type against entities.
 
 **Entity**:
-A post, term, or user a rule acts on. Wrapped by `BWS_Entity` so handlers stay entity-agnostic.
+A post, term, or user a rule acts on. The dispatchers queue and pass over entities; today every entity a pass reaches is a post.
 
 **Filter gate**:
 A rule's optional restriction selecting which posts it considers at all — its **source**. Today: post type + **post status** + taxonomy/term filters, plus — for a Temporal rule with a **field**-source boundary — an automatic **boundary-presence clause** (the post must have the boundary's meta key set; an `EXISTS`-on-key condition). The post-status filter selects which statuses a rule considers (e.g. only `publish`, or `publish`+`future`); empty = all. It is a *gate*, distinct from a future "set post status" *effect* — one decides whether the rule looks at a post, the other would change the post's status. Independent of the rule's main logic — a post must pass the filter gate *and* the rule's own logic to be acted on. The boundary-presence clause does double duty: it is the same `meta_query` the cron sweep uses to find candidate posts for that field, and it is what makes two Temporal rules reading *different* boundary keys provably disjoint (see **Boundary-key disjointness**).
