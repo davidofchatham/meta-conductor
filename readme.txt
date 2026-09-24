@@ -18,9 +18,8 @@ Meta Conductor adds rule-driven automation to WordPress taxonomies and meta fiel
 * Cascade terms from parent post to children
 * Generate titles and slugs from token patterns with collision avoidance
 * Restrict which depths of a hierarchical taxonomy a post may carry
-* One-shot ACF → taxonomy data conversion wizard
 
-Rules are authored as two ordered lists — one for rules that write terms, one for rules that format titles and slugs — and they run in the order you put them in. A bulk-apply tool reconciles existing posts.
+Rules are authored as two ordered lists — one for rules that write terms, one for rules that format titles and slugs — and they run in the order you put them in. The *Apply to existing posts* page runs them over posts that already exist.
 
 == Installation ==
 
@@ -32,9 +31,13 @@ Rules are authored as two ordered lists — one for rules that write terms, one 
 
 * WordPress 6.5 or higher
 * PHP 8.1 or higher (strictly enforced — plugin deactivates on older PHP)
-* Advanced Custom Fields Pro is required for ACF-driven rules and the Conversion tool
+* Advanced Custom Fields Pro is required for ACF-driven rules
 
 == Upgrade Notes ==
+
+= Unreleased =
+
+**The Data Conversion page and the `wp bws-conversion` WP-CLI command are gone.** The new *Apply to existing posts* page under the Meta Conductor menu replaces it: pick a rule, preview, apply. The Copy and Map jobs come back later as rule types applied through that page; until then, a conversion you still need has no in-plugin replacement. The update removes the page's scheduled cleanup and its two scratch tables automatically.
 
 = 0.8.1 =
 
@@ -61,6 +64,9 @@ Full detail, including the two post-status corrections and the storage migration
 See CHANGELOG.md in the plugin directory for the full release log.
 
 == Upgrade Notice ==
+
+= Unreleased =
+Data Conversion and `wp bws-conversion` are removed. The new Apply to existing posts page replaces them; Copy / Map return later as rule types.
 
 = 0.8.1 =
 Fixes a title/slug pattern built entirely from fields dropping tokens that matched the existing title. Posts saved under the broken rule need one re-save to correct, which also changes their slug.

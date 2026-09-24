@@ -14,8 +14,6 @@ use BWS\MetaConductor\Handlers\TimeBasedHandler;
 use BWS\MetaConductor\Handlers\RelatedPostTermsHandler;
 use BWS\MetaConductor\Handlers\HierarchicalLevelRestrictionHandler;
 use BWS\MetaConductor\Handlers\TitleSlugHandler;
-use BWS\MetaConductor\Conversion\ConversionManager;
-use BWS\MetaConductor\Conversion\ConversionCli;
 use BWS\MetaConductor\Core\AcfWriteQueue;
 use BWS\MetaConductor\Core\TermDispatcher;
 use BWS\MetaConductor\Core\FormatDispatcher;
@@ -36,11 +34,6 @@ class TaxonomyManager {
      * Handler instances
      */
     private $handlers = array();
-
-    /**
-     * Conversion manager instance
-     */
-    private $conversion_manager;
 
     /**
      * ACF write queue — AC-agnostic reapply trigger (#42).
@@ -74,19 +67,12 @@ class TaxonomyManager {
     }
 
     /**
-     * Get conversion manager instance
-     */
-    public function get_conversion_manager() {
-        return $this->conversion_manager;
-    }
-
-    /**
      * Get the ACF write queue (#42).
      *
      * Exposed so a behavior sweep can drive flush_post() directly — the Admin
      * Columns entry point is otherwise only reachable from an admin request
      * with AC Pro loaded, which WP-CLI cannot produce (AC returns early on
-     * !is_admin()). Mirrors get_conversion_manager().
+     * !is_admin()).
      *
      * @return AcfWriteQueue|null
      */
@@ -139,35 +125,16 @@ class TaxonomyManager {
         // Admin hooks
         if (is_admin()) {
             add_action('admin_menu', array($this, 'add_admin_menu'));
-            add_action('admin_enqueue_scripts', array($this, 'enqueue_admin_scripts'));
         }
         
         // AJAX hooks — data-population endpoints used by Wireframe field
-        // options + Title/Slug preview/apply. Phase 2c dropped 5 rule-
+        // options. Phase 2c dropped 5 rule-
         // management endpoints (toggle/delete/validate/process/search)
         // whose functionality is now in Wireframe's REST save path.
         add_action('wp_ajax_bws_get_taxonomy_terms', array($this, 'ajax_get_taxonomy_terms'));
         add_action('wp_ajax_bws_get_post_type_taxonomies', array($this, 'ajax_get_post_type_taxonomies'));
 		add_action('wp_ajax_bws_test_related_posts', array($this, 'ajax_test_related_posts'));
 		add_action('wp_ajax_bws_preview_level_restrictions', array($this, 'ajax_preview_level_restrictions'));
-
-		// Conversion AJAX hooks. All eight endpoints route to ConversionUi's
-		// canonical handlers (via the lazily-built instance on the conversion
-		// manager) so responses carry the exact shapes conversion-admin.js
-		// expects — indexed field arrays, bare taxonomy/term arrays, and the
-		// flat-POST config the estimate/process/preview paths read. Divergent
-		// local copies previously emitted key-preserved (object) field lists +
-		// wrapped payloads and read a nested config the client never sends,
-		// leaving every selector empty and every conversion inert.
-		add_action('wp_ajax_bws_meta_manager_conversion_get_fields', array($this, 'ajax_conversion_get_fields'));
-		add_action('wp_ajax_bws_meta_manager_conversion_get_taxonomies', array($this, 'ajax_conversion_get_taxonomies'));
-		add_action('wp_ajax_bws_meta_manager_conversion_get_taxonomy_terms', array($this, 'ajax_conversion_get_taxonomy_terms'));
-		add_action('wp_ajax_bws_meta_manager_conversion_get_options', array($this, 'ajax_conversion_get_options'));
-		add_action('wp_ajax_bws_meta_manager_conversion_estimate_size', array($this, 'ajax_conversion_estimate_size'));
-		add_action('wp_ajax_bws_meta_manager_conversion_process_chunk', array($this, 'ajax_conversion_process_chunk'));
-		add_action('wp_ajax_bws_meta_manager_conversion_process', array($this, 'ajax_conversion_process'));
-		add_action('wp_ajax_bws_meta_manager_conversion_preview', array($this, 'ajax_conversion_preview'));
-
     }
     
     /**
@@ -234,13 +201,6 @@ class TaxonomyManager {
             $this->register_admin_columns_v7_reapply();
         }
 
-        // Initialize conversion manager
-        $this->conversion_manager = new ConversionManager();
-
-        // Register WP-CLI commands if available
-        if (defined('WP_CLI') && WP_CLI) {
-            \WP_CLI::add_command('bws-conversion', new ConversionCli($this->conversion_manager));
-        }
     }
 
     /**
@@ -292,45 +252,6 @@ class TaxonomyManager {
      */
     public function add_admin_menu() {
         // Intentionally empty. Settings live at admin.php?page=meta-conductor.
-    }
-    
-    /**
-     * Enqueue admin scripts
-     */
-    public function enqueue_admin_scripts($hook) {
-        // Conversion subpage under meta-conductor menu. Wireframe handles
-        // its own asset enqueue for the settings page.
-        if ('meta-conductor_page_meta-conductor-conversion' !== $hook) {
-            return;
-        }
-
-        wp_enqueue_script(
-            'bws-conversion-admin',
-            META_CONDUCTOR_PLUGIN_URL . 'assets/js/conversion-admin.js',
-            array('jquery', 'wp-util'),
-            META_CONDUCTOR_VERSION,
-            true
-        );
-
-        wp_enqueue_style(
-            'bws-conversion-admin',
-            META_CONDUCTOR_PLUGIN_URL . 'assets/css/conversion-admin.css',
-            array(),
-            META_CONDUCTOR_VERSION
-        );
-
-        wp_localize_script('bws-conversion-admin', 'bwsMetaManager', array(
-            'ajaxUrl' => admin_url('admin-ajax.php'),
-            'nonce'   => wp_create_nonce('bws_meta_conductor_nonce'),
-            'strings' => array(
-                'confirm_conversion' => __('This will convert data. Continue?', 'meta-conductor'),
-                'confirm_preview'    => __('Generate preview?', 'meta-conductor'),
-                'skip_unmapped'      => __('Skip this value', 'meta-conductor'),
-                'processing'         => __('Processing...', 'meta-conductor'),
-                'complete'           => __('Conversion complete!', 'meta-conductor'),
-                'error'              => __('An error occurred. Please try again.', 'meta-conductor'),
-            )
-        ));
     }
     
 	/**
@@ -739,76 +660,5 @@ class TaxonomyManager {
 			'handlers_summary' => $handlers_summary,
 			'requirements' => $requirements
 		);
-	}
-
-	// ========================================
-	// Conversion AJAX Handlers
-	// ========================================
-
-	// The conversion handlers below are thin delegators to ConversionUi, which
-	// owns the canonical response shapes expected by conversion-admin.js.
-	// Keeping the wp_ajax_* method names stable avoids touching the hook
-	// registrations; the real logic lives in ConversionUi.
-
-	/**
-	 * AJAX handler: Get ACF fields (delegates to ConversionUi).
-	 */
-	public function ajax_conversion_get_fields() {
-		$this->conversion_manager->get_conversion_ui()->handle_get_fields_ajax();
-	}
-
-	/**
-	 * AJAX handler: Get taxonomies (delegates to ConversionUi).
-	 */
-	public function ajax_conversion_get_taxonomies() {
-		$this->conversion_manager->get_conversion_ui()->handle_get_taxonomies_ajax();
-	}
-
-	/**
-	 * AJAX handler: Get taxonomy terms (delegates to ConversionUi).
-	 */
-	public function ajax_conversion_get_taxonomy_terms() {
-		$this->conversion_manager->get_conversion_ui()->handle_get_taxonomy_terms_ajax();
-	}
-
-	/**
-	 * AJAX handler: Get field options (delegates to ConversionUi).
-	 */
-	public function ajax_conversion_get_options() {
-		$this->conversion_manager->get_conversion_ui()->handle_get_options_ajax();
-	}
-
-	// The estimate/chunk/process/preview handlers also delegate to ConversionUi.
-	// The local copies were either unimplemented stubs (estimate_size,
-	// process_chunk returned hardcoded zeros) or read a nested $_POST['config']
-	// array the client never sends — conversion-admin.js posts a FLAT FormData,
-	// which ConversionUi::sanitize_conversion_config() reads directly.
-
-	/**
-	 * AJAX handler: Estimate conversion size (delegates to ConversionUi).
-	 */
-	public function ajax_conversion_estimate_size() {
-		$this->conversion_manager->get_conversion_ui()->handle_estimate_conversion_size_ajax();
-	}
-
-	/**
-	 * AJAX handler: Process conversion chunk (delegates to ConversionUi).
-	 */
-	public function ajax_conversion_process_chunk() {
-		$this->conversion_manager->get_conversion_ui()->handle_chunked_conversion_ajax();
-	}
-
-	/**
-	 * AJAX handler: Process conversion (delegates to ConversionUi).
-	 */
-	public function ajax_conversion_process() {
-		$this->conversion_manager->get_conversion_ui()->handle_conversion_ajax();
-	}
-
-	/**
-	 * AJAX handler: Generate preview (delegates to ConversionUi).
-	 */
-	public function ajax_conversion_preview() {
-		$this->conversion_manager->get_conversion_ui()->handle_preview_ajax();
 	}
 }

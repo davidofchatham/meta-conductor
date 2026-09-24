@@ -726,8 +726,8 @@ class TermDispatcher {
      * TWO FILTERS, DELIBERATELY. `meta_conductor_acf_reapply_enabled` is
      * consulted first because it is the established "do not recompute rules
      * for this post" switch, and every existing user of it means that here
-     * too: WordPress imports (via `WP_IMPORTING`), the conversion tool's bulk
-     * field writes, and the fixture seeder's empty-rules-then-restore window —
+     * too: WordPress imports (via `WP_IMPORTING`) and the fixture seeder's
+     * empty-rules-then-restore window —
      * which would otherwise be reopened by this dispatcher, since the pass now
      * happens on a drain that lands after the seeder restores the rules. It
      * was named for the queue because the queue was the only thing that

@@ -283,11 +283,11 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
     queue cannot tell a user edit from a bulk rewrite; both are `update_field()`.
     So a bulk writer that does not want one full rule recompute per post has to
     say so, via `meta_conductor_acf_reapply_enabled`, scoped to the call rather
-    than the request. Three known cases: WordPress imports (automatic, via
-    `WP_IMPORTING`), the conversion tool, and the fixture seeder — which learned
-    it the hard way, its "empty the rules → write content → restore the rules"
-    model silently broken by a flush that now runs AFTER the restore. The
-    plugin's own bulk apply action is exempt: it does not write through ACF.
+    than the request. Two known cases: WordPress imports (automatic, via
+    `WP_IMPORTING`) and the fixture seeder — which learned it the hard way, its
+    "empty the rules → write content → restore the rules" model silently broken
+    by a flush that now runs AFTER the restore. The plugin's own bulk apply is
+    exempt: it does not write through ACF.
 
 17. **A converted handler owns no hooks, and the dispatcher is the only caller
     of `apply_to_post`.** This INVERTS the rule every hook-driven handler was
@@ -693,11 +693,11 @@ Invariants asserted by H10 (`tests/verify-kind-lists.php`):
 - **`KIND_TYPES` is the enumeration.** `all_types()` flattens it and `get_kind_for_type()` inverts it, so there is no second list for it to drift out of step with — which is what lets `get_enabled_rules()` carry no fallback.
 - **A write that was not needed is not a failure** (#27): `save_rule()` / `import_rules()` / `bulk_toggle_rules()` report success when the data already matches storage, and failure only when a re-read shows it did not persist.
 
-## Data conversion tool
+## Apply to existing posts
 
-[includes/conversion/](../includes/conversion/)
+[includes/core/class-existing-posts-applier.php](../includes/core/class-existing-posts-applier.php) · [includes/admin/class-apply-page.php](../includes/admin/class-apply-page.php)
 
-Multi-step wizard for ACF → taxonomy data migration. Lives at the `meta-conductor-conversion` admin subpage under the Meta Conductor menu. Phase 7 of the [ROADMAP](../ROADMAP.md) replaces it with an *Apply to existing posts* page that runs configured rules over existing content, and deletes this subsystem; its Copy / Map flows return as rule types.
+The plugin's one bulk mechanism. A Wireframe subpage under the Meta Conductor menu picks a rule (or *All enabled rules*) and hands the choice to `ExistingPostsApplier`, which names every post in that rule's reach to the term dispatcher and drains it — the same full ordered pass a save runs, never a separate apply. A disabled choice is a one-time run for that batch only; large runs proceed in time-boxed batches behind Continue. It replaced the Data Conversion page, whose Copy / Map jobs return as rule types applied through it.
 
 ## Diagnostics page
 

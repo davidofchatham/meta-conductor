@@ -11,8 +11,6 @@
 
 namespace BWS\MetaConductor\Admin;
 
-use BWS\MetaConductor\TaxonomyManager;
-use BWS\MetaConductor\Conversion\ConversionUi;
 use BWS\MetaConductor\Handlers\HierarchicalHandler;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 use BWS\MetaConductor\Storage\RuleStorage;
@@ -28,7 +26,6 @@ class WireframeBootstrap {
      */
     public static function init(): void {
         add_action('init', [self::class, 'boot'], 10);
-        add_action('admin_menu', [self::class, 'register_subpages'], 11);
 
         // Snapshot every row title in the ordered term-rule list
         // (architecture.md → The ordered rule repeaters).
@@ -997,55 +994,6 @@ class WireframeBootstrap {
         }
 
         return $tax->label ?: $slug;
-    }
-
-    /**
-     * Register subpages hanging off the meta-conductor top-level menu.
-     *
-     * Wireframe registers the parent via add_menu_page() at admin_menu
-     * priority 10; subpages hook at 11 so the parent exists.
-     */
-    public static function register_subpages(): void {
-        if (!function_exists('acf_get_field_groups')) {
-            // Conversion needs ACF; skip submenu when unavailable.
-            return;
-        }
-
-        add_submenu_page(
-            'meta-conductor',
-            __('Data Conversion', 'meta-conductor'),
-            __('Data Conversion', 'meta-conductor'),
-            'manage_options',
-            'meta-conductor-conversion',
-            [self::class, 'render_conversion_page']
-        );
-    }
-
-    /**
-     * Render callback for the Data Conversion subpage.
-     */
-    public static function render_conversion_page(): void {
-        if (!class_exists(ConversionUi::class) || !class_exists(TaxonomyManager::class)) {
-            wp_die(esc_html__('Conversion components unavailable.', 'meta-conductor'));
-        }
-
-        $plugin             = TaxonomyManager::get_instance();
-        $conversion_manager = method_exists($plugin, 'get_conversion_manager') ? $plugin->get_conversion_manager() : null;
-
-        if (!$conversion_manager) {
-            echo '<div class="wrap"><h1>' . esc_html__('Data Conversion', 'meta-conductor') . '</h1>';
-            echo '<div class="notice notice-error"><p>' . esc_html__('Conversion manager not initialized.', 'meta-conductor') . '</p></div>';
-            echo '</div>';
-            return;
-        }
-
-        $conversion_ui = new ConversionUi(
-            $conversion_manager->get_field_mapper(),
-            $conversion_manager->get_data_processor(),
-            $conversion_manager->get_preview_system()
-        );
-
-        $conversion_ui->render_page();
     }
 
     /**

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Meta Conductor
  * Plugin URI: https://github.com/davidofchatham/meta-conductor
- * Description: Unified meta and taxonomy management with hierarchical inheritance, entity relationships, data conversion, and intelligent automation
+ * Description: Unified meta and taxonomy management with hierarchical inheritance, entity relationships, and intelligent automation
  * Version: 0.8.2
  * Author: David Mitchell (Bridge Web Solutions) and Claude AI
  * License: GPL-2.0-or-later
@@ -228,36 +228,6 @@ if (!function_exists('bws_meta_manager_init')) {
 			KEY applied_at (applied_at)
 		) $charset_collate;";
 
-		// ACF conversion preview table
-		$preview_table = $wpdb->prefix . 'bws_acf_conversion_preview';
-		$preview_sql = "CREATE TABLE $preview_table (
-			id mediumint(9) NOT NULL AUTO_INCREMENT,
-			session_id varchar(32) NOT NULL,
-			post_id bigint(20) NOT NULL,
-			field_key varchar(255) NOT NULL,
-			old_value longtext,
-			new_value longtext,
-			conversion_type varchar(50) NOT NULL,
-			created_at datetime DEFAULT CURRENT_TIMESTAMP,
-			PRIMARY KEY (id),
-			KEY session_id (session_id),
-			KEY post_id (post_id),
-			KEY created_at (created_at)
-		) $charset_collate;";
-
-		// ACF conversion sessions table
-		$sessions_table = $wpdb->prefix . 'bws_acf_conversion_sessions';
-		$sessions_sql = "CREATE TABLE $sessions_table (
-			id bigint(20) NOT NULL AUTO_INCREMENT,
-			session_id varchar(32) NOT NULL,
-			session_data longtext NOT NULL,
-			created_at datetime NOT NULL,
-			updated_at datetime NOT NULL,
-			PRIMARY KEY (id),
-			UNIQUE KEY session_id (session_id),
-			KEY created_at (created_at)
-		) $charset_collate;";
-
 		// Relationship tracking table
 		$relationship_table = $wpdb->prefix . 'bws_relationship_log';
 		$relationship_sql = "CREATE TABLE $relationship_table (
@@ -294,16 +264,12 @@ if (!function_exists('bws_meta_manager_init')) {
 		// Execute dbDelta to create tables
 		require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
 		dbDelta($log_sql);
-		dbDelta($preview_sql);
-		dbDelta($sessions_sql);
 		dbDelta($relationship_sql);
 		dbDelta($queue_sql);
 
 		// Verify all tables were created successfully
 		$required_tables = [
 			'bws_meta_conductor_log' => 'Enhanced log table with entity support',
-			'bws_acf_conversion_preview' => 'ACF conversion preview data',
-			'bws_acf_conversion_sessions' => 'Conversion session tracking',
 			'bws_relationship_log' => 'Relationship tracking',
 			'bws_batch_queue' => 'Background job queue',
 		];
@@ -401,8 +367,30 @@ if (!function_exists('bws_meta_manager_init')) {
 			// RENAME TABLE to preserve existing log rows.
 			bws_meta_conductor_migrate_log_table();
 
+			// The Data Conversion page was deleted with the Apply page's arrival.
+			// Its hourly cleanup event would otherwise keep firing into a hook
+			// nothing listens on, and its two scratch tables (previews, sessions)
+			// have no reader left. Both idempotent.
+			wp_clear_scheduled_hook('bws_meta_manager_conversion_cleanup');
+			bws_meta_conductor_drop_conversion_tables();
+
 			update_option('bws_meta_conductor_version', META_CONDUCTOR_VERSION);
 			bws_taxonomy_manager_clear_caches();
+		}
+	}
+
+	/**
+	 * Drop the deleted Data Conversion tool's scratch tables.
+	 *
+	 * They held only previews and in-flight sessions, which the tool's own
+	 * hourly cron already expired — nothing durable is lost.
+	 */
+	function bws_meta_conductor_drop_conversion_tables() {
+		global $wpdb;
+
+		foreach (['bws_acf_conversion_preview', 'bws_acf_conversion_sessions'] as $t) {
+			$table_name = $wpdb->prefix . $t;
+			$wpdb->query("DROP TABLE IF EXISTS `$table_name`"); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 		}
 	}
 

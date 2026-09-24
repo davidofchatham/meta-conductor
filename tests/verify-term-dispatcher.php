@@ -197,7 +197,7 @@ if (!preg_match('/function\s+pass_enabled\s*\(\s*int\s+\$\w+\s*\)\s*:\s*bool\s*\
     foreach (
         [
             'WP_IMPORTING'                        => 'the import stand-down',
-            'meta_conductor_acf_reapply_enabled'  => "the established off switch (the seeder and conversion tool use it, and the pass now runs after the seeder restores its rules)",
+            'meta_conductor_acf_reapply_enabled'  => "the established off switch (the seeder uses it, and the pass now runs after the seeder restores its rules)",
             'meta_conductor_term_pass_enabled'    => 'the pass-specific override',
         ] as $needle => $what
     ) {
@@ -847,7 +847,7 @@ if (!is_file($format_file)) {
         foreach (
             [
                 'WP_IMPORTING'                       => 'the import stand-down',
-                'meta_conductor_acf_reapply_enabled' => 'the established off switch (the seeder and conversion tool ride on it)',
+                'meta_conductor_acf_reapply_enabled' => 'the established off switch (the seeder rides on it)',
                 'meta_conductor_format_pass_enabled' => 'the format-specific override',
             ] as $needle => $what
         ) {

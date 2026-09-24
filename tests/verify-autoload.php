@@ -79,13 +79,6 @@ $classes = [
     'BWS\\MetaConductor\\Handlers\\RelatedPostTermsHandler',
     'BWS\\MetaConductor\\Handlers\\HierarchicalLevelRestrictionHandler',
     'BWS\\MetaConductor\\Handlers\\TitleSlugHandler',
-    // Conversion\
-    'BWS\\MetaConductor\\Conversion\\ConversionManager',
-    'BWS\\MetaConductor\\Conversion\\ConversionCli',
-    'BWS\\MetaConductor\\Conversion\\ConversionUi',
-    'BWS\\MetaConductor\\Conversion\\FieldMapper',
-    'BWS\\MetaConductor\\Conversion\\DataProcessor',
-    'BWS\\MetaConductor\\Conversion\\PreviewSystem',
     // Admin\
     'BWS\\MetaConductor\\Admin\\Diagnostics',
     'BWS\\MetaConductor\\Admin\\WireframeBootstrap',
@@ -103,19 +96,10 @@ $classes = [
     'BWS\\MetaConductor\\Admin\\Config\\TermRulesConfig',
     'BWS\\MetaConductor\\Admin\\Config\\FormatRulesConfig',
     'BWS\\MetaConductor\\Admin\\Config\\WireframeConfig',
-    // Support\ (concrete)
-    'BWS\\MetaConductor\\Support\\BatchProcessor',
-    'BWS\\MetaConductor\\Support\\ValueMapper',
-    'BWS\\MetaConductor\\Support\\FieldConverter',
-    'BWS\\MetaConductor\\Support\\TermMigrator',
 ];
 
 $interfaces = [
     'BWS\\MetaConductor\\Storage\\RuleStorage',
-    'BWS\\MetaConductor\\Support\\BatchProcessorInterface',
-    'BWS\\MetaConductor\\Support\\ValueMapperInterface',
-    'BWS\\MetaConductor\\Support\\FieldConverterInterface',
-    'BWS\\MetaConductor\\Support\\TermMigratorInterface',
 ];
 
 // Handler traits composed into UnifiedHandlerBase (0.6.3). class_exists() does

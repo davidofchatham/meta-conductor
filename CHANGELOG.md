@@ -23,6 +23,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Two unused admin AJAX endpoints (`bws_validate_acf_field`, `bws_get_acf_fields`). Nothing called them.
 - The per-handler bulk path: `process_existing_posts()` on the handler base and its time-based and title/slug overrides, `TitleSlugHandler::preview_rule()`, and the two title/slug admin AJAX endpoints built on them (`bws_title_slug_preview`, `bws_title_slug_process_existing`). No screen called the endpoints. The existing-posts applier is the one bulk path now: it drains each post, so a bulk run is the same ordered pass a save runs.
+- **The Data Conversion page and the `wp bws-conversion` WP-CLI command.** The *Apply to existing posts* page replaces it; the Copy and Map jobs come back later as rule types you apply through that page. The upgrade unschedules the page's hourly cleanup event and drops its two scratch tables (`bws_acf_conversion_preview`, `bws_acf_conversion_sessions`), which held only previews and in-flight sessions. The unused `includes/support/` classes (batch processor, field converter, value mapper, term migrator) went with it.
 
 ## [0.8.2] — 2026-09-18
 

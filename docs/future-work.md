@@ -216,8 +216,8 @@ Take a defined group of posts — all descendants of a page, or all posts in a t
 A dedicated admin page that runs a chosen configured rule — or all enabled rules — over the posts that already exist, as a full ordered pass. Rules otherwise act only on save, so this is how a new or changed rule reaches existing content. Replaces the Data Conversion page; was the "Unified Migration / Preview tool" with a recipe engine until restarted 2026-09-23.
 
 - **Detail home:** [ROADMAP.md](../ROADMAP.md) Phase 7.
-- **Progress:** Not started. Shape settled 2026-09-23: rule dropdown (disabled rows included as one-time runs, plus "All enabled rules"), full-pass semantics, format-rule preview, term-rule limit + change report, time-boxed Continue batches, Data Conversion + `includes/support/` deleted in the same release. The Wireframe `action` field (1.0.6) carries the page's buttons, so no custom JS.
-- **Open:** build contract written as `.scratch/apply-existing/spec.md` (2026-09-23); nine build tickets cut under `.scratch/apply-existing/issues/` (2026-09-23), frontier 01 + 03.
+- **Progress:** Built on branch `claude/apply-existing-7`, unmerged (2026-09-24): all nine tickets under `.scratch/apply-existing/issues/`. Rule choice codec + reach, the dispatchers' one-time row override, the format pass split into compute + write, the applier (one batch, then time-boxed Continue batches, then format preview), `process_existing_posts()` and the title/slug AJAX endpoints retired, the Wireframe Apply page, and Data Conversion + `includes/support/` deleted with the upgrade unscheduling its cron event and dropping its tables. H-gate `tests/verify-apply-existing.php`; behavior sweep `sweep-apply-existing.php`.
+- **Open:** merge the branch, release (version bump + tag), then lift the spec into `docs/design-history/`. Copy / Map return as rule types (`related`, FW-4 `field_transformation`).
 - **Blocked by:** — • **Interacts with:** FW-4, FW-15, FW-23, FW-31, FW-32, FW-33
 - **Phase:** 7
 

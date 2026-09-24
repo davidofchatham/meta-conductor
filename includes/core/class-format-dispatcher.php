@@ -423,7 +423,7 @@ class FormatDispatcher {
      * Same two-filter shape and the same reasoning as
      * `TermDispatcher::pass_enabled()`: `meta_conductor_acf_reapply_enabled` is
      * the established "do not recompute rules for this post" switch and every
-     * existing user of it — imports, the conversion tool, the fixture seeder's
+     * existing user of it — imports and the fixture seeder's
      * empty-rules window — means it here too; `meta_conductor_format_pass_enabled`
      * is the finer control for a site that wants term passes without renames.
      * Public for the same reason as the term dispatcher's.
