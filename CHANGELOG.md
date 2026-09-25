@@ -7,6 +7,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **A site updating from before 0.8.0 must pass through 0.9.x.** The one-time migrations off the pre-0.8.0 rule storage are gone (see *Removed*). A site that still holds pre-0.8.0 rules and no ordered rule lists now shows an admin error notice telling its author to install 0.9.x first; until then those rules do not run. Empty pre-0.8.0 rule arrays — an old install with no rules — raise no notice.
+- A fresh install seeds only the two ordered rule lists (`term_rules`, `format_rules`), not the seven per-type arrays that sent every new site through the old upgrade path.
+
 ### Fixed
 
 - **A date-window rule missing a start or end date now does nothing.** An empty end date compared as long expired, so the rule stripped its target term from every post in scope on every save and on the daily cleanup. The editor requires both dates, but a row written by hand or by an import was not held to that.
@@ -18,6 +23,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The post-type and post-status gates no longer fall back to a pre-0.2.0 `source_filters` key when a rule has no `post_types` / `post_status`. The fallback only ever held a single post type as a string, which the gate already read as "every post type", so no rule changes behavior. Rules now reach handlers in one guaranteed shape: slug lists for the checkbox gates, whole numbers for term ids.
 - The rule storage's `validate_rule()` method. Nothing called it, and it checked fields three rule types no longer have, so it would have rejected every real rule of those types.
 - The rule storage's programmatic write API — `save_rule()`, `delete_rule()`, `bulk_toggle_rules()`, `duplicate_rule()`, `search_rules()`, `count_rules()`, `rule_exists()`, `get_rule_types()`, `export_rules()`, `import_rules()` — along with the handler-base `save_rule()` / `delete_rule()` wrappers and the storage factory's configuration, statistics and backend-migration helpers (plus the `bws_meta_conductor_storage_type` / `bws_meta_conductor_storage_info` filters and the `BWS_RULE_STORAGE_TYPE` constant). Nothing called them; rules are written by the settings page.
+- The pre-0.8.0 storage migrations: the read-time upgrade off the seven per-type rule arrays, the admin-load persist of the ordered lists, and the one-time ACF-reference rewrite and field-key backfill. The upgrade routine deletes their `bws_mc_kind_schema` and `bws_mc_acfref_schema` options. A two-part ACF-reference value (a field name that matched more than one field) still reads by name.
 
 ## [0.9.0] — 2026-09-24
 

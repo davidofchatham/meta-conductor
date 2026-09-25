@@ -446,9 +446,7 @@ class WireframeBootstrap {
             if (is_array($row)) {
                 $row = self::migrate_inheritance_behavior($row);
                 $row = self::migrate_related_term_shape($row);
-                // The acf-ref key-rename migration is one-shot flag-gated
-                // (maybe_migrate_acf_ref_storage), so a legacy-shaped row
-                // written AFTER the flag was set — CLI, import — would reach
+                // A legacy-shaped row written by CLI or import would reach
                 // the repeater raw and render with config defaults (absent
                 // holder_role = the radio's `source`, reversing a live rule's
                 // direction on resave). Re-applying here is idempotent and
@@ -1024,37 +1022,10 @@ class WireframeBootstrap {
             return;
         }
 
-        // One-time persist of the related_post_terms_rules read-time migration,
-        // BEFORE Wireframe reads the option raw (it bypasses normalize_rule_shape,
-        // so the form would otherwise render legacy rows with config defaults and
-        // a resave would corrupt them). Flag-gated → at most one write.
-        // (architecture.md → Canonical shape adapter, key-renaming caveat)
-        //
-        // It reads through the storage layer, which upgrades a pre-#56 option to
-        // the kind-list shape on the way in — so the rewrite lands on the rows
-        // the repeater is about to render, whichever shape the site arrived in.
         $storage = \BWS\MetaConductor\Storage\StorageFactory::get_instance();
-        if (method_exists($storage, 'maybe_migrate_acf_ref_storage')) {
-            $storage->maybe_migrate_acf_ref_storage();
-        }
-
-        // Persist the kind-list shape (ADR 0003, #56 → #66). Runs AFTER the
-        // acf-ref rewrite above so the stored lists carry already-key-renamed
-        // related_post_terms rows. Writes only when the stored option differs
-        // from the upgraded shape, so it is at most one write per site.
-        //
-        // Reads apply the same upgrade themselves, so front-end and cron
-        // requests — which never reach this boot — see the same rules whether
-        // or not this write has happened. The ADMIN is what needs the write:
-        // it reads the option RAW, and the ordered repeater can only bind to
-        // `term_rules` / `format_rules` if those keys are in storage.
-        if (method_exists($storage, 'maybe_migrate_kind_lists')) {
-            $storage->maybe_migrate_kind_lists();
-        }
 
         // Bring the persisted list up to what the repeater expects to render,
-        // BEFORE Wireframe reads the option raw. Runs after the sync so it
-        // works on the list the admin is about to see. (#57)
+        // BEFORE Wireframe reads the option raw. (#57)
         self::repair_stored_rules($storage);
 
         // First collision scan for a rule set that never passed through a save

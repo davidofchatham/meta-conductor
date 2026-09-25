@@ -52,12 +52,9 @@ class OptionRuleStorage implements RuleStorage {
      * Two jobs since #66. It is the ENUMERATION of every rule type storage
      * knows (`all_types()` flattens it, `get_kind_for_type()` inverts it) — the
      * seven-entry `$valid_types` list that used to be a second copy is gone.
-     * And it is still the seed order for the pre-#56 migration: the position
-     * each type's rules take inside its kind list when `fan_in()` builds one,
-     * where position IS order (ADR 0003 — no stable `_id`). That order
-     * reproduces the old Auto-Set tab order, so a rule set authored before the
-     * migration keeps the sequence its author was looking at. Do not reorder
-     * this without a migration.
+     * Its order is the type-select order and the order fixture tooling
+     * authors by-type rules in; storage itself never re-sorts a stored list
+     * by it.
      *
      * The `type` value written onto each row is the legacy type key verbatim
      * (`hierarchical_rules`, not `hierarchical`). Rule-type RENAMING stays
@@ -106,7 +103,7 @@ class OptionRuleStorage implements RuleStorage {
      * never before. The list is now identical to the flattened KIND_TYPES,
      * and it stays a separate constant precisely so the NEXT type
      * (`field_transformation`) can be declared in KIND_TYPES — and therefore
-     * fanned in and read — a change before its subfields exist.
+     * read — a change before its subfields exist.
      *
      * @since 0.8.0
      * @var string[]
@@ -153,72 +150,46 @@ class OptionRuleStorage implements RuleStorage {
     }
 
     /**
-     * Get all settings from options, in the kind-list shape.
+     * Get all settings from options.
      *
-     * The kind lists are the ONLY rule shape as of #66. Anything still holding
-     * the pre-#56 type-keyed arrays is upgraded here, on read, so a front-end
-     * or cron request on a site whose admin has never been loaded still sees
-     * its rules (see upgrade_legacy_shape()).
+     * The kind lists are the ONLY rule shape. A pre-0.8.0 option still holding
+     * the type-keyed arrays is not upgraded — it reads as no rules, and
+     * holds_pre_08_rows() is what tells the author why.
      *
      * @return array Complete settings array
      */
     private function get_all_settings(): array {
         if ($this->cached_settings === null) {
             $stored = get_option(self::OPTION_NAME, []);
-            $this->cached_settings = self::upgrade_legacy_shape(
-                is_array($stored) ? $stored : []
-            );
+            $this->cached_settings = is_array($stored) ? $stored : [];
         }
 
         return $this->cached_settings;
     }
 
     /**
-     * The one-time pre-#56 upgrade, applied at READ time so it cannot be missed.
+     * Does a stored option still hold pre-0.8.0 rule ROWS and no kind list?
      *
-     * A site that last ran a version before the expand ticket (#56) stores seven
-     * type-keyed rule arrays and no kind list. The contract ticket (#66) deleted
-     * every reader of those arrays, so without this such a site would read zero
-     * rules — silently, on every request, until an admin load. Running it on
-     * read rather than only on admin load is the same reasoning #56 used for its
-     * read-time adapter: handlers read storage on front-end and cron requests
-     * that never reach `WireframeBootstrap::boot()`.
+     * The migration off the type-keyed arrays was deleted after 0.9.x, so such
+     * a site runs no rules; the admin notice this drives tells its author to
+     * update through 0.9.x first. Empty legacy arrays are not rows — a 0.7.x
+     * site with no rules has nothing to lose and must not be nagged.
      *
-     * A kind list that is ALREADY present wins. That is the whole safety
-     * argument: from #56 onwards both shapes exist side by side, the kind list
-     * is the authored one, and re-deriving it from the type-keyed arrays would
-     * discard the author's cross-type order (the fan-in groups by type). Only a
-     * kind key that is absent or unusable is seeded from the legacy arrays.
-     *
-     * The legacy keys are then dropped from the working copy, so the next write
-     * this class performs prunes them from storage. Nothing is persisted here —
-     * a read that migrates must not write, or a front-end request would rewrite
-     * the option out from under an admin editing it.
-     *
-     * **What makes the drop safe is that `$legacy` is computed BEFORE the loop.**
-     * The seed and the `unset()` happen in the same iteration, so a seed that
-     * read `$settings` directly would be reading an array the previous iteration
-     * had already pruned. It reads the pre-prune fan-in instead. Don't move the
-     * `fan_in()` call inside the loop.
-     *
-     * @since 0.8.0
-     * @param array $settings Raw stored option.
-     * @return array
+     * @param array $stored Raw stored option.
+     * @return bool
      */
-    private static function upgrade_legacy_shape(array $settings): array {
-        $legacy = self::fan_in($settings);
+    public static function holds_pre_08_rows(array $stored): bool {
+        if (isset($stored[self::KIND_TERM]) || isset($stored[self::KIND_FORMAT])) {
+            return false;
+        }
 
-        foreach (self::KIND_TYPES as $kind => $types) {
-            if (!isset($settings[$kind]) || !is_array($settings[$kind])) {
-                $settings[$kind] = $legacy[$kind];
-            }
-
-            foreach ($types as $type) {
-                unset($settings[$type]);
+        foreach (self::all_types() as $type) {
+            if (!empty($stored[$type]) && is_array($stored[$type])) {
+                return true;
             }
         }
 
-        return $settings;
+        return false;
     }
 
     /**
@@ -267,104 +238,6 @@ class OptionRuleStorage implements RuleStorage {
             }
             $out[$row['taxonomy']] = $row['mode'];
         }
-        return $out;
-    }
-
-    /**
-     * Regroup the seven type-keyed rule arrays into the two kind-keyed ordered
-     * lists (ADR 0003 decision 1).
-     *
-     * **Migration code since #66.** It was the read path for the expand half of
-     * expand-then-contract; with the type-keyed arrays gone its only remaining
-     * job is seeding a kind list that does not exist yet, from a site that last
-     * ran a pre-#56 version (see upgrade_legacy_shape()). It stays public, and
-     * `fan_out()` stays with it, because "the migration is lossless" is a claim
-     * H10 has to be able to check.
-     *
-     * A pure regroup, deliberately: each row is carried across VERBATIM plus a
-     * `type` key naming the array it came from. It applies no shape coercion —
-     * not `normalize_rule_shape()`, not `migrate_related_post_terms_shape()`.
-     * Two reasons. (1) Losslessness: `fan_out(fan_in($s))` must reproduce the
-     * type-keyed arrays byte-for-byte, which is what makes persisting the lists
-     * safe on live data. (2) The persisted lists are what the Wireframe admin
-     * will read raw once the config collapses (#57), and the admin needs the
-     * STORED shape — e.g. `acf_field_name` must stay the combined
-     * "post_type:field" the select's option keys use. Coercion stays at read
-     * time, in `project_kind_rules()`, exactly where it already is for the
-     * type-keyed path.
-     *
-     * Rows that are not arrays cannot carry a `type` and are dropped; nothing
-     * the plugin writes produces one.
-     *
-     * @since 0.8.0
-     * @param array $settings Raw settings option.
-     * @return array<string,array[]> Both kind keys, always present.
-     */
-    public static function fan_in(array $settings): array {
-        $lists = [];
-
-        foreach (self::KIND_TYPES as $kind => $types) {
-            $rows = [];
-            foreach ($types as $type) {
-                $source = $settings[$type] ?? [];
-                if (!is_array($source)) {
-                    continue;
-                }
-                foreach ($source as $row) {
-                    if (!is_array($row)) {
-                        continue;
-                    }
-                    // Authoritative: the owning array names the type, so a
-                    // stale `type` on the row (a round-tripped kind row) is
-                    // corrected rather than trusted.
-                    $row['type'] = $type;
-                    $rows[]      = $row;
-                }
-            }
-            $lists[$kind] = $rows;
-        }
-
-        return $lists;
-    }
-
-    /**
-     * Inverse of fan_in(): split kind lists back into type-keyed arrays.
-     *
-     * Exists to PROVE fan_in is lossless — Phase 4 Gate 1 asks for exactly
-     * that, and "lossless" is only checkable against an inverse. Its caller is
-     * H10, deliberately: it is a proof obligation, not a rollback path (#56
-     * asks for no reversal, and the migration only ADDS keys, so there is
-     * nothing to roll back).
-     *
-     * Rows are stripped of `type` (it is the grouping, not rule data) and
-     * reindexed, so a round-trip reproduces the original arrays.
-     *
-     * All seven type keys are always present, empty where the kind lists hold
-     * no rows of that type.
-     *
-     * @since 0.8.0
-     * @param array $lists Kind-keyed lists as produced by fan_in().
-     * @return array<string,array[]> Type-keyed rule arrays.
-     */
-    public static function fan_out(array $lists): array {
-        $out = [];
-
-        foreach (self::KIND_TYPES as $kind => $types) {
-            $out = array_merge($out, array_fill_keys($types, []));
-
-            foreach ($lists[$kind] ?? [] as $row) {
-                if (!is_array($row)) {
-                    continue;
-                }
-                $type = (string) ($row['type'] ?? '');
-                if (!in_array($type, $types, true)) {
-                    continue;
-                }
-                unset($row['type']);
-                $out[$type][] = $row;
-            }
-        }
-
         return $out;
     }
 
@@ -462,44 +335,6 @@ class OptionRuleStorage implements RuleStorage {
         }
 
         return $out;
-    }
-
-    /**
-     * Save settings to options.
-     *
-     * Returns TRUE when the option round-trips — the write succeeded, OR the
-     * bytes already equalled what was stored so no write was needed. FALSE only
-     * when a re-read shows the data did not persist (#27). `update_option()`
-     * cannot be believed on its own: it returns false for both of those.
-     *
-     * The request cache is refreshed to match what is ACTUALLY stored, for the
-     * same reason. Adopting $settings after a genuine DB failure would have a
-     * later read in the same request serve data the database does not hold.
-     * (PR#24 round 5 #5 + round 6 #4)
-     *
-     * @param array $settings Complete settings array
-     * @return bool True when storage holds $settings afterwards.
-     */
-    private function save_all_settings(array $settings): bool {
-        if (update_option(self::OPTION_NAME, $settings)) {
-            $this->cached_settings = $settings;
-
-            return true;
-        }
-
-        // false ⇒ a no-op on equality, or a genuine failure. Re-read to tell
-        // them apart, bypassing the request cache we may have primed earlier.
-        $stored = get_option(self::OPTION_NAME, []);
-
-        if (is_array($stored) && $stored === $settings) {
-            $this->cached_settings = $settings;
-
-            return true;
-        }
-
-        $this->cached_settings = null;
-
-        return false;
     }
 
     /**
@@ -750,8 +585,8 @@ class OptionRuleStorage implements RuleStorage {
      *   post_status absent                → untouched (= any)
      *
      * Public since #58: `WireframeBootstrap::repair_stored_rules()` applies it
-     * to the kind-list rows too, closing the gap the one-shot flag leaves — a
-     * legacy-shaped row written AFTER the flag is set (CLI, import) would
+     * to the kind-list rows too, so a legacy-shaped row written by CLI or
+     * import would
      * otherwise render with config defaults in the unified repeater and be
      * persisted that way, e.g. an absent `holder_role` rendering as the radio
      * default `source` and silently reversing a live rule's direction on the
@@ -796,258 +631,6 @@ class OptionRuleStorage implements RuleStorage {
         }
 
         return $rule;
-    }
-
-    /**
-     * Schema-version flag for the one-time related_post_terms_rules rewrite.
-     *
-     * Bumped whenever a future key-RENAMING migration is added that the admin
-     * (raw get_option) can't see at read time. Re-running the rewrite is
-     * idempotent, so the gate is purely to avoid a write on every admin load.
-     *
-     * 2 (#25): ACF field-key backfill — `post_type:name` → `post_type:name:key`.
-     */
-    const ACFREF_SCHEMA_VERSION = 2;
-    const ACFREF_SCHEMA_FLAG    = 'bws_mc_acfref_schema';
-
-    /**
-     * One-time, flag-gated persistence of the related_post_terms_rules
-     * read-time migration. (SPEC §V16, B6, T18)
-     *
-     * The Wireframe admin reads the settings option RAW (get_option, no filter
-     * seam), bypassing normalize_rule_shape — so the read-time key-RENAME
-     * migration (source_taxonomy→taxonomy, bidirectional→keep_in_sync,
-     * conflict_handling drop, holder_role default) never reaches the form. A
-     * legacy row then renders with config DEFAULTS (push, empty taxonomy) and a
-     * resave PERSISTS that corruption. This rewrites the legacy rows in storage
-     * once so the admin reads already-migrated data.
-     *
-     * Applies the key-rename migration (migrate_related_post_terms_shape) and,
-     * since #25, the ACF field-KEY backfill: a stored `post_type:field_name`
-     * becomes `post_type:field_name:field_key`. Deliberately does NOT split
-     * acf_field_name → that split is a SAFE directional adapter: the admin
-     * stores+round-trips the COMBINED value, the handler splits at read time.
-     * Persisting the split would break the admin select (its option keys are
-     * the combined value). (SPEC §V16)
-     *
-     * The backfill lives HERE and not in migrate_related_post_terms_shape,
-     * which also runs at READ time on every front-end and cron request: it has
-     * to scan the post type's field groups, and reads already degrade safely to
-     * name resolution when the key is absent. One-shot write, never per read.
-     *
-     * A name that resolves to MORE than one relationship/post-object field on
-     * its post type — the very ambiguity #25 is about — is left two-part on
-     * purpose. Guessing would pick a field the author never chose; the row
-     * keeps behaving exactly as it does today until it is re-picked in the UI,
-     * where the option labels now carry the field-group title.
-     *
-     * Idempotent: a row already in the new shape is unchanged. Runs once per
-     * schema version via the option flag.
-     *
-     * @return bool True if a rewrite was performed.
-     */
-    public function maybe_migrate_acf_ref_storage(): bool {
-        if ((int) get_option(self::ACFREF_SCHEMA_FLAG, 0) >= self::ACFREF_SCHEMA_VERSION) {
-            return false;
-        }
-
-        // Through the request cache, so a pre-#56 site is upgraded to the kind
-        // shape first and the rewrite lands on the rows the repeater will read.
-        $settings = $this->get_all_settings();
-        $rows     = $settings[self::KIND_TERM] ?? [];
-        $changed  = false;
-        $deferred = false;
-
-        foreach ($rows as $i => $row) {
-            if (!is_array($row) || ($row['type'] ?? '') !== 'related_post_terms_rules') {
-                continue;
-            }
-            $migrated = self::backfill_acf_field_keys(
-                self::migrate_related_post_terms_shape($row),
-                $deferred
-            );
-            if ($migrated !== $row) {
-                $rows[$i] = $migrated;
-                $changed  = true;
-            }
-        }
-
-        if ($changed) {
-            $settings[self::KIND_TERM] = $rows;
-
-            // Flag iff the migrated rows are ACTUALLY in storage now. save_all_settings()
-            // reports true for a successful write AND for a no-op on equality (a
-            // concurrent writer got there first) — both mean the rows are stored, so
-            // both should flag. A genuine DB failure leaves the flag unset so the next
-            // load retries rather than permanently skipping and later corrupting on a
-            // raw resave (PR#24 round 2 #3 / round 4 #3), and reports false so a caller
-            // doesn't log "migration done" (round 8 #3).
-            if (!$this->save_all_settings($settings)) {
-                return false;
-            }
-        }
-
-        // Withhold the flag when a key could not be backfilled because ACF was
-        // not loaded on THIS request: flagging would retire the scan forever
-        // over rows it never actually looked at. An ambiguous name does not
-        // defer — that outcome is final, not pending.
-        if (!$deferred) {
-            update_option(self::ACFREF_SCHEMA_FLAG, self::ACFREF_SCHEMA_VERSION);
-        }
-
-        return $changed;
-    }
-
-    /**
-     * Append the resolved ACF field key to a row's stored field values. (#25)
-     *
-     * Operates on the STORED shape — `acf_field_name` is still the combined
-     * option value here, not the split form the handler sees.
-     *
-     * @param array $row       Stored related_post_terms row.
-     * @param bool  $deferred  Set true when a key is missing and ACF cannot be
-     *                         consulted on this request (by reference).
-     * @return array The row, with keys appended where they resolved.
-     */
-    private static function backfill_acf_field_keys(array $row, bool &$deferred): array {
-        foreach (['acf_field_name', 'reverse_acf_field_name'] as $field) {
-            if (empty($row[$field])) {
-                continue;
-            }
-
-            [$post_type, $name, $key] = self::split_acf_field_value((string) $row[$field]);
-
-            if ($key !== '' || $post_type === null || $name === '') {
-                continue;
-            }
-
-            if (!function_exists('acf_get_field_groups') || !function_exists('acf_get_fields')) {
-                $deferred = true;
-                continue;
-            }
-
-            $resolved = self::resolve_acf_field_key($post_type, $name);
-
-            if ($resolved !== '') {
-                $row[$field] = $post_type . ':' . $name . ':' . $resolved;
-            }
-        }
-
-        return $row;
-    }
-
-    /**
-     * ACF field types a related_post_terms rule may point at. (#25)
-     *
-     * Shared with `ConfigHelpers::acf_relationship_field_options()`, which uses
-     * it to decide what to OFFER, so that the resolver below can resolve every
-     * name that was offered. Two independent lists would drift into a name the
-     * select shows and the backfill cannot key. It lives on storage, not on the
-     * config class, because storage is what runtime resolution may reach —
-     * pulling `Admin\Config` in the other direction is don't #4.
-     *
-     * @var string[]
-     */
-    const ACF_REFERENCE_FIELD_TYPES = ['relationship', 'post_object'];
-
-    /**
-     * The one relationship/post-object field key matching $name on $post_type.
-     *
-     * '' when nothing matches OR when several do — the ambiguous case #25 is
-     * about, which callers must leave alone rather than resolve arbitrarily.
-     * Field types and nesting depth mirror the options list
-     * (`ConfigHelpers::acf_relationship_field_options()`), so a name that is
-     * offered there is a name this can resolve.
-     *
-     * @param string $post_type Post type whose field groups to scan.
-     * @param string $name      Bare ACF field name.
-     * @return string Field key, or ''.
-     */
-    private static function resolve_acf_field_key(string $post_type, string $name): string {
-        $matches = [];
-
-        foreach ((array) acf_get_field_groups(['post_type' => $post_type]) as $group) {
-            foreach ((array) acf_get_fields($group['key'] ?? '') as $field) {
-                if (!in_array($field['type'] ?? '', self::ACF_REFERENCE_FIELD_TYPES, true)) {
-                    continue;
-                }
-                if (($field['name'] ?? '') === $name && !empty($field['key'])) {
-                    $matches[(string) $field['key']] = true;
-                }
-            }
-        }
-
-        return count($matches) === 1 ? (string) array_key_first($matches) : '';
-    }
-
-    /**
-     * Schema marker recording that the kind-list shape has been persisted.
-     *
-     * Bumped only if the stored shape changes again (a kind added, the
-     * documented order changed). It is a MARKER, not a gate — see
-     * maybe_migrate_kind_lists() for why gating on it would be wrong.
-     *
-     * @since 0.8.0
-     */
-    const KIND_SCHEMA_VERSION = 1;
-    const KIND_SCHEMA_FLAG    = 'bws_mc_kind_schema';
-
-    /**
-     * Persist the kind-list shape (#56 → #66, ADR 0003). Runs on admin load,
-     * AFTER maybe_migrate_acf_ref_storage() so the persisted lists carry
-     * already-key-renamed `related_post_terms` rows rather than freezing a
-     * legacy shape into the new one.
-     *
-     * All it does now is write back what `get_all_settings()` already read:
-     * the kind lists seeded from any pre-#56 type-keyed arrays, and those
-     * arrays pruned. Reads apply that upgrade themselves
-     * (`upgrade_legacy_shape()`), so nothing depends on this having run —
-     * except the ADMIN, which reads the settings option RAW and can therefore
-     * only bind the ordered repeater to `term_rules` / `format_rules` if those
-     * keys exist in storage. That is the whole reason it persists.
-     *
-     * **Deliberately NOT flag-gated, though #56 asked for "flag-gated".** The
-     * flag was asked for to avoid a write on every admin load; writing only
-     * when the upgraded settings differ from the stored ones achieves that and
-     * is strictly better, because it also covers a site that is upgraded, rolled
-     * back and upgraded again. Idempotent: once the option is in the kind shape
-     * the comparison matches and no write happens.
-     *
-     * It is NOT a reconciliation. Before #66 this method had to decide whether
-     * a stored kind list could still be trusted against the type-keyed arrays,
-     * and rebuild it in KIND_TYPES order when it could not — which silently
-     * reordered the author's list, and since #60 that meant changing what a pass
-     * DOES. With one stored shape there is nothing to reconcile: the list is
-     * authoritative, full stop.
-     *
-     * @since 0.8.0
-     * @return bool True if a rewrite was performed AND persisted.
-     */
-    public function maybe_migrate_kind_lists(): bool {
-        // Through the request cache: this is exactly the upgraded shape every
-        // read in this request is already serving.
-        $settings = $this->get_all_settings();
-        $stored   = get_option(self::OPTION_NAME, []);
-
-        if (is_array($stored) && $stored === $settings) {
-            // Already in the stored shape (a migrated site, or a fresh install
-            // whose first save wrote it). Record the schema version.
-            update_option(self::KIND_SCHEMA_FLAG, self::KIND_SCHEMA_VERSION);
-
-            return false;
-        }
-
-        // save_all_settings() reports true only when storage actually holds
-        // $settings afterwards, so a genuine DB failure leaves the marker unset
-        // and the next load retries. The marker gates nothing, so a missed mark
-        // costs only its own accuracy.
-        if (!$this->save_all_settings($settings)) {
-            return false;
-        }
-
-        update_option(self::KIND_SCHEMA_FLAG, self::KIND_SCHEMA_VERSION);
-
-        return true;
     }
 
     /**

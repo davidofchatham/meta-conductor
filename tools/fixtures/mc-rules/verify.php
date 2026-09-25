@@ -245,10 +245,10 @@ if ( ! $mc_a7_solo || ! $mc_a7_arch || ! $mc_a7_feat || ! class_exists( '\\BWS\\
 	 */
 	$mc_a7_set_rules = function ( array $rules ) use ( $mc_a7_opt ) {
 		$settings = get_option( $mc_a7_opt, array() );
-		$settings[ \BWS\MetaConductor\Storage\OptionRuleStorage::KIND_TERM ] =
-			\BWS\MetaConductor\Storage\OptionRuleStorage::fan_in(
-				array( 'time_based_rules' => $rules )
-			)[ \BWS\MetaConductor\Storage\OptionRuleStorage::KIND_TERM ];
+		$settings[ \BWS\MetaConductor\Storage\OptionRuleStorage::KIND_TERM ] = array_map(
+			static fn( array $rule ): array => array( 'type' => 'time_based_rules' ) + $rule,
+			$rules
+		);
 		update_option( $mc_a7_opt, $settings );
 		\BWS\MetaConductor\Storage\StorageFactory::get_instance()->clear_cache();
 	};

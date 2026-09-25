@@ -4,9 +4,8 @@
  *
  * The dynamic half of H11 for the #58 batch, run against the real testbed:
  *
- *   1. Simulates the admin-load storage sequence (acf-ref migration →
- *      kind-list sync → stored-rule repair) the way WireframeBootstrap::boot
- *      runs it, then asserts the persisted `term_rules` list carries the
+ *   1. Simulates the admin-load storage sequence (stored-rule repair) the
+ *      way WireframeBootstrap::boot runs it, then asserts the persisted `term_rules` list carries the
  *      related + related_post_terms rows in admin-renderable shape —
  *      combined "post_type:field" acf_field_name, array term ids, row_title.
  *
@@ -37,8 +36,6 @@ $note = static function (string $label, bool $ok) use (&$fail): void {
 // ── 1. The admin-load storage sequence. ─────────────────────────────────────
 
 $storage = StorageFactory::get_instance();
-$storage->maybe_migrate_acf_ref_storage();
-$storage->maybe_migrate_kind_lists();
 
 $repair = new ReflectionMethod(WireframeBootstrap::class, 'repair_stored_rules');
 $repair->invoke(null, $storage);

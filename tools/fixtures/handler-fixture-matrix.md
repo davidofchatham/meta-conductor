@@ -943,17 +943,7 @@ sweep suite re-run, not a new scenario. There is no `sweep-66-*.php` on purpose.
 type-keyed array survives. 10 term rows in the documented `KIND_TYPES` order,
 1 format row.
 
-**§11b every fixture writer moved to the kind lists.** `seed.php`,
-`mc_isolate()`, `mc_restore()` and `verify.php`'s A7 cron probe all wrote
-type-keyed arrays, which after #66 silence nothing and install nothing. They now
-go through two new `sweep-lib.php` helpers: `mc_write_rule_types()` (author by
-TYPE, landed via `fan_in()` in `KIND_TYPES` order — the seeder and the
-isolate/restore path) and `mc_write_ordered_rules()` (author the list VERBATIM —
-the sweeps whose subject is cross-type order). **The three restore steps that
-`unset()` the authored kind list are gone**: that used to force a rebuild from
-the type arrays, and now it would leave the site with no rules at all —
-`sweep-61`'s did it *after* `mc_restore()`, so it was the one that would have
-emptied the fixture.
+**§11b every fixture writer moved to the kind lists.** `seed.php`, `mc_isolate()`, `mc_restore()` and `verify.php`'s A7 cron probe all wrote type-keyed arrays, which after #66 silence nothing and install nothing. They now go through two new `sweep-lib.php` helpers: `mc_write_rule_types()` (author by TYPE, landed via `fan_in()` in `KIND_TYPES` order (`mc_fan_in()` since FW-39) — the seeder and the isolate/restore path) and `mc_write_ordered_rules()` (author the list VERBATIM — the sweeps whose subject is cross-type order). **The three restore steps that `unset()` the authored kind list are gone**: that used to force a rebuild from the type arrays, and now it would leave the site with no rules at all — `sweep-61`'s did it *after* `mc_restore()`, so it was the one that would have emptied the fixture.
 
 **§11c the re-run** ✅ `verify.php` 127/127. Sweeps 58, 59-roundtrip,
 59-behaviour, 60 (order/provoke/s1/s2/restore), 61 (all five steps), 62 (all
@@ -966,13 +956,7 @@ renaming 94 back under `meta_conductor_acf_reapply_enabled=false`; re-seed and
 verify then clean. **Check `wp post list --post_type=mc_item --fields=ID,post_name`
 after a restore AND after the next seed** — one row too many is the tell.
 
-**§11d the pre-#56 upgrade, end to end** ✅ A one-off eval fanned the fixture's
-kind lists back out to type-keyed arrays, stored only those, and read through
-the live storage instance: 10 term rules, 1 format rule, `get_rules()` agreeing
-per type, and **the read persisted nothing**. `maybe_migrate_kind_lists()` then
-wrote once, pruned the legacy arrays, and no-op'd on the second call. H10 covers
-the same ground as pure state transitions; this proves the wiring on a real
-option with real rules.
+**§11d the pre-#56 upgrade, end to end** ✅ A one-off eval fanned the fixture's kind lists back out to type-keyed arrays, stored only those, and read through the live storage instance: 10 term rules, 1 format rule, `get_rules()` agreeing per type, and **the read persisted nothing**. `maybe_migrate_kind_lists()` then wrote once, pruned the legacy arrays, and no-op'd on the second call. H10 covers the same ground as pure state transitions; this proves the wiring on a real option with real rules. (The upgrade itself was deleted in FW-39; a pre-0.8.0 option now reads as no rules and raises an admin notice.)
 
 ### §12 cross-order: hierarchical vs level_restriction (#67, Phase 4 Gate 3) — results
 
