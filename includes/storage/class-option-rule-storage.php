@@ -552,7 +552,7 @@ class OptionRuleStorage implements RuleStorage {
             // Filter by post type
             if (isset($filters['post_type']) && $matches) {
                 $post_types = $rule['post_types'] ?? [];
-                if (!in_array($filters['post_type'], (array)$post_types, true)) {
+                if (!in_array($filters['post_type'], $post_types, true)) {
                     $matches = false;
                 }
             }
@@ -618,41 +618,41 @@ class OptionRuleStorage implements RuleStorage {
      * writer may serialize differently; handlers should see a single
      * canonical shape and not care which writer produced the row.
      *
-     * Current coercions:
-     *   - Single-value term IDs: [N] array (from FormTokenField max=1) → int N
+     * Current coercions — GUARANTEED, so no consumer re-decodes or re-casts
+     * (FW-29). A field absent from the row stays absent; read it `?? []`
+     * (`?? 0` for `target_term_id`).
+     *   - Checkbox gates `post_types`, `post_status`, `filter_taxonomies` →
+     *     string[] slug list, empty = all.
+     *   - `target_term_id` → int. The FormTokenField stores [N]; that is a FORM
+     *     shape, never a runtime one.
+     *   - `trigger_term_id`, `filter_terms` → int[], deduped, zeros dropped.
      *   - ACF relationship field: "post_type:field_name:field_key" → split into
      *     scalar post_type + bare acf_field_name + acf_field_key (#25; a legacy
      *     two-part value yields an empty key, which callers read as "resolve by
      *     name", i.e. pre-#25 behavior)
+     *
+     * Read-only: nothing writes the projection back, so widening it needs no
+     * migration. Admin code holding raw form values runs them through
+     * `project_kind_rules()` rather than decoding by hand.
      */
     private static function normalize_rule_shape(string $type, array $rule): array {
-        $single_term_fields = [
-            'related_rules'    => ['target_term_id'],
-            'time_based_rules' => ['target_term_id'],
-        ];
-
-        if (isset($single_term_fields[$type])) {
-            foreach ($single_term_fields[$type] as $field) {
-                if (!isset($rule[$field])) {
-                    continue;
-                }
-                if (is_array($rule[$field])) {
-                    $first        = reset($rule[$field]);
-                    $rule[$field] = $first === false ? 0 : (int) $first;
-                } else {
-                    $rule[$field] = (int) $rule[$field];
-                }
+        foreach (['post_types', 'post_status', 'filter_taxonomies'] as $field) {
+            if (isset($rule[$field])) {
+                $rule[$field] = self::selected_checkbox_slugs($rule[$field]);
             }
         }
 
-        // related_rules trigger_term_id: canonical shape is int[] (V1).
+        if (isset($rule['target_term_id'])) {
+            $raw                    = $rule['target_term_id'];
+            $rule['target_term_id'] = (int) (is_array($raw) ? (reset($raw) ?: 0) : $raw);
+        }
+
         // Stored value may be a FormTokenField array [a,b,...] or a legacy scalar.
-        // Dedupe, cast, and drop zeros.
-        if ($type === 'related_rules' && isset($rule['trigger_term_id'])) {
-            $raw = $rule['trigger_term_id'];
-            $ids = is_array($raw) ? $raw : [$raw];
-            $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
-            $rule['trigger_term_id'] = $ids;
+        foreach (['trigger_term_id', 'filter_terms'] as $field) {
+            if (isset($rule[$field])) {
+                $raw          = $rule[$field];
+                $rule[$field] = array_values(array_unique(array_filter(array_map('intval', is_array($raw) ? $raw : [$raw]))));
+            }
         }
 
         if ($type === 'related_post_terms_rules') {
@@ -680,6 +680,25 @@ class OptionRuleStorage implements RuleStorage {
         }
 
         return $rule;
+    }
+
+    /**
+     * Normalize a Wireframe checkboxes value to a flat list of selected slugs.
+     *
+     * Wireframe stores a flat slug list; legacy and hand-seeded rows carry a
+     * `{slug: bool}` map. Anything else (a scalar, empty) reads as nothing
+     * selected.
+     *
+     * @param mixed $value Checkbox map, list of slugs, or empty.
+     * @return string[] Selected slugs (truthy keys), or [] when nothing selected.
+     */
+    private static function selected_checkbox_slugs($value): array {
+        if (empty($value) || !is_array($value)) {
+            return [];
+        }
+        return array_is_list($value)
+            ? array_values($value)
+            : array_keys(array_filter($value));
     }
 
     /**

@@ -7,7 +7,6 @@
 
 namespace BWS\MetaConductor\Core;
 
-use BWS\MetaConductor\Admin\Config\ConfigHelpers;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 
 // Prevent direct access
@@ -170,7 +169,7 @@ final class RuleChoice {
             return self::DEFAULT_STATUSES;
         }
 
-        $gate = ConfigHelpers::selected_checkbox_slugs($row['post_status'] ?? []);
+        $gate = $row['post_status'] ?? [];
 
         if ($gate === [] || $gate[0] === 'any') {
             return self::DEFAULT_STATUSES;

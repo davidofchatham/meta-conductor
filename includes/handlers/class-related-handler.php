@@ -143,7 +143,7 @@ class RelatedHandler extends UnifiedHandlerBase {
         $trigger_type = $rule['trigger_type'] ?? '';
 
         if ($trigger_type === 'term') {
-            foreach ((array) ($rule['trigger_term_id'] ?? []) as $tid) {
+            foreach ($rule['trigger_term_id'] ?? [] as $tid) {
                 if ($this->resolve_term($tid)) {
                     return true;
                 }
@@ -173,7 +173,7 @@ class RelatedHandler extends UnifiedHandlerBase {
         $trigger_terms = array();
 
         if ($rule['trigger_type'] === 'term') {
-            $trigger_ids = (array) ($rule['trigger_term_id'] ?? []);
+            $trigger_ids = $rule['trigger_term_id'] ?? [];
             foreach ($trigger_ids as $tid) {
                 $term = $this->resolve_term($tid);
                 if (!$term) {
@@ -215,8 +215,7 @@ class RelatedHandler extends UnifiedHandlerBase {
 
         if ($trigger_type === 'term') {
             // V6: non-empty AND every id resolves.
-            $trigger_ids = (array) ($rule['trigger_term_id'] ?? []);
-            $trigger_ids = array_filter($trigger_ids);
+            $trigger_ids = $rule['trigger_term_id'] ?? [];
             if (empty($trigger_ids)) {
                 return false;
             }
@@ -274,11 +273,11 @@ class RelatedHandler extends UnifiedHandlerBase {
      * pinning term-mode triggers to it would invalidate live rows whose radio
      * has been flipped.
      *
-     * @param mixed $term_id Stored id (canonical shape is int; tolerant anyway).
+     * @param int $term_id Stored id.
      * @return \WP_Term|null Null when the id resolves to nothing usable.
      */
-    private function resolve_term($term_id): ?\WP_Term {
-        $term = \get_term((int) $term_id);
+    private function resolve_term(int $term_id): ?\WP_Term {
+        $term = \get_term($term_id);
 
         if (!$term instanceof \WP_Term || !\taxonomy_exists($term->taxonomy)) {
             return null;

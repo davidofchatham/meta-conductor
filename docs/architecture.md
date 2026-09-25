@@ -640,6 +640,8 @@ Fixed upstream in 1.0.6 (no longer quirks): single-page `App::boot()` honors `me
 
 Wireframe writes some fields differently than handlers expect (e.g. a `multiple+max=1` FormTokenField writes `[id]` where a handler wants `int`; an ACF field select writes `"post_type:field_name:field_key"` where a handler wants the three parts separately). The storage layer's `normalize_rule_shape()` coerces these on read.
 
+The projection is a **guarantee**, not a convenience (FW-29): checkbox gates (`post_types`, `post_status`, `filter_taxonomies`) arrive as slug lists (empty = all; a legacy `{slug:bool}` map is decoded here), `target_term_id` as `int`, `trigger_term_id` and `filter_terms` as `int[]`. No consumer re-decodes or re-casts them, and runtime code never imports `Admin\Config` to do so. Admin code holding raw form values — the row-title snapshot, the on-demand collision check — runs them through `OptionRuleStorage::project_kind_rules()` first. The projection is read-only, so widening it needs no migration.
+
 Storage is the adapter boundary between writers (current: Wireframe REST) and handlers — future writers (CLI, import) plug in at the same boundary. **Caveat:** a key-RENAMING migration here is read-time-only and the Wireframe admin reads the option RAW, so a renamed/removed key must ALSO be persisted (one-time rewrite) or the admin renders defaults and corrupts on resave. (See the ACF-reference migration.)
 
 ### ACF field identity (#25)

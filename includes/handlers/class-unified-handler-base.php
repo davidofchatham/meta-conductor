@@ -218,12 +218,8 @@ abstract class UnifiedHandlerBase {
             return false;
         }
 
-        // Check post type. Like post_status below, flatten the Wireframe
-        // checkboxes {slug:bool} map via the canonical extractor rather than
-        // hand-rolling it — keeps this from drifting from the status gate and
-        // ConfigHelpers (the extractor's own docblock names this call site).
-        $post_types = $rule['post_types'] ?? $rule['source_filters']['post_type'] ?? [];
-        $post_types = \BWS\MetaConductor\Admin\Config\ConfigHelpers::selected_checkbox_slugs($post_types);
+        // Check post type. Storage projects both gates to slug lists (FW-29).
+        $post_types = $rule['post_types'] ?? [];
 
         if (!empty($post_types)) {
             if ($post_types[0] !== 'any' && !in_array($post->post_type, $post_types)) {
@@ -231,12 +227,8 @@ abstract class UnifiedHandlerBase {
             }
         }
 
-        // Check post status. Like post_types, the config stores this as a
-        // Wireframe checkboxes {slug:bool} map — flatten to selected slugs first,
-        // else the (array) cast keeps the map and in_array compares against
-        // boolean values (loose match => gate silently bypassed).
-        $post_statuses = $rule['post_status'] ?? $rule['source_filters']['post_status'] ?? [];
-        $post_statuses = \BWS\MetaConductor\Admin\Config\ConfigHelpers::selected_checkbox_slugs($post_statuses);
+        // Check post status.
+        $post_statuses = $rule['post_status'] ?? [];
 
         if (!empty($post_statuses)) {
             if ($post_statuses[0] !== 'any' && !in_array($post->post_status, $post_statuses)) {

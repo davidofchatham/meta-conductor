@@ -973,13 +973,12 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
     }
 
     /**
-     * Normalize the post_status gate (Wireframe checkboxes {slug:bool} or list)
-     * to a list of slugs. Empty ⇒ no filter.
+     * The post_status gate as a slug list. Empty ⇒ no filter.
      *
      * @return string[]
      */
     private function status_gate(array $rule): array {
-        return \BWS\MetaConductor\Admin\Config\ConfigHelpers::selected_checkbox_slugs($rule['post_status'] ?? []);
+        return $rule['post_status'] ?? [];
     }
 
     /** Whether a post's type matches a required type ('' ⇒ any). */

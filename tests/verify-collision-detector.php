@@ -147,8 +147,9 @@ $check('a date-window rule keys on its target TERM, not a taxonomy',
     CollisionDetector::target_key('time_based_rules', ['target_term_id' => 21]) === 'term|21');
 $check('a related-term rule keys on its target term',
     CollisionDetector::target_key('related_rules', ['target_term_id' => 22]) === 'term|22');
-$check('the FormTokenField [N] shape resolves to the same key',
-    CollisionDetector::target_key('related_rules', ['target_term_id' => [22]]) === 'term|22');
+$check('the FormTokenField [N] shape, projected, resolves to the same key',
+    CollisionDetector::target_key('related_rules',
+        OptionRuleStorage::project_kind_rules([['type' => 'related_rules', 'target_term_id' => [22]]])[0]) === 'term|22');
 
 $check('a format rule keys on the fields it writes',
     CollisionDetector::target_key('title_slug_rules', ['post_type' => 'mc_item']) === 'fields|title_slug');
@@ -162,8 +163,9 @@ $check('an untyped row resolves nothing',
 
 // --- 3. Written post types. -------------------------------------------------
 
-$check('post_types is read through the checkbox extractor',
-    CollisionDetector::written_post_types('hierarchical_rules', ['post_types' => ['mc_item' => true, 'mc_section' => false]])
+$check('a projected checkbox map reads as its selected slugs',
+    CollisionDetector::written_post_types('hierarchical_rules',
+        OptionRuleStorage::project_kind_rules([['type' => 'hierarchical_rules', 'post_types' => ['mc_item' => true, 'mc_section' => false]]])[0])
     === ['mc_item']);
 $check('empty post_types means every post type',
     CollisionDetector::written_post_types('hierarchical_rules', []) === []);

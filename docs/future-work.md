@@ -274,15 +274,6 @@ The repo's gates are plain-PHP `tests/verify-*.php` scripts run on bare host PHP
   - **Scope when it lands:** `require-dev` on PHPUnit plus a `/tests export-ignore` check so nothing new reaches the ZIP. Note the helpers are no longer uniform — four of the five now read the unified repeater's rows, while `snapshot_claim_override_labels` still reads the General tab's per-taxonomy default; fixtures must reflect that split rather than assume one shape.
 - **Blocked by:** — • **Interacts with:** FW-20
 
-#### FW-29 — `trigger_term_id`'s `int[]` invariant is declared but not enforced
-
-`OptionRuleStorage::normalize_rule_shape()` declares `related_rules.trigger_term_id` to be `int[]`, but nothing guarantees it at the boundary, so every consumer re-coerces defensively — `(array)`, `(int)`, `is_wp_error` guard. Forgetting one is silent: the term lookup fails and the rule quietly misbehaves, which is the class of mistake that produced B1.
-
-- **Detail home:** none. The issue that framed it was #20.
-- **Progress:** Mostly closed by attrition rather than by decision. #61 rewrote `RelatedHandler` into a pure applier and deleted `should_trigger_related_terms` / `apply_related_terms` / `process_acf_related_terms`, and the integration call sites are gone; of the original ~8 re-coercion sites, **3 remained** in `class-related-handler.php`. Fixing [#52](https://github.com/davidofchatham/meta-conductor/issues/52) routed all five of that file's term reads — those three plus the target resolutions — through one private `resolve_term()`, so the `(int)` cast and the "is this readable" test each exist once there. The `(array)` on `trigger_term_id` does not: its three readers still coerce.
-- **Open:** the surviving callers still ask genuinely different questions — *any* id resolves, which resolved ids are on the post, *every* id resolves — so they were never one helper's worth of duplication; what `resolve_term()` unified is the *answer*, not the question. The decision the issue's point 3 named and #61 never settled is untouched: **is `normalize_rule_shape()` the guaranteed `int[]` boundary or not?** If yes, the `(array)` casts come out and the guarantee gets stated where the shape is declared; if no, that is worth one comment saying why a consumer must still re-coerce. Doing neither is what leaves the invariant declared and unenforced.
-- **Blocked by:** — • **Interacts with:** FW-30, FW-39 (its storage PR settles this: `int` for `target_term_id`, `int[]` for `trigger_term_id`, guaranteed at read)
-
 #### FW-32 — Term-rule dry run
 
 A compute-only path through the term pass, so FW-16 can preview what a term rule would write before it writes. The format pass already has one — `apply_to_data()` returns data and the dispatcher writes — but every term applier writes as it goes.
@@ -444,6 +435,7 @@ Shipped or cut items retire here, densely — a closed item is read in bulk and 
 |---|---|---|
 | FW-16 | Apply rules to existing posts | **Merged in [#75](https://github.com/davidofchatham/meta-conductor/pull/75)** (2026-09-24, Phase 7). Added the *Apply to Existing Posts* page: a bulk run is a full ordered pass over the chosen rule's reach, and a disabled rule can run once. Data Conversion and `includes/support/` were deleted. Spec: [design-history/apply-existing.md](design-history/apply-existing.md). Deferred parts are still open as FW-31 (in-row buttons), FW-32 (term dry run) and FW-33 (background runs); Copy / Map return as rule types through FW-4. |
 | FW-18 | Text-domain string sweep | **Shipped in 0.7.0** (Phase 2b rename sweep, [#48](https://github.com/davidofchatham/meta-conductor/pull/48)) — the row survived the 2026-09-11 migration describing work already done. Every `__()` / `_e()` / `_x()` / `_n()` call site now passes `'meta-conductor'`; `'bws-meta-manager'` survives only as the Composer package name in `vendor/`. The *conversion* subsystem's identifiers (JS object, cron / AJAX / transient names) were never part of this row — they were the 2b remainder, closed by deletion with the Data Conversion page in FW-16. |
+| FW-29 | `trigger_term_id`'s `int[]` invariant is declared but not enforced | **Settled by FW-39's storage PR** (`rule-type-descriptor/01`, branch `claude/storage-projection-39`): yes, `normalize_rule_shape()` is the guaranteed boundary. Checkbox gates arrive as slug lists, `target_term_id` as `int`, `trigger_term_id` / `filter_terms` as `int[]`; every consumer re-decode and re-cast is deleted, checkbox decoding moved out of `ConfigHelpers` into storage, and H10 asserts the shape for every rule type. |
 
 ---
 

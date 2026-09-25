@@ -430,6 +430,34 @@ $check('the read normalizes: related term ids are canonicalized',
 $check('the read normalizes: time_based single-term array collapses to int',
     $of_type($projected, 'time_based_rules')[0]['target_term_id'] === 21);
 
+// FW-29: the projection is the GUARANTEED canonical shape — consumers never
+// re-decode, so every form/legacy shape must land here, for every type.
+$canon = static fn(array $row): array => OptionRuleStorage::project_kind_rules([$row])[0];
+foreach (OptionRuleStorage::all_types() as $type) {
+    $row = $canon([
+        'type'              => $type,
+        'post_types'        => ['page' => true, 'post' => false],
+        'post_status'       => ['publish' => true, 'draft' => true],
+        'filter_taxonomies' => ['category' => false, 'post_tag' => true],
+        'target_term_id'    => ['34'],
+        'trigger_term_id'   => ['12', '12', 0, '7'],
+        'filter_terms'      => '5',
+    ]);
+    $check("canonical ($type): {slug:bool} maps → slug lists",
+        $row['post_types'] === ['page']
+        && $row['post_status'] === ['publish', 'draft']
+        && $row['filter_taxonomies'] === ['post_tag']);
+    $check("canonical ($type): [N] target → int, token lists → deduped int[]",
+        $row['target_term_id'] === 34
+        && $row['trigger_term_id'] === [12, 7]
+        && $row['filter_terms'] === [5]);
+}
+$check('canonical: a slug list passes through, an empty target reads as 0',
+    $canon(['type' => 'hierarchical_rules', 'post_types' => ['page', 'post'], 'target_term_id' => []])
+        === ['type' => 'hierarchical_rules', 'post_types' => ['page', 'post'], 'target_term_id' => 0, 'id' => 0]);
+$check('canonical: an absent field stays absent — empty means all, read `?? []`',
+    !array_key_exists('post_types', $canon(['type' => 'propagation_rules'])));
+
 // `id` is PER TYPE, not the kind-list position — the number the type-facing
 // mutators take. H2 in the term list sits at kind
 // position 7 but must still report id 1; the sole title_slug rule must be 0.

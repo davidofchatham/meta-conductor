@@ -28,7 +28,7 @@ matrix at the bottom. Companion skeleton: `tools/fixtures/mc-rules/`.
   manifest state). Rule arrays are positional; `id` = index, never persisted.
   Storage read-side normalization (`normalize_rule_shape`) applies at runtime,
   so seed the canonical UI-written shape (checkbox maps `{slug: bool}` fine —
-  `selected_checkbox_slugs` flattens).
+  the projection flattens them).
 - **Dates:** time-based needs dates relative to seed day → `{TODAY±N}` tokens
   resolved at seed time (same pattern as core-structures `{CURRENT_YEAR}`).
 - **Reseed is additive** (no key deletes). MC sweeps mutate terms by design →

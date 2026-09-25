@@ -89,11 +89,11 @@ class WireframeBootstrap {
     private static function related_title(array $rule): string {
         $trigger = (($rule['trigger_type'] ?? 'term') === 'taxonomy')
             ? self::taxonomy_label($rule['trigger_taxonomy'] ?? '')
-            : self::trigger_terms_label($rule['trigger_term_id'] ?? null);
+            : self::trigger_terms_label($rule['trigger_term_id'] ?? []);
 
         return $trigger
             . ' ' . "\xE2\x86\x92" . ' '
-            . self::term_label($rule['target_term_id'] ?? null)
+            . self::term_label($rule['target_term_id'] ?? 0)
             . self::scope_label($rule['post_types'] ?? []);
     }
 
@@ -153,7 +153,7 @@ class WireframeBootstrap {
             $verb,
             self::taxonomy_label($rule['taxonomy'] ?? ''),
             $prep,
-            self::acf_field_label($rule['acf_field_name'] ?? '')
+            self::acf_field_label($rule['acf_field_name'] ?? '', $rule['acf_field_key'] ?? '')
         ));
 
         if ($gate !== '') {
@@ -177,6 +177,11 @@ class WireframeBootstrap {
      *
      * Each per-type builder returns UNESCAPED text and is escaped here, once —
      * the same discipline the term/taxonomy label helpers already follow.
+     *
+     * Builders read the row through `OptionRuleStorage::project_kind_rules()`:
+     * the payload holds FORM values (`[N]` term ids, the combined ACF field
+     * value), and the projection is the one place those are decoded. Only
+     * `row_title` is written back onto the raw row.
      *
      * The title LEADS with the row's list position ("#3 "). Wireframe only
      * numbers a row whose `title_template` renders empty, so a titled list
@@ -213,7 +218,7 @@ class WireframeBootstrap {
 
             $rule['row_title'] = '#' . $position . ' '
                 . self::disabled_prefix($rule)
-                . \esc_html($title($rule));
+                . \esc_html($title(OptionRuleStorage::project_kind_rules([$rule])[0]));
         }
         unset($rule);
 
@@ -322,9 +327,8 @@ class WireframeBootstrap {
      * The scalar counterpart of scope_label(), which reads a checkboxes value.
      * They are not one function taking either shape on purpose: a scalar
      * `post_type` and a `post_types` gate mean different things — a lookup key
-     * versus a scope — and selected_checkbox_slugs() silently returns [] for a
-     * string, so a shared helper would render an empty scope for every
-     * title/slug rule rather than failing visibly.
+     * versus a scope — and a helper taking either shape would have to guess
+     * which one it was handed.
      *
      * @param mixed $post_type Single post-type slug.
      * @return string
@@ -694,10 +698,10 @@ class WireframeBootstrap {
      * Unescaped — every caller feeds its result through the single esc_html()
      * in snapshot_term_rule_labels().
      *
-     * @param mixed $post_types Checkbox {slug:bool} map or list of slugs.
+     * @param string[] $post_types Slug list.
      * @return string Trailing ": " when present.
      */
-    private static function scope_prefix($post_types): string {
+    private static function scope_prefix(array $post_types): string {
         $labels = self::post_type_labels($post_types);
         return empty($labels) ? '' : implode(', ', $labels) . ': ';
     }
@@ -780,7 +784,7 @@ class WireframeBootstrap {
     private static function time_based_title(array $rule): string {
         $start  = (string) ($rule['start_date'] ?? '');
         $end    = (string) ($rule['end_date'] ?? '');
-        $target = self::term_label($rule['target_term_id'] ?? null);
+        $target = self::term_label($rule['target_term_id'] ?? 0);
 
         // en dash, no surrounding spaces.
         $window = ($start !== '' || $end !== '') ? $start . "\xE2\x80\x93" . $end . ': ' : '';
@@ -800,10 +804,10 @@ class WireframeBootstrap {
      * rule applies to all post types (empty post_types), else the human
      * post-type labels ("Pages", "Posts, Pages"). Unescaped.
      *
-     * @param mixed $post_types Checkbox {slug:bool} map or list of slugs.
+     * @param string[] $post_types Slug list.
      * @return string
      */
-    private static function time_based_scope_phrase($post_types): string {
+    private static function time_based_scope_phrase(array $post_types): string {
         $labels = self::post_type_labels($post_types);
         return empty($labels) ? __('posts', 'meta-conductor') : implode(', ', $labels);
     }
@@ -817,14 +821,13 @@ class WireframeBootstrap {
      * @return string
      */
     private static function time_based_filter_clause(array $rule): string {
-        $terms = self::trigger_terms_label($rule['filter_terms'] ?? null);
+        $terms = self::trigger_terms_label($rule['filter_terms'] ?? []);
         if ($terms !== '') {
             return ' ' . sprintf(__('with %s', 'meta-conductor'), $terms);
         }
 
-        $taxonomies = Config\ConfigHelpers::selected_checkbox_slugs($rule['filter_taxonomies'] ?? []);
         $labels = [];
-        foreach ($taxonomies as $slug) {
+        foreach ($rule['filter_taxonomies'] ?? [] as $slug) {
             $label = self::taxonomy_label((string) $slug);
             if ($label !== '') {
                 $labels[] = $label;
@@ -838,24 +841,22 @@ class WireframeBootstrap {
     }
 
     /**
-     * Resolve a raw "post_type:field_name:field_key" (or older two-part / bare
-     * name) ACF relationship field to its clean human label via acf_get_field().
-     * Falls back to the bare field name. (architecture.md → Canonical shape
-     * adapter)
+     * Resolve a projected ACF relationship field (bare name + key) to its clean
+     * human label via acf_get_field(). Falls back to the bare field name.
+     * (architecture.md → Canonical shape adapter)
      *
-     * Resolves by KEY when the value carries one: two separately-created fields
+     * Resolves by KEY when the row carries one: two separately-created fields
      * can share a bare name, and a row title showing the wrong field's label is
      * how an author would be told the wrong thing about their own rule. (#25)
      *
-     * @param string $stored Raw option value.
+     * @param string $name Bare field name.
+     * @param string $key  Field key; '' for a legacy two-part value.
      * @return string Unescaped label.
      */
-    private static function acf_field_label($stored): string {
-        $raw = (string) $stored;
-        if ($raw === '') {
+    private static function acf_field_label(string $name, string $key): string {
+        if ($name === '') {
             return '';
         }
-        [, $name, $key] = OptionRuleStorage::split_acf_field_value($raw);
 
         if (function_exists('acf_get_field')) {
             // Key first; the name is the fallback for a key that no longer
@@ -872,14 +873,12 @@ class WireframeBootstrap {
     }
 
     /**
-     * Comma-joined human labels for a post_status gate (Wireframe {slug:bool}
-     * map or list). '' when no gate set.
+     * Comma-joined human labels for a post_status gate. '' when no gate set.
      *
-     * @param mixed $post_status
+     * @param string[] $slugs
      * @return string Unescaped.
      */
-    private static function status_gate_label($post_status): string {
-        $slugs = Config\ConfigHelpers::selected_checkbox_slugs($post_status);
+    private static function status_gate_label(array $slugs): string {
         if (empty($slugs)) {
             return '';
         }
@@ -893,18 +892,15 @@ class WireframeBootstrap {
     }
 
     /**
-     * Resolve a single stored term ID to "<taxonomy label>: <term name>".
+     * Resolve a single term ID to "<taxonomy label>: <term name>".
      *
-     * Accepts a bare scalar or a single-element array. Returns '' when
-     * unresolvable. Used for target_term_id (single) and as a primitive
-     * for trigger_terms_label (multi).
+     * Returns '' when unresolvable. Used for target_term_id (single) and as a
+     * primitive for trigger_terms_label (multi).
      *
-     * @param mixed $stored Term ID or single-element array.
+     * @param int $id Term ID.
      * @return string Unescaped label.
      */
-    private static function term_label($stored): string {
-        $id = is_array($stored) ? ($stored[0] ?? 0) : $stored;
-        $id = (int) $id;
+    private static function term_label(int $id): string {
         if ($id <= 0) {
             return '';
         }
@@ -922,17 +918,14 @@ class WireframeBootstrap {
     /**
      * Build the trigger_label for a term-type rule (V7).
      *
-     * Maps the int[] trigger_term_id array to individual term labels and joins
-     * with ", ". Scalar and single-element-array stored values are also
-     * accepted (legacy shape; normalizer converts on read but the save-payload
-     * hook runs before normalize). Returns UNESCAPED text — the caller escapes
-     * once at injection, matching term_label/taxonomy_label/scope_label.
+     * Maps an int[] of term ids to individual term labels and joins with ", ".
+     * Returns UNESCAPED text — the caller escapes once at injection, matching
+     * term_label/taxonomy_label/scope_label.
      *
-     * @param mixed $stored int[], scalar, or null.
+     * @param int[] $ids
      * @return string Unescaped, comma-joined label; '' if nothing resolves.
      */
-    private static function trigger_terms_label($stored): string {
-        $ids = is_array($stored) ? $stored : [$stored];
+    private static function trigger_terms_label(array $ids): string {
         $labels = [];
         foreach ($ids as $id) {
             $label = self::term_label($id);
@@ -944,17 +937,17 @@ class WireframeBootstrap {
     }
 
     /**
-     * Resolve a Wireframe post-type checkbox value ({slug:bool} map or slug
-     * list) to a flat array of human post-type labels. Unresolvable slugs (a
+     * Resolve a post-type slug list to a flat array of human post-type
+     * labels. Unresolvable slugs (a
      * type unregistered after save) are dropped. Single source for the three
      * row-title scope formatters below. (0.6.0 review — was triplicated.)
      *
-     * @param mixed $post_types
+     * @param string[] $post_types
      * @return string[] Post-type labels.
      */
-    private static function post_type_labels($post_types): array {
+    private static function post_type_labels(array $post_types): array {
         $labels = [];
-        foreach (Config\ConfigHelpers::selected_checkbox_slugs($post_types) as $slug) {
+        foreach ($post_types as $slug) {
             $obj = \get_post_type_object((string) $slug);
             if ($obj) {
                 $labels[] = $obj->label;
@@ -976,10 +969,10 @@ class WireframeBootstrap {
      * labels (V11); accepted rather than fixed, since storing raw slugs would
      * require render-time formatting the template cannot do. (PR #19 review #4.)
      *
-     * @param mixed $post_types
+     * @param string[] $post_types
      * @return string
      */
-    private static function scope_label($post_types): string {
+    private static function scope_label(array $post_types): string {
         $labels = self::post_type_labels($post_types);
         return empty($labels) ? '' : ' (' . implode(', ', $labels) . ')';
     }
