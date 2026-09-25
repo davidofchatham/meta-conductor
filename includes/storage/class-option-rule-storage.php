@@ -508,8 +508,6 @@ class OptionRuleStorage implements RuleStorage {
                 $rule['reverse_acf_field_name']   = $rbare;
                 $rule['reverse_acf_field_key']    = $rkey;
             }
-
-            $rule = self::migrate_related_post_terms_shape($rule);
         }
 
         return $rule;
@@ -568,69 +566,6 @@ class OptionRuleStorage implements RuleStorage {
         }
 
         return [$parts[0], $parts[1], $parts[2] ?? ''];
-    }
-
-    /**
-     * Live-data-safe old→new shape migration for related_post_terms rules.
-     *
-     * Read-time only (no stored rewrite) — applies on every get_rules/get_rule
-     * so legacy rows behave identically until re-saved in the new UI. (SPEC §V8)
-     *
-     *   source_taxonomy(+target fallback) → single `taxonomy` (prefer source;
-     *     cross-tax never worked — term-ID copy rejects foreign-tax IDs)
-     *   bidirectional (bool)              → keep_in_sync (bool)
-     *   conflict_handling                 → DROPPED (merge→off, replace→on,
-     *                                       skip→off + _migration_flag)
-     *   holder_role absent                → 'target' (= legacy pull-to-holder)
-     *   post_status absent                → untouched (= any)
-     *
-     * Public since #58: `WireframeBootstrap::repair_stored_rules()` applies it
-     * to the kind-list rows too, so a legacy-shaped row written by CLI or
-     * import would
-     * otherwise render with config defaults in the unified repeater and be
-     * persisted that way, e.g. an absent `holder_role` rendering as the radio
-     * default `source` and silently reversing a live rule's direction on the
-     * next save. Deliberately does NOT split acf_field_name (see below), so
-     * it is safe on admin-facing shapes.
-     *
-     * @param array $rule Normalized-so-far rule (post_type/acf split already done).
-     * @return array
-     */
-    public static function migrate_related_post_terms_shape(array $rule): array {
-        // Taxonomy collapse.
-        if (!isset($rule['taxonomy']) || $rule['taxonomy'] === '') {
-            $rule['taxonomy'] = $rule['source_taxonomy'] ?? $rule['target_taxonomy'] ?? '';
-        }
-        unset($rule['source_taxonomy'], $rule['target_taxonomy']);
-
-        // bidirectional → keep_in_sync.
-        if (!isset($rule['keep_in_sync']) && isset($rule['bidirectional'])) {
-            $rule['keep_in_sync'] = !empty($rule['bidirectional']);
-        }
-        unset($rule['bidirectional']);
-
-        // conflict_handling → keep_in_sync axis, then drop.
-        if (isset($rule['conflict_handling'])) {
-            if (!isset($rule['keep_in_sync'])) {
-                $rule['keep_in_sync'] = ($rule['conflict_handling'] === 'replace');
-            }
-            if ($rule['conflict_handling'] === 'skip') {
-                // No clean equivalent; flag for manual review (rare).
-                $rule['_migration_flag'] = 'conflict_handling=skip dropped';
-            }
-            unset($rule['conflict_handling']);
-        }
-
-        // Defaults for absent keys.
-        if (!isset($rule['keep_in_sync'])) {
-            $rule['keep_in_sync'] = false;
-        }
-        if (!isset($rule['holder_role']) || $rule['holder_role'] === '') {
-            // Legacy behavior was pull-to-holder.
-            $rule['holder_role'] = 'target';
-        }
-
-        return $rule;
     }
 
     /**

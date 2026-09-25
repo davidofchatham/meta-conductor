@@ -345,42 +345,22 @@ class WireframeBootstrap {
     }
 
     /**
-     * Bring stored rules up to what the ordered repeater expects, before
+     * Backfill the `row_title` of any stored rule that lacks one, before
      * Wireframe reads the settings option raw.
      *
-     * Two repairs, one write. Both exist because **Wireframe reads the option
-     * directly** — it does not go through the storage layer's read-time
-     * adapters — so anything a handler tolerates on read but the config does
-     * not declare gets rewritten by the first save of the settings page
-     * (`RepeaterField::sanitize` rebuilds each row from declared subfields
-     * only, filling defaults). That makes a read-time-only adaptation unsafe
-     * for the admin path, which is exactly what architecture invariant #1
-     * warns about.
+     * `row_title` is a save-time snapshot, so a rule that reached storage
+     * some other way — a seeded fixture, a raw `update_option()` from
+     * WP-CLI — has none, and `title_template` renders its collapsed row
+     * blank. The per-type repeaters mostly hid this by interpolating a live
+     * token (`{taxonomy}`, `{name}`) instead; one shared template means one
+     * shared fix. Runs over BOTH kind lists (#59).
      *
-     * 1. **`inheritance_behavior` (#16).** A hierarchical row saved before the
-     *    outcome selector carries only `hierarchy_direction` +
-     *    `expansion_behavior`. Left alone, the form would bind the absent new
-     *    key, show its `ancestors` default, and the next save would persist
-     *    that — silently turning a `parent_to_child` rule into an ancestors
-     *    one. `HierarchicalHandler::resolve_behavior()` still reads the legacy
-     *    pair, which covers front-end and cron requests that never reach this
-     *    boot; this is the admin half.
-     * 2. **`row_title`.** A save-time snapshot, so a rule that reached storage
-     *    some other way — a seeded fixture, a raw `update_option()` from
-     *    WP-CLI — has none, and `title_template` renders its collapsed row
-     *    blank. The per-type repeaters mostly hid this by interpolating a live
-     *    token (`{taxonomy}`, `{name}`) instead; one shared template means one
-     *    shared fix.
+     * This is not a migration. The every-boot shape migrations that used to
+     * run here were deleted with FW-39 once no stored row was in a legacy
+     * shape.
      *
-     * Since #59 this runs over BOTH kind lists. Only the title backfill
-     * applies to `format_rules` — `title_slug_rules`' stored shape is
-     * unchanged by the move, which is the ticket's "existing rules survive
-     * intact" criterion restated as an absence of migration code — but the
-     * blank-collapsed-row failure is identical, and it is newly reachable
-     * there because the format list stopped interpolating `{name}` live.
-     *
-     * Self-limiting — once every row is migrated and titled there is nothing
-     * to do, so this is at most one write per rule set, not one per admin load.
+     * Self-limiting — once every row is titled there is nothing to do, so
+     * this is at most one write per rule set, not one per admin load.
      * Both kinds are repaired in ONE write for the same reason: two
      * update_option calls would leave a window where the two lists disagree
      * about which admin load they belong to.
@@ -431,46 +411,21 @@ class WireframeBootstrap {
     }
 
     /**
-     * The term list's row repairs: three shape migrations, then the title
-     * backfill. Pure — takes rows, returns rows, so the caller decides whether
-     * anything is worth writing.
+     * The term list's row repair: the title backfill. Pure — takes rows,
+     * returns rows, so the caller decides whether anything is worth writing.
      *
      * @since 0.8.0
      * @param array $rows Stored `term_rules` rows.
      * @return array
      */
     private static function repair_term_rows(array $rows): array {
-        $repaired = [];
-
-        foreach ($rows as $row) {
-            if (is_array($row)) {
-                $row = self::migrate_inheritance_behavior($row);
-                $row = self::migrate_related_term_shape($row);
-                // A legacy-shaped row written by CLI or import would reach
-                // the repeater raw and render with config defaults (absent
-                // holder_role = the radio's `source`, reversing a live rule's
-                // direction on resave). Re-applying here is idempotent and
-                // closes that window for the admin path.
-                if (($row['type'] ?? '') === 'related_post_terms_rules') {
-                    $row = OptionRuleStorage::migrate_related_post_terms_shape($row);
-                }
-            }
-            $repaired[] = $row;
-        }
-
         $key = OptionRuleStorage::KIND_TERM;
 
-        return self::snapshot_term_rule_labels([$key => $repaired])[$key];
+        return self::snapshot_term_rule_labels([$key => $rows])[$key];
     }
 
     /**
      * The format list's row repairs: the title backfill, and nothing else.
-     *
-     * No shape migration, deliberately. `title_slug_rules` moved into the
-     * ordered repeater (#59) with its stored keys unchanged, so there is no
-     * legacy shape to translate — and an empty migration is the honest way to
-     * say so. If a future format type needs one it goes here, beside the term
-     * list's three.
      *
      * @since 0.8.0
      * @param array $rows Stored `format_rules` rows.
@@ -480,87 +435,6 @@ class WireframeBootstrap {
         $key = OptionRuleStorage::KIND_FORMAT;
 
         return self::snapshot_format_rule_labels([$key => $rows])[$key];
-    }
-
-    /**
-     * Rewrite a hierarchical row's legacy direction/expansion pair into the
-     * `inheritance_behavior` outcome the config now authors (#16).
-     *
-     * Only ever fills in a MISSING key — a row that already names an outcome
-     * is returned untouched, and so is a row of any other type. The legacy
-     * keys are dropped once translated: `RepeaterField::sanitize` would drop
-     * them on the next save anyway (they are no longer declared subfields), so
-     * carrying them would only make the stored shape lie about what is read.
-     *
-     * @since 0.8.0
-     * @param array $row One term-rule row.
-     * @return array
-     */
-    private static function migrate_inheritance_behavior(array $row): array {
-        if (($row['type'] ?? '') !== 'hierarchical_rules'
-            || (string) ($row['inheritance_behavior'] ?? '') !== '') {
-            return $row;
-        }
-
-        if (!isset($row['hierarchy_direction']) && !isset($row['expansion_behavior'])) {
-            return $row;
-        }
-
-        // behavior_key() resolves the pair through the same map the handler
-        // runs on, so the migrated row behaves as the legacy one did.
-        $outcome = HierarchicalHandler::behavior_key($row);
-
-        // The one pair that names no outcome is parent_to_child + never, which
-        // applies nothing at all. Preserve that as a disabled rule rather than
-        // inventing a behaviour it never had.
-        if ($outcome === '') {
-            $row['enabled'] = false;
-            $outcome        = 'descendants_smart';
-        }
-
-        $row['inheritance_behavior'] = $outcome;
-        unset($row['hierarchy_direction'], $row['expansion_behavior']);
-
-        return $row;
-    }
-
-    /**
-     * Rewrite a related-term row's legacy scalar term ids into the array
-     * shapes the repeater's selects render (#58).
-     *
-     * The admin reads the option raw, so a pre-Wireframe row storing
-     * `trigger_term_id => "12"` or `target_term_id => 9` would render its
-     * select EMPTY — the FormTokenField binds an array — and the next save
-     * would persist that emptiness, silently disarming a live rule. The
-     * handlers already tolerate both shapes at read time
-     * (`normalize_rule_shape`); this is the admin half, same split as the
-     * inheritance-behavior migration above.
-     *
-     * Rows of any other type, and rows already in array shape, are untouched.
-     * The stale per-token label keys the old three-token title carried
-     * (`trigger_label` / `target_label` / `scope_label`) are shed here for
-     * the same reason the hierarchical migration sheds its legacy pair:
-     * sanitize would drop them on the next save anyway.
-     *
-     * @since 0.8.0
-     * @param array $row One term-rule row.
-     * @return array
-     */
-    private static function migrate_related_term_shape(array $row): array {
-        if (($row['type'] ?? '') !== 'related_rules') {
-            return $row;
-        }
-
-        foreach (['trigger_term_id', 'target_term_id'] as $key) {
-            if (isset($row[$key]) && !is_array($row[$key])) {
-                $id        = (int) $row[$key];
-                $row[$key] = $id > 0 ? [$id] : [];
-            }
-        }
-
-        unset($row['trigger_label'], $row['target_label'], $row['scope_label']);
-
-        return $row;
     }
 
     /**

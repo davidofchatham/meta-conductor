@@ -109,18 +109,17 @@ $settings = [
         ['name' => 'T1', 'enabled' => true, 'target_term_id' => ['21'], 'schedule_type' => 'daily'],
     ],
     'related_post_terms_rules' => [
-        // Fully legacy: pre-rename keys, combined "post_type:field" values.
+        // Combined "post_type:field" values, as the select stores them.
         [
             'name'                   => 'A1',
             'enabled'                => true,
             'acf_field_name'         => 'event:related_team',
             'reverse_acf_field_name' => 'team:related_events',
-            'source_taxonomy'        => 'sport',
-            'target_taxonomy'        => 'sport',
-            'bidirectional'          => true,
+            'taxonomy'               => 'sport',
+            'keep_in_sync'           => true,
+            'holder_role'            => 'target',
         ],
-        // The rare conflict_handling=skip row that gets flagged for review.
-        ['name' => 'A2', 'enabled' => false, 'acf_field_name' => 'post:ref', 'source_taxonomy' => 'sport', 'conflict_handling' => 'skip'],
+        ['name' => 'A2', 'enabled' => false, 'acf_field_name' => 'post:ref', 'taxonomy' => 'sport'],
     ],
     'hierarchical_level_restriction_rules' => [
         ['name' => 'L1', 'taxonomy' => 'category', 'enabled' => true, 'restriction_mode' => 'deepest_only'],
@@ -246,16 +245,17 @@ $projected = array_merge(
 );
 
 $acf = $of_type($projected, 'related_post_terms_rules')[0];
-$check('the read normalizes: legacy acf-ref keys are migrated at read time',
-    $acf['taxonomy'] === 'sport'
-    && $acf['keep_in_sync'] === true
-    && $acf['post_type'] === 'event'
+$check('the read normalizes: the combined acf-ref values are split',
+    $acf['post_type'] === 'event'
     && $acf['acf_field_name'] === 'related_team'
-    && $acf['reverse_acf_field_name'] === 'related_events'
-    && $acf['holder_role'] === 'target');
-$check('the read normalizes: conflict_handling=skip is flagged for review',
-    ($of_type($projected, 'related_post_terms_rules')[1]['_migration_flag'] ?? '')
-        === 'conflict_handling=skip dropped');
+    && $acf['reverse_acf_field_name'] === 'related_events');
+// FW-39: the read-time key-rename migration is gone — a legacy key is no
+// longer translated, and no default is invented for an absent one.
+$check('the read no longer migrates legacy acf-ref keys',
+    !array_key_exists('keep_in_sync', OptionRuleStorage::project_kind_rules([[
+        'type' => 'related_post_terms_rules', 'acf_field_name' => 'post:ref',
+        'bidirectional' => true,
+    ]])[0]));
 $check('the read normalizes: related term ids are canonicalized',
     $of_type($projected, 'related_rules')[0]['trigger_term_id'] === [12]
     && $of_type($projected, 'related_rules')[0]['target_term_id'] === 34
