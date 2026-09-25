@@ -175,6 +175,7 @@ if (!function_exists('bws_meta_manager_init')) {
 		// Remove all options
 		delete_option('bws_meta_conductor_settings');
 		delete_option('bws_meta_conductor_version');
+		delete_option('bws_title_slug_rule_status');
 		delete_option('bws_taxonomy_manager_settings'); // legacy
 		delete_option('bws_taxonomy_manager_version');  // legacy
 		
@@ -227,6 +228,10 @@ if (!function_exists('bws_meta_manager_init')) {
 				unset($settings['manual_processing_enabled']);
 				update_option('bws_meta_conductor_settings', $settings);
 			}
+
+			// Title/slug's per-rule status record was deleted: nothing read it, and
+			// it was keyed on a positional id that a reorder repoints. Idempotent.
+			delete_option('bws_title_slug_rule_status');
 
 			update_option('bws_meta_conductor_version', META_CONDUCTOR_VERSION);
 			bws_taxonomy_manager_clear_caches();

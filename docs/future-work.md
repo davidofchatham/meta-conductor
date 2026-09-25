@@ -211,6 +211,25 @@ A format rule that changes a published post's `post_name` moves its URL. Since #
   - **Audit trail.** A rule-driven rename leaves only the old-slug meta; nothing records which rule did it, or what provoked the pass.
 - **Blocked by:** — • **Interacts with:** FW-13, FW-16
 
+#### FW-37 — What a date-window rule's filter scopes
+
+A date-window rule's filter (`filter_taxonomies` / `filter_terms`) gates only the apply. Removal outside the window ignores it, so an in-range post that stops matching the filter keeps the target term until the window closes, then loses it whether or not it ever matched. That fits neither consistent reading. If the filter scopes **jurisdiction**, the rule should never touch a non-matching post, and the out-of-range removal reaches too far. If it is a **condition**, an in-range non-matching post should lose the term, and the rule should remove it.
+
+- **Detail home:** none yet. Code: `TimeBasedHandler::apply_time_based_rule()` (the apply and remove branches) and `expired_rule_posts()` (the cron selection, which ignores the filter too). Ownership model: [ADR 0001](adr/0001-temporal-rule-general-model-constrained-ui.md), [ADR 0004](adr/0004-claim-axis-and-jurisdiction.md).
+- **Progress:** Not started. Found in the 2026-09-24 architecture review. The current behavior is sweep-asserted (matrix §6c/§6d), so either answer changes a sweep expectation, and changes behavior if a live site runs a filtered date-window rule.
+- **Blocked by:** `decision:jurisdiction or condition` • **Interacts with:** FW-3, FW-24
+
+#### FW-38 — Whether to finish the title/slug rule's admin feedback
+
+The title/slug design planned three per-rule admin surfaces that never got built: a *last applied* line (when, on which post, the resulting title and slug), a warnings log (the last 10, e.g. a token that resolved empty or a field value that is not a string), and a Preview button showing current vs. resulting title/slug with per-token warnings. Decide whether any of them are still wanted, and in what form.
+
+- **Detail home:** [design-history/title-slug-rules.md](design-history/title-slug-rules.md) → the render-method and `admin.js` sections.
+- **Progress:** Not started. The Preview is mostly covered already: the Apply page's format preview shows the resulting title and slug for sample posts in one rule's reach, without per-token warnings. Nothing produces warnings today. The only status record ever written (`bws_title_slug_rule_status`) was write-only, keyed on the positional rule id so a reorder moved it to the wrong rule, and was deleted after 0.9.0.
+- **Open:**
+  - **Scope.** A title/slug-only surface, or the per-rule "last pass result" FW-35 weighs for every type. Deciding FW-35's logging level first avoids building a title/slug store that the general answer would replace.
+  - **Identity.** Any stored per-rule record needs a key that survives reordering and deletion. The rule `id` does not.
+- **Blocked by:** `decision:whether the feedback is still wanted` • **Interacts with:** FW-35, FW-36
+
 ---
 
 ## Tools and infrastructure
@@ -400,12 +419,12 @@ A Preview / Apply-to-existing button inside each rule row, so an author can chec
 The Diagnostics page (`Admin\Diagnostics`) is a 0.3.0 stub: hidden unless `WP_DEBUG` or a filter is on, it dumps the raw settings option plus a legacy option key no build writes any more, and otherwise says "User-level diagnostics coming soon". Rework it into something an author can use, and decide alongside it whether the plugin should keep any record of what its rules did — because that record is what such a page would mostly show.
 
 - **Detail home:** none.
-- **Progress:** Not started. The plugin has no logging today: the run log and its `enable_logging` read went with the dead rule engine (#26), and the upgrade drops every table the plugin ever created, none of which had a writer left. What remains is `debug_log()` to the PHP error log under `WP_DEBUG`, and title/slug's last-result record in the `bws_title_slug_rule_status` option.
+- **Progress:** Not started. The plugin has no logging today: the run log and its `enable_logging` read went with the dead rule engine (#26), and the upgrade drops every table the plugin ever created, none of which had a writer left. What remains is `debug_log()` to the PHP error log under `WP_DEBUG`. Title/slug's last-result record (`bws_title_slug_rule_status`) was deleted after 0.9.0: nothing read it, and it was keyed on a positional rule id.
 - **Open:**
   - **What the page is for.** Candidates: per-rule health (a rule whose target term or taxonomy no longer resolves — FW-30's runtime question), the ordered kind lists as the dispatcher reads them, recent pass activity, and the dev dumps kept behind `WP_DEBUG`. Drop the legacy-option dump either way.
-  - **Whether to log, and what.** A per-rule "last pass result" (like title/slug's status option, for every type) is cheap and answers most "did my rule run" questions; a per-write audit trail is what a rule-driven slug change with no redirect (FW-13 → *Slug safety*) would want, and needs a table, retention and a cleanup job. Decide the level before building storage for it — the deleted log table is the precedent for storage built ahead of a reader.
+  - **Whether to log, and what.** A per-rule "last pass result" for every type is cheap and answers most "did my rule run" questions; a per-write audit trail is what a rule-driven slug change with no redirect (FW-13 → *Slug safety*) would want, and needs a table, retention and a cleanup job. Decide the level before building storage for it — the deleted log table is the precedent for storage built ahead of a reader.
   - **Visibility.** Whether the page stays gated behind `WP_DEBUG` / a filter or becomes a normal submenu once it has author-facing content.
-- **Blocked by:** — • **Interacts with:** FW-13, FW-30
+- **Blocked by:** — • **Interacts with:** FW-13, FW-30, FW-38
 
 ---
 

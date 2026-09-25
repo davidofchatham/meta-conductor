@@ -484,7 +484,6 @@ switch ( $step ) {
 	case 'revisions':
 		add_post_type_support( 'mc_item', 'revisions' );
 		$snap   = mcae_snapshot();
-		$status = get_option( 'bws_title_slug_rule_status' );
 		$count  = function () {
 			$n = 0;
 			foreach ( get_posts( array( 'post_type' => 'mc_item', 'post_status' => 'any', 'numberposts' => -1, 'fields' => 'ids' ) ) as $id ) {
@@ -503,7 +502,6 @@ switch ( $step ) {
 		$t( '§ae7 …and created no revisions', $count(), $before );
 
 		mcae_put_back( $snap );
-		false === $status ? delete_option( 'bws_title_slug_rule_status' ) : update_option( 'bws_title_slug_rule_status', $status, false );
 		foreach ( array_keys( $snap ) as $id ) {
 			foreach ( wp_get_post_revisions( $id, array( 'fields' => 'ids' ) ) as $rev ) {
 				wp_delete_post_revision( $rev );
@@ -643,10 +641,9 @@ switch ( $step ) {
 	// ------------------------------------------------------------- preview
 	// A format preview shows the pass's result on the newest posts in reach
 	// and writes nothing: post rows and every meta row, `_bws_raw_title`
-	// included, hash the same before and after, and so does the rule status.
+	// included, hash the same before and after.
 	case 'preview':
 		$snap   = mcae_snapshot();
-		$status = get_option( 'bws_title_slug_rule_status' );
 		mcae_author( array(), array( mcae_title_row( 'PV' ) ) );
 
 		$digest = mcae_digest();
@@ -660,7 +657,6 @@ switch ( $step ) {
 		$t( '§ae11 shows the resulting title', mcae_titled( $result['sample'], 'PV' ), true );
 		$t( '§ae11 carries the uniqueness / terms note', '' !== $result['note'], true );
 		$t( '§ae11 post rows + meta byte-identical', mcae_digest(), $digest );
-		$t( '§ae11 rule status untouched', get_option( 'bws_title_slug_rule_status' ), $status );
 
 		mcae_put_back( $snap );
 		break;
@@ -670,7 +666,6 @@ switch ( $step ) {
 	// — in the preview AND in the run — and storage never changes.
 	case 'first':
 		$snap   = mcae_snapshot();
-		$status = get_option( 'bws_title_slug_rule_status' );
 		mcae_author( array(), array( mcae_title_row( 'FIRST', false ), mcae_title_row( 'SECOND' ) ) );
 		$stored = get_option( mc_sweep_option() );
 
@@ -690,7 +685,6 @@ switch ( $step ) {
 		$t( '§ae12 rules storage unchanged', get_option( mc_sweep_option() ), $stored );
 
 		mcae_put_back( $snap );
-		false === $status ? delete_option( 'bws_title_slug_rule_status' ) : update_option( 'bws_title_slug_rule_status', $status, false );
 		break;
 
 	// --------------------------------------------------------------- pterm

@@ -126,7 +126,7 @@ class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
             // Apply level restrictions
             $restricted_terms = $this->calculate_restricted_terms($current_terms, $taxonomy, $rule);
 
-            if ($restricted_terms !== $current_terms) {
+            if (!self::same_set($restricted_terms, $current_terms)) {
                 // Update ACF field — write by KEY so a first-write registers the
                 // ACF reference row (see set_acf_taxonomy_value docblock).
                 $this->set_acf_taxonomy_value($post_id, $field['key'], $restricted_terms);
@@ -214,6 +214,25 @@ class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
     }
     
     /**
+     * Whether two term-ID lists hold the same terms, ignoring order.
+     *
+     * `calculate_restricted_terms()` regroups by level and appends ancestors,
+     * so an untouched set can come back reordered. A strict `!==` read that as
+     * a change: a no-op native write, and an ACF field value reordered on
+     * every pass.
+     *
+     * @param array $a Term IDs.
+     * @param array $b Term IDs.
+     */
+    private static function same_set(array $a, array $b): bool {
+        $a = array_map('intval', $a);
+        $b = array_map('intval', $b);
+        sort($a);
+        sort($b);
+        return $a === $b;
+    }
+
+    /**
      * Group terms by their hierarchical level
      */
     private function group_terms_by_level($term_ids, $taxonomy) {
@@ -288,7 +307,7 @@ class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
         
         $restricted_terms = $this->calculate_restricted_terms($current_terms, $taxonomy, $rule);
         
-        if ($restricted_terms !== $current_terms) {
+        if (!self::same_set($restricted_terms, $current_terms)) {
             wp_set_object_terms($post_id, $restricted_terms, $taxonomy);
             
             $this->debug_log(

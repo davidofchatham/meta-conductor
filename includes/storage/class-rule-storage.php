@@ -257,14 +257,4 @@ interface RuleStorage {
      * @return string Storage backend name ('options', 'cpt', 'external', etc.)
      */
     public function get_storage_type(): string;
-
-    /**
-     * Validate rule data before saving
-     *
-     * @since 0.2.0
-     * @param string $type Rule type
-     * @param array  $data Rule data to validate
-     * @return array Array with 'valid' (bool) and 'errors' (array) keys
-     */
-    public function validate_rule(string $type, array $data): array;
 }

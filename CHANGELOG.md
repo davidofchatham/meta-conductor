@@ -5,6 +5,18 @@ All notable changes to Meta Conductor are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **A date-window rule missing a start or end date now does nothing.** An empty end date compared as long expired, so the rule stripped its target term from every post in scope on every save and on the daily cleanup. The editor requires both dates, but a row written by hand or by an import was not held to that.
+- **A level-restriction rule no longer rewrites a post it has nothing to change on.** Restricting could return the same terms in a different order, which counted as a change: every pass made a redundant term write and reordered the value stored in the post's ACF taxonomy field.
+
+### Removed
+
+- Title/slug rules no longer record a per-rule *last applied* status. Nothing displayed it, and it was filed under the rule's position, so reordering or deleting a rule attached the record to a different rule. The stored `bws_title_slug_rule_status` option is deleted on upgrade.
+- The rule storage's `validate_rule()` method. Nothing called it, and it checked fields three rule types no longer have, so it would have rejected every real rule of those types.
+
 ## [0.9.0] — 2026-09-24
 
 ### Added

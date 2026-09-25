@@ -138,7 +138,7 @@ Status (L1)          — second root: related/time-based targets live here so
 | Data | Posts with meta + terms feeding tokens; two posts colliding on generated slug (date_escalation ladder year→minute → `wp_unique_post_slug`). |
 | Rule config | `name`, `post_type: mc_item`, `title_pattern` / `slug_pattern` (tokens: `{default_title}`, `{meta:x}`, `{date_year:x}`, `{pub_*}`, `{term:tax}`, `{terms:tax}`), `slug_mode` (prefix/suffix/replace), `date_escalation` + `date_field`. |
 | Rules to seed | 1 (`mc_item`: slug_pattern with `{meta:...}` + `{term:mc_topic}`, escalation on). Pattern variants per-scenario (one-per-type limit blocks parallel rules). |
-| Mutates | `post_title`/`post_name` only; meta `_bws_raw_title`/`_bws_applied_title`; option `bws_title_slug_rule_status`. No taxonomy writes. |
+| Mutates | `post_title`/`post_name` only; meta `_bws_raw_title`/`_bws_applied_title`. No taxonomy writes. |
 | Scenarios | Same-pass `{term:TAX}` read (a term rule's write, not the previous save's); provocation-independence (editor save / ACF save / term write / bulk); idempotent re-pass; slug collision escalation. The pre-write vs post-write split is GONE (#64) — every apply is post-write. |
 | Shared reuse | None — a rule on `page`/`post`/`staff` would rename GBDTE fixture slugs and break every matrix URL. Hard no. |
 

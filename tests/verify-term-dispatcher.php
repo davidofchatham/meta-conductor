@@ -1033,7 +1033,7 @@ foreach (($fmt_converted ?? []) as $type) {
     // The meta and option writes too, since FW-16 03: the compute step runs the
     // appliers for a preview, so anything an applier writes is written by a
     // preview. Per-rule state belongs in commit_data(), which only write() calls.
-    foreach (['wp_update_post', 'wp_insert_post', 'update_post_meta', 'update_option', 'write_rule_status'] as $effect) {
+    foreach (['wp_update_post', 'wp_insert_post', 'update_post_meta', 'update_option'] as $effect) {
         if (preg_match('/\b' . preg_quote($effect, '/') . '\s*\(/', $applier)) {
             $errors[] = sprintf(
                 '%s::apply_to_data() calls %s() — a format applier returns data; the dispatcher writes the row and commit_data() the per-rule state (#64, FW-16 03).',
@@ -1072,7 +1072,7 @@ if (isset($fsrc)) {
         }
     }
     if (isset($write_body) && strpos($write_body, 'commit_data(') === false) {
-        $errors[] = 'FormatDispatcher::write() does not call commit_data() — the idempotency meta and rule status would never be written (FW-16 03).';
+        $errors[] = 'FormatDispatcher::write() does not call commit_data() — the idempotency meta would never be written (FW-16 03).';
     }
 }
 

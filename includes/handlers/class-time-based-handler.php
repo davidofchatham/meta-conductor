@@ -59,7 +59,7 @@ class TimeBasedHandler extends UnifiedHandlerBase {
      * honest (#31).
      */
     public function apply_to_post(int $post_id, array $rule): bool {
-        if (!$this->should_process_post($post_id, $rule)) {
+        if (!$this->should_process_post($post_id, $rule) || !self::has_window($rule)) {
             return false;
         }
         $post = get_post($post_id);
@@ -75,6 +75,18 @@ class TimeBasedHandler extends UnifiedHandlerBase {
         $before = $this->terms_fingerprint($post_id, $taxonomy);
         $this->apply_time_based_rule($post_id, $post, $rule);
         return $this->terms_fingerprint($post_id, $taxonomy) !== $before;
+    }
+
+    /**
+     * Whether the rule names both ends of its window.
+     *
+     * A missing date compares as `''`, which is below every Y-m-d, so an empty
+     * `end_date` reads as long expired and the removal branch would strip the
+     * target from every in-scope post on every pass. The UI marks both dates
+     * required, but a hand-authored or seeded row is not held to that.
+     */
+    private static function has_window(array $rule): bool {
+        return ($rule['start_date'] ?? '') !== '' && ($rule['end_date'] ?? '') !== '';
     }
 
     /**
@@ -212,7 +224,7 @@ class TimeBasedHandler extends UnifiedHandlerBase {
 
         foreach ($enabled_rules as $rule) {
             // Skip rules that haven't expired yet
-            if ($current_date <= $rule['end_date']) {
+            if (!self::has_window($rule) || $current_date <= $rule['end_date']) {
                 continue;
             }
 
@@ -293,7 +305,7 @@ class TimeBasedHandler extends UnifiedHandlerBase {
         $active_rules = array();
         
         foreach ($enabled_rules as $rule) {
-            if ($date >= $rule['start_date'] && $date <= $rule['end_date']) {
+            if (self::has_window($rule) && $date >= $rule['start_date'] && $date <= $rule['end_date']) {
                 $active_rules[] = $rule;
             }
         }
@@ -312,7 +324,7 @@ class TimeBasedHandler extends UnifiedHandlerBase {
         $upcoming_rules = array();
         
         foreach ($enabled_rules as $rule) {
-            if ($rule['start_date'] > $current_date && $rule['start_date'] <= $future_date) {
+            if (self::has_window($rule) && $rule['start_date'] > $current_date && $rule['start_date'] <= $future_date) {
                 $upcoming_rules[] = $rule;
             }
         }
@@ -335,7 +347,7 @@ class TimeBasedHandler extends UnifiedHandlerBase {
         );
         
         foreach ($enabled_rules as $rule) {
-            if ($rule['end_date'] < $current_date) {
+            if (self::has_window($rule) && $rule['end_date'] < $current_date) {
                 $summary['expired_rules']++;
             }
         }

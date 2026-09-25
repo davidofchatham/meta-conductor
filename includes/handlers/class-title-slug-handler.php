@@ -110,7 +110,7 @@ class TitleSlugHandler extends UnifiedHandlerBase {
     }
 
     /**
-     * The idempotency meta and status record for one `apply_to_data()` answer.
+     * The idempotency meta for one `apply_to_data()` answer.
      *
      * @param array $before  Post data the applier was handed.
      * @param array $after   Post data it returned.
@@ -139,12 +139,6 @@ class TitleSlugHandler extends UnifiedHandlerBase {
             $default_title = $this->resolve_default_title($post_id, (object) $before, $rule);
             update_post_meta($post_id, '_bws_raw_title', $this->as_stored($default_title, $post_id));
             update_post_meta($post_id, '_bws_applied_title', $this->as_stored($new_title, $post_id));
-        }
-
-        // Status is a record of work done, so it is written only when the rule
-        // actually moved something — an idempotent re-pass is not an event.
-        if ($after['post_title'] !== $before['post_title'] || $after['post_name'] !== $before['post_name']) {
-            $this->write_rule_status((int) ($rule['id'] ?? 0), $post_id, $new_title, (string) $after['post_name'], []);
         }
     }
 
@@ -660,33 +654,5 @@ class TitleSlugHandler extends UnifiedHandlerBase {
         }
 
         return wp_unique_post_slug($candidate, $post_id, $post->post_status, $post->post_type, $post->post_parent);
-    }
-
-    // -------------------------------------------------------------------------
-    // Status logging
-    // -------------------------------------------------------------------------
-
-    protected function write_rule_status(int $rule_index, int $post_id, string $title,
-                                         string $slug, array $warnings): void {
-        $status = get_option('bws_title_slug_rule_status', []);
-
-        // Always overwrite last-applied (one record per rule).
-        $status[$rule_index]['last_applied'] = [
-            'timestamp' => current_time('mysql'),
-            'post_id'   => $post_id,
-            'title'     => $title,
-            'slug'      => $slug,
-        ];
-
-        // Only log warnings; cap at 10 entries (FIFO).
-        if (!empty($warnings)) {
-            $log = $status[$rule_index]['warnings'] ?? [];
-            foreach ($warnings as $w) {
-                $log[] = ['timestamp' => current_time('mysql'), 'post_id' => $post_id, 'message' => $w];
-            }
-            $status[$rule_index]['warnings'] = array_slice($log, -10);
-        }
-
-        update_option('bws_title_slug_rule_status', $status, false); // autoload=false
     }
 }

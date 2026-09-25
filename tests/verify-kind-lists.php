@@ -19,10 +19,9 @@
  * 3. **Every storage entry point operates on the kind list.** `get_rules()`
  *    and friends still speak in rule TYPES, but a type is a filter over a kind
  *    list now, and `$rule_id` is a per-type index into a cross-type array —
- *    the one number every mutator has to translate. Per-type `id` is
- *    load-bearing: `TitleSlugHandler::write_rule_status()` persists per-rule
- *    state against it, so re-basing it onto the kind-list position would
- *    silently repoint every stored status.
+ *    the one number every mutator has to translate. The projected `id` is
+ *    that same per-type number, so a rule read out and a rule addressed by
+ *    a mutator agree on which rule is meant.
  *
  * Plus the #27 boundary: `update_option()` returns false both for a genuine
  * failure and for a write that was not needed, and the mutators must not
@@ -380,8 +379,6 @@ $check('an unknown type maps to no kind', $storage->get_kind_for_type('nope_rule
 $check('an unknown kind reads as empty, not a fatal', $storage->get_kind_rules('nope') === []);
 $check('an unknown type reads as empty', $storage->get_rules('nope_rules') === []);
 $check('an unknown type cannot be saved', $storage->save_rule('nope_rules', -1, ['a' => 1]) === -1);
-$check('an unknown type cannot be validated into existence',
-    $storage->validate_rule('nope_rules', [])['valid'] === false);
 
 // A type may be declared in KIND_TYPES before its repeater subfields exist —
 // that is what CONFIG_MIGRATED_TYPES is for — but never the other way round: a
@@ -433,9 +430,8 @@ $check('the read normalizes: related term ids are canonicalized',
 $check('the read normalizes: time_based single-term array collapses to int',
     $of_type($projected, 'time_based_rules')[0]['target_term_id'] === 21);
 
-// `id` is PER TYPE, not the kind-list position. TitleSlugHandler persists
-// per-rule status keyed on this number, so re-basing it onto the kind list
-// would silently repoint every stored status. H2 in the term list sits at kind
+// `id` is PER TYPE, not the kind-list position — the number the type-facing
+// mutators take. H2 in the term list sits at kind
 // position 7 but must still report id 1; the sole title_slug rule must be 0.
 $check('id is the per-type index, not the kind-list position',
     array_column($of_type($projected, 'hierarchical_rules'), 'id') === [0, 1]

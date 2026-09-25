@@ -408,10 +408,9 @@ class OptionRuleStorage implements RuleStorage {
      *
      * `id` is assigned PER TYPE, not per kind-list position — it stays the
      * index the rule has inside its own type, exactly as `get_rules()` reports
-     * it. Handlers persist state keyed on it (`TitleSlugHandler`'s
-     * `write_rule_status()`), so re-basing it onto the kind list would silently
-     * repoint every stored per-rule status. It carries the same warning as
-     * `get_rules()`: positional, re-derived on read, never a stable identity.
+     * it, so it stays the number the type-facing mutators take. It carries the
+     * same warning as `get_rules()`: positional, re-derived on read, never a
+     * stable identity.
      *
      * Not memoized on purpose. It reads only what `get_all_settings()` already
      * cached, and a second request-scoped cache would need resetting in
@@ -1388,101 +1387,5 @@ class OptionRuleStorage implements RuleStorage {
      */
     public function get_storage_type(): string {
         return 'options';
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function validate_rule(string $type, array $data): array {
-        // An unknown type names no kind list, so there is nowhere for the rule
-        // to be saved and nothing to validate it against. This replaces the
-        // `$valid_types` membership test the mutators used to share (#66).
-        if ($this->get_kind_for_type($type) === '') {
-            return [
-                'valid'  => false,
-                'errors' => ['Unknown rule type: ' . $type],
-            ];
-        }
-
-        $errors = [];
-
-        // Basic validation - check required fields by type
-        switch ($type) {
-            case 'hierarchical_rules':
-                if (empty($data['taxonomy'])) {
-                    $errors[] = 'Taxonomy is required for hierarchical rules';
-                }
-                if (!empty($data['taxonomy']) && !taxonomy_exists($data['taxonomy'])) {
-                    $errors[] = 'Invalid taxonomy: ' . $data['taxonomy'];
-                }
-                break;
-
-            case 'propagation_rules':
-                if (empty($data['taxonomy'])) {
-                    $errors[] = 'Taxonomy is required for propagation rules';
-                }
-                if (empty($data['post_type'])) {
-                    $errors[] = 'Post type is required for propagation rules';
-                }
-                break;
-
-            case 'related_rules':
-                if (empty($data['source_taxonomy'])) {
-                    $errors[] = 'Source taxonomy is required for related rules';
-                }
-                if (empty($data['target_taxonomy'])) {
-                    $errors[] = 'Target taxonomy is required for related rules';
-                }
-                break;
-
-            case 'time_based_rules':
-                if (empty($data['taxonomy'])) {
-                    $errors[] = 'Taxonomy is required for time-based rules';
-                }
-                if (empty($data['schedule_type'])) {
-                    $errors[] = 'Schedule type is required for time-based rules';
-                }
-                break;
-
-            case 'related_post_terms_rules':
-                if (empty($data['acf_field_name'])) {
-                    $errors[] = 'ACF field name is required';
-                }
-                // New schema: single `taxonomy`. Legacy rows: `source_taxonomy`.
-                // Accept either so validation is live-data safe. (SPEC §V8)
-                if (empty($data['taxonomy']) && empty($data['source_taxonomy'])) {
-                    $errors[] = 'Taxonomy is required';
-                }
-                break;
-
-            case 'hierarchical_level_restriction_rules':
-                if (empty($data['taxonomy'])) {
-                    $errors[] = 'Taxonomy is required';
-                }
-                if (empty($data['restriction_mode'])) {
-                    $errors[] = 'Restriction mode is required';
-                }
-                break;
-
-            case 'title_slug_rules':
-                if (empty($data['post_type'])) {
-                    $errors[] = 'Post type is required for title/slug rules';
-                } elseif (!post_type_exists($data['post_type'])) {
-                    $errors[] = 'Invalid post type: ' . $data['post_type'];
-                }
-                if (empty($data['title_pattern']) && empty($data['slug_pattern'])) {
-                    $errors[] = 'At least one of title pattern or slug pattern is required';
-                }
-                if (!empty($data['slug_pattern']) && !empty($data['slug_mode'])
-                    && !in_array($data['slug_mode'], ['replace', 'prefix', 'suffix'], true)) {
-                    $errors[] = 'Invalid slug mode';
-                }
-                break;
-        }
-
-        return [
-            'valid' => empty($errors),
-            'errors' => $errors,
-        ];
     }
 }
