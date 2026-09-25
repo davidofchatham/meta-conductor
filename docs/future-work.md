@@ -195,7 +195,7 @@ A rule whose **claim** is *restricting* (today only level-restriction) declares 
 Current rule-type names conflate **basis**, **effect target** and **claim** into one string, which is why `hierarchical` (term graph) and `propagation` (post graph) read as near-synonyms, as do `related` (term↔term) and `related_post_terms` (post↔post). Names should be composed from the axes once those have settled.
 
 - **Detail home:** [ADR 0002](adr/0002-cross-rule-composition.md), where it was deferred. Axis definitions: [CONTEXT.md](../CONTEXT.md).
-- **Progress:** Not started. Storage keys (`related_rules`, `time_based_rules`, …) are unaffected — this is domain and UI vocabulary only.
+- **Progress:** Not started. Storage keys (`related_rules`, `time_based_rules`, …) are unaffected — this is domain and UI vocabulary only. Once FW-39 lands, each rule type's descriptor `label()` is the single rename site; descriptor class names mirror the storage keys and do not change.
 - **Blocked by:** `code:the Effect axis carries only term values` — renaming before it carries field, title and body-class values means minting names twice • **Interacts with:** FW-4, FW-5, FW-6
 
 #### FW-36 — Slug-change safety for format rules
@@ -281,7 +281,7 @@ The repo's gates are plain-PHP `tests/verify-*.php` scripts run on bare host PHP
 - **Detail home:** none. The issue that framed it was #20.
 - **Progress:** Mostly closed by attrition rather than by decision. #61 rewrote `RelatedHandler` into a pure applier and deleted `should_trigger_related_terms` / `apply_related_terms` / `process_acf_related_terms`, and the integration call sites are gone; of the original ~8 re-coercion sites, **3 remained** in `class-related-handler.php`. Fixing [#52](https://github.com/davidofchatham/meta-conductor/issues/52) routed all five of that file's term reads — those three plus the target resolutions — through one private `resolve_term()`, so the `(int)` cast and the "is this readable" test each exist once there. The `(array)` on `trigger_term_id` does not: its three readers still coerce.
 - **Open:** the surviving callers still ask genuinely different questions — *any* id resolves, which resolved ids are on the post, *every* id resolves — so they were never one helper's worth of duplication; what `resolve_term()` unified is the *answer*, not the question. The decision the issue's point 3 named and #61 never settled is untouched: **is `normalize_rule_shape()` the guaranteed `int[]` boundary or not?** If yes, the `(array)` casts come out and the guarantee gets stated where the shape is declared; if no, that is worth one comment saying why a consumer must still re-coerce. Doing neither is what leaves the invariant declared and unenforced.
-- **Blocked by:** — • **Interacts with:** FW-30
+- **Blocked by:** — • **Interacts with:** FW-30, FW-39 (its storage PR settles this: `int` for `target_term_id`, `int[]` for `trigger_term_id`, guaranteed at read)
 
 #### FW-32 — Term-rule dry run
 
@@ -308,7 +308,15 @@ Replace the minimal pairwise collision warning (#65) with an analysis over **rea
 - **Detail home:** [ADR 0003](adr/0003-ordered-rule-list-and-dispatcher.md) → Consequences, where it was deferred; the component model is in [ADR 0002](adr/0002-cross-rule-composition.md) → Consequences (its tie to the ordering UI is superseded). The *What it deliberately does NOT do* PHPDoc on `Admin\CollisionDetector` says where the current detector stops. Vocabulary: [CONTEXT.md](../CONTEXT.md) → *Reach*, *Collision*.
 - **Progress:** Not started. The pairwise advisory shipped in 0.8.0: equal effect targets plus overlapping written post types, claim not consulted. `CollisionDetector::written_post_types()` already gives post-type-level reach, and FW-16 reuses it.
 - **Open:** defining reach once for **every** effect kind, not just terms — which is why it waits for a real field or rendered kind. Also whether to consult the claim, since two purely contributing rules cannot actually fight. With the repeater as the ordering UI, the result is advisory only: components no longer decide which rules get ordering control.
-- **Blocked by:** `code:the only effect kinds are term and title/slug` — cleared by FW-4 landing • **Interacts with:** FW-4, FW-6, FW-12, FW-25
+- **Blocked by:** `code:the only effect kinds are term and title/slug` — cleared by FW-4 landing • **Interacts with:** FW-4, FW-6, FW-12, FW-25, FW-39
+
+#### FW-39 — Rule-type descriptor + canonical storage projection
+
+Give each rule type one descriptor module that declares its kind, label, handler, subfields, shape normalization, row title and reach, with an ordered registry deriving every type list the code keeps by hand today. First, make storage's read projection the guaranteed canonical rule shape and delete the migration and CRUD code nothing reaches any more. Adding a rule type today touches ~15 hand-kept sites across 9 files, and an unregistered type falls through silently.
+
+- **Detail home:** `.scratch/rule-type-descriptor/spec.md`. Origin: the 2026-09-24 architecture review (candidates 1 + 2).
+- **Progress:** Specced; two PRs planned (storage projection first, then the descriptor). The live-site shape check (`tools/fixtures/legacy-shape-check.php`) came back clean on both production sites, which clears the migration deletions.
+- **Blocked by:** — • **Interacts with:** FW-1, FW-4, FW-5, FW-8, FW-14, FW-20, FW-24, FW-29, FW-30, FW-34
 
 ---
 

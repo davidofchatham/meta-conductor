@@ -13,7 +13,7 @@ A single configured unit of behaviour belonging to a **rule type**. Reads as fiv
 _Avoid_: setting, config entry.
 
 **Rule type**:
-A named family of rules with shared structure and a dedicated handler (e.g. Temporal Rule, Title/Slug, Hierarchical).
+A named family of rules with shared structure and a dedicated handler (e.g. Temporal Rule, Title/Slug, Hierarchical). Each rule type is declared by one **descriptor** — the single place its kind, label, handler, subfields, stored shape, row title and reach are stated; the lists that enumerate rule types are derived from the ordered registry of descriptors.
 
 **Handler**:
 The code that processes all rules of one rule type against entities.
