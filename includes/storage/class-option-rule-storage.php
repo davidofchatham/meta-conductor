@@ -315,8 +315,8 @@ class OptionRuleStorage implements RuleStorage {
                         continue;
                     }
                     // Authoritative: the owning array names the type, so a
-                    // stale `type` on the row (a round-tripped kind row saved
-                    // back through save_rule) is corrected rather than trusted.
+                    // stale `type` on the row (a round-tripped kind row) is
+                    // corrected rather than trusted.
                     $row['type'] = $type;
                     $rows[]      = $row;
                 }
@@ -470,13 +470,11 @@ class OptionRuleStorage implements RuleStorage {
      * Returns TRUE when the option round-trips — the write succeeded, OR the
      * bytes already equalled what was stored so no write was needed. FALSE only
      * when a re-read shows the data did not persist (#27). `update_option()`
-     * cannot be believed on its own: it returns false for both of those, and
-     * every mutator on this class treats false as failure.
+     * cannot be believed on its own: it returns false for both of those.
      *
      * The request cache is refreshed to match what is ACTUALLY stored, for the
      * same reason. Adopting $settings after a genuine DB failure would have a
-     * later save in the same request (import_rules looping save_rule) read the
-     * poisoned cache and persist the failed data as its baseline.
+     * later read in the same request serve data the database does not hold.
      * (PR#24 round 5 #5 + round 6 #4)
      *
      * @param array $settings Complete settings array
@@ -1053,50 +1051,6 @@ class OptionRuleStorage implements RuleStorage {
     }
 
     /**
-     * The kind-list POSITION of one type's Nth rule, or null if it has no Nth.
-     *
-     * The bridge every mutator crosses: `$rule_id` is the per-type index the
-     * read paths report (see get_rules()), the stored list is cross-type, and
-     * these two numbers only coincide for a single-type kind.
-     *
-     * @since 0.8.0
-     * @param array  $rows    One kind list.
-     * @param string $type    Rule type.
-     * @param int    $rule_id Per-type index.
-     * @return int|null
-     */
-    private static function position_of(array $rows, string $type, int $rule_id): ?int {
-        $index = 0;
-
-        foreach ($rows as $position => $row) {
-            if (!is_array($row) || ($row['type'] ?? '') !== $type) {
-                continue;
-            }
-            if ($index === $rule_id) {
-                return (int) $position;
-            }
-            $index++;
-        }
-
-        return null;
-    }
-
-    /**
-     * How many rules of one type a kind list holds.
-     *
-     * @since 0.8.0
-     * @param array  $rows One kind list.
-     * @param string $type Rule type.
-     * @return int
-     */
-    private static function count_of(array $rows, string $type): int {
-        return count(array_filter(
-            $rows,
-            static fn($row): bool => is_array($row) && ($row['type'] ?? '') === $type
-        ));
-    }
-
-    /**
      * {@inheritDoc}
      */
     public function get_rule(string $type, int $rule_id): ?array {
@@ -1109,302 +1063,11 @@ class OptionRuleStorage implements RuleStorage {
 
     /**
      * {@inheritDoc}
-     *
-     * A new rule is APPENDED to the end of its kind list, not slotted in beside
-     * the other rules of its type. Position is order and order is composition
-     * (ADR 0003 decision 3), so a rule the author has not placed belongs last —
-     * where it cannot change what the existing list already does.
-     */
-    public function save_rule(string $type, int $rule_id, array $data): int {
-        $kind = $this->get_kind_for_type($type);
-
-        if ($kind === '') {
-            return -1;
-        }
-
-        // Guard: -1 is the only valid "create new" sentinel. Any other negative
-        // id means a caller round-tripped a failure return (-1 collides with
-        // the create sentinel only by value, not intent) or passed garbage.
-        // Fail loud rather than silently create or corrupt an index.
-        if ($rule_id < -1) {
-            return -1;
-        }
-
-        $all_settings = $this->get_all_settings();
-        $rows         = $all_settings[$kind] ?? [];
-
-        // `id` is the read-time position, never stored; `type` is the row's
-        // place in the list, so it is written from the argument rather than
-        // trusted off the payload.
-        unset($data['id']);
-        $data['type'] = $type;
-
-        if ($rule_id === -1) {
-            // Count BEFORE the append: the number of rows of this type already
-            // present is the new rule's per-type index, which is the number
-            // get_rules() will report for it. Counting after and subtracting one
-            // says the same thing twice, in opposite directions.
-            $new_id = self::count_of($rows, $type);
-            $rows[] = $data;
-        } else {
-            $position = self::position_of($rows, $type, $rule_id);
-
-            if ($position === null) {
-                return -1;
-            }
-
-            $rows[$position] = $data;
-            $new_id          = $rule_id;
-        }
-
-        $all_settings[$kind] = array_values($rows);
-
-        return $this->save_all_settings($all_settings) ? $new_id : -1;
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function delete_rule(string $type, int $rule_id): bool {
-        $kind = $this->get_kind_for_type($type);
-
-        if ($kind === '' || $rule_id < 0) {
-            return false;
-        }
-
-        $all_settings = $this->get_all_settings();
-        $rows         = $all_settings[$kind] ?? [];
-        $position     = self::position_of($rows, $type, $rule_id);
-
-        if ($position === null) {
-            return false;
-        }
-
-        // Remove rule and re-index — the remaining rules keep their order, and
-        // every id after this one shifts down, exactly as before.
-        unset($rows[$position]);
-        $all_settings[$kind] = array_values($rows);
-
-        return $this->save_all_settings($all_settings);
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function search_rules(string $query, array $filters = []): array {
-        $query_lower = strtolower($query);
-        $results = [];
-
-        foreach (array_keys(self::KIND_TYPES) as $kind) {
-            foreach ($this->get_kind_rules($kind, $filters) as $rule) {
-                $searchable = [
-                    $rule['name'] ?? '',
-                    $rule['taxonomy'] ?? '',
-                    implode(' ', (array) ($rule['post_types'] ?? [])),
-                ];
-
-                $searchable_text = strtolower(implode(' ', $searchable));
-
-                if (strpos($searchable_text, $query_lower) !== false) {
-                    // `type` is already on the row — it is the grouping key of
-                    // the list this came out of, not something added here.
-                    $results[] = $rule;
-                }
-            }
-        }
-
-        return $results;
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function get_rule_types(): array {
-        return self::all_types();
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function count_rules(string $type, array $filters = []): int {
-        return count($this->get_rules($type, $filters));
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function rule_exists(string $type, int $rule_id): bool {
-        return $this->get_rule($type, $rule_id) !== null;
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function duplicate_rule(string $type, int $rule_id, array $overrides = []): int {
-        $original = $this->get_rule($type, $rule_id);
-
-        if (!$original) {
-            return 0;
-        }
-
-        // Remove ID
-        unset($original['id']);
-
-        // Apply overrides
-        $duplicate = array_merge($original, $overrides);
-
-        // Add " (Copy)" to name if not overridden
-        if (!isset($overrides['name'])) {
-            $duplicate['name'] = ($original['name'] ?? 'Rule') . ' (Copy)';
-        }
-
-        return $this->save_rule($type, -1, $duplicate);
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function bulk_toggle_rules(string $type, array $rule_ids, bool $enabled): int {
-        $kind = $this->get_kind_for_type($type);
-
-        if ($kind === '') {
-            return 0;
-        }
-
-        $all_settings  = $this->get_all_settings();
-        $rows          = $all_settings[$kind] ?? [];
-        $updated_count = 0;
-
-        foreach ($rule_ids as $rule_id) {
-            $position = self::position_of($rows, $type, (int) $rule_id);
-
-            if ($position === null) {
-                continue;
-            }
-
-            // Only count + mutate rules whose state ACTUALLY changes. Counting
-            // no-ops would (a) overstate the toggle count, and (b) when EVERY
-            // target is already in the requested state, leave $settings ===
-            // stored ⇒ nothing to write ⇒ the failure guard below would report
-            // 0 for a set of rules that are all correct. (PR#24 round 8 #1)
-            if ((bool) ($rows[$position]['enabled'] ?? false) !== $enabled) {
-                $rows[$position]['enabled'] = $enabled;
-                $updated_count++;
-            }
-        }
-
-        if ($updated_count === 0) {
-            return 0;
-        }
-
-        $all_settings[$kind] = $rows;
-
-        // Report 0 if the write didn't persist, so callers don't show success
-        // on a genuine DB failure (save_rule/delete_rule already propagate the
-        // save result; bulk_toggle must too). (PR#24 round 6 #3, round 8 #1)
-        return $this->save_all_settings($all_settings) ? $updated_count : 0;
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function export_rules(array $filters = []): array {
-        $export = [
-            'version' => defined('META_CONDUCTOR_VERSION') ? META_CONDUCTOR_VERSION : '0.3.0',
-            'storage_type' => 'options',
-            'exported_at' => current_time('mysql'),
-            'rules' => [],
-        ];
-
-        // Export specific types or all types
-        $types_to_export = $filters['types'] ?? self::all_types();
-
-        foreach ($types_to_export as $type) {
-            if ($this->get_kind_for_type($type) === '') {
-                continue;
-            }
-
-            $rules = $this->get_rules($type, $filters);
-
-            if (!empty($rules)) {
-                $export['rules'][$type] = $rules;
-            }
-        }
-
-        return $export;
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function import_rules(array $rules_data, array $options = []): array {
-        $results = [
-            'imported' => 0,
-            'skipped' => 0,
-            'errors' => [],
-        ];
-
-        $overwrite = $options['overwrite'] ?? false;
-        $skip_duplicates = $options['skip_duplicates'] ?? true;
-        $prefix_names = $options['prefix_names'] ?? '';
-
-        foreach ($rules_data as $type => $rules) {
-            if ($this->get_kind_for_type((string) $type) === '') {
-                $results['errors'][] = "Invalid rule type: {$type}";
-                continue;
-            }
-
-            foreach ($rules as $rule) {
-                // Add prefix if specified
-                if ($prefix_names && isset($rule['name'])) {
-                    $rule['name'] = $prefix_names . $rule['name'];
-                }
-
-                // Check for duplicates by exact name (search_rules uses a
-                // fuzzy substring match — "Foo" would falsely match "Food").
-                if ($skip_duplicates) {
-                    $import_name = $rule['name'] ?? '';
-                    $is_duplicate = false;
-                    foreach ($this->get_rules($type) as $existing_rule) {
-                        if (($existing_rule['name'] ?? '') === $import_name) {
-                            $is_duplicate = true;
-                            break;
-                        }
-                    }
-                    if ($is_duplicate) {
-                        $results['skipped']++;
-                        continue;
-                    }
-                }
-
-                // Import the rule
-                $new_id = $this->save_rule($type, -1, $rule);
-
-                if ($new_id >= 0) {
-                    $results['imported']++;
-                } else {
-                    $results['errors'][] = "Failed to import rule: " . ($rule['name'] ?? 'Unnamed');
-                }
-            }
-        }
-
-        return $results;
-    }
-
-    /**
-     * {@inheritDoc}
      */
     public function clear_cache(?string $type = null): void {
         $this->cached_settings = null;
 
         // Clear WordPress object cache
         wp_cache_delete(self::OPTION_NAME, 'options');
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function get_storage_type(): string {
-        return 'options';
     }
 }

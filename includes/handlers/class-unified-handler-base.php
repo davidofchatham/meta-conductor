@@ -157,36 +157,6 @@ abstract class UnifiedHandlerBase {
     }
 
     /**
-     * Save a rule
-     *
-     * @since 0.2.0
-     * @param int   $rule_id Rule ID (-1 for new rule)
-     * @param array $data Rule data
-     * @return int Zero-based rule index on success, -1 on failure. Index 0 is
-     *             a valid first rule — guard with `>= 0`, not `> 0`.
-     */
-    protected function save_rule($rule_id, array $data) {
-        $storage = StorageFactory::get_instance();
-        $rule_type = $this->get_rule_type();
-
-        return $storage->save_rule($rule_type, $rule_id, $data);
-    }
-
-    /**
-     * Delete a rule
-     *
-     * @since 0.2.0
-     * @param int $rule_id Rule ID
-     * @return bool True on success, false on failure
-     */
-    protected function delete_rule($rule_id) {
-        $storage = StorageFactory::get_instance();
-        $rule_type = $this->get_rule_type();
-
-        return $storage->delete_rule($rule_type, $rule_id);
-    }
-
-    /**
      * Log a debug message when WP_DEBUG is on.
      *
      * Ported from legacy HandlerBase (V10).

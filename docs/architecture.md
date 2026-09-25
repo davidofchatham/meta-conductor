@@ -664,7 +664,7 @@ It arrived expand-first (#56): from #56 to #64 the two lists lived alongside the
 
 | | Kind lists (2) |
 |---|---|
-| Written by | the ordered repeater (raw `update_option` via Wireframe), plus every storage-layer save |
+| Written by | the ordered repeater (raw `update_option` via Wireframe) |
 | Read by | `get_kind_rules()` — the dispatcher's pass, `get_enabled_rules()`, `get_rules()`, and the settings page |
 | Authority | **rules and order both** |
 
@@ -672,9 +672,9 @@ It arrived expand-first (#56): from #56 to #64 the two lists lived alongside the
 
 ### The per-type `$rule_id`
 
-The type-facing API (`get_rule`, `save_rule`, `delete_rule`, `bulk_toggle_rules`) still identifies a rule by its index **within its own type**, and the list is cross-type — so every mutator translates that number to a list POSITION before it can act. `id` deliberately did **not** re-base onto the kind-list position: it is the number that API speaks, so a rule's `id` and the index its mutators take stay the same number. It is still positional and re-derived on read, so nothing may persist state keyed on it — the title/slug status record that once did was deleted for exactly that reason.
+`get_rule($type, $rule_id)` identifies a rule by its index **within its own type**, across a cross-type list. `id` deliberately did **not** re-base onto the kind-list position: it is the number `get_rule()` speaks, so a rule's `id` and the index it is addressed by stay the same number. It is still positional and re-derived on read, so nothing may persist state keyed on it — the title/slug status record that once did was deleted for exactly that reason.
 
-A rule created through that API is **appended to the end of its kind list**, not slotted in beside the other rules of its type. Position is order and order is composition, so a rule the author has not placed belongs where it cannot change what the list already does. (Before #66 such a write forced the stored list to be rebuilt in a fixed type order, silently re-sequencing every rule in the kind — the reconciliation cost that made the contract ticket worth doing on its own.)
+The storage interface (`RuleStorage`) declares only what has callers — `get_kind_rules`, `get_rules`, `get_rule`, `get_raw_settings`, `clear_cache` — and `StorageFactory` only `get_instance()`. The type-addressed CRUD (save / delete / toggle / duplicate / search / import / export) had no caller and is gone; rules are written by the ordered repeater. FW-17 grows the interface back if a second backend lands.
 
 ### Migrating a pre-#56 site
 
@@ -695,7 +695,7 @@ Invariants asserted by H10 (`tests/verify-kind-lists.php`):
 - **The upgrade never clobbers**: a stored kind list wins over legacy arrays that disagree with it in order or membership, and a read persists nothing.
 - **`id` is the per-type index**, not the kind-list position.
 - **`KIND_TYPES` is the enumeration.** `all_types()` flattens it and `get_kind_for_type()` inverts it, so there is no second list for it to drift out of step with — which is what lets `get_enabled_rules()` carry no fallback.
-- **A write that was not needed is not a failure** (#27): `save_rule()` / `import_rules()` / `bulk_toggle_rules()` report success when the data already matches storage, and failure only when a re-read shows it did not persist.
+- **A write that was not needed is not a failure** (#27): a storage write reports success when the data already matches storage, and failure only when a re-read shows it did not persist.
 
 ## Apply to Existing Posts
 

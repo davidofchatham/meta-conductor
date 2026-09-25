@@ -366,8 +366,8 @@ class WireframeBootstrap {
      *    pair, which covers front-end and cron requests that never reach this
      *    boot; this is the admin half.
      * 2. **`row_title`.** A save-time snapshot, so a rule that reached storage
-     *    some other way — a seeded fixture, `save_rule()` from WP-CLI, an
-     *    import — has none, and `title_template` renders its collapsed row
+     *    some other way — a seeded fixture, a raw `update_option()` from
+     *    WP-CLI — has none, and `title_template` renders its collapsed row
      *    blank. The per-type repeaters mostly hid this by interpolating a live
      *    token (`{taxonomy}`, `{name}`) instead; one shared template means one
      *    shared fix.

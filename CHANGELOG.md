@@ -17,6 +17,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Title/slug rules no longer record a per-rule *last applied* status. Nothing displayed it, and it was filed under the rule's position, so reordering or deleting a rule attached the record to a different rule. The stored `bws_title_slug_rule_status` option is deleted on upgrade.
 - The post-type and post-status gates no longer fall back to a pre-0.2.0 `source_filters` key when a rule has no `post_types` / `post_status`. The fallback only ever held a single post type as a string, which the gate already read as "every post type", so no rule changes behavior. Rules now reach handlers in one guaranteed shape: slug lists for the checkbox gates, whole numbers for term ids.
 - The rule storage's `validate_rule()` method. Nothing called it, and it checked fields three rule types no longer have, so it would have rejected every real rule of those types.
+- The rule storage's programmatic write API — `save_rule()`, `delete_rule()`, `bulk_toggle_rules()`, `duplicate_rule()`, `search_rules()`, `count_rules()`, `rule_exists()`, `get_rule_types()`, `export_rules()`, `import_rules()` — along with the handler-base `save_rule()` / `delete_rule()` wrappers and the storage factory's configuration, statistics and backend-migration helpers (plus the `bws_meta_conductor_storage_type` / `bws_meta_conductor_storage_info` filters and the `BWS_RULE_STORAGE_TYPE` constant). Nothing called them; rules are written by the settings page.
 
 ## [0.9.0] — 2026-09-24
 

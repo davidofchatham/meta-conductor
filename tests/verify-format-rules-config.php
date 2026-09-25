@@ -355,7 +355,7 @@ $check('the snapshot bakes the row title onto the list rows',
 // --- The admin-load repair: a title backfill and nothing else. --------------
 //
 // A rule that reached storage without passing through the settings page — a
-// seeded fixture, an import, WP-CLI save_rule() — has no row_title, and the
+// seeded fixture, a raw WP-CLI update_option() — has no row_title, and the
 // snapshot-only template would render its collapsed row blank. The repair also
 // must not TOUCH anything else: #59 moved title/slug rules with their stored
 // shape unchanged, which is the ticket's "existing rules survive" criterion.
