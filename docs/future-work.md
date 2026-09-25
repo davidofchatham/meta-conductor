@@ -315,7 +315,7 @@ Replace the minimal pairwise collision warning (#65) with an analysis over **rea
 Give each rule type one descriptor module that declares its kind, label, handler, subfields, shape normalization, row title and reach, with an ordered registry deriving every type list the code keeps by hand today. First, make storage's read projection the guaranteed canonical rule shape and delete the migration and CRUD code nothing reaches any more. Adding a rule type today touches ~15 hand-kept sites across 9 files, and an unregistered type falls through silently.
 
 - **Detail home:** `.scratch/rule-type-descriptor/spec.md`. Origin: the 2026-09-24 architecture review (candidates 1 + 2).
-- **Progress:** Specced; two PRs planned (storage projection first, then the descriptor). The live-site shape check (`tools/fixtures/legacy-shape-check.php`) came back clean on both production sites, which clears the migration deletions.
+- **Progress:** Specced; 12 build tickets cut (01–04 storage PR, 05–12 descriptor PR), all open. The live-site shape check (`tools/fixtures/legacy-shape-check.php`) came back clean on both production sites, which clears the migration deletions.
 - **Blocked by:** — • **Interacts with:** FW-1, FW-4, FW-5, FW-8, FW-14, FW-20, FW-24, FW-29, FW-30, FW-34
 
 ---
