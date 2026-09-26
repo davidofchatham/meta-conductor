@@ -74,6 +74,15 @@
 $root   = dirname(__DIR__);
 $errors = [];
 
+// Which types belong to each kind is the registry's answer (FW-39) — load it
+// rather than regex-read a list. Declaring the descriptors executes nothing.
+define('ABSPATH', $root . '/');
+define('BWS_META_CONDUCTOR_PATH', $root . '/');
+require $root . '/autoload.php';
+$kind_types = static fn(string $kind): array => array_keys(
+    \BWS\MetaConductor\RuleTypes\Registry::of_kind($kind)
+);
+
 $dispatcher_file = $root . '/includes/core/class-term-dispatcher.php';
 if (!is_file($dispatcher_file)) {
     fwrite(STDERR, "DISPATCHER FAIL — includes/core/class-term-dispatcher.php missing.\n");
@@ -496,18 +505,10 @@ if (in_array('time_based_rules', $converted ?? [], true)) {
 // --- 9. The two lists partition the term-kind rule types -------------------
 // A type in both would double-apply; a type in neither would be silently
 // retired, which is the failure mode that looks most like nothing happening.
-$storage_file = $root . '/includes/storage/class-option-rule-storage.php';
-if (!is_file($storage_file)) {
-    $errors[] = 'includes/storage/class-option-rule-storage.php missing.';
-} elseif ($converted !== null && $unconverted !== null) {
-    $ssrc = $strip_comments((string) file_get_contents($storage_file));
-    $term_types = [];
-    if (preg_match('/self::KIND_TERM\s*=>\s*\[(.*?)\]/s', $ssrc, $tm)) {
-        preg_match_all('/[\'"]([^\'"]+)[\'"]/', $tm[1], $tvals);
-        $term_types = $tvals[1];
-    }
+if ($converted !== null && $unconverted !== null) {
+    $term_types = $kind_types('term_rules');
     if (empty($term_types)) {
-        $errors[] = 'Could not read KIND_TYPES[KIND_TERM] out of OptionRuleStorage — cannot verify the dispatcher covers every term rule type.';
+        $errors[] = 'The registry lists no term_rules types — cannot verify the dispatcher covers every term rule type.';
     } else {
         $both = array_intersect($converted, $unconverted);
         if ($both) {
@@ -888,15 +889,10 @@ if (!is_file($format_file)) {
     $fmt_unconverted = $const_list($fsrc, 'UNCONVERTED_TYPES');
     if ($fmt_converted === null || $fmt_unconverted === null) {
         $errors[] = 'FormatDispatcher is missing CONVERTED_TYPES / UNCONVERTED_TYPES — what a format pass runs, and what still owns hooks, must be enumerated.';
-    } elseif (is_file($storage_file)) {
-        $ssrc2 = $strip_comments((string) file_get_contents($storage_file));
-        $format_types = [];
-        if (preg_match('/self::KIND_FORMAT\s*=>\s*\[(.*?)\]/s', $ssrc2, $fm2)) {
-            preg_match_all('/[\'"]([^\'"]+)[\'"]/', $fm2[1], $fvals);
-            $format_types = $fvals[1];
-        }
+    } else {
+        $format_types = $kind_types('format_rules');
         if (empty($format_types)) {
-            $errors[] = 'Could not read KIND_TYPES[KIND_FORMAT] out of OptionRuleStorage — cannot verify the format dispatcher covers every format rule type.';
+            $errors[] = 'The registry lists no format_rules types — cannot verify the format dispatcher covers every format rule type.';
         } else {
             $fboth = array_intersect($fmt_converted, $fmt_unconverted);
             if ($fboth) {

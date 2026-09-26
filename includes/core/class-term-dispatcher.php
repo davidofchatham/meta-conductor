@@ -276,7 +276,7 @@ class TermDispatcher {
     ];
 
     /**
-     * Handlers keyed by RULE type (`hierarchical_rules`), not handler type.
+     * Handlers keyed by stored rule type (`hierarchical_rules`).
      *
      * A kind-list row carries its rule type, so that is the key a pass has in
      * hand. Every handler is in the map, including format-kind ones — the map
@@ -343,16 +343,14 @@ class TermDispatcher {
     /**
      * @param array<string,UnifiedHandlerBase> $handlers Handlers as built by
      *                                                   TaxonomyManager, keyed
-     *                                                   by handler type.
+     *                                                   by stored rule type.
      * @param FormatDispatcher|null            $format   Format-kind dispatcher
      *                                                   to run after each
      *                                                   entity's term pass.
      */
     public function __construct(array $handlers, ?FormatDispatcher $format = null) {
-        foreach ($handlers as $handler) {
-            $this->handlers[$handler->rule_type()] = $handler;
-        }
-        $this->format = $format;
+        $this->handlers = $handlers;
+        $this->format   = $format;
     }
 
     /**

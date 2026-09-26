@@ -20,10 +20,6 @@ class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
      */
     private $term_level_cache = array();
 
-    public function get_handler_type(): string {
-        return 'hierarchical_level_restriction';
-    }
-
     protected function get_rule_type(): string {
         return 'hierarchical_level_restriction_rules';
     }

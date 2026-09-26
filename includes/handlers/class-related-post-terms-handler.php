@@ -83,8 +83,6 @@ if (!defined('ABSPATH')) {
  */
 class RelatedPostTermsHandler extends UnifiedHandlerBase {
 
-    protected $handler_type = 'related_post_terms';
-
     /**
      * Posts whose sources were BROKEN this request,
      * `[post_id][rule key] => true`.
@@ -170,10 +168,6 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
      * @var array<int,array>|null
      */
     private ?array $enabled_rules_memo = null;
-
-    public function get_handler_type() {
-        return $this->handler_type;
-    }
 
     protected function get_rule_type() {
         return 'related_post_terms_rules';

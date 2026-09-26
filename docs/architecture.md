@@ -680,13 +680,15 @@ The storage interface (`RuleStorage`) declares only what has callers — `get_ki
 
 The migration off the seven type-keyed arrays shipped in 0.8.0–0.9.x and was deleted after (FW-39). Storage reads the kind lists only; an absent kind list reads as empty. A site that jumps straight from a pre-0.8.0 version therefore runs no rules, so `OptionRuleStorage::holds_pre_08_rows()` drives an admin error notice telling the author to pass through 0.9.x. It fires only on legacy **rows** with no kind list — empty legacy arrays (an old install with no rules) have nothing to lose and raise nothing. Fresh installs seed the two kind keys directly.
 
-**`CONFIG_MIGRATED_TYPES`** is the list of types with repeater subfields. A type is added to it in the same change that gives it those subfields, never before: the repeater renders every row in the key it is bound to, and `RepeaterField::sanitize` drops any subfield the config does not declare — so a row the repeater has no subfields for would be gutted on the next save. As of #59 every rule type is in, making it identical to the flattened `KIND_TYPES`; it stays a separate constant precisely so the next type can be declared in `KIND_TYPES` — and therefore read — a change before its subfields exist.
+**`RuleTypes\Registry` is the enumeration** (FW-39). One descriptor per rule type (`includes/rule-types/`, class named after the storage key) states its `type()`, `kind()`, `label()` and `handler_class()`; the registry's explicit order is the type-select order and the fixture authoring order. Storage's `all_types()` / `migrated_types_for_kind()` / `get_kind_for_type()`, the configs' `type` options and `TaxonomyManager`'s handler map (keyed by the stored type string — there is no second, short handler key) are all views of it. H16 (`tests/verify-rule-type-registry.php`) pins the order and each descriptor's completeness.
+
+**`has_subfields()`** says whether the repeater declares a type's subfields yet. A type flips it in the same change that gives it those subfields, never before: the repeater renders every row in the key it is bound to, and `RepeaterField::sanitize` drops any subfield the config does not declare — so a row the repeater has no subfields for would be gutted on the next save. Every rule type has subfields as of #59; the flag stays separate so the next type can be declared in the registry — and therefore read — a change before its subfields exist.
 
 Invariants asserted by H10 (`tests/verify-kind-lists.php`):
 
 - **The pre-0.8.0 guard** fires on legacy rows with no kind list, and on nothing else.
 - **`id` is the per-type index**, not the kind-list position.
-- **`KIND_TYPES` is the enumeration.** `all_types()` flattens it and `get_kind_for_type()` inverts it, so there is no second list for it to drift out of step with — which is what lets `get_enabled_rules()` carry no fallback.
+- **The registry is the enumeration.** `all_types()` and `get_kind_for_type()` read it, so there is no second list for them to drift out of step with — which is what lets `get_enabled_rules()` carry no fallback.
 
 ## Apply to Existing Posts
 

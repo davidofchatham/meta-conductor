@@ -128,7 +128,7 @@ class FormatDispatcher {
     private const CAPTURE_HOOKS = [];
 
     /**
-     * Handlers keyed by RULE type. Same map the term dispatcher builds.
+     * Handlers keyed by stored rule type. Same map the term dispatcher holds.
      *
      * @var array<string,UnifiedHandlerBase>
      */
@@ -163,12 +163,10 @@ class FormatDispatcher {
     /**
      * @param array<string,UnifiedHandlerBase> $handlers Handlers as built by
      *                                                   TaxonomyManager, keyed
-     *                                                   by handler type.
+     *                                                   by stored rule type.
      */
     public function __construct(array $handlers) {
-        foreach ($handlers as $handler) {
-            $this->handlers[$handler->rule_type()] = $handler;
-        }
+        $this->handlers = $handlers;
     }
 
     /**

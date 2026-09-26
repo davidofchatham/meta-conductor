@@ -105,10 +105,6 @@ class PropagationHandler extends UnifiedHandlerBase {
      */
     private array $child_cache = array();
 
-    public function get_handler_type(): string {
-        return 'propagation';
-    }
-
     protected function get_rule_type(): string {
         return 'propagation_rules';
     }

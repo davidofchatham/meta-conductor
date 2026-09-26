@@ -15,10 +15,6 @@ if (!defined('ABSPATH')) {
 
 class TimeBasedHandler extends UnifiedHandlerBase {
 
-    public function get_handler_type(): string {
-        return 'time_based';
-    }
-
     protected function get_rule_type(): string {
         return 'time_based_rules';
     }

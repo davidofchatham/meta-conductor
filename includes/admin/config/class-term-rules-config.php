@@ -29,9 +29,9 @@
  *
  * ## Which types live here
  *
- * `OptionRuleStorage::migrated_types_for_kind()` is the single source of
- * truth, shared with the storage layer so the set of types this repeater
- * offers and the set storage treats as authored cannot drift. Batch 1 (#57)
+ * `RuleTypes\Registry` is the single source of truth, read through
+ * `OptionRuleStorage::migrated_types_for_kind()` so the set of types this
+ * repeater offers and the set storage treats as authored cannot drift. Batch 1 (#57)
  * was the four types not live on any real site; #58 moved the two live ones
  * (`related_rules`, `related_post_terms_rules`) in, completing the collapse.
  * Their rows exist in real data, so two shapes are load-bearing: the ACF
@@ -44,8 +44,8 @@
  * (`hierarchical_rules`, not `hierarchical`) — rule-type renaming stays
  * deferred (ADR 0002/0003), and reusing the key is what lets every handler's
  * `get_enabled_rules()` filter on `get_rule_type()` with no mapping table.
- * The author-facing labels below are this file's business; the stored values
- * are not.
+ * The author-facing labels are each descriptor's `label()`; the stored values
+ * never change with them.
  *
  * @package BWS_Meta_Manager
  * @since 0.8.0
@@ -54,6 +54,7 @@
 namespace BWS\MetaConductor\Admin\Config;
 
 use BWS\MetaConductor\Admin\CollisionDetector;
+use BWS\MetaConductor\RuleTypes\Registry;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 
 if (!defined('ABSPATH')) {
@@ -63,41 +64,16 @@ if (!defined('ABSPATH')) {
 class TermRulesConfig {
 
     /**
-     * Author-facing label for each rule type the repeater offers.
-     *
-     * Keyed by the stored legacy type key. Every key in
-     * OptionRuleStorage::config_migrated_types() that belongs to the term
-     * kind must appear here — H11 asserts the two agree, so adding a type to
-     * storage without labelling it fails the harness rather than rendering an
-     * unlabelled option.
-     *
-     * @return array<string,string>
-     */
-    private static function type_labels(): array {
-        return [
-            'propagation_rules'                    => __('From parent post — cascade terms to children', 'meta-conductor'),
-            'related_post_terms_rules'             => __('From referenced post (ACF) — copy terms across a relationship field', 'meta-conductor'),
-            'time_based_rules'                     => __('Date window — apply a term while a date range is current', 'meta-conductor'),
-            'related_rules'                        => __('Related term — a trigger term applies a target term', 'meta-conductor'),
-            'hierarchical_rules'                   => __('Hierarchy — inherit terms up or down the taxonomy tree', 'meta-conductor'),
-            'hierarchical_level_restriction_rules' => __('Level restriction — limit which tree depths may hold terms', 'meta-conductor'),
-        ];
-    }
-
-    /**
-     * The rule types this repeater authors, in the order storage lists them.
+     * The rule types this repeater authors, in registry order.
      *
      * @return string[]
      */
     public static function types(): array {
-        return array_values(array_intersect(
-            OptionRuleStorage::migrated_types_for_kind(OptionRuleStorage::KIND_TERM),
-            array_keys(self::type_labels())
-        ));
+        return OptionRuleStorage::migrated_types_for_kind(OptionRuleStorage::KIND_TERM);
     }
 
     /**
-     * `type` select options: stored legacy key => author-facing label.
+     * `type` select options: stored type key => the descriptor's label.
      *
      * Carries a leading empty placeholder so a freshly added row starts
      * untyped, with every type-specific subfield hidden — "pick what this
@@ -107,11 +83,10 @@ class TermRulesConfig {
      * @return array<string,string>
      */
     public static function type_options(): array {
-        $labels  = self::type_labels();
         $options = ['' => __('— Select rule type —', 'meta-conductor')];
 
         foreach (self::types() as $type) {
-            $options[$type] = $labels[$type];
+            $options[$type] = Registry::get($type)->label();
         }
 
         return $options;

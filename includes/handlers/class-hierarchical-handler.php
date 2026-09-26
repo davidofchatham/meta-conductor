@@ -35,10 +35,6 @@ class HierarchicalHandler extends UnifiedHandlerBase {
      */
     protected function init_hooks() {}
 
-    public function get_handler_type() {
-        return 'hierarchical';
-    }
-
     protected function get_rule_type() {
         return 'hierarchical_rules';
     }

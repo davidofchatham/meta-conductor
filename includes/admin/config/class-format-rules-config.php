@@ -56,6 +56,7 @@
 namespace BWS\MetaConductor\Admin\Config;
 
 use BWS\MetaConductor\Admin\CollisionDetector;
+use BWS\MetaConductor\RuleTypes\Registry;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 
 if (!defined('ABSPATH')) {
@@ -65,35 +66,16 @@ if (!defined('ABSPATH')) {
 class FormatRulesConfig {
 
     /**
-     * Author-facing label for each rule type the repeater offers.
-     *
-     * Keyed by the stored legacy type key. Every format-kind type in
-     * `OptionRuleStorage::migrated_types_for_kind()` must appear here — H12
-     * asserts the two agree, so adding a type to storage without labelling it
-     * fails the harness rather than rendering an unlabelled option.
-     *
-     * @return array<string,string>
-     */
-    private static function type_labels(): array {
-        return [
-            'title_slug_rules' => __('Title & slug pattern — build the title and slug from tokens', 'meta-conductor'),
-        ];
-    }
-
-    /**
-     * The rule types this repeater authors, in the order storage lists them.
+     * The rule types this repeater authors, in registry order.
      *
      * @return string[]
      */
     public static function types(): array {
-        return array_values(array_intersect(
-            OptionRuleStorage::migrated_types_for_kind(OptionRuleStorage::KIND_FORMAT),
-            array_keys(self::type_labels())
-        ));
+        return OptionRuleStorage::migrated_types_for_kind(OptionRuleStorage::KIND_FORMAT);
     }
 
     /**
-     * `type` select options: stored legacy key => author-facing label.
+     * `type` select options: stored type key => the descriptor's label.
      *
      * Carries the leading empty placeholder even though there is one real
      * option, and `required` still rejects a save that leaves it there. Not
@@ -106,11 +88,10 @@ class FormatRulesConfig {
      * @return array<string,string>
      */
     public static function type_options(): array {
-        $labels  = self::type_labels();
         $options = ['' => __('— Select rule type —', 'meta-conductor')];
 
         foreach (self::types() as $type) {
-            $options[$type] = $labels[$type];
+            $options[$type] = Registry::get($type)->label();
         }
 
         return $options;
