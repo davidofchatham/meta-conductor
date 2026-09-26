@@ -69,4 +69,19 @@ abstract class RuleType {
     public function has_subfields(): bool {
         return true;
     }
+
+    /**
+     * This type's branch of the stored-shape projection.
+     *
+     * Runs AFTER `OptionRuleStorage::normalize_rule_shape()` has applied the
+     * cross-type coercions (checkbox gates, term ids), so a row arrives with
+     * its shared fields already canonical. Read-only, like the projection:
+     * nothing writes the result back.
+     *
+     * @param array $row Stored row, shared fields already projected.
+     * @return array
+     */
+    public function normalize(array $row): array {
+        return $row;
+    }
 }

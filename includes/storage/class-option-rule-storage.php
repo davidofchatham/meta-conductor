@@ -387,10 +387,8 @@ class OptionRuleStorage implements RuleStorage {
      *   - `target_term_id` → int. The FormTokenField stores [N]; that is a FORM
      *     shape, never a runtime one.
      *   - `trigger_term_id`, `filter_terms` → int[], deduped, zeros dropped.
-     *   - ACF relationship field: "post_type:field_name:field_key" → split into
-     *     scalar post_type + bare acf_field_name + acf_field_key (#25; a legacy
-     *     two-part value yields an empty key, which callers read as "resolve by
-     *     name", i.e. pre-#25 behavior)
+     *   - Per-type fields → the type descriptor's `normalize()` (today only
+     *     `RelatedPostTermsRules`, which splits the combined ACF field values)
      *
      * Read-only: nothing writes the projection back, so widening it needs no
      * migration. Admin code holding raw form values runs them through
@@ -416,29 +414,9 @@ class OptionRuleStorage implements RuleStorage {
             }
         }
 
-        if ($type === 'related_post_terms_rules') {
-            if (!empty($rule['acf_field_name'])) {
-                [$pt, $bare, $key]         = self::split_acf_field_value((string) $rule['acf_field_name']);
-                $rule['acf_field_name']    = $bare;
-                $rule['acf_field_key']     = $key;
-                if ($pt !== null) {
-                    $rule['post_type'] = $pt;
-                } elseif (!isset($rule['post_type'])) {
-                    $rule['post_type'] = '';
-                }
-            }
-
-            // Reverse field is stored in the same option format; the handler
-            // wants the bare field name and, since #25, the key beside it.
-            // (SPEC §V6)
-            if (!empty($rule['reverse_acf_field_name'])) {
-                [, $rbare, $rkey]                 = self::split_acf_field_value((string) $rule['reverse_acf_field_name']);
-                $rule['reverse_acf_field_name']   = $rbare;
-                $rule['reverse_acf_field_key']    = $rkey;
-            }
-        }
-
-        return $rule;
+        // Per-type branch: the descriptor's own normalize(). An unknown type
+        // passes through with only the shared projection.
+        return Registry::get($type)?->normalize($rule) ?? $rule;
     }
 
     /**
