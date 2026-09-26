@@ -186,7 +186,7 @@ return array(
 				'post_types'      => array( 'mc_item' ),
 				'trigger_type'    => 'term',
 				'trigger_term_id' => array( '{TERM:topic-coastal}' ),
-				'target_term_id'  => '{TERM:topic-featured}',
+				'target_term_id'  => array( '{TERM:topic-featured}' ),
 				'bidirectional'   => true,
 			),
 			array(
@@ -194,7 +194,7 @@ return array(
 				'post_types'       => array( 'mc_item' ),
 				'trigger_type'     => 'taxonomy',
 				'trigger_taxonomy' => 'mc_flag',
-				'target_term_id'   => '{TERM:topic-featured}',
+				'target_term_id'   => array( '{TERM:topic-featured}' ),
 				'bidirectional'    => false,
 			),
 		),
@@ -253,7 +253,7 @@ return array(
 				'post_types'        => array( 'mc_item' ),
 				'start_date'        => '{TODAY-1}',
 				'end_date'          => '{TODAY+7}',
-				'target_term_id'    => '{TERM:topic-featured}',
+				'target_term_id'    => array( '{TERM:topic-featured}' ),
 				'filter_taxonomies' => array( 'mc_topic' ),
 			),
 			array(
@@ -261,14 +261,14 @@ return array(
 				'post_types'     => array( 'mc_item' ),
 				'start_date'     => '{TODAY-30}',
 				'end_date'       => '{TODAY-2}',
-				'target_term_id' => '{TERM:topic-archived}',
+				'target_term_id' => array( '{TERM:topic-archived}' ),
 			),
 			array(
 				'enabled'        => true,
 				'post_types'     => array( 'mc_item' ),
 				'start_date'     => '{TODAY+10}',
 				'end_date'       => '{TODAY+20}',
-				'target_term_id' => '{TERM:topic-archived}',
+				'target_term_id' => array( '{TERM:topic-archived}' ),
 			),
 		),
 
