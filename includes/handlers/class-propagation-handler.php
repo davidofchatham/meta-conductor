@@ -474,16 +474,13 @@ class PropagationHandler extends UnifiedHandlerBase {
      * The post-type GATE (should_process_post) treats empty as "all" and never
      * needs concrete slugs; the fan-out does — get_posts needs real post types
      * to query by post_parent. So empty `post_types` ⇒ every HIERARCHICAL
-     * public post type (propagation only acts on parent/child trees; V5). A
-     * non-empty checkbox map/list is flattened via the canonical extractor.
+     * public post type (propagation only acts on parent/child trees; V5).
      *
      * @param array $rule Rule config.
      * @return string[] Post-type slugs to query for children.
      */
     private function resolve_child_post_types($rule): array {
-        $slugs = \BWS\MetaConductor\Admin\Config\ConfigHelpers::selected_checkbox_slugs(
-            $rule['post_types'] ?? []
-        );
+        $slugs = $rule['post_types'] ?? [];
 
         if (empty($slugs)) {
             $slugs = array_values(get_post_types(['public' => true, 'hierarchical' => true]));

@@ -37,8 +37,8 @@
  * Their rows exist in real data, so two shapes are load-bearing: the ACF
  * field select's combined "post_type:field_name" value round-trips WHOLE
  * (the handler splits at read time; persisting the split would break the
- * select's option keys), and a legacy-shaped stored row must render with its
- * own values, never config defaults (WireframeBootstrap::repair_stored_rules).
+ * select's option keys), and a stored row must render with its own values,
+ * never config defaults — which is why no row may be left in a legacy shape.
  *
  * The stored `type` value is the LEGACY TYPE KEY VERBATIM
  * (`hierarchical_rules`, not `hierarchical`) — rule-type renaming stays
@@ -454,13 +454,10 @@ class TermRulesConfig {
      * outcomes. The handler maps it back to the pair it already implements
      * (`HierarchicalHandler::resolve_behavior`), so no expansion code changed.
      *
-     * A legacy row carrying only the old pair is handled on BOTH paths, and it
-     * needs both: `resolve_behavior()` reads the pair at runtime for front-end
-     * and cron requests, while `WireframeBootstrap::migrate_inheritance_behavior()`
-     * rewrites it on admin load. The rewrite is not optional — Wireframe reads
-     * the option raw, so an un-migrated row would render with this field's
-     * `ancestors` default and the next save would persist it, silently
-     * converting a `parent_to_child` rule (architecture invariant #1).
+     * A legacy row carrying only the old pair still reads correctly at
+     * runtime (`resolve_behavior()` falls back to it). The admin-load rewrite
+     * that once converted such rows was deleted with FW-39: no stored row
+     * still carries the pair.
      *
      * Taken now because the schema window is free — hierarchical rules are
      * test-site only (CLAUDE.md live-rule-type rule) — and it closes once

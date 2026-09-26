@@ -89,11 +89,11 @@ class WireframeBootstrap {
     private static function related_title(array $rule): string {
         $trigger = (($rule['trigger_type'] ?? 'term') === 'taxonomy')
             ? self::taxonomy_label($rule['trigger_taxonomy'] ?? '')
-            : self::trigger_terms_label($rule['trigger_term_id'] ?? null);
+            : self::trigger_terms_label($rule['trigger_term_id'] ?? []);
 
         return $trigger
             . ' ' . "\xE2\x86\x92" . ' '
-            . self::term_label($rule['target_term_id'] ?? null)
+            . self::term_label($rule['target_term_id'] ?? 0)
             . self::scope_label($rule['post_types'] ?? []);
     }
 
@@ -153,7 +153,7 @@ class WireframeBootstrap {
             $verb,
             self::taxonomy_label($rule['taxonomy'] ?? ''),
             $prep,
-            self::acf_field_label($rule['acf_field_name'] ?? '')
+            self::acf_field_label($rule['acf_field_name'] ?? '', $rule['acf_field_key'] ?? '')
         ));
 
         if ($gate !== '') {
@@ -177,6 +177,11 @@ class WireframeBootstrap {
      *
      * Each per-type builder returns UNESCAPED text and is escaped here, once —
      * the same discipline the term/taxonomy label helpers already follow.
+     *
+     * Builders read the row through `OptionRuleStorage::project_kind_rules()`:
+     * the payload holds FORM values (`[N]` term ids, the combined ACF field
+     * value), and the projection is the one place those are decoded. Only
+     * `row_title` is written back onto the raw row.
      *
      * The title LEADS with the row's list position ("#3 "). Wireframe only
      * numbers a row whose `title_template` renders empty, so a titled list
@@ -213,7 +218,7 @@ class WireframeBootstrap {
 
             $rule['row_title'] = '#' . $position . ' '
                 . self::disabled_prefix($rule)
-                . \esc_html($title($rule));
+                . \esc_html($title(OptionRuleStorage::project_kind_rules([$rule])[0]));
         }
         unset($rule);
 
@@ -322,9 +327,8 @@ class WireframeBootstrap {
      * The scalar counterpart of scope_label(), which reads a checkboxes value.
      * They are not one function taking either shape on purpose: a scalar
      * `post_type` and a `post_types` gate mean different things — a lookup key
-     * versus a scope — and selected_checkbox_slugs() silently returns [] for a
-     * string, so a shared helper would render an empty scope for every
-     * title/slug rule rather than failing visibly.
+     * versus a scope — and a helper taking either shape would have to guess
+     * which one it was handed.
      *
      * @param mixed $post_type Single post-type slug.
      * @return string
@@ -341,42 +345,22 @@ class WireframeBootstrap {
     }
 
     /**
-     * Bring stored rules up to what the ordered repeater expects, before
+     * Backfill the `row_title` of any stored rule that lacks one, before
      * Wireframe reads the settings option raw.
      *
-     * Two repairs, one write. Both exist because **Wireframe reads the option
-     * directly** — it does not go through the storage layer's read-time
-     * adapters — so anything a handler tolerates on read but the config does
-     * not declare gets rewritten by the first save of the settings page
-     * (`RepeaterField::sanitize` rebuilds each row from declared subfields
-     * only, filling defaults). That makes a read-time-only adaptation unsafe
-     * for the admin path, which is exactly what architecture invariant #1
-     * warns about.
+     * `row_title` is a save-time snapshot, so a rule that reached storage
+     * some other way — a seeded fixture, a raw `update_option()` from
+     * WP-CLI — has none, and `title_template` renders its collapsed row
+     * blank. The per-type repeaters mostly hid this by interpolating a live
+     * token (`{taxonomy}`, `{name}`) instead; one shared template means one
+     * shared fix. Runs over BOTH kind lists (#59).
      *
-     * 1. **`inheritance_behavior` (#16).** A hierarchical row saved before the
-     *    outcome selector carries only `hierarchy_direction` +
-     *    `expansion_behavior`. Left alone, the form would bind the absent new
-     *    key, show its `ancestors` default, and the next save would persist
-     *    that — silently turning a `parent_to_child` rule into an ancestors
-     *    one. `HierarchicalHandler::resolve_behavior()` still reads the legacy
-     *    pair, which covers front-end and cron requests that never reach this
-     *    boot; this is the admin half.
-     * 2. **`row_title`.** A save-time snapshot, so a rule that reached storage
-     *    some other way — a seeded fixture, `save_rule()` from WP-CLI, an
-     *    import — has none, and `title_template` renders its collapsed row
-     *    blank. The per-type repeaters mostly hid this by interpolating a live
-     *    token (`{taxonomy}`, `{name}`) instead; one shared template means one
-     *    shared fix.
+     * This is not a migration. The every-boot shape migrations that used to
+     * run here were deleted with FW-39 once no stored row was in a legacy
+     * shape.
      *
-     * Since #59 this runs over BOTH kind lists. Only the title backfill
-     * applies to `format_rules` — `title_slug_rules`' stored shape is
-     * unchanged by the move, which is the ticket's "existing rules survive
-     * intact" criterion restated as an absence of migration code — but the
-     * blank-collapsed-row failure is identical, and it is newly reachable
-     * there because the format list stopped interpolating `{name}` live.
-     *
-     * Self-limiting — once every row is migrated and titled there is nothing
-     * to do, so this is at most one write per rule set, not one per admin load.
+     * Self-limiting — once every row is titled there is nothing to do, so
+     * this is at most one write per rule set, not one per admin load.
      * Both kinds are repaired in ONE write for the same reason: two
      * update_option calls would leave a window where the two lists disagree
      * about which admin load they belong to.
@@ -427,48 +411,21 @@ class WireframeBootstrap {
     }
 
     /**
-     * The term list's row repairs: three shape migrations, then the title
-     * backfill. Pure — takes rows, returns rows, so the caller decides whether
-     * anything is worth writing.
+     * The term list's row repair: the title backfill. Pure — takes rows,
+     * returns rows, so the caller decides whether anything is worth writing.
      *
      * @since 0.8.0
      * @param array $rows Stored `term_rules` rows.
      * @return array
      */
     private static function repair_term_rows(array $rows): array {
-        $repaired = [];
-
-        foreach ($rows as $row) {
-            if (is_array($row)) {
-                $row = self::migrate_inheritance_behavior($row);
-                $row = self::migrate_related_term_shape($row);
-                // The acf-ref key-rename migration is one-shot flag-gated
-                // (maybe_migrate_acf_ref_storage), so a legacy-shaped row
-                // written AFTER the flag was set — CLI, import — would reach
-                // the repeater raw and render with config defaults (absent
-                // holder_role = the radio's `source`, reversing a live rule's
-                // direction on resave). Re-applying here is idempotent and
-                // closes that window for the admin path.
-                if (($row['type'] ?? '') === 'related_post_terms_rules') {
-                    $row = OptionRuleStorage::migrate_related_post_terms_shape($row);
-                }
-            }
-            $repaired[] = $row;
-        }
-
         $key = OptionRuleStorage::KIND_TERM;
 
-        return self::snapshot_term_rule_labels([$key => $repaired])[$key];
+        return self::snapshot_term_rule_labels([$key => $rows])[$key];
     }
 
     /**
      * The format list's row repairs: the title backfill, and nothing else.
-     *
-     * No shape migration, deliberately. `title_slug_rules` moved into the
-     * ordered repeater (#59) with its stored keys unchanged, so there is no
-     * legacy shape to translate — and an empty migration is the honest way to
-     * say so. If a future format type needs one it goes here, beside the term
-     * list's three.
      *
      * @since 0.8.0
      * @param array $rows Stored `format_rules` rows.
@@ -478,87 +435,6 @@ class WireframeBootstrap {
         $key = OptionRuleStorage::KIND_FORMAT;
 
         return self::snapshot_format_rule_labels([$key => $rows])[$key];
-    }
-
-    /**
-     * Rewrite a hierarchical row's legacy direction/expansion pair into the
-     * `inheritance_behavior` outcome the config now authors (#16).
-     *
-     * Only ever fills in a MISSING key — a row that already names an outcome
-     * is returned untouched, and so is a row of any other type. The legacy
-     * keys are dropped once translated: `RepeaterField::sanitize` would drop
-     * them on the next save anyway (they are no longer declared subfields), so
-     * carrying them would only make the stored shape lie about what is read.
-     *
-     * @since 0.8.0
-     * @param array $row One term-rule row.
-     * @return array
-     */
-    private static function migrate_inheritance_behavior(array $row): array {
-        if (($row['type'] ?? '') !== 'hierarchical_rules'
-            || (string) ($row['inheritance_behavior'] ?? '') !== '') {
-            return $row;
-        }
-
-        if (!isset($row['hierarchy_direction']) && !isset($row['expansion_behavior'])) {
-            return $row;
-        }
-
-        // behavior_key() resolves the pair through the same map the handler
-        // runs on, so the migrated row behaves as the legacy one did.
-        $outcome = HierarchicalHandler::behavior_key($row);
-
-        // The one pair that names no outcome is parent_to_child + never, which
-        // applies nothing at all. Preserve that as a disabled rule rather than
-        // inventing a behaviour it never had.
-        if ($outcome === '') {
-            $row['enabled'] = false;
-            $outcome        = 'descendants_smart';
-        }
-
-        $row['inheritance_behavior'] = $outcome;
-        unset($row['hierarchy_direction'], $row['expansion_behavior']);
-
-        return $row;
-    }
-
-    /**
-     * Rewrite a related-term row's legacy scalar term ids into the array
-     * shapes the repeater's selects render (#58).
-     *
-     * The admin reads the option raw, so a pre-Wireframe row storing
-     * `trigger_term_id => "12"` or `target_term_id => 9` would render its
-     * select EMPTY — the FormTokenField binds an array — and the next save
-     * would persist that emptiness, silently disarming a live rule. The
-     * handlers already tolerate both shapes at read time
-     * (`normalize_rule_shape`); this is the admin half, same split as the
-     * inheritance-behavior migration above.
-     *
-     * Rows of any other type, and rows already in array shape, are untouched.
-     * The stale per-token label keys the old three-token title carried
-     * (`trigger_label` / `target_label` / `scope_label`) are shed here for
-     * the same reason the hierarchical migration sheds its legacy pair:
-     * sanitize would drop them on the next save anyway.
-     *
-     * @since 0.8.0
-     * @param array $row One term-rule row.
-     * @return array
-     */
-    private static function migrate_related_term_shape(array $row): array {
-        if (($row['type'] ?? '') !== 'related_rules') {
-            return $row;
-        }
-
-        foreach (['trigger_term_id', 'target_term_id'] as $key) {
-            if (isset($row[$key]) && !is_array($row[$key])) {
-                $id        = (int) $row[$key];
-                $row[$key] = $id > 0 ? [$id] : [];
-            }
-        }
-
-        unset($row['trigger_label'], $row['target_label'], $row['scope_label']);
-
-        return $row;
     }
 
     /**
@@ -694,10 +570,10 @@ class WireframeBootstrap {
      * Unescaped — every caller feeds its result through the single esc_html()
      * in snapshot_term_rule_labels().
      *
-     * @param mixed $post_types Checkbox {slug:bool} map or list of slugs.
+     * @param string[] $post_types Slug list.
      * @return string Trailing ": " when present.
      */
-    private static function scope_prefix($post_types): string {
+    private static function scope_prefix(array $post_types): string {
         $labels = self::post_type_labels($post_types);
         return empty($labels) ? '' : implode(', ', $labels) . ': ';
     }
@@ -780,7 +656,7 @@ class WireframeBootstrap {
     private static function time_based_title(array $rule): string {
         $start  = (string) ($rule['start_date'] ?? '');
         $end    = (string) ($rule['end_date'] ?? '');
-        $target = self::term_label($rule['target_term_id'] ?? null);
+        $target = self::term_label($rule['target_term_id'] ?? 0);
 
         // en dash, no surrounding spaces.
         $window = ($start !== '' || $end !== '') ? $start . "\xE2\x80\x93" . $end . ': ' : '';
@@ -800,10 +676,10 @@ class WireframeBootstrap {
      * rule applies to all post types (empty post_types), else the human
      * post-type labels ("Pages", "Posts, Pages"). Unescaped.
      *
-     * @param mixed $post_types Checkbox {slug:bool} map or list of slugs.
+     * @param string[] $post_types Slug list.
      * @return string
      */
-    private static function time_based_scope_phrase($post_types): string {
+    private static function time_based_scope_phrase(array $post_types): string {
         $labels = self::post_type_labels($post_types);
         return empty($labels) ? __('posts', 'meta-conductor') : implode(', ', $labels);
     }
@@ -817,14 +693,13 @@ class WireframeBootstrap {
      * @return string
      */
     private static function time_based_filter_clause(array $rule): string {
-        $terms = self::trigger_terms_label($rule['filter_terms'] ?? null);
+        $terms = self::trigger_terms_label($rule['filter_terms'] ?? []);
         if ($terms !== '') {
             return ' ' . sprintf(__('with %s', 'meta-conductor'), $terms);
         }
 
-        $taxonomies = Config\ConfigHelpers::selected_checkbox_slugs($rule['filter_taxonomies'] ?? []);
         $labels = [];
-        foreach ($taxonomies as $slug) {
+        foreach ($rule['filter_taxonomies'] ?? [] as $slug) {
             $label = self::taxonomy_label((string) $slug);
             if ($label !== '') {
                 $labels[] = $label;
@@ -838,24 +713,22 @@ class WireframeBootstrap {
     }
 
     /**
-     * Resolve a raw "post_type:field_name:field_key" (or older two-part / bare
-     * name) ACF relationship field to its clean human label via acf_get_field().
-     * Falls back to the bare field name. (architecture.md → Canonical shape
-     * adapter)
+     * Resolve a projected ACF relationship field (bare name + key) to its clean
+     * human label via acf_get_field(). Falls back to the bare field name.
+     * (architecture.md → Canonical shape adapter)
      *
-     * Resolves by KEY when the value carries one: two separately-created fields
+     * Resolves by KEY when the row carries one: two separately-created fields
      * can share a bare name, and a row title showing the wrong field's label is
      * how an author would be told the wrong thing about their own rule. (#25)
      *
-     * @param string $stored Raw option value.
+     * @param string $name Bare field name.
+     * @param string $key  Field key; '' for a legacy two-part value.
      * @return string Unescaped label.
      */
-    private static function acf_field_label($stored): string {
-        $raw = (string) $stored;
-        if ($raw === '') {
+    private static function acf_field_label(string $name, string $key): string {
+        if ($name === '') {
             return '';
         }
-        [, $name, $key] = OptionRuleStorage::split_acf_field_value($raw);
 
         if (function_exists('acf_get_field')) {
             // Key first; the name is the fallback for a key that no longer
@@ -872,14 +745,12 @@ class WireframeBootstrap {
     }
 
     /**
-     * Comma-joined human labels for a post_status gate (Wireframe {slug:bool}
-     * map or list). '' when no gate set.
+     * Comma-joined human labels for a post_status gate. '' when no gate set.
      *
-     * @param mixed $post_status
+     * @param string[] $slugs
      * @return string Unescaped.
      */
-    private static function status_gate_label($post_status): string {
-        $slugs = Config\ConfigHelpers::selected_checkbox_slugs($post_status);
+    private static function status_gate_label(array $slugs): string {
         if (empty($slugs)) {
             return '';
         }
@@ -893,18 +764,15 @@ class WireframeBootstrap {
     }
 
     /**
-     * Resolve a single stored term ID to "<taxonomy label>: <term name>".
+     * Resolve a single term ID to "<taxonomy label>: <term name>".
      *
-     * Accepts a bare scalar or a single-element array. Returns '' when
-     * unresolvable. Used for target_term_id (single) and as a primitive
-     * for trigger_terms_label (multi).
+     * Returns '' when unresolvable. Used for target_term_id (single) and as a
+     * primitive for trigger_terms_label (multi).
      *
-     * @param mixed $stored Term ID or single-element array.
+     * @param int $id Term ID.
      * @return string Unescaped label.
      */
-    private static function term_label($stored): string {
-        $id = is_array($stored) ? ($stored[0] ?? 0) : $stored;
-        $id = (int) $id;
+    private static function term_label(int $id): string {
         if ($id <= 0) {
             return '';
         }
@@ -922,17 +790,14 @@ class WireframeBootstrap {
     /**
      * Build the trigger_label for a term-type rule (V7).
      *
-     * Maps the int[] trigger_term_id array to individual term labels and joins
-     * with ", ". Scalar and single-element-array stored values are also
-     * accepted (legacy shape; normalizer converts on read but the save-payload
-     * hook runs before normalize). Returns UNESCAPED text — the caller escapes
-     * once at injection, matching term_label/taxonomy_label/scope_label.
+     * Maps an int[] of term ids to individual term labels and joins with ", ".
+     * Returns UNESCAPED text — the caller escapes once at injection, matching
+     * term_label/taxonomy_label/scope_label.
      *
-     * @param mixed $stored int[], scalar, or null.
+     * @param int[] $ids
      * @return string Unescaped, comma-joined label; '' if nothing resolves.
      */
-    private static function trigger_terms_label($stored): string {
-        $ids = is_array($stored) ? $stored : [$stored];
+    private static function trigger_terms_label(array $ids): string {
         $labels = [];
         foreach ($ids as $id) {
             $label = self::term_label($id);
@@ -944,17 +809,17 @@ class WireframeBootstrap {
     }
 
     /**
-     * Resolve a Wireframe post-type checkbox value ({slug:bool} map or slug
-     * list) to a flat array of human post-type labels. Unresolvable slugs (a
+     * Resolve a post-type slug list to a flat array of human post-type
+     * labels. Unresolvable slugs (a
      * type unregistered after save) are dropped. Single source for the three
      * row-title scope formatters below. (0.6.0 review — was triplicated.)
      *
-     * @param mixed $post_types
+     * @param string[] $post_types
      * @return string[] Post-type labels.
      */
-    private static function post_type_labels($post_types): array {
+    private static function post_type_labels(array $post_types): array {
         $labels = [];
-        foreach (Config\ConfigHelpers::selected_checkbox_slugs($post_types) as $slug) {
+        foreach ($post_types as $slug) {
             $obj = \get_post_type_object((string) $slug);
             if ($obj) {
                 $labels[] = $obj->label;
@@ -976,10 +841,10 @@ class WireframeBootstrap {
      * labels (V11); accepted rather than fixed, since storing raw slugs would
      * require render-time formatting the template cannot do. (PR #19 review #4.)
      *
-     * @param mixed $post_types
+     * @param string[] $post_types
      * @return string
      */
-    private static function scope_label($post_types): string {
+    private static function scope_label(array $post_types): string {
         $labels = self::post_type_labels($post_types);
         return empty($labels) ? '' : ' (' . implode(', ', $labels) . ')';
     }
@@ -1031,37 +896,10 @@ class WireframeBootstrap {
             return;
         }
 
-        // One-time persist of the related_post_terms_rules read-time migration,
-        // BEFORE Wireframe reads the option raw (it bypasses normalize_rule_shape,
-        // so the form would otherwise render legacy rows with config defaults and
-        // a resave would corrupt them). Flag-gated → at most one write.
-        // (architecture.md → Canonical shape adapter, key-renaming caveat)
-        //
-        // It reads through the storage layer, which upgrades a pre-#56 option to
-        // the kind-list shape on the way in — so the rewrite lands on the rows
-        // the repeater is about to render, whichever shape the site arrived in.
         $storage = \BWS\MetaConductor\Storage\StorageFactory::get_instance();
-        if (method_exists($storage, 'maybe_migrate_acf_ref_storage')) {
-            $storage->maybe_migrate_acf_ref_storage();
-        }
-
-        // Persist the kind-list shape (ADR 0003, #56 → #66). Runs AFTER the
-        // acf-ref rewrite above so the stored lists carry already-key-renamed
-        // related_post_terms rows. Writes only when the stored option differs
-        // from the upgraded shape, so it is at most one write per site.
-        //
-        // Reads apply the same upgrade themselves, so front-end and cron
-        // requests — which never reach this boot — see the same rules whether
-        // or not this write has happened. The ADMIN is what needs the write:
-        // it reads the option RAW, and the ordered repeater can only bind to
-        // `term_rules` / `format_rules` if those keys are in storage.
-        if (method_exists($storage, 'maybe_migrate_kind_lists')) {
-            $storage->maybe_migrate_kind_lists();
-        }
 
         // Bring the persisted list up to what the repeater expects to render,
-        // BEFORE Wireframe reads the option raw. Runs after the sync so it
-        // works on the list the admin is about to see. (#57)
+        // BEFORE Wireframe reads the option raw. (#57)
         self::repair_stored_rules($storage);
 
         // First collision scan for a rule set that never passed through a save

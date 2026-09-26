@@ -618,7 +618,7 @@ H11 (`tests/verify-term-rules-config.php`) and H12 (`tests/verify-format-rules-c
 
 Row titles are a **save-time snapshot** (`row_title`, rendered by `title_template`), assembled by `snapshot_term_rule_labels()` / `snapshot_format_rule_labels()` dispatching on the row's `type`. The format list gained one in #59 despite `{name}` having been interpolable live: a substitution-only template cannot carry the disabled marker, the post-type scope, or a second rule type's schema, and adding the snapshot later would be the restructure #59 exists to avoid.
 
-`WireframeBootstrap::repair_stored_rules()` runs on admin load, before `App::boot()`, and exists because **Wireframe reads the settings option raw** — it does not pass through the storage layer's read-time adapters, so anything a handler tolerates on read but the config does not declare gets rewritten by the first save (`RepeaterField::sanitize` rebuilds each row from declared subfields, filling defaults). That is invariant #1's hazard, and it takes two kinds of repair: the term list's shape migrations (`#16` `inheritance_behavior`, legacy related term ids, the ACF-reference key rename), and — on **both** kind lists since #59 — backfilling a `row_title` for any rule that reached storage some other way. `title_slug_rules` needs no shape migration: it moved into the format repeater with its stored keys unchanged. Both kinds are repaired in ONE `update_option`, so two writes cannot leave the two lists belonging to different admin loads.
+`WireframeBootstrap::repair_stored_rules()` runs on admin load, before `App::boot()`, and exists because **Wireframe reads the settings option raw** — it does not pass through the storage layer's read-time adapters, so anything a handler tolerates on read but the config does not declare gets rewritten by the first save (`RepeaterField::sanitize` rebuilds each row from declared subfields, filling defaults). That is invariant #1's hazard. What it does now is backfill a `row_title`, on **both** kind lists, for any rule that reached storage some other way. The term list's shape repairs that used to run beside it (`#16` `inheritance_behavior`, legacy related term ids, the ACF-reference key rename) were deleted with FW-39 once no stored row was in a legacy shape. Both kinds are repaired in ONE `update_option`, so two writes cannot leave the two lists belonging to different admin loads.
 
 ### Why Wireframe
 
@@ -640,7 +640,9 @@ Fixed upstream in 1.0.6 (no longer quirks): single-page `App::boot()` honors `me
 
 Wireframe writes some fields differently than handlers expect (e.g. a `multiple+max=1` FormTokenField writes `[id]` where a handler wants `int`; an ACF field select writes `"post_type:field_name:field_key"` where a handler wants the three parts separately). The storage layer's `normalize_rule_shape()` coerces these on read.
 
-Storage is the adapter boundary between writers (current: Wireframe REST) and handlers — future writers (CLI, import) plug in at the same boundary. **Caveat:** a key-RENAMING migration here is read-time-only and the Wireframe admin reads the option RAW, so a renamed/removed key must ALSO be persisted (one-time rewrite) or the admin renders defaults and corrupts on resave. (See the ACF-reference migration.)
+The projection is a **guarantee**, not a convenience (FW-29): checkbox gates (`post_types`, `post_status`, `filter_taxonomies`) arrive as slug lists (empty = all; a legacy `{slug:bool}` map is decoded here), `target_term_id` as `int`, `trigger_term_id` and `filter_terms` as `int[]`. No consumer re-decodes or re-casts them, and runtime code never imports `Admin\Config` to do so. Admin code holding raw form values — the row-title snapshot, the on-demand collision check — runs them through `OptionRuleStorage::project_kind_rules()` first. The projection is read-only, so widening it needs no migration.
+
+Storage is the adapter boundary between writers (current: Wireframe REST) and handlers — future writers (CLI, import) plug in at the same boundary. **Caveat:** a key-RENAMING migration here is read-time-only and the Wireframe admin reads the option RAW, so a renamed/removed key must ALSO be persisted (one-time rewrite) or the admin renders defaults and corrupts on resave. (`WireframeBootstrap::repair_stored_rules()` was that rewrite until FW-39 deleted the migrations; it now only backfills row titles.)
 
 ### ACF field identity (#25)
 
@@ -652,7 +654,7 @@ The identity therefore travels in the stored value, which is also the select's o
 - **field_name** stays because reading a VALUE (`get_field($name, $post_id)`) is post-scoped and was never ambiguous, and because it is what a lookup falls back to when a key no longer resolves (deleted field, a row imported from another site). That fallback is a safeguard, not a correctness requirement: both consumers already degrade permissively when a lookup finds nothing — empty target types mean "cannot narrow", an empty partner list means "fall to the tier-3 scan" — so a dead key costs the slow path and a bare-name row title, never a wrong write. It is verified in `acf_selector()` rather than assumed.
 - **field_key** is what separates the twins.
 
-Three lookups consume it — the bidirectional partner resolution, the target-post-type eligibility pre-filter, and the row-title label — all through `$key ?: $name`. A legacy two-part value parses to an empty key and resolves by name: pre-#25 behavior, never worse. The one-shot `maybe_migrate_acf_ref_storage()` backfills keys where the name resolves to exactly one field, and **leaves an ambiguous name alone** rather than guessing at a field the author never chose; those rows keep working as they do today until re-picked, which the group-titled option labels finally make possible.
+Three lookups consume it — the bidirectional partner resolution, the target-post-type eligibility pre-filter, and the row-title label — all through `$key ?: $name`. A legacy two-part value parses to an empty key and resolves by name: pre-#25 behavior, never worse. The 0.9.x one-shot backfilled keys where the name resolved to exactly one field and **left an ambiguous name alone** rather than guessing at a field the author never chose; those rows keep working by name until re-picked, which the group-titled option labels make possible. The backfill itself was deleted after 0.9.x, the two-part parser was not.
 
 ## Effect-kind rule lists
 
@@ -662,7 +664,7 @@ It arrived expand-first (#56): from #56 to #64 the two lists lived alongside the
 
 | | Kind lists (2) |
 |---|---|
-| Written by | the ordered repeater (raw `update_option` via Wireframe), plus every storage-layer save |
+| Written by | the ordered repeater (raw `update_option` via Wireframe) |
 | Read by | `get_kind_rules()` — the dispatcher's pass, `get_enabled_rules()`, `get_rules()`, and the settings page |
 | Authority | **rules and order both** |
 
@@ -670,30 +672,21 @@ It arrived expand-first (#56): from #56 to #64 the two lists lived alongside the
 
 ### The per-type `$rule_id`
 
-The type-facing API (`get_rule`, `save_rule`, `delete_rule`, `bulk_toggle_rules`) still identifies a rule by its index **within its own type**, and the list is cross-type — so every mutator translates that number to a list POSITION before it can act. `id` deliberately did **not** re-base onto the kind-list position: it is the number that API speaks, so a rule's `id` and the index its mutators take stay the same number. It is still positional and re-derived on read, so nothing may persist state keyed on it — the title/slug status record that once did was deleted for exactly that reason.
+`get_rule($type, $rule_id)` identifies a rule by its index **within its own type**, across a cross-type list. `id` deliberately did **not** re-base onto the kind-list position: it is the number `get_rule()` speaks, so a rule's `id` and the index it is addressed by stay the same number. It is still positional and re-derived on read, so nothing may persist state keyed on it — the title/slug status record that once did was deleted for exactly that reason.
 
-A rule created through that API is **appended to the end of its kind list**, not slotted in beside the other rules of its type. Position is order and order is composition, so a rule the author has not placed belongs where it cannot change what the list already does. (Before #66 such a write forced the stored list to be rebuilt in a fixed type order, silently re-sequencing every rule in the kind — the reconciliation cost that made the contract ticket worth doing on its own.)
+The storage interface (`RuleStorage`) declares only what has callers — `get_kind_rules`, `get_rules`, `get_rule`, `get_raw_settings`, `clear_cache` — and `StorageFactory` only `get_instance()`. The type-addressed CRUD (save / delete / toggle / duplicate / search / import / export) had no caller and is gone; rules are written by the ordered repeater. FW-17 grows the interface back if a second backend lands.
 
-### Migrating a pre-#56 site
+### A pre-0.8.0 site
 
-`fan_in()` (and its inverse `fan_out()`) survive as migration code. `upgrade_legacy_shape()` applies the fan-in on **read**, inside `get_all_settings()`, for the same reason #56 shipped a read-time adapter: handlers read storage on front-end and cron requests that never reach the admin-gated `WireframeBootstrap::boot()`, so an admin-load-only migration would leave those paths seeing no rules at all.
+The migration off the seven type-keyed arrays shipped in 0.8.0–0.9.x and was deleted after (FW-39). Storage reads the kind lists only; an absent kind list reads as empty. A site that jumps straight from a pre-0.8.0 version therefore runs no rules, so `OptionRuleStorage::holds_pre_08_rows()` drives an admin error notice telling the author to pass through 0.9.x. It fires only on legacy **rows** with no kind list — empty legacy arrays (an old install with no rules) have nothing to lose and raise nothing. Fresh installs seed the two kind keys directly.
 
-Two rules keep it safe:
-
-- **A kind list that already exists wins.** Only an absent or unusable kind key is seeded from the legacy arrays. Re-deriving one that exists would group by type and discard the author's cross-type order.
-- **The legacy keys are pruned by the next WRITE**, never by the read that decides which shape to trust.
-
-`maybe_migrate_kind_lists()` (admin load, after `maybe_migrate_acf_ref_storage()`) persists that upgraded shape. Nothing depends on it having run *except the admin*, which reads the settings option raw and can only bind the ordered repeater to keys that are in storage. It is not flag-gated — it writes only when the stored option differs from the upgraded one, which is strictly better than a one-shot gate and idempotent across repeat loads. The schema flag stays a marker, not a gate.
-
-**`CONFIG_MIGRATED_TYPES`** is the list of types with repeater subfields. A type is added to it in the same change that gives it those subfields, never before: the repeater renders every row in the key it is bound to, and `RepeaterField::sanitize` drops any subfield the config does not declare — so a row the repeater has no subfields for would be gutted on the next save. As of #59 every rule type is in, making it identical to the flattened `KIND_TYPES`; it stays a separate constant precisely so the next type can be declared in `KIND_TYPES` — and therefore fanned in and read — a change before its subfields exist.
+**`CONFIG_MIGRATED_TYPES`** is the list of types with repeater subfields. A type is added to it in the same change that gives it those subfields, never before: the repeater renders every row in the key it is bound to, and `RepeaterField::sanitize` drops any subfield the config does not declare — so a row the repeater has no subfields for would be gutted on the next save. As of #59 every rule type is in, making it identical to the flattened `KIND_TYPES`; it stays a separate constant precisely so the next type can be declared in `KIND_TYPES` — and therefore read — a change before its subfields exist.
 
 Invariants asserted by H10 (`tests/verify-kind-lists.php`):
 
-- **`fan_in()` is a pure regroup** — rows cross over verbatim plus a `type` key, with no shape coercion, so `fan_out(fan_in($s))` reproduces the type-keyed arrays byte-for-byte. Coercion stays at read time.
-- **The upgrade never clobbers**: a stored kind list wins over legacy arrays that disagree with it in order or membership, and a read persists nothing.
+- **The pre-0.8.0 guard** fires on legacy rows with no kind list, and on nothing else.
 - **`id` is the per-type index**, not the kind-list position.
 - **`KIND_TYPES` is the enumeration.** `all_types()` flattens it and `get_kind_for_type()` inverts it, so there is no second list for it to drift out of step with — which is what lets `get_enabled_rules()` carry no fallback.
-- **A write that was not needed is not a failure** (#27): `save_rule()` / `import_rules()` / `bulk_toggle_rules()` report success when the data already matches storage, and failure only when a re-read shows it did not persist.
 
 ## Apply to Existing Posts
 

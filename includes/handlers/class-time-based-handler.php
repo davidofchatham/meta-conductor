@@ -68,7 +68,7 @@ class TimeBasedHandler extends UnifiedHandlerBase {
         }
         // Time-based writes the TARGET term's taxonomy — fingerprint that.
         $taxonomy    = '';
-        $target_term = get_term((int) ($rule['target_term_id'] ?? 0));
+        $target_term = get_term($rule['target_term_id'] ?? 0);
         if ($target_term && !is_wp_error($target_term)) {
             $taxonomy = $target_term->taxonomy;
         }
@@ -134,13 +134,10 @@ class TimeBasedHandler extends UnifiedHandlerBase {
      * Check if post matches the filter criteria for a rule
      */
     private function post_matches_filter($post_id, $rule) {
-        // Flatten both filters up front. filter_taxonomies is a Wireframe
-        // checkboxes {slug:bool} map; filter_terms is a token list. Extracting
-        // selected slugs first means an all-unchecked map (non-empty but no
-        // selection) correctly reads as "no filter", and the taxonomy loop never
-        // binds to boolean values. (0.6.0 review)
-        $filter_terms      = \BWS\MetaConductor\Admin\Config\ConfigHelpers::selected_checkbox_slugs($rule['filter_terms'] ?? []);
-        $filter_taxonomies = \BWS\MetaConductor\Admin\Config\ConfigHelpers::selected_checkbox_slugs($rule['filter_taxonomies'] ?? []);
+        // Storage projects filter_terms to int[] and filter_taxonomies to a
+        // slug list, so an all-unchecked map already reads as "no filter".
+        $filter_terms      = $rule['filter_terms'] ?? [];
+        $filter_taxonomies = $rule['filter_taxonomies'] ?? [];
 
         // No filter → match all posts.
         if (empty($filter_terms) && empty($filter_taxonomies)) {
@@ -254,7 +251,7 @@ class TimeBasedHandler extends UnifiedHandlerBase {
      * @return int[] Post IDs, possibly empty.
      */
     private function expired_rule_posts($rule): array {
-        $target_term = get_term((int) ($rule['target_term_id'] ?? 0));
+        $target_term = get_term($rule['target_term_id'] ?? 0);
         if (!$target_term || is_wp_error($target_term)) {
             return array();
         }
@@ -262,7 +259,7 @@ class TimeBasedHandler extends UnifiedHandlerBase {
         // Resolve the rule's post types for the sweep query. Empty ⇒ all
         // public types (get_posts needs a concrete set; the gate treats empty
         // as "all"). get_posts accepts an array of slugs.
-        $post_types = \BWS\MetaConductor\Admin\Config\ConfigHelpers::selected_checkbox_slugs($rule['post_types'] ?? []);
+        $post_types = $rule['post_types'] ?? [];
         if (empty($post_types)) {
             $post_types = array_values(get_post_types(array('public' => true)));
         }
@@ -270,7 +267,7 @@ class TimeBasedHandler extends UnifiedHandlerBase {
         // Resolve the rule's post STATUSES the same way, so selection matches
         // the gate the pass will apply (see cleanup_expired_rules()). Empty ⇒
         // the historical set, which is what an unscoped rule always swept.
-        $post_statuses = \BWS\MetaConductor\Admin\Config\ConfigHelpers::selected_checkbox_slugs($rule['post_status'] ?? []);
+        $post_statuses = $rule['post_status'] ?? [];
         if (empty($post_statuses) || $post_statuses[0] === 'any') {
             $post_statuses = array('publish', 'draft', 'private');
         }

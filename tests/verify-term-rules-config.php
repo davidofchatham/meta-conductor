@@ -409,43 +409,7 @@ $check('a payload without the rule list is returned untouched',
     WireframeBootstrap::snapshot_term_rule_labels(['manual_processing_enabled' => true])
         === ['manual_processing_enabled' => true]);
 
-// --- #16: a legacy hierarchical row is REWRITTEN, not just read. -----------
-//
-// Wireframe reads the settings option raw, so a row that still carries only
-// hierarchy_direction + expansion_behavior would render with the new select's
-// `ancestors` default and be persisted as such on the next save — silently
-// converting the rule. A read-time fallback alone does not cover the admin.
-
-$migrate = new ReflectionMethod(WireframeBootstrap::class, 'migrate_inheritance_behavior');
-// (private; PHP 8.1+ needs no setAccessible)
-$m = fn(array $row) => $migrate->invoke(null, $row);
-
-$legacy = $m(['type' => 'hierarchical_rules', 'enabled' => true,
-              'hierarchy_direction' => 'parent_to_child', 'expansion_behavior' => 'merge']);
-$check('a legacy pair migrates to the outcome it behaved as',
-    ($legacy['inheritance_behavior'] ?? null) === 'descendants_always');
-$check('the migrated row sheds the legacy keys',
-    !isset($legacy['hierarchy_direction']) && !isset($legacy['expansion_behavior']));
-
-$check('a row already naming an outcome is untouched',
-    $m(['type' => 'hierarchical_rules', 'inheritance_behavior' => 'both_smart',
-        'hierarchy_direction' => 'child_to_parent'])['inheritance_behavior'] === 'both_smart');
-
-$other = ['type' => 'propagation_rules', 'hierarchy_direction' => 'both'];
-$check('a row of another type is untouched', $m($other) === $other);
-
-$fresh = ['type' => 'hierarchical_rules', 'taxonomy' => 'category'];
-$check('a row with neither shape is untouched', $m($fresh) === $fresh);
-
-// parent_to_child + never applied nothing at all. Preserve that as disabled
-// rather than inventing a behaviour the rule never had.
-$inert = $m(['type' => 'hierarchical_rules', 'enabled' => true,
-             'hierarchy_direction' => 'parent_to_child', 'expansion_behavior' => 'never']);
-$check('the do-nothing pair migrates to a DISABLED rule', empty($inert['enabled']));
-$check('the do-nothing pair still names a valid outcome',
-    in_array($inert['inheritance_behavior'], $behaviour_opts, true));
-
-// --- #58: the two live types' row titles and legacy-shape repair. ------------
+// --- #58: the two live types' row titles. -----------------------------------
 
 // Related: trigger → target, with the disabled prefix like everything else.
 $rel_title = WireframeBootstrap::snapshot_term_rule_labels([$KIND => [[
@@ -489,47 +453,31 @@ $acf_copy_title = WireframeBootstrap::snapshot_term_rule_labels([$KIND => [[
 $check('acf-reference title: Copy + from when pull and not syncing',
     str_starts_with($acf_copy_title, '#1 Copy') && str_contains($acf_copy_title, ' from '));
 
-// Legacy related rows: scalar term ids must become the arrays the selects
-// bind, or the admin renders them EMPTY and the next save disarms the rule.
-$repair = new ReflectionMethod(WireframeBootstrap::class, 'migrate_related_term_shape');
-$r = fn(array $row) => $repair->invoke(null, $row);
+// --- The admin-load repair: a title backfill and nothing else. --------------
+//
+// The three every-boot shape migrations are gone (FW-39): no stored row is in
+// a legacy shape. What stays is the row_title backfill, which is not a
+// migration — a row that reached storage without the admin has no title, and
+// the collapsed row renders blank. A legacy-shaped row now passes through
+// untouched apart from its title.
 
-$legacy_rel = $r(['type' => 'related_rules', 'trigger_term_id' => '12',
-                  'target_term_id' => 9, 'trigger_label' => 'stale']);
-$check('a legacy scalar trigger becomes the select\'s array shape',
-    $legacy_rel['trigger_term_id'] === [12]);
-$check('a legacy scalar target becomes the select\'s array shape',
-    $legacy_rel['target_term_id'] === [9]);
-$check('the stale three-token label keys are shed',
-    !isset($legacy_rel['trigger_label']));
-$check('an array-shaped related row is untouched',
-    $r(['type' => 'related_rules', 'trigger_term_id' => [5], 'target_term_id' => [9]])
-        === ['type' => 'related_rules', 'trigger_term_id' => [5], 'target_term_id' => [9]]);
-$other_rel = ['type' => 'time_based_rules', 'target_term_id' => '21'];
-$check('a row of another type is untouched by the related repair',
-    $r($other_rel) === $other_rel);
+$repair = new ReflectionMethod(WireframeBootstrap::class, 'repair_term_rows');
+$r = fn(array $rows) => $repair->invoke(null, $rows);
 
-// Legacy ACF-reference rows: the key-rename migration is one-shot flag-gated
-// in storage, so the admin repair re-applies it to kind-list rows — a row
-// written behind the flag must not render with the radio's `source` default
-// and have its direction reversed on resave.
-$legacy_acf = OptionRuleStorage::migrate_related_post_terms_shape([
-    'type' => 'related_post_terms_rules',
-    'acf_field_name' => 'event:ref', 'source_taxonomy' => 'category',
-    'bidirectional' => true,
-]);
-$check('a legacy acf-ref row gains the runtime holder_role default, not the config one',
-    $legacy_acf['holder_role'] === 'target');
-$check('a legacy acf-ref row migrates its renamed keys',
-    $legacy_acf['taxonomy'] === 'category'
-    && $legacy_acf['keep_in_sync'] === true
-    && !isset($legacy_acf['source_taxonomy']) && !isset($legacy_acf['bidirectional']));
-$check('the combined acf_field_name is NOT split by the migration',
-    $legacy_acf['acf_field_name'] === 'event:ref');
-$migrated_acf = ['type' => 'related_post_terms_rules', 'acf_field_name' => 'event:ref',
-                 'taxonomy' => 'category', 'holder_role' => 'source', 'keep_in_sync' => false];
-$check('an already-migrated acf-ref row is untouched',
-    OptionRuleStorage::migrate_related_post_terms_shape($migrated_acf) === $migrated_acf);
+$stored = [
+    ['type' => 'hierarchical_rules', 'enabled' => true, 'taxonomy' => 'category',
+     'hierarchy_direction' => 'parent_to_child', 'expansion_behavior' => 'merge'],
+    ['type' => 'related_rules', 'trigger_term_id' => '12', 'target_term_id' => 9],
+    ['type' => 'related_post_terms_rules', 'acf_field_name' => 'event:ref',
+     'source_taxonomy' => 'category', 'bidirectional' => true],
+];
+$repaired = $r($stored);
+$check('the repair backfills every missing row_title',
+    count(array_filter(array_column($repaired, 'row_title'))) === count($stored));
+$check('the repair changes NOTHING else about a stored row',
+    array_map(fn($row) => array_diff_key($row, ['row_title' => null]), $repaired) === $stored);
+$check('the repair is idempotent', $r($repaired) === $repaired);
+$check('the repair leaves an empty list empty', $r([]) === []);
 
 // --- Tabs: exactly three, Personalize gone. ---------------------------------
 

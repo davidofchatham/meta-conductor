@@ -35,6 +35,10 @@ Rules are authored as two ordered lists — one for rules that write terms, one 
 
 == Upgrade Notes ==
 
+= Unreleased =
+
+**Updating from a version older than 0.8.0 now needs a stop at 0.9.x first.** The one-time migrations that converted pre-0.8.0 rules to the ordered rule lists were removed. A site that skips 0.9.x keeps its old rules in storage but runs none of them, and every admin page shows an error notice saying so. Install a 0.9.x release, open the Meta Conductor settings page once, then update. Sites already on 0.8.0 or later, and fresh installs, are unaffected.
+
 = 0.9.0 =
 
 **The Data Conversion page and the `wp bws-conversion` WP-CLI command are gone.** The new *Apply to Existing Posts* page under the Meta Conductor menu replaces it: pick a rule, preview, apply. The Copy and Map jobs come back later as rule types applied through that page; until then, a conversion you still need has no in-plugin replacement. The update removes the page's scheduled cleanup and its two scratch tables automatically.
@@ -64,6 +68,9 @@ Full detail, including the two post-status corrections and the storage migration
 See CHANGELOG.md in the plugin directory for the full release log.
 
 == Upgrade Notice ==
+
+= Unreleased =
+Coming from before 0.8.0? Update to 0.9.x and open the settings page first — this version no longer migrates pre-0.8.0 rules.
 
 = 0.9.0 =
 Data Conversion and `wp bws-conversion` are removed. The new Apply to Existing Posts page replaces them; Copy / Map return later as rule types.

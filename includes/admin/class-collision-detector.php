@@ -55,7 +55,6 @@
 
 namespace BWS\MetaConductor\Admin;
 
-use BWS\MetaConductor\Admin\Config\ConfigHelpers;
 use BWS\MetaConductor\Handlers\HierarchicalHandler;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 use BWS\MetaConductor\Storage\StorageFactory;
@@ -237,11 +236,7 @@ class CollisionDetector {
         }
 
         if (in_array($type, self::TERM_TARGET_TYPES, true)) {
-            $stored = $rule['target_term_id'] ?? 0;
-            // Canonical shape is a scalar int, but the on-demand path sees the
-            // form's own value before `normalize_rule_shape()` has touched it,
-            // and the control is a FormTokenField that posts [N].
-            $term_id = is_array($stored) ? (int) (reset($stored) ?: 0) : (int) $stored;
+            $term_id = $rule['target_term_id'] ?? 0;
 
             return $term_id <= 0 ? null : 'term|' . $term_id;
         }
@@ -297,7 +292,7 @@ class CollisionDetector {
             return $post_type === '' ? [] : [$post_type];
         }
 
-        $slugs = ConfigHelpers::selected_checkbox_slugs($rule['post_types'] ?? []);
+        $slugs = $rule['post_types'] ?? [];
 
         // `any` is should_process_post's sentinel for "don't gate", so it has to
         // read as every post type here too, not as a post type named "any".
@@ -305,7 +300,7 @@ class CollisionDetector {
             return [];
         }
 
-        return array_values($slugs);
+        return $slugs;
     }
 
     /**

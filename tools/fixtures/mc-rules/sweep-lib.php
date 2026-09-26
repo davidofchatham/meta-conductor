@@ -65,6 +65,38 @@ if ( ! function_exists( 'mc_sweep_clear_cache' ) ) {
 	}
 }
 
+if ( ! function_exists( 'mc_fan_in' ) ) {
+	/**
+	 * Regroup TYPE-KEYED rules into the two ordered kind lists, KIND_TYPES
+	 * order, each row tagged with its `type`.
+	 *
+	 * Fixture code: the manifest is authored by type, storage reads only kind
+	 * lists. The owning key names the type, so a stale `type` on a row is
+	 * overwritten. Non-array rows are dropped.
+	 *
+	 * @param array<string,array[]> $by_type Rules keyed by rule type.
+	 * @return array<string,array[]> Both kind keys, always present.
+	 */
+	function mc_fan_in( array $by_type ) {
+		$storage = \BWS\MetaConductor\Storage\OptionRuleStorage::class;
+		$lists   = array(
+			$storage::KIND_TERM   => array(),
+			$storage::KIND_FORMAT => array(),
+		);
+		// all_types() is KIND_TYPES flattened in order.
+		foreach ( $storage::all_types() as $type ) {
+			$kind = ( new $storage() )->get_kind_for_type( $type );
+			foreach ( (array) ( $by_type[ $type ] ?? array() ) as $row ) {
+				if ( is_array( $row ) ) {
+					$row['type']      = $type;
+					$lists[ $kind ][] = $row;
+				}
+			}
+		}
+		return $lists;
+	}
+}
+
 if ( ! function_exists( 'mc_write_rule_types' ) ) {
 	/**
 	 * Write a TYPE-KEYED map of rules into the ordered kind lists — the only
@@ -72,10 +104,9 @@ if ( ! function_exists( 'mc_write_rule_types' ) ) {
 	 *
 	 * Sweeps and the seeder author by rule TYPE because that is how the
 	 * manifest is written, but `term_rules` / `format_rules` are what handlers
-	 * and the dispatcher read. This translates one into the other through the
-	 * storage layer's own migration transform, so the row order it produces is
-	 * exactly the documented KIND_TYPES order — the same order the option held
-	 * before the contract ticket. A sweep that asserts a specific CROSS-TYPE
+	 * and the dispatcher read. This translates one into the other through
+	 * mc_fan_in(), so the row order it produces is the documented KIND_TYPES
+	 * order. A sweep that asserts a specific CROSS-TYPE
 	 * order must author the list itself (see mc_write_ordered_rules()).
 	 *
 	 * The types NOT named are carried through from what is already stored, and
@@ -95,18 +126,22 @@ if ( ! function_exists( 'mc_write_rule_types' ) ) {
 		$storage = \BWS\MetaConductor\Storage\OptionRuleStorage::class;
 
 		// The type-keyed VIEW of what is stored, so unnamed types survive.
-		$current = $storage::fan_out( array(
-			$storage::KIND_TERM   => $settings[ $storage::KIND_TERM ] ?? array(),
-			$storage::KIND_FORMAT => $settings[ $storage::KIND_FORMAT ] ?? array(),
-		) );
+		$current = array();
+		foreach ( array( $storage::KIND_TERM, $storage::KIND_FORMAT ) as $kind ) {
+			foreach ( (array) ( $settings[ $kind ] ?? array() ) as $row ) {
+				if ( is_array( $row ) && isset( $row['type'] ) ) {
+					$current[ $row['type'] ][] = $row;
+				}
+			}
+		}
 
 		foreach ( $by_type as $type => $rules ) {
 			$current[ $type ] = array_values( (array) $rules );
 		}
 
-		$lists = $storage::fan_in( $current );
+		$lists = mc_fan_in( $current );
 
-		foreach ( array_keys( $current ) as $type ) {
+		foreach ( $storage::all_types() as $type ) {
 			unset( $settings[ $type ] );
 		}
 		$settings[ $storage::KIND_TERM ]   = $lists[ $storage::KIND_TERM ];

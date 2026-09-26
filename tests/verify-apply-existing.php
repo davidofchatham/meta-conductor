@@ -184,28 +184,32 @@ $check('All enabled rules gets the default set', RuleChoice::reach_statuses(null
 $check('no default status is trash or auto-draft',
     array_intersect($default, ['trash', 'auto-draft']) === []);
 
+// reach_statuses() takes PROJECTED rows; project so the form shapes below
+// (checkbox maps) reach it the way they would from storage.
+$reach = fn(?array $row) => RuleChoice::reach_statuses($row === null ? null : OptionRuleStorage::project_kind_rules([$row])[0]);
+
 $h = ['type' => 'hierarchical_rules', 'taxonomy' => 'category'];
-$check('no post_status → default set', RuleChoice::reach_statuses($h) === $default);
+$check('no post_status → default set', $reach($h) === $default);
 $check('an empty checkbox map → default set',
-    RuleChoice::reach_statuses($h + ['post_status' => ['publish' => false]]) === $default);
+    $reach($h + ['post_status' => ['publish' => false]]) === $default);
 $check("'any' → default set",
-    RuleChoice::reach_statuses($h + ['post_status' => ['any']]) === $default);
+    $reach($h + ['post_status' => ['any']]) === $default);
 $check('a checkbox map narrows the set',
-    RuleChoice::reach_statuses($h + ['post_status' => ['publish' => true, 'draft' => false]]) === ['publish']);
+    $reach($h + ['post_status' => ['publish' => true, 'draft' => false]]) === ['publish']);
 $check('a list narrows the set',
-    RuleChoice::reach_statuses($h + ['post_status' => ['draft', 'pending']]) === ['draft', 'pending']);
+    $reach($h + ['post_status' => ['draft', 'pending']]) === ['draft', 'pending']);
 $check('trash and auto-draft are dropped from a narrowed set',
-    RuleChoice::reach_statuses($h + ['post_status' => ['trash' => true, 'auto-draft' => true, 'private' => true]]) === ['private']);
+    $reach($h + ['post_status' => ['trash' => true, 'auto-draft' => true, 'private' => true]]) === ['private']);
 $check('a gate of only trash reaches nothing, never the default set',
-    RuleChoice::reach_statuses($h + ['post_status' => ['trash' => true]]) === []);
+    $reach($h + ['post_status' => ['trash' => true]]) === []);
 
 foreach (['propagation_rules', 'related_rules', 'time_based_rules', 'hierarchical_level_restriction_rules'] as $type) {
     $check("$type narrows by post_status",
-        RuleChoice::reach_statuses(['type' => $type, 'post_status' => ['publish' => true]]) === ['publish']);
+        $reach(['type' => $type, 'post_status' => ['publish' => true]]) === ['publish']);
 }
 
 $check('related_post_terms never narrows — post_status gates the source there',
-    RuleChoice::reach_statuses(['type' => 'related_post_terms_rules', 'post_status' => ['publish' => true]]) === $default);
+    $reach(['type' => 'related_post_terms_rules', 'post_status' => ['publish' => true]]) === $default);
 
 // --- 5. Disabled-row override (dispatcher pass rows). -----------------------
 

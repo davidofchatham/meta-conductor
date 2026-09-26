@@ -5,8 +5,8 @@
  * The dynamic half of H12 for the #59 batch, run against the real testbed.
  * Same two acts as sweep-58-roundtrip.php, on the other kind list:
  *
- *   1. Simulates the admin-load storage sequence (kind-list sync → stored-rule
- *      repair) the way WireframeBootstrap::boot runs it, then asserts the
+ *   1. Simulates the admin-load storage sequence (stored-rule repair) the
+ *      way WireframeBootstrap::boot runs it, then asserts the
  *      persisted `format_rules` list carries the seeded title/slug rule in
  *      admin-renderable shape — its `type`, a backfilled `row_title`, and
  *      every stored key it had before the move.
@@ -43,8 +43,6 @@ $storage = StorageFactory::get_instance();
 
 // What the handler sees BEFORE any of this runs. The move must not change it.
 $before = $storage->get_rules('title_slug_rules');
-
-$storage->maybe_migrate_kind_lists();
 
 $repair = new ReflectionMethod(WireframeBootstrap::class, 'repair_stored_rules');
 $repair->invoke(null, $storage);
