@@ -123,13 +123,8 @@ if (!function_exists('bws_meta_manager_init')) {
 		// Hard-coded literal because storage class isn't loaded during activation hook.
 		if (!get_option('bws_meta_conductor_settings')) {
 			add_option('bws_meta_conductor_settings', array(
-				'hierarchical_rules' => array(),
-				'propagation_rules' => array(),
-				'related_rules' => array(),
-				'time_based_rules' => array(),
-				'related_post_terms_rules' => array(),
-				'hierarchical_level_restriction_rules' => array(),
-				'title_slug_rules' => array(),
+				'term_rules' => array(),
+				'format_rules' => array(),
 				'conflict_handling' => array(),
 			));
 		}
@@ -232,6 +227,10 @@ if (!function_exists('bws_meta_manager_init')) {
 			// Title/slug's per-rule status record was deleted: nothing read it, and
 			// it was keyed on a positional id that a reorder repoints. Idempotent.
 			delete_option('bws_title_slug_rule_status');
+
+			// The pre-0.8.0 migrations were deleted; their schema flags gate nothing. Idempotent.
+			delete_option('bws_mc_acfref_schema');
+			delete_option('bws_mc_kind_schema');
 
 			update_option('bws_meta_conductor_version', META_CONDUCTOR_VERSION);
 			bws_taxonomy_manager_clear_caches();
@@ -365,6 +364,28 @@ if (!function_exists('bws_meta_manager_init')) {
 		}
 	}
 	
+	/**
+	 * Warn a site still holding pre-0.8.0 rule rows: the migration off them was
+	 * deleted, so they run nothing until the site updates through 0.9.x.
+	 */
+	add_action('admin_notices', function() {
+		if (!current_user_can('manage_options') || !class_exists(\BWS\MetaConductor\Storage\OptionRuleStorage::class)) {
+			return;
+		}
+		$stored = \BWS\MetaConductor\Storage\StorageFactory::get_instance()->get_raw_settings();
+		if (!\BWS\MetaConductor\Storage\OptionRuleStorage::holds_pre_08_rows($stored)) {
+			return;
+		}
+		?>
+		<div class="notice notice-error">
+			<p>
+				<strong><?php esc_html_e('Meta Conductor', 'meta-conductor'); ?></strong>
+				<?php esc_html_e('found rules saved by a version older than 0.8.0. This version cannot read them, so none of them are running. Install a 0.9.x release first, load the Meta Conductor settings page once, then update to this version.', 'meta-conductor'); ?>
+			</p>
+		</div>
+		<?php
+	});
+
 	/**
 	 * Show requirement warnings
 	 */

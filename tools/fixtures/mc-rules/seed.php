@@ -362,7 +362,8 @@ foreach ( $mc_manifest['mc_rules'] as $mc_type => $mc_rules ) {
 // Land the seeded rules in the ordered kind lists — the only shape storage
 // reads (#66). The fan-in produces the documented KIND_TYPES order; every
 // other key in the option — globals like enable_logging — is untouched.
-$mc_lists = $mc_storage_class::fan_in( $mc_rules_out );
+require_once $mc_base . '/sweep-lib.php';
+$mc_lists = mc_fan_in( $mc_rules_out );
 
 $mc_settings = get_option( $mc_option, array() );
 if ( ! is_array( $mc_settings ) ) {

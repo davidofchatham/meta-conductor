@@ -11,8 +11,6 @@
 
 namespace BWS\MetaConductor\Admin\Config;
 
-use BWS\MetaConductor\Storage\OptionRuleStorage;
-
 if (!defined('ABSPATH')) {
     exit;
 }
@@ -138,9 +136,9 @@ class ConfigHelpers {
      * Wireframe stores a checkboxes value as a FLAT LIST of selected slugs,
      * and its REST validator accepts only that shape — handed a {slug:bool}
      * map it validates the map's values, so `true` arrives as "1" and the
-     * save 400s with `"1" is not a valid option`. Handlers additionally
-     * tolerate the map on read (see selected_checkbox_slugs) because legacy
-     * and hand-seeded data carries it, but nothing should WRITE it.
+     * save 400s with `"1" is not a valid option`. Storage's read
+     * projection additionally tolerates the map (legacy and hand-seeded data
+     * carries it), but nothing should WRITE it.
      *
      * Every public post type is offered, including flat ones. A
      * hierarchical-only variant existed until 0.8.0 for propagation (SPEC
@@ -160,27 +158,6 @@ class ConfigHelpers {
                 'options' => self::post_types_checkbox_options(),
             ],
         ], $overrides);
-    }
-
-    /**
-     * Normalize a Wireframe checkboxes value to a flat list of selected slugs.
-     *
-     * Checkboxes store a `{slug: bool}` map; a plain list of slugs (or an empty
-     * value) is also accepted. Single source of truth for the extraction shared
-     * by handlers (gate enforcement) and the label snapshot (row titles) — keep
-     * the three former copies (handler status_gate, bootstrap status_gate_label,
-     * should_process_post) from drifting.
-     *
-     * @param mixed $value Checkbox map, list of slugs, or empty.
-     * @return string[] Selected slugs (truthy keys), or [] when nothing selected.
-     */
-    public static function selected_checkbox_slugs($value): array {
-        if (empty($value) || !is_array($value)) {
-            return [];
-        }
-        return array_is_list($value)
-            ? array_values($value)
-            : array_keys(array_filter($value));
     }
 
     /**
@@ -384,7 +361,7 @@ class ConfigHelpers {
         $fields_cache = [];
 
         $post_types  = get_post_types(['public' => true], 'objects');
-        $field_types = OptionRuleStorage::ACF_REFERENCE_FIELD_TYPES;
+        $field_types = ['relationship', 'post_object'];
 
         foreach ($post_types as $post_type) {
             $groups = acf_get_field_groups(['post_type' => $post_type->name]);

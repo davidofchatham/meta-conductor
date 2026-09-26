@@ -171,13 +171,9 @@ class HierarchicalHandler extends UnifiedHandlerBase {
      * which is why the collapse is a config change rather than a rewrite.
      *
      * A row saved before the collapse carries only the old pair, so that is
-     * the fallback — reading it exactly as before, defaults included. This is
-     * the RUNTIME half only, and it covers front-end and cron requests, which
-     * never reach the admin boot. The admin half is a real rewrite,
-     * `WireframeBootstrap::migrate_inheritance_behavior()`: Wireframe reads
-     * the settings option raw, so a row left un-migrated would render with the
-     * new select's default and be persisted as such on the next save. A
-     * read-time fallback alone would have silently converted rules.
+     * the fallback — reading it exactly as before, defaults included. The
+     * admin-side rewrite that once paired with it was deleted with FW-39 (no
+     * stored row still carries the pair).
      *
      * @since 0.8.0
      * @param array $rule Rule configuration.
