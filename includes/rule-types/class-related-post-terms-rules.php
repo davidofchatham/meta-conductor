@@ -38,6 +38,34 @@ final class RelatedPostTermsRules extends RuleType {
         return RelatedPostTermsHandler::class;
     }
 
+    public function target_key(array $rule): ?string {
+        return self::taxonomy_target($rule);
+    }
+
+    /**
+     * The DEPENDENT end, not `post_types` — this type has no such subfield
+     * (#58). Under `holder_role = source` (push) the dependents are the related
+     * posts, whose type the rule never constrains — so "all", exactly as
+     * `dependent_post_type()` reports it.
+     */
+    public function written_post_types(array $rule): array {
+        if ((string) ($rule['holder_role'] ?? 'target') === 'source') {
+            return [];
+        }
+        $post_type = trim((string) ($rule['post_type'] ?? ''));
+
+        return $post_type === '' ? [] : [$post_type];
+    }
+
+    /**
+     * `post_status` gates the SOURCE here (don't 6e(b)); narrowing the
+     * dependents by it would silently drop a draft dependent of a published
+     * source from a run.
+     */
+    public function status_gates_source(): bool {
+        return true;
+    }
+
     /**
      * No A→B arrow: same term, same taxonomy, moved across a relationship.
      *

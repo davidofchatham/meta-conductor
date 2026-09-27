@@ -38,6 +38,29 @@ final class TitleSlugRules extends RuleType {
     }
 
     /**
+     * Every row writes the same two fields, so the key is a constant and the
+     * collision predicate reduces to post-type overlap — the handler's
+     * first-match-wins lookup, stated as a collision.
+     *
+     * A row with no post type picked writes NOTHING (`rule_matches()` requires
+     * one). Without the null the key is a constant, so the half-authored skip
+     * could never fire for this kind and a blank new row would be reported as
+     * colliding with every other format row.
+     */
+    public function target_key(array $rule): ?string {
+        return trim((string) ($rule['post_type'] ?? '')) === '' ? null : 'fields|title_slug';
+    }
+
+    /**
+     * The scalar `post_type`. Never []: a row without one resolves no target
+     * (see `target_key()`), and if one ever reached here `['']` intersects
+     * nothing — the safe failure — where [] would claim every post type.
+     */
+    public function written_post_types(array $rule): array {
+        return [trim((string) ($rule['post_type'] ?? ''))];
+    }
+
+    /**
      * Schema:
      *   {name}{ (Post type)}
      *   e.g. "MC item slug (MC Items)"

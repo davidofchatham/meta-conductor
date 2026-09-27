@@ -37,6 +37,10 @@ final class HierarchicalRules extends RuleType {
         return HierarchicalHandler::class;
     }
 
+    public function target_key(array $rule): ?string {
+        return self::taxonomy_target($rule);
+    }
+
     /**
      * Schema:
      *   {Scope: }Inherit {Taxonomy}: {outcome} ({depth})

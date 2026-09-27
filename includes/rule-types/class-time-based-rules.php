@@ -38,6 +38,10 @@ final class TimeBasedRules extends RuleType {
         return TimeBasedHandler::class;
     }
 
+    public function target_key(array $rule): ?string {
+        return self::term_target($rule);
+    }
+
     /**
      * Date-first — the window is the most salient part of a manually
      * configured date rule — then a sentence:

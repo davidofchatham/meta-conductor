@@ -7,7 +7,7 @@
 
 namespace BWS\MetaConductor\Core;
 
-use BWS\MetaConductor\Admin\CollisionDetector;
+use BWS\MetaConductor\RuleTypes\Registry;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 use BWS\MetaConductor\Storage\StorageFactory;
 
@@ -348,7 +348,7 @@ final class ExistingPostsApplier {
     /**
      * Post IDs in the reach of these rows, ascending from the cursor.
      *
-     * Post types are each row's `CollisionDetector::written_post_types()` —
+     * Post types are each row's `RuleType::written_post_types()` —
      * empty means every public type. Deliberately conservative (CONTEXT.md →
      * Reach): a post the rule's own gate then skips costs a no-op pass.
      *
@@ -366,7 +366,7 @@ final class ExistingPostsApplier {
 
         $types = [];
         foreach ($rows as $rule) {
-            $written = CollisionDetector::written_post_types((string) ($rule['type'] ?? ''), $rule);
+            $written = Registry::get((string) ($rule['type'] ?? ''))?->written_post_types($rule) ?? [];
             if ($written === []) {
                 $types = get_post_types(['public' => true]);
                 break;

@@ -132,4 +132,83 @@ abstract class RuleType {
     public function normalize(array $row): array {
         return $row;
     }
+
+    /**
+     * The effect target a row writes, as a comparable key.
+     *
+     * Two rows contend when their keys are EQUAL (`CollisionDetector`), so the
+     * scheme prefix is part of the contract: `taxonomy|<slug>` for a whole
+     * taxonomy, `term|<id>` for one term, `fields|<name>` for post fields.
+     * Null ⇒ nothing resolvable yet — a half-authored row — and the row takes
+     * no part in the scan.
+     *
+     * Abstract on purpose: a type that inherited one would be compared under a
+     * scheme nobody chose for it.
+     *
+     * @param array $rule Projected row.
+     * @return string|null
+     */
+    abstract public function target_key(array $rule): ?string;
+
+    /**
+     * The post types a row WRITES — not the ones it looks at.
+     *
+     * Empty ⇒ every post type, which keeps both readers permissive in the
+     * right direction: the collision check over-reports, the Apply page's
+     * reach over-selects (a post the rule's own gate then skips costs a no-op
+     * pass). The default reads `post_types`; `any` is `should_process_post()`'s
+     * "don't gate" sentinel, so it reads as every post type too.
+     *
+     * @param array $rule Projected row.
+     * @return string[] Post-type slugs; [] = every post type.
+     */
+    public function written_post_types(array $rule): array {
+        $slugs = $rule['post_types'] ?? [];
+
+        if ($slugs === [] || ($slugs[0] ?? '') === 'any') {
+            return [];
+        }
+
+        return $slugs;
+    }
+
+    /**
+     * Whether `post_status` gates a SOURCE post rather than the post written.
+     *
+     * When true, the rule's status gate must not narrow the posts a run
+     * writes (`RuleChoice::reach_statuses()`).
+     *
+     * @return bool
+     */
+    public function status_gates_source(): bool {
+        return false;
+    }
+
+    /**
+     * `target_key()` for a type whose target is the whole `taxonomy`.
+     *
+     * @param array $rule Projected row.
+     * @return string|null
+     */
+    protected static function taxonomy_target(array $rule): ?string {
+        $taxonomy = trim((string) ($rule['taxonomy'] ?? ''));
+
+        return $taxonomy === '' ? null : 'taxonomy|' . $taxonomy;
+    }
+
+    /**
+     * `target_key()` for a term-pairing type: ONE term, `target_term_id`.
+     *
+     * Keyed on the term, not its taxonomy: two date-window rules in one
+     * taxonomy with different targets need not contend, and taxonomy-level
+     * keying would warn on every such pair.
+     *
+     * @param array $rule Projected row.
+     * @return string|null
+     */
+    protected static function term_target(array $rule): ?string {
+        $term_id = $rule['target_term_id'] ?? 0;
+
+        return $term_id <= 0 ? null : 'term|' . $term_id;
+    }
 }

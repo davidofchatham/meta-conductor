@@ -37,6 +37,10 @@ final class HierarchicalLevelRestrictionRules extends RuleType {
         return HierarchicalLevelRestrictionHandler::class;
     }
 
+    public function target_key(array $rule): ?string {
+        return self::taxonomy_target($rule);
+    }
+
     /**
      * Schema:
      *   {Scope: }Restrict {Taxonomy} to {mode}{, keeping ancestors}

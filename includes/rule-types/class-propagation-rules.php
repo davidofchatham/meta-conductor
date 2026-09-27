@@ -37,6 +37,10 @@ final class PropagationRules extends RuleType {
         return PropagationHandler::class;
     }
 
+    public function target_key(array $rule): ?string {
+        return self::taxonomy_target($rule);
+    }
+
     /**
      * Schema:
      *   {Scope: }Copy {Taxonomy} terms to children ({claim})

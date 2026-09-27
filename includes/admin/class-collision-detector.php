@@ -21,6 +21,9 @@
  *   - one term, for the two term-pairing types;
  *   - the post's own title/slug fields, for the format kind.
  *
+ * Each descriptor states its own (`RuleType::target_key()` and
+ * `written_post_types()`); this class only compares them.
+ *
  * Keying the term-pairing types on the TERM rather than on the term's taxonomy
  * is deliberate. Two date-window rules in one taxonomy with different targets
  * need not contend, and taxonomy-level keying would warn on every pair of them
@@ -56,6 +59,10 @@
 namespace BWS\MetaConductor\Admin;
 
 use BWS\MetaConductor\Handlers\HierarchicalHandler;
+use BWS\MetaConductor\RuleTypes\HierarchicalLevelRestrictionRules;
+use BWS\MetaConductor\RuleTypes\HierarchicalRules;
+use BWS\MetaConductor\RuleTypes\Registry;
+use BWS\MetaConductor\RuleTypes\RelatedRules;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 use BWS\MetaConductor\Storage\StorageFactory;
 
@@ -75,41 +82,6 @@ class CollisionDetector {
      * Not autoloaded — only the settings page and its save hook read it.
      */
     const OPTION_NAME = 'bws_mc_collision_warnings';
-
-    /**
-     * Rule types whose effect target is a WHOLE taxonomy, named by `taxonomy`.
-     *
-     * @var string[]
-     */
-    private const TAXONOMY_TARGET_TYPES = [
-        'propagation_rules',
-        'hierarchical_rules',
-        'hierarchical_level_restriction_rules',
-        'related_post_terms_rules',
-    ];
-
-    /**
-     * Term-pairing types: the effect target is ONE term, named by
-     * `target_term_id`, and no `taxonomy` subfield exists to read.
-     *
-     * @var string[]
-     */
-    private const TERM_TARGET_TYPES = [
-        'time_based_rules',
-        'related_rules',
-    ];
-
-    /**
-     * Format types: type => the fields it writes. Every `title_slug` rule
-     * writes the same two fields, so the target key is a constant per type and
-     * the whole predicate reduces to post-type overlap — which is exactly the
-     * handler's first-match-wins lookup, stated as a collision.
-     *
-     * @var array<string,string>
-     */
-    private const FIELD_TARGET_TYPES = [
-        'title_slug_rules' => 'title_slug',
-    ];
 
     /**
      * Register the two surfaces.
@@ -177,8 +149,9 @@ class CollisionDetector {
                 continue;
             }
 
-            $type = (string) ($row['type'] ?? '');
-            $key  = self::target_key($type, $row);
+            $type       = (string) ($row['type'] ?? '');
+            $descriptor = Registry::get($type);
+            $key        = $descriptor?->target_key($row);
 
             // No resolvable target — an untyped row, or one whose taxonomy or
             // target term has not been picked yet. Half-authored rules are not
@@ -190,9 +163,10 @@ class CollisionDetector {
             $facts[] = [
                 'index'      => $index,
                 'type'       => $type,
+                'descriptor' => $descriptor,
                 'row'        => $row,
                 'key'        => $key,
-                'post_types' => self::written_post_types($type, $row),
+                'post_types' => $descriptor->written_post_types($row),
             ];
         }
 
@@ -216,91 +190,6 @@ class CollisionDetector {
         }
 
         return $found;
-    }
-
-    /**
-     * The effect target a rule writes, as a comparable key.
-     *
-     * Null ⇒ nothing to compare, so the row takes no part in the scan.
-     *
-     * @since 0.8.0
-     * @param string $type Legacy rule-type key.
-     * @param array  $rule Projected row.
-     * @return string|null
-     */
-    public static function target_key(string $type, array $rule): ?string {
-        if (in_array($type, self::TAXONOMY_TARGET_TYPES, true)) {
-            $taxonomy = trim((string) ($rule['taxonomy'] ?? ''));
-
-            return $taxonomy === '' ? null : 'taxonomy|' . $taxonomy;
-        }
-
-        if (in_array($type, self::TERM_TARGET_TYPES, true)) {
-            $term_id = $rule['target_term_id'] ?? 0;
-
-            return $term_id <= 0 ? null : 'term|' . $term_id;
-        }
-
-        if (isset(self::FIELD_TARGET_TYPES[$type])) {
-            // A format rule with no post type picked writes NOTHING —
-            // `TitleSlugHandler::rule_matches()` requires the key to be
-            // non-empty. Without this the target key is a constant, so the
-            // half-authored skip above could never fire for this kind and a
-            // blank new row would be reported as colliding with every other
-            // format row, in "the lower one never runs" wording.
-            return trim((string) ($rule['post_type'] ?? '')) === ''
-                ? null
-                : 'fields|' . self::FIELD_TARGET_TYPES[$type];
-        }
-
-        return null;
-    }
-
-    /**
-     * The post types a rule WRITES — not the ones it looks at.
-     *
-     * Empty ⇒ every post type, which is what makes the overlap test permissive
-     * in the right direction (over-report, never under-report).
-     *
-     * Two types do not answer this with `post_types`:
-     *   - the format types name one post type in a scalar `post_type`;
-     *   - the ACF-reference rule has no `post_types` subfield at all (#58) and
-     *     writes its DEPENDENT end. Under `holder_role = source` (push) the
-     *     dependents are the related posts, whose type the rule never
-     *     constrains — so "all", exactly as `dependent_post_type()` reports it.
-     *
-     * @since 0.8.0
-     * @param string $type Legacy rule-type key.
-     * @param array  $rule Projected row.
-     * @return string[] Post-type slugs; [] = every post type.
-     */
-    public static function written_post_types(string $type, array $rule): array {
-        if (isset(self::FIELD_TARGET_TYPES[$type])) {
-            // Never [] here: an empty `post_type` resolves no target at all
-            // (see target_key), so a row that reaches this line has one. If one
-            // ever did not, `['']` intersects nothing — the safe failure —
-            // where [] would claim every post type.
-            return [trim((string) ($rule['post_type'] ?? ''))];
-        }
-
-        if ($type === 'related_post_terms_rules') {
-            if ((string) ($rule['holder_role'] ?? 'target') === 'source') {
-                return [];
-            }
-            $post_type = trim((string) ($rule['post_type'] ?? ''));
-
-            return $post_type === '' ? [] : [$post_type];
-        }
-
-        $slugs = $rule['post_types'] ?? [];
-
-        // `any` is should_process_post's sentinel for "don't gate", so it has to
-        // read as every post type here too, not as a post type named "any".
-        if ($slugs === [] || ($slugs[0] ?? '') === 'any') {
-            return [];
-        }
-
-        return $slugs;
     }
 
     /**
@@ -371,7 +260,7 @@ class CollisionDetector {
      * @return array{0:string,1:array,2:array}
      */
     private static function diagnose(array $a, array $b): array {
-        $pair = self::as_pair($a, $b, 'hierarchical_rules', 'hierarchical_level_restriction_rules');
+        $pair = self::as_pair($a, $b, HierarchicalRules::class, HierarchicalLevelRestrictionRules::class);
 
         if ($pair !== null) {
             [$adds, $restricts] = $pair;
@@ -406,15 +295,15 @@ class CollisionDetector {
      *
      * @param array  $a
      * @param array  $b
-     * @param string $first_type
-     * @param string $second_type
+     * @param string $first_type  Descriptor class.
+     * @param string $second_type Descriptor class.
      * @return array{0:array,1:array}|null
      */
     private static function as_pair(array $a, array $b, string $first_type, string $second_type): ?array {
-        if ($a['type'] === $first_type && $b['type'] === $second_type) {
+        if ($a['descriptor'] instanceof $first_type && $b['descriptor'] instanceof $second_type) {
             return [$a, $b];
         }
-        if ($b['type'] === $first_type && $a['type'] === $second_type) {
+        if ($b['descriptor'] instanceof $first_type && $a['descriptor'] instanceof $second_type) {
             return [$b, $a];
         }
 
@@ -501,7 +390,7 @@ class CollisionDetector {
      * @return bool
      */
     private static function removes(array $fact): bool {
-        if ($fact['type'] === 'related_rules') {
+        if ($fact['descriptor'] instanceof RelatedRules) {
             return !empty($fact['row']['bidirectional']);
         }
 
@@ -562,7 +451,7 @@ class CollisionDetector {
     /**
      * Human name for an effect target key.
      *
-     * @param string $key Target key from target_key().
+     * @param string $key Target key from `RuleType::target_key()`.
      * @return string Unescaped.
      */
     private static function target_label(string $key): string {

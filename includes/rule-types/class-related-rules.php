@@ -38,6 +38,10 @@ final class RelatedRules extends RuleType {
         return RelatedHandler::class;
     }
 
+    public function target_key(array $rule): ?string {
+        return self::term_target($rule);
+    }
+
     /**
      * Schema:
      *   {trigger} → {target}{ (post types)}

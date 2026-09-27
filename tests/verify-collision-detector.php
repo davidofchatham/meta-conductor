@@ -88,6 +88,7 @@ require dirname(__DIR__) . '/vendor/autoload.php';
 require dirname(__DIR__) . '/autoload.php';
 
 use BWS\MetaConductor\Admin\CollisionDetector;
+use BWS\MetaConductor\RuleTypes\Registry;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 
 $fail  = [];
@@ -111,76 +112,69 @@ $pairs = fn(array $found) => array_map(fn($f) => [$f['a']['index'], $f['b']['ind
 
 // --- 1. Every rule type is filed under exactly one target scheme. -----------
 //
-// A type storage knows but the detector does not resolve is skipped in silence
-// — the advisory would simply never mention it. Reflection reads the three
-// private lists rather than restating them, so this fails when a type is added
-// to storage and nowhere else, not when this file falls behind.
+// A type whose descriptor resolves no target is skipped in silence — the
+// advisory would simply never mention it. Every registered descriptor, given a
+// row with every target-naming field filled, must name exactly one scheme.
 
-$reflected = new ReflectionClass(CollisionDetector::class);
-$filed     = array_merge(
-    $reflected->getConstant('TAXONOMY_TARGET_TYPES'),
-    $reflected->getConstant('TERM_TARGET_TYPES'),
-    array_keys($reflected->getConstant('FIELD_TARGET_TYPES'))
-);
-$known = array_merge(
-    OptionRuleStorage::migrated_types_for_kind($KIND_TERM),
-    OptionRuleStorage::migrated_types_for_kind($KIND_FORMAT)
-);
+$desc = fn(string $type) => Registry::get($type);
+$full = ['taxonomy' => 'mc_topic', 'target_term_id' => 21, 'post_type' => 'mc_item'];
 
-sort($filed);
-$sorted_known = $known;
-sort($sorted_known);
-
-$check('every rule type resolves to a target scheme', $filed === $sorted_known);
-$check('no type is filed under two schemes', count($filed) === count(array_unique($filed)));
+foreach (Registry::all() as $type => $descriptor) {
+    $key = $descriptor->target_key(['type' => $type] + $full);
+    $check("$type resolves to a target scheme",
+        is_string($key) && in_array(explode('|', $key)[0], ['taxonomy', 'term', 'fields'], true));
+}
 
 // --- 2. Target keys. --------------------------------------------------------
 
 $check('a taxonomy-declaring type keys on its taxonomy',
-    CollisionDetector::target_key('hierarchical_rules', ['taxonomy' => 'mc_topic']) === 'taxonomy|mc_topic');
+    $desc('hierarchical_rules')->target_key(['taxonomy' => 'mc_topic']) === 'taxonomy|mc_topic');
 $check('the ACF-reference type keys on its taxonomy too',
-    CollisionDetector::target_key('related_post_terms_rules', ['taxonomy' => 'mc_topic']) === 'taxonomy|mc_topic');
+    $desc('related_post_terms_rules')->target_key(['taxonomy' => 'mc_topic']) === 'taxonomy|mc_topic');
 
 // The gap the #65 comment names: neither term-pairing type HAS a taxonomy
 // subfield, so keying on `taxonomy` would resolve nothing for either.
 $check('a date-window rule keys on its target TERM, not a taxonomy',
-    CollisionDetector::target_key('time_based_rules', ['target_term_id' => 21]) === 'term|21');
+    $desc('time_based_rules')->target_key(['target_term_id' => 21]) === 'term|21');
 $check('a related-term rule keys on its target term',
-    CollisionDetector::target_key('related_rules', ['target_term_id' => 22]) === 'term|22');
+    $desc('related_rules')->target_key(['target_term_id' => 22]) === 'term|22');
 $check('the FormTokenField [N] shape, projected, resolves to the same key',
-    CollisionDetector::target_key('related_rules',
+    $desc('related_rules')->target_key(
         OptionRuleStorage::project_kind_rules([['type' => 'related_rules', 'target_term_id' => [22]]])[0]) === 'term|22');
 
 $check('a format rule keys on the fields it writes',
-    CollisionDetector::target_key('title_slug_rules', ['post_type' => 'mc_item']) === 'fields|title_slug');
+    $desc('title_slug_rules')->target_key(['post_type' => 'mc_item']) === 'fields|title_slug');
 
 $check('a row with no taxonomy picked resolves nothing',
-    CollisionDetector::target_key('hierarchical_rules', []) === null);
+    $desc('hierarchical_rules')->target_key([]) === null);
 $check('a row with no target term picked resolves nothing',
-    CollisionDetector::target_key('time_based_rules', ['target_term_id' => 0]) === null);
-$check('an untyped row resolves nothing',
-    CollisionDetector::target_key('', ['taxonomy' => 'mc_topic']) === null);
+    $desc('time_based_rules')->target_key(['target_term_id' => 0]) === null);
+$check('untyped rows take no part in the scan',
+    $scan($KIND_TERM, [
+        ['type' => '', 'taxonomy' => 'mc_topic'],
+        ['type' => '', 'taxonomy' => 'mc_topic'],
+    ]) === []);
 
 // --- 3. Written post types. -------------------------------------------------
 
 $check('a projected checkbox map reads as its selected slugs',
-    CollisionDetector::written_post_types('hierarchical_rules',
+    $desc('hierarchical_rules')->written_post_types(
         OptionRuleStorage::project_kind_rules([['type' => 'hierarchical_rules', 'post_types' => ['mc_item' => true, 'mc_section' => false]]])[0])
     === ['mc_item']);
 $check('empty post_types means every post type',
-    CollisionDetector::written_post_types('hierarchical_rules', []) === []);
+    $desc('hierarchical_rules')->written_post_types([]) === []);
 $check('the `any` sentinel means every post type, not a type called any',
-    CollisionDetector::written_post_types('hierarchical_rules', ['post_types' => ['any']]) === []);
+    $desc('hierarchical_rules')->written_post_types(['post_types' => ['any']]) === []);
 $check('a format rule reads its scalar post_type',
-    CollisionDetector::written_post_types('title_slug_rules', ['post_type' => 'mc_item']) === ['mc_item']);
+    $desc('title_slug_rules')->written_post_types(['post_type' => 'mc_item']) === ['mc_item']);
 
 // The ACF-reference rule writes its DEPENDENT end, and a push rule does not
 // constrain that end's type — so "all", exactly as dependent_post_type() reads.
 $check('a push ACF-reference rule writes every post type',
-    CollisionDetector::written_post_types('related_post_terms_rules',
+    $desc('related_post_terms_rules')->written_post_types(
         ['post_type' => 'mc_section', 'holder_role' => 'source']) === []);
 $check('a pull ACF-reference rule writes the holder type',
-    CollisionDetector::written_post_types('related_post_terms_rules',
+    $desc('related_post_terms_rules')->written_post_types(
         ['post_type' => 'mc_section', 'holder_role' => 'target']) === ['mc_section']);
 
 $check('empty on either side overlaps',
@@ -508,7 +502,7 @@ $check('two format rules on different post types are independent',
 // a non-empty post_type — so it is unfinished, not colliding. The format target
 // key is a constant, so nothing else in the scan would have caught this.
 $check('a format rule with no post type resolves no target',
-    CollisionDetector::target_key('title_slug_rules', ['post_type' => '']) === null);
+    $desc('title_slug_rules')->target_key(['post_type' => '']) === null);
 $s_format_blank = $s_format;
 $s_format_blank[1]['post_type'] = '';
 $check('a blank format row collides with nothing',
