@@ -146,6 +146,33 @@ final class RuleChoice {
     }
 
     /**
+     * Which post types a run over these rows may touch.
+     *
+     * The union of each row's `RuleType::written_post_types()`. A row whose
+     * type has no descriptor adds NOTHING — the pass skips it, so it writes
+     * nothing — and above all never widens the run to every post type.
+     *
+     * @param array[] $rows Projected rows.
+     * @return string[]|null Slugs; null means every public type.
+     */
+    public static function reach_post_types(array $rows): ?array {
+        $types = [];
+        foreach ($rows as $rule) {
+            $descriptor = Registry::get((string) ($rule['type'] ?? ''));
+            if ($descriptor === null) {
+                continue;
+            }
+            $written = $descriptor->written_post_types($rule);
+            if ($written === []) {
+                return null;
+            }
+            $types = array_merge($types, $written);
+        }
+
+        return array_values(array_unique($types));
+    }
+
+    /**
      * Which post statuses a run over this rule may touch.
      *
      * The rule's `post_status` where it gates the written post, else the

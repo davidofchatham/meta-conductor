@@ -8,6 +8,7 @@
 namespace BWS\MetaConductor\Core;
 
 use BWS\MetaConductor\Handlers\UnifiedHandlerBase;
+use BWS\MetaConductor\RuleTypes\Registry;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 use BWS\MetaConductor\Storage\StorageFactory;
 
@@ -600,7 +601,8 @@ class TermDispatcher {
      *
      * Every enabled rule of this kind, in AUTHORED order, each recomputing from
      * live state. Rules of unconverted types are skipped — their own hooks
-     * already ran them, and running them here too would double-apply.
+     * already ran them, and running them here too would double-apply. A row
+     * whose type has no descriptor is skipped and logged (`Registry::known()`).
      *
      * The lock is taken for the whole pass and released in `finally`, so a
      * handler throwing cannot strand it and silence the entity for the rest of
@@ -626,6 +628,9 @@ class TermDispatcher {
             foreach ($this->ordered_rules() as $rule) {
                 $type = (string) ($rule['type'] ?? '');
 
+                if (!Registry::known($type)) {
+                    continue;
+                }
                 if (!in_array($type, self::CONVERTED_TYPES, true)) {
                     continue;
                 }

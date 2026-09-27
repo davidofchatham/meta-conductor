@@ -155,6 +155,20 @@ $check('untyped rows take no part in the scan',
         ['type' => '', 'taxonomy' => 'mc_topic'],
     ]) === []);
 
+// A stored type with no descriptor is REPORTED, not skipped (ticket 10) — a
+// silent skip reads as "checked, no collision". Never paired with anything.
+$ghost = $scan($KIND_TERM, [
+    ['type' => 'hierarchical_rules', 'taxonomy' => 'mc_topic', 'row_title' => '#1 H'],
+    ['type' => 'nope_rules', 'taxonomy' => 'mc_topic', 'row_title' => '#2 Ghost'],
+]);
+$check('an unknown-type row is reported as unknown_type',
+    $codes($ghost) === ['unknown_type'] && $ghost[0]['a']['index'] === 1);
+$check('the unknown-type message names the row and its stored type',
+    str_contains(CollisionDetector::message($ghost[0]), '#2 Ghost')
+    && str_contains(CollisionDetector::message($ghost[0]), 'nope_rules'));
+$check('a disabled unknown-type row is not reported',
+    $scan($KIND_TERM, [['type' => 'nope_rules', 'enabled' => false]]) === []);
+
 // --- 3. Written post types. -------------------------------------------------
 
 $check('a projected checkbox map reads as its selected slugs',

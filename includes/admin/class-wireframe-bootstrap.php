@@ -133,10 +133,16 @@ class WireframeBootstrap {
                 continue;
             }
 
-            $descriptor = $descriptors[(string) ($rule['type'] ?? '')] ?? null;
-            $title      = $descriptor
-                ? $descriptor->row_title(OptionRuleStorage::project_kind_rules([$rule])[0])
-                : __('(no rule type chosen)', 'meta-conductor');
+            $type       = (string) ($rule['type'] ?? '');
+            $descriptor = $descriptors[$type] ?? null;
+            if ($descriptor) {
+                $title = $descriptor->row_title(OptionRuleStorage::project_kind_rules([$rule])[0]);
+            } elseif ($type === '') {
+                $title = __('(no rule type chosen)', 'meta-conductor');
+            } else {
+                /* translators: %s: the stored rule type key. */
+                $title = sprintf(__('(unknown rule type: %s — this rule never runs)', 'meta-conductor'), $type);
+            }
 
             $rule['row_title'] = '#' . $position . ' '
                 . Labels::disabled_prefix($rule)

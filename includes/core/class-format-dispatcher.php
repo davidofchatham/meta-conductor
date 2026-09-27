@@ -8,6 +8,7 @@
 namespace BWS\MetaConductor\Core;
 
 use BWS\MetaConductor\Handlers\UnifiedHandlerBase;
+use BWS\MetaConductor\RuleTypes\Registry;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 use BWS\MetaConductor\Storage\StorageFactory;
 
@@ -295,6 +296,9 @@ class FormatDispatcher {
         foreach ($this->ordered_rules() as $rule) {
             $type = (string) ($rule['type'] ?? '');
 
+            if (!Registry::known($type)) {
+                continue;
+            }
             if (!in_array($type, self::CONVERTED_TYPES, true)) {
                 continue;
             }

@@ -139,10 +139,12 @@ class CollisionDetector {
      * @since 0.8.0
      * @param string $kind KIND_TERM or KIND_FORMAT.
      * @param array  $rows Projected kind-list rows, in authored order.
-     * @return array[] Findings, in list order.
+     * @return array[] Findings: `unknown_type` reports first (no `b`), then
+     *                 pairs, each in list order.
      */
     public static function detect(string $kind, array $rows): array {
-        $facts = [];
+        $facts   = [];
+        $unknown = [];
 
         foreach (array_values($rows) as $index => $row) {
             if (!is_array($row) || !($row['enabled'] ?? true)) {
@@ -151,7 +153,21 @@ class CollisionDetector {
 
             $type       = (string) ($row['type'] ?? '');
             $descriptor = Registry::get($type);
-            $key        = $descriptor?->target_key($row);
+
+            // A stored type with no descriptor: nothing can say what it
+            // writes, and the pass skips it. Reported, never paired — staying
+            // silent would read as "checked, no collision".
+            if ($descriptor === null && $type !== '') {
+                $unknown[] = [
+                    'kind'   => $kind,
+                    'code'   => 'unknown_type',
+                    'a'      => self::rule_ref(['index' => $index, 'type' => $type, 'row' => $row]),
+                    'target' => $type,
+                ];
+                continue;
+            }
+
+            $key = $descriptor?->target_key($row);
 
             // No resolvable target — an untyped row, or one whose taxonomy or
             // target term has not been picked yet. Half-authored rules are not
@@ -189,7 +205,7 @@ class CollisionDetector {
             }
         }
 
-        return $found;
+        return array_merge($unknown, $found);
     }
 
     /**
@@ -532,6 +548,13 @@ class CollisionDetector {
         $order   = __('The rule lower in the list acts last, so it decides the result.', 'meta-conductor');
 
         switch ((string) ($finding['code'] ?? '')) {
+            case 'unknown_type':
+                return sprintf(
+                    /* translators: 1: rule name, 2: the stored rule type key. */
+                    __('“%1$s” has a rule type this version of Meta Conductor does not know (%2$s). It never runs and cannot be checked for collisions. Update the plugin or delete the rule.', 'meta-conductor'),
+                    $a_title, $target
+                );
+
             case 'ancestors_stripped':
                 return sprintf(
                     /* translators: 1: rule name, 2: rule name, 3: taxonomy, 4: post types, 5: order sentence. */

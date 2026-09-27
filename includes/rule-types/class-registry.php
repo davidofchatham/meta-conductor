@@ -71,6 +71,31 @@ final class Registry {
     }
 
     /**
+     * Whether a stored row's type has a descriptor — the runtime question.
+     *
+     * A row with no descriptor is skipped, never guessed at and never fatal:
+     * a front-end request is no place to refuse a rule set. The first miss of
+     * each type logs one line (under WP_DEBUG), so a drain over many posts
+     * says it once. Admin surfaces refuse the row visibly instead.
+     *
+     * @param string $type Storage type key.
+     * @return bool
+     */
+    public static function known(string $type): bool {
+        static $logged = [];
+
+        if (self::get($type) !== null) {
+            return true;
+        }
+        if (!isset($logged[$type]) && defined('WP_DEBUG') && WP_DEBUG) {
+            $logged[$type] = true;
+            error_log('[Meta Conductor] Skipping a stored rule of unknown type "' . $type . '" — no descriptor is registered for it.');
+        }
+
+        return false;
+    }
+
+    /**
      * The descriptors of one kind, keyed by storage type, in registry order.
      *
      * @param string $kind KIND_TERM or KIND_FORMAT.

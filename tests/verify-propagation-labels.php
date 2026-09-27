@@ -179,6 +179,8 @@ $check('level restriction: absent mode ⇒ one per level',
 // --- An untyped row stays findable rather than going blank. -----------------
 $check('untyped row is named, not empty',
     $title(['enabled' => true, 'taxonomy' => 'category']) === '(no rule type chosen)');
+$check('a type with no descriptor says so, naming the stored type',
+    str_contains($title(['type' => 'nope_rules']), 'unknown rule type: nope_rules'));
 
 // --- No term_rules key ⇒ untouched. -----------------------------------------
 $untouched = WireframeBootstrap::snapshot_term_rule_labels(['other' => 1]);

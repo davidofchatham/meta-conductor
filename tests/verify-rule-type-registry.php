@@ -108,6 +108,11 @@ foreach ($all as $key => $d) {
     }
 }
 
+// The runtime question the dispatchers ask before running a row (ticket 10).
+$check('a registered type is known', Registry::known('hierarchical_rules'));
+$check('a type with no descriptor is not known — the pass skips it', !Registry::known('nope_rules'));
+$check('an untyped row is not known', !Registry::known(''));
+
 $check('handler classes are one per type',
     count(array_unique(array_map(fn(RuleType $d) => $d->handler_class(), $all))) === count($all));
 

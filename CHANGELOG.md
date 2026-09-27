@@ -14,6 +14,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A stored rule of a type this version does not know is no longer treated as reaching every post type.** On *Apply to Existing Posts* such a rule reached every public post type; now the dropdown marks it *(unknown type)*, choosing it is refused with a message, and it adds nothing to an *All enabled rules* run. The collision check reports it instead of skipping it, its row title says so on the rules page, and rule passes skip it with one debug-log line per request.
 - **A date-window rule missing a start or end date now does nothing.** An empty end date compared as long expired, so the rule stripped its target term from every post in scope on every save and on the daily cleanup. The editor requires both dates, but a row written by hand or by an import was not held to that.
 - **A level-restriction rule no longer rewrites a post it has nothing to change on.** Restricting could return the same terms in a different order, which counted as a change: every pass made a redundant term write and reordered the value stored in the post's ACF taxonomy field.
 

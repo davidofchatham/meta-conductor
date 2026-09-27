@@ -1178,6 +1178,17 @@ if (preg_match_all('/\b(?:self|static)::apply\s*\(/', $src) !== 1 || $term_pass 
     $errors[] = 'TermDispatcher::apply() must be called exactly once, from run_pass() — anything else executes a rule outside the ordered pass (FW-16 07).';
 }
 
+// --- 15. A stored row with no descriptor is skipped AND logged (ticket 10) --
+// Both loops must ask Registry::known() — the skip-and-log — before they look a
+// handler up. A missing handler alone also skips the row, but silently.
+foreach (['TermDispatcher::run_pass' => $term_pass, 'FormatDispatcher::compute' => isset($fsrc) ? $method_body($fsrc, 'compute') : null] as $where => $body) {
+    $known_at   = $body === null ? false : strpos($body, 'Registry::known(');
+    $handler_at = $body === null ? false : strpos($body, '$this->handlers[');
+    if ($known_at === false || $handler_at === false || $known_at > $handler_at) {
+        $errors[] = "$where() must skip a row via Registry::known() before its handler lookup — an unknown stored type would otherwise be skipped without a log line (ticket 10).";
+    }
+}
+
 if ($errors) {
     fwrite(STDERR, "DISPATCHER FAIL — term dispatcher invariants broken (#60):\n");
     foreach ($errors as $e) {

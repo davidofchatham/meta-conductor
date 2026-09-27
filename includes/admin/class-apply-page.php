@@ -11,6 +11,7 @@ namespace BWS\MetaConductor\Admin;
 use BWS\MetaConductor\Admin\Config\ConfigHelpers;
 use BWS\MetaConductor\Core\ExistingPostsApplier;
 use BWS\MetaConductor\Core\RuleChoice;
+use BWS\MetaConductor\RuleTypes\Registry;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 use BWS\MetaConductor\Storage\StorageFactory;
 
@@ -130,10 +131,11 @@ final class ApplyPage {
                 }
 
                 $options[RuleChoice::encode($kind, $position, $row)] = sprintf(
-                    '%s: #%d %s%s',
+                    '%s: #%d %s%s%s',
                     $group,
                     $position + 1,
                     ($row['enabled'] ?? true) === true ? '' : __('(disabled)', 'meta-conductor') . ' ',
+                    Registry::get((string) ($row['type'] ?? '')) === null ? __('(unknown type)', 'meta-conductor') . ' ' : '',
                     $title
                 );
             }
