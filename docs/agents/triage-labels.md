@@ -12,6 +12,8 @@ The skills speak in terms of five canonical triage roles. **One vocabulary, two 
 
 When a skill names a role ("apply the AFK-ready triage label"), pick the carrier from the surface you are on, not from the phrasing: a `#n` gets `gh issue edit <n> --add-label ready-for-agent`, a `<slug>/03` gets the `Status:` line rewritten in place. Routing between the surfaces is [issue-tracker.md](issue-tracker.md); this file only says what the role is called once you are there.
 
+**A built local ticket leaves the five roles.** Once its commit lands, a `.scratch/<slug>/issues/` ticket's line becomes `Status: built — <sha>[, <sha>…] on <branch>, unmerged`, replacing `ready-for-agent`; drop `, unmerged` when the PR merges. It is a sixth word on the local carrier only — a GitHub issue says the same thing with its own `Closes #N` and a Built comment.
+
 **`FW-N` rows carry no role.** [docs/future-work.md](../future-work.md) has its own `Progress:` / `Open:` / typed `Blocked by:` shape, which says more than a triage role could. Do not add a `Status:` line to a tracker row.
 
 **The wayfinder's `Status:` is a different axis.** A `.scratch/<effort>/issues/NN-*.md` child ticket carries `claimed` / `resolved` — a *state*, not a triage role. The two never appear on the same file: wayfinder children are self-assigned work, build tickets are triaged work. If a file needs both, it is two files.
