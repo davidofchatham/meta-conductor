@@ -161,7 +161,7 @@ class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
      *
      * The change was free rather than breaking: level restriction runs on the
      * test site only (CLAUDE.md live-rule-type rule), so no stored rule
-     * needed migrating. Config side: TermRulesConfig::level_restriction_subfields().
+     * needed migrating. Config side: HierarchicalLevelRestrictionRules::subfields().
      *
      * @param int[]  $term_ids Term IDs currently on the post.
      * @param string $taxonomy Taxonomy slug.

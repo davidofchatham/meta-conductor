@@ -36,4 +36,8 @@ final class PropagationRules extends RuleType {
     public function handler_class(): string {
         return PropagationHandler::class;
     }
+
+    public function reads_shared_fields(): array {
+        return ['taxonomy', 'post_types', 'hierarchical_post_type_note', 'conflict_handling'];
+    }
 }

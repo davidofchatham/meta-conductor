@@ -11,6 +11,8 @@
 
 namespace BWS\MetaConductor\Admin\Config;
 
+use BWS\MetaConductor\RuleTypes\Registry;
+
 if (!defined('ABSPATH')) {
     exit;
 }
@@ -43,6 +45,47 @@ class ConfigHelpers {
                            . ' <a href="' . esc_url('admin.php?page=' . self::APPLY_PAGE_SLUG) . '">' . esc_html__('Apply to Existing Posts', 'meta-conductor') . '</a>.</p>',
             ],
         ];
+    }
+
+    /**
+     * A `conditions` clause restricting a kind-repeater subfield to the given
+     * rule types.
+     *
+     * Always `in` with an explicit list, never `not_in`: a subfield gated by
+     * exclusion silently becomes visible on every type added later, and a
+     * subfield that is visible where nothing reads it stores junk — whereas a
+     * missing `in` entry merely hides a field, which H11/H12 catch. With one
+     * type in a kind, a `not_in` gate is indistinguishable from no gate.
+     *
+     * @param string ...$types Stored type keys the subfield belongs to.
+     */
+    public static function type_gate(string ...$types): array {
+        return [
+            'field'    => 'type',
+            'operator' => 'in',
+            'value'    => $types,
+        ];
+    }
+
+    /**
+     * Every type's own subfields, each gated to that type alone.
+     *
+     * The gate is stamped here, not by the descriptor, so no subfield can be
+     * visible on a type that did not declare it (RuleType::subfields()).
+     *
+     * @param string[] $types Stored type keys, in registry order.
+     * @return array[]
+     */
+    public static function type_subfields(array $types): array {
+        $fields = [];
+        foreach ($types as $type) {
+            foreach (Registry::get($type)->subfields() as $field) {
+                $field['conditions'] = self::type_gate($type);
+                $fields[]            = $field;
+            }
+        }
+
+        return $fields;
     }
 
     /**

@@ -71,6 +71,40 @@ abstract class RuleType {
     }
 
     /**
+     * Which of its kind's SHARED subfields a row of this type shows.
+     *
+     * The kind config builds every gated shared subfield's `conditions` from
+     * these declarations. List every shared field the handler reads: a reader
+     * missing here has that value hidden and DROPPED on the next save
+     * (CLAUDE.md don't 3). A shared `html` note is listed by the types it
+     * annotates. Subfields every type reads (`type`, `enabled`, `post_status`,
+     * `row_title`, the format frame) are ungated and never listed.
+     *
+     * H11/H12's hand-written `$expected_visible` is the independent check on
+     * this list; never derive it from here.
+     *
+     * @return string[] Shared subfield ids.
+     */
+    public function reads_shared_fields(): array {
+        return [];
+    }
+
+    /**
+     * This type's own subfields, in render order.
+     *
+     * Returned UNGATED: the kind config stamps a `type in [this type]` gate on
+     * every one, overwriting any `conditions` set here. Ids must be unique
+     * across the whole kind repeater (H11/H12), so a field two types read is
+     * a shared one, declared by the config and listed in
+     * `reads_shared_fields()`, not here.
+     *
+     * @return array[] Wireframe subfield definitions.
+     */
+    public function subfields(): array {
+        return [];
+    }
+
+    /**
      * This type's branch of the stored-shape projection.
      *
      * Runs AFTER `OptionRuleStorage::normalize_rule_shape()` has applied the
