@@ -38,6 +38,24 @@ final class RelatedRules extends RuleType {
         return RelatedHandler::class;
     }
 
+    /**
+     * Schema:
+     *   {trigger} → {target}{ (post types)}
+     *   e.g. "Categories: Term A → Tags: Term B (Pages)"
+     * Trigger is the taxonomy label when trigger_type=taxonomy, else the
+     * comma-joined trigger term labels.
+     */
+    public function row_title(array $row): string {
+        $trigger = (($row['trigger_type'] ?? 'term') === 'taxonomy')
+            ? Labels::taxonomy_label($row['trigger_taxonomy'] ?? '')
+            : Labels::trigger_terms_label($row['trigger_term_id'] ?? []);
+
+        return $trigger
+            . ' ' . "\xE2\x86\x92" . ' '
+            . Labels::term_label($row['target_term_id'] ?? 0)
+            . Labels::scope_label($row['post_types'] ?? []);
+    }
+
     public function reads_shared_fields(): array {
         return ['post_types', 'target_term_id'];
     }

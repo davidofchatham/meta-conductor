@@ -38,6 +38,79 @@ final class RelatedPostTermsRules extends RuleType {
         return RelatedPostTermsHandler::class;
     }
 
+    /**
+     * No A→B arrow: same term, same taxonomy, moved across a relationship.
+     *
+     * Schema: {Copy|Sync} {Taxonomy} terms {to|from} {field_label}{ on {statuses}}
+     *   Copy|Sync ← keep_in_sync (off|on)
+     *   to|from   ← holder_role (source=to/push | target=from/pull)
+     *   field_label ← acf_get_field()['label'] (clean human label), fallback name
+     *   on {statuses} ← post_status gate, only when set
+     */
+    public function row_title(array $row): string {
+        $verb = !empty($row['keep_in_sync'])
+            ? __('Sync', 'meta-conductor')
+            : __('Copy', 'meta-conductor');
+
+        // Default an ABSENT holder_role to 'target', matching the handler
+        // (holder_is_source) — NOT 'source'. Defaulting to 'source' here would
+        // write a row title that lies about the rule's runtime direction. A
+        // new rule always carries an explicit holder_role. (PR#24 round 4 #2)
+        $prep = (($row['holder_role'] ?? 'target') === 'source')
+            ? __('to', 'meta-conductor')
+            : __('from', 'meta-conductor');
+
+        $gate = Labels::status_gate_label($row['post_status'] ?? []);
+
+        // Assemble; tolerate empty parts gracefully.
+        $title = trim(sprintf(
+            /* translators: 1: Copy/Sync 2: taxonomy 3: to/from 4: field label */
+            __('%1$s %2$s terms %3$s %4$s', 'meta-conductor'),
+            $verb,
+            Labels::taxonomy_label($row['taxonomy'] ?? ''),
+            $prep,
+            self::acf_field_label($row['acf_field_name'] ?? '', $row['acf_field_key'] ?? '')
+        ));
+
+        if ($gate !== '') {
+            $title .= ' ' . sprintf(__('on %s', 'meta-conductor'), $gate);
+        }
+
+        return $title;
+    }
+
+    /**
+     * Resolve a projected ACF relationship field (bare name + key) to its clean
+     * human label via acf_get_field(). Falls back to the bare field name.
+     * (architecture.md → Canonical shape adapter)
+     *
+     * Resolves by KEY when the row carries one: two separately-created fields
+     * can share a bare name, and a row title showing the wrong field's label is
+     * how an author would be told the wrong thing about their own rule. (#25)
+     *
+     * @param string $name Bare field name.
+     * @param string $key  Field key; '' for a legacy two-part value.
+     * @return string Unescaped label.
+     */
+    private static function acf_field_label(string $name, string $key): string {
+        if ($name === '') {
+            return '';
+        }
+
+        if (function_exists('acf_get_field')) {
+            // Key first; the name is the fallback for a key that no longer
+            // resolves, so a stale row still shows a label rather than a blank.
+            $field = $key !== '' ? \acf_get_field($key) : null;
+            if (!is_array($field)) {
+                $field = \acf_get_field($name);
+            }
+            if (is_array($field) && !empty($field['label'])) {
+                return (string) $field['label'];
+            }
+        }
+        return $name;
+    }
+
     public function reads_shared_fields(): array {
         return ['taxonomy', 'acf_taxonomy_note', 'acf_status_note'];
     }

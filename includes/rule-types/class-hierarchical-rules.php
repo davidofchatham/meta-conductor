@@ -37,6 +37,42 @@ final class HierarchicalRules extends RuleType {
         return HierarchicalHandler::class;
     }
 
+    /**
+     * Schema:
+     *   {Scope: }Inherit {Taxonomy}: {outcome} ({depth})
+     *   e.g. "Inherit Categories: ancestors (all levels)"
+     *        "Pages: Inherit Shakers: ancestors and descendants (one level)"
+     *
+     * The outcome phrase is derived through HierarchicalHandler::behavior_key()
+     * rather than read off the row, so a legacy row storing only the old
+     * direction/expansion pair still gets the title its behavior deserves
+     * (#16).
+     */
+    public function row_title(array $row): string {
+        $outcomes = [
+            'ancestors'          => __('ancestors', 'meta-conductor'),
+            'descendants_smart'  => __('descendants when none picked', 'meta-conductor'),
+            'descendants_always' => __('descendants', 'meta-conductor'),
+            'both_smart'         => __('ancestors, and descendants when none picked', 'meta-conductor'),
+            'both_always'        => __('ancestors and descendants', 'meta-conductor'),
+        ];
+
+        $key     = HierarchicalHandler::behavior_key($row);
+        $outcome = $outcomes[$key] ?? __('nothing', 'meta-conductor');
+
+        $depth = (($row['inheritance_depth'] ?? 'all') === 'immediate')
+            ? __('one level', 'meta-conductor')
+            : __('all levels', 'meta-conductor');
+
+        return Labels::scope_prefix($row['post_types'] ?? []) . sprintf(
+            /* translators: 1: taxonomy label 2: what is applied 3: how far up/down the tree */
+            __('Inherit %1$s: %2$s (%3$s)', 'meta-conductor'),
+            Labels::taxonomy_label($row['taxonomy'] ?? ''),
+            $outcome,
+            $depth
+        );
+    }
+
     public function reads_shared_fields(): array {
         return ['taxonomy', 'hierarchical_taxonomy_note', 'post_types'];
     }

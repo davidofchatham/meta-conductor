@@ -38,6 +38,28 @@ final class TitleSlugRules extends RuleType {
     }
 
     /**
+     * Schema:
+     *   {name}{ (Post type)}
+     *   e.g. "MC item slug (MC Items)"
+     *
+     * The author names these rules themselves (`name` is required), so unlike
+     * the term titles there is nothing to assemble from the mechanics — the
+     * snapshot's job here is the scope suffix and the disabled marker. A row
+     * that reached storage without a name (a fixture, an import) is NAMED
+     * rather than left blank: it is still selectable in a collapsed,
+     * reorderable list and has to stay findable.
+     */
+    public function row_title(array $row): string {
+        $name = trim((string) ($row['name'] ?? ''));
+
+        if ($name === '') {
+            $name = __('Untitled title/slug rule', 'meta-conductor');
+        }
+
+        return $name . Labels::post_type_scope_label($row['post_type'] ?? '');
+    }
+
+    /**
      * Title & slug patterns — the mechanics of this one transformation.
      *
      * Every field here is gated: they are read only by `TitleSlugHandler`, and

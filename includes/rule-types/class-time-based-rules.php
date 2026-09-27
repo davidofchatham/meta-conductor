@@ -38,6 +38,76 @@ final class TimeBasedRules extends RuleType {
         return TimeBasedHandler::class;
     }
 
+    /**
+     * Date-first — the window is the most salient part of a manually
+     * configured date rule — then a sentence:
+     *   {start}–{end}: Apply {target} to {scope}{ with {filter}}
+     *   - dates joined by an en dash, no surrounding spaces.
+     *   - scope = "posts" (all types) or the post-type labels (when restricted).
+     *   - filter clause only when set: specific terms → "with {Term, …}";
+     *     else taxonomies → "with any {Taxonomy} term"; neither → omitted.
+     *   e.g. "2026-05-26–2026-05-27: Apply Shakers: Grandchild ii to posts"
+     *        "2026-05-26–2026-05-27: Apply … to Pages with Breakers: Term A"
+     */
+    public function row_title(array $row): string {
+        $start  = (string) ($row['start_date'] ?? '');
+        $end    = (string) ($row['end_date'] ?? '');
+        $target = Labels::term_label($row['target_term_id'] ?? 0);
+
+        // en dash, no surrounding spaces.
+        $window = ($start !== '' || $end !== '') ? $start . "\xE2\x80\x93" . $end . ': ' : '';
+
+        $sentence = sprintf(
+            /* translators: 1: target term 2: post-type scope phrase */
+            __('Apply %1$s to %2$s', 'meta-conductor'),
+            $target !== '' ? $target : __('(no term)', 'meta-conductor'),
+            self::scope_phrase($row['post_types'] ?? [])
+        );
+
+        return $window . $sentence . self::filter_clause($row);
+    }
+
+    /**
+     * Scope phrase for the title's "to …" clause: "posts" when the rule
+     * applies to all post types (empty post_types), else the human post-type
+     * labels ("Pages", "Posts, Pages"). Unescaped.
+     *
+     * @param string[] $post_types Slug list.
+     * @return string
+     */
+    private static function scope_phrase(array $post_types): string {
+        $labels = Labels::post_type_labels($post_types);
+        return empty($labels) ? __('posts', 'meta-conductor') : implode(', ', $labels);
+    }
+
+    /**
+     * Filter clause for the title: " with {specific terms}" when filter_terms
+     * is set; else " with any {taxonomy} term" when filter_taxonomies is set;
+     * else '' (no filter). Unescaped.
+     *
+     * @param array $row
+     * @return string
+     */
+    private static function filter_clause(array $row): string {
+        $terms = Labels::trigger_terms_label($row['filter_terms'] ?? []);
+        if ($terms !== '') {
+            return ' ' . sprintf(__('with %s', 'meta-conductor'), $terms);
+        }
+
+        $labels = [];
+        foreach ($row['filter_taxonomies'] ?? [] as $slug) {
+            $label = Labels::taxonomy_label((string) $slug);
+            if ($label !== '') {
+                $labels[] = $label;
+            }
+        }
+        if (!empty($labels)) {
+            return ' ' . sprintf(__('with any %s term', 'meta-conductor'), implode(', ', $labels));
+        }
+
+        return '';
+    }
+
     public function reads_shared_fields(): array {
         return ['post_types', 'target_term_id'];
     }

@@ -57,6 +57,20 @@ abstract class RuleType {
     abstract public function handler_class(): string;
 
     /**
+     * The collapsed row title for one row of this type.
+     *
+     * UNESCAPED, and without the position number or disabled marker —
+     * `WireframeBootstrap::snapshot_row_titles()` adds both and escapes once.
+     * The row arrives through `OptionRuleStorage::project_kind_rules()`, so
+     * term ids and the ACF field value are already decoded. Shared label
+     * helpers live on `Labels`.
+     *
+     * @param array $row Projected row.
+     * @return string Unescaped.
+     */
+    abstract public function row_title(array $row): string;
+
+    /**
      * Whether the kind-list repeater declares this type's subfields yet.
      *
      * A type may be declared (and therefore read) a change before its config

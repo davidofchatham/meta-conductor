@@ -79,6 +79,7 @@ $classes = [
     // Also proves the kebab DIRECTORY mapping (RuleTypes -> rule-types/).
     'BWS\\MetaConductor\\RuleTypes\\RuleType',
     'BWS\\MetaConductor\\RuleTypes\\Registry',
+    'BWS\\MetaConductor\\RuleTypes\\Labels',
     'BWS\\MetaConductor\\RuleTypes\\PropagationRules',
     'BWS\\MetaConductor\\RuleTypes\\RelatedPostTermsRules',
     'BWS\\MetaConductor\\RuleTypes\\TimeBasedRules',
