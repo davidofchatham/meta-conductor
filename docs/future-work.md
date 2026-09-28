@@ -100,8 +100,8 @@ Combine multiple source fields into one formatted output field — merge first/m
 - **Axes:** basis **relation** (authored — an ACF relationship / post-object field), effect target **field** (scalar), claim TBD.
 - **Detail home:** none. Raised 2026-08-12 in the cross-rule composition session.
 - **Progress:** Not started. Most of the traversal, direction and reverse-lookup machinery already exists in `related_post_terms_rules`; the net-new work is the field write path — shared with FW-4 — and deciding the claim.
-- **Open:** ⚠️ **Scalar effect target** — a scalar's **jurisdiction** is its single slot, so any two rules writing it share the whole of it and **always** collide. Unlike terms there is no contributing option: the claim is *owning* or nothing. Storage TBD — likely a `type` within `format_rules` alongside FW-4, since both write fields.
-- **Blocked by:** `code:no field write path exists` — cleared by FW-4 • **Interacts with:** FW-4, FW-7
+- **Open:** ⚠️ **Scalar effect target** — a scalar's **jurisdiction** is its single slot, so any two rules writing it share the whole of it and **always** collide. Unlike terms there is no contributing option: the claim is *owning* or nothing. Storage TBD — likely a `type` within `format_rules` alongside FW-4, since both write fields. **Split the relationship graph out first:** holder/direction/dependents/sources/reverse-lookup tiers and their memos move out of `RelatedPostTermsHandler` into a per-rule graph module that both the terms effect and this field effect read, and that `CollisionDetector` and `RuleChoice` stop re-deriving direction from. FW-11's reverse index would live behind it. The sever capture bookkeeping stays with each effect but needs the graph to diff old and new links. Premature while terms are the only effect (candidate 5 of the 2026-09-24 architecture review; see [design-history/rule-type-descriptor.md](design-history/rule-type-descriptor.md) → *Out of Scope*).
+- **Blocked by:** `code:no field write path exists` — cleared by FW-4 • **Interacts with:** FW-4, FW-7, FW-11
 
 #### FW-6 — `body_class_rules`: Document classes from terms/fields
 
@@ -195,7 +195,7 @@ A rule whose **claim** is *restricting* (today only level-restriction) declares 
 Current rule-type names conflate **basis**, **effect target** and **claim** into one string, which is why `hierarchical` (term graph) and `propagation` (post graph) read as near-synonyms, as do `related` (term↔term) and `related_post_terms` (post↔post). Names should be composed from the axes once those have settled.
 
 - **Detail home:** [ADR 0002](adr/0002-cross-rule-composition.md), where it was deferred. Axis definitions: [CONTEXT.md](../CONTEXT.md).
-- **Progress:** Not started. Storage keys (`related_rules`, `time_based_rules`, …) are unaffected — this is domain and UI vocabulary only. Once FW-39 lands, each rule type's descriptor `label()` is the single rename site; descriptor class names mirror the storage keys and do not change.
+- **Progress:** Not started. Storage keys (`related_rules`, `time_based_rules`, …) are unaffected — this is domain and UI vocabulary only. Since FW-39, each rule type's descriptor `label()` is the single rename site; descriptor class names mirror the storage keys and do not change.
 - **Blocked by:** `code:the Effect axis carries only term values` — renaming before it carries field, title and body-class values means minting names twice • **Interacts with:** FW-4, FW-5, FW-6
 
 #### FW-36 — Slug-change safety for format rules
@@ -280,8 +280,8 @@ A compute-only path through the term pass, so FW-16 can preview what a term rule
 
 - **Detail home:** [design-history/apply-existing.md](design-history/apply-existing.md) → *Preview* (FW-16's spec).
 - **Progress:** Not started. FW-16 launches without it: term rules get an in-scope count, a sample list, a post limit and a post-run change report instead.
-- **Open:** `TermOperations::compute_end_state()` is the natural seam, since it already encodes merge / replace / skip for every write. A rolled-back DB transaction was considered and set aside — other plugins' hooks and the object cache fire during the pass and do not roll back.
-- **Blocked by:** — • **Interacts with:** FW-16
+- **Open:** `TermOperations::compute_end_state()` already encodes merge / replace / skip for every write, but alone it is too narrow a seam — FW-41 is the refactor that would give this row its compute-only path. A rolled-back DB transaction was considered and set aside — other plugins' hooks and the object cache fire during the pass and do not roll back.
+- **Blocked by:** — • **Interacts with:** FW-16, FW-41
 
 #### FW-33 — Background bulk apply
 
@@ -301,13 +301,40 @@ Replace the minimal pairwise collision warning (#65) with an analysis over **rea
 - **Open:** defining reach once for **every** effect kind, not just terms — which is why it waits for a real field or rendered kind. Also whether to consult the claim, since two purely contributing rules cannot actually fight. With the repeater as the ordering UI, the result is advisory only: components no longer decide which rules get ordering control.
 - **Blocked by:** `code:the only effect kinds are term and title/slug` — cleared by FW-4 landing • **Interacts with:** FW-4, FW-6, FW-12, FW-25, FW-39
 
-#### FW-39 — Rule-type descriptor + canonical storage projection
+#### FW-40 — Extract the token engine from TitleSlugHandler
 
-Give each rule type one descriptor module that declares its kind, label, handler, subfields, shape normalization, row title and reach, with an ordered registry deriving every type list the code keeps by hand today. First, make storage's read projection the guaranteed canonical rule shape and delete the migration and CRUD code nothing reaches any more. Adding a rule type today touches ~15 hand-kept sites across 9 files, and an unregistered type falls through silently.
+Pull the pattern → segments → resolve-or-drop → trim engine out of `TitleSlugHandler` into its own module that takes a pattern, a token source and an output policy. Today a `'title'|'slug'` context string branches at every level and the title's idempotency guard is a resolver parameter, so a third output policy would mean a third branch everywhere.
 
-- **Detail home:** `.scratch/rule-type-descriptor/spec.md`. Origin: the 2026-09-24 architecture review (candidates 1 + 2).
-- **Progress:** All 12 build tickets built. PR 1 (01–04, canonical storage projection) merged as #76. PR 2 (05–12, descriptors + registry) is built on `claude/rule-type-descriptor-39`, not yet opened: every rule type is now listed once, in `RuleTypes\Registry`, and each stored type string is spelled only in its descriptor — handlers read theirs back from the registry. The live-site shape check (`tools/fixtures/legacy-shape-check.php`) came back clean on both production sites, which cleared the migration deletions.
-- **Blocked by:** — • **Interacts with:** FW-1, FW-4, FW-5, FW-8, FW-14, FW-20, FW-24, FW-29, FW-30, FW-34
+- **Detail home:** [design-history/rule-type-descriptor.md](design-history/rule-type-descriptor.md) → *Out of Scope* names it (candidate 3 of the 2026-09-24 architecture review); the review itself was not kept.
+- **Progress:** Not started. The engine is tested today only by reflection on a private method, inside a docker sweep.
+- **Open:** two token sources make the seam real — the post (today) and an ACF repeater row (FW-4's row-scoped reads). Output policies title / slug / raw; title/slug keeps only its default title, inverse strip and uniqueness escalation. The timezone-naive `DateTime` in the date tokens gets fixed once, in the engine. A fake source makes the engine testable on host PHP.
+- **Blocked by:** — • **Interacts with:** FW-4, FW-6, FW-7
+
+#### FW-41 — Term appliers return an end state; the dispatcher writes
+
+Make term appliers return the terms they want and let `TermDispatcher` apply the claim, diff and write — the shape the format pass already has (`apply_to_data()` returns data, `FormatDispatcher` writes). Claim would be decided in one place, and FW-32's dry run would fall out of it.
+
+- **Detail home:** [design-history/rule-type-descriptor.md](design-history/rule-type-descriptor.md) → *Out of Scope* (candidate 4 of the 2026-09-24 architecture review, rated *worth exploring*).
+- **Progress:** Not started.
+- **Open:** three appliers resist it. Level restriction's native read depends on ACF's sync reacting to its own field write; propagation writes the ACF mirror before it reads native terms; hierarchical writes `_bws_auto_terms` provenance meta mid-apply. `compute_end_state()` alone is too narrow a seam — it cannot express provenance or restriction. A whole-pass dry run also needs a state overlay, so later rules see earlier rules' results.
+- **Blocked by:** — • **Interacts with:** FW-8, FW-24, FW-25, FW-32
+
+#### FW-42 — Fold the ACF write queue into the dispatcher's queue
+
+`AcfWriteQueue`'s only job now is to call `TermDispatcher::mark_dirty()` later, from its own pending set flushed at `shutdown` p10, ahead of the drain at p20. Marking the entity dirty straight from ACF's write filter would leave one queue, and the pass lock would drop the pass's own ACF echoes.
+
+- **Detail home:** [design-history/rule-type-descriptor.md](design-history/rule-type-descriptor.md) → *Out of Scope* (candidate 6 of the 2026-09-24 architecture review, rated *worth exploring*).
+- **Progress:** Not started. `record()` has no pass-lock check (confirmed in code), so a pass's own ACF write is probably recorded and flushed after the lock is released, costing one extra full pass. Inferred, not reproduced on the testbed; passes are idempotent, so it wastes work rather than producing wrong output.
+- **Open:** what goes: the pending set, `FLUSH_CAP`, the `reapply_for_post` loop and the priority ordering against the drain. The Admin Columns v7 immediate flush (#37) routes through the queue today and needs a new caller.
+- **Blocked by:** — • **Interacts with:** —
+
+#### FW-43 — Delete the dead TaxonomyManager and handler surface
+
+`TaxonomyManager` still carries surface from before Wireframe and the dispatchers, and handlers carry read helpers nothing calls. Deleting it would leave `TaxonomyManager` as the composition root.
+
+- **Detail home:** [design-history/rule-type-descriptor.md](design-history/rule-type-descriptor.md) → *Out of Scope*; the list comes from the 2026-09-24 architecture review.
+- **Progress:** Not started. Candidates, to confirm by grep before deleting: the four `wp_ajax_bws_*` endpoints (the only JS caller left is the `assets/js/admin.js~` backup), `simulate_level_restrictions` (pre-#32 semantics), `get_handlers_summary`, `get_plugin_status`, `check_system_requirements`, `add_admin_menu`; handler-side `get_rules_summary`, `get_active_rules`, `get_upcoming_rules`, `preview_changes`, and the base's empty `reapply_for_post` (FW-42 retires its last caller).
+- **Blocked by:** — • **Interacts with:** FW-42
 
 ---
 
@@ -436,6 +463,7 @@ Shipped or cut items retire here, densely — a closed item is read in bulk and 
 | FW-16 | Apply rules to existing posts | **Merged in [#75](https://github.com/davidofchatham/meta-conductor/pull/75)** (2026-09-24, Phase 7). Added the *Apply to Existing Posts* page: a bulk run is a full ordered pass over the chosen rule's reach, and a disabled rule can run once. Data Conversion and `includes/support/` were deleted. Spec: [design-history/apply-existing.md](design-history/apply-existing.md). Deferred parts are still open as FW-31 (in-row buttons), FW-32 (term dry run) and FW-33 (background runs); Copy / Map return as rule types through FW-4. |
 | FW-18 | Text-domain string sweep | **Shipped in 0.7.0** (Phase 2b rename sweep, [#48](https://github.com/davidofchatham/meta-conductor/pull/48)) — the row survived the 2026-09-11 migration describing work already done. Every `__()` / `_e()` / `_x()` / `_n()` call site now passes `'meta-conductor'`; `'bws-meta-manager'` survives only as the Composer package name in `vendor/`. The *conversion* subsystem's identifiers (JS object, cron / AJAX / transient names) were never part of this row — they were the 2b remainder, closed by deletion with the Data Conversion page in FW-16. |
 | FW-29 | `trigger_term_id`'s `int[]` invariant is declared but not enforced | **Settled by FW-39's storage PR** (`rule-type-descriptor/01`, branch `claude/storage-projection-39`): yes, `normalize_rule_shape()` is the guaranteed boundary. Checkbox gates arrive as slug lists, `target_term_id` as `int`, `trigger_term_id` / `filter_terms` as `int[]`; every consumer re-decode and re-cast is deleted, checkbox decoding moved out of `ConfigHelpers` into storage, and H10 asserts the shape for every rule type. |
+| FW-39 | Rule-type descriptor + canonical storage projection | **Merged in [#76](https://github.com/davidofchatham/meta-conductor/pull/76) and [#77](https://github.com/davidofchatham/meta-conductor/pull/77)** (2026-09-26, 2026-09-28). #76 made storage's read projection the guaranteed canonical rule shape and deleted the pre-0.8.0 migrations behind an admin notice; #77 gave each rule type one descriptor in `RuleTypes\Registry`, the only place rule types are listed. Spec: [design-history/rule-type-descriptor.md](design-history/rule-type-descriptor.md). The review candidates it left out are FW-40, FW-41, FW-42, FW-43 and FW-5's graph split. |
 
 ---
 
