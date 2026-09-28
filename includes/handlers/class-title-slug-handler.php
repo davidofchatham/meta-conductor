@@ -413,7 +413,7 @@ class TitleSlugHandler extends UnifiedHandlerBase {
             $raw = get_post_meta($post_id, $rule['date_field'], true);
             $dt  = $raw ? TokenEngine::parse_date((string)$raw) : null;
         } else {
-            $dt = new \DateTime($post->post_date); // fallback: publication date (local time)
+            $dt = TokenEngine::parse_date((string)$post->post_date); // fallback: publication date
         }
         if (!$dt) return [];
 

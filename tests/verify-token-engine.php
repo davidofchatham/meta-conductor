@@ -74,9 +74,13 @@ if (!is_array($golden)) {
     exit(1);
 }
 
-// Replay under the capture's clocks: parsed meta dates read the server zone,
-// the publish date the site zone.
+// Replay under the capture's clocks. Every date reads the site zone (04), and
+// the server zone is kept as captured so a server-zone leak would show.
 date_default_timezone_set($golden['server_timezone']);
+$site_tz = $golden['site_timezone'];
+function wp_timezone(): \DateTimeZone {
+    return new \DateTimeZone($GLOBALS['site_tz']);
+}
 
 $unseen   = [];
 $sanitize = static function (string $raw) use ($golden, &$unseen): string {
@@ -155,6 +159,36 @@ $check('date_part_of: date_ needs a field', TokenEngine::date_part_of('date_year
 $check('date_part_of: pub_ takes no field', TokenEngine::date_part_of('pub_year:x') === null);
 $check('date_part_of: non-date tokens', TokenEngine::date_part_of('meta:date_year') === null
     && TokenEngine::date_part_of('term:genre') === null && TokenEngine::date_part_of('default_slug') === null);
+
+// --- Date parsing reads site time (04). --------------------------------------
+// Site New York, server Auckland: a leak of the server zone lands on a
+// different day from both UTC and the site.
+
+$site_tz = 'America/New_York';
+date_default_timezone_set('Pacific/Auckland');
+$dsrc  = new FakeTokenSource([
+    'unix'  => (string) gmmktime(2, 0, 0, 1, 1, 2027), // 2026-12-31 21:00 New York
+    'zoned' => '2027-01-01T02:00:00+00:00',            // same instant, strtotime path
+    'wall'  => 'April 3 2026 23:45',                   // no zone: site wall clock as written
+    'ymd'   => '20260403',
+    'iso'   => '2026-04-03',
+    'dmy'   => '03/04/2026',
+    'bad'   => 'garbage',
+]);
+$parts = static fn(string $key) => TokenEngine::render(
+    "{date_year:$key}-{date_month:$key}-{date_day:$key} {date_hour:$key}:{date_minute:$key}",
+    $dsrc, OutputPolicy::slug(static fn(string $v) => $v));
+
+$check('unix timestamp near midnight converts into site time', $parts('unix') === '2026-12-31 21:00');
+$check('zoned strtotime string near midnight converts into site time', $parts('zoned') === '2026-12-31 21:00');
+$check('wall-clock strtotime string reads as site time', $parts('wall') === '2026-04-03 23:45');
+$check('Ymd parts unchanged, time zeroed', $parts('ymd') === '2026-04-03 00:00');
+$check('Y-m-d parts unchanged, time zeroed', $parts('iso') === '2026-04-03 00:00');
+$check('d/m/Y parts unchanged, time zeroed', $parts('dmy') === '2026-04-03 00:00');
+$check('unparseable date resolves empty', $parts('bad') === '');
+$check('parse_date: blank is null, not now', TokenEngine::parse_date('') === null && TokenEngine::parse_date(' ') === null);
+$check('parse_date returns site time',
+    TokenEngine::parse_date('20260403')?->getTimezone()->getName() === 'America/New_York');
 
 // --- Report. ----------------------------------------------------------------
 

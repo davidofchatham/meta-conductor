@@ -73,20 +73,25 @@ final class TokenEngine {
     }
 
     /**
-     * Parse a meta date value. Tries the stored formats first, then a unix
-     * timestamp, then anything `strtotime()` accepts.
+     * Parse a date value in SITE time (CONTEXT.md → Site time), never the
+     * server zone. Tries the stored formats first, then a unix timestamp, then
+     * anything `strtotime()` accepts. A wall-clock value reads as site time; a
+     * timestamp or a string carrying its own zone converts into it. Date-only
+     * formats zero the time (`!`) — without it the clock fills hour and minute.
      */
-    public static function parse_date(string $value): ?\DateTime {
-        foreach (['Ymd', 'Y-m-d', 'Y-m-d H:i:s', 'd/m/Y'] as $format) {
-            $dt = \DateTime::createFromFormat($format, $value);
+    public static function parse_date(string $value): ?\DateTimeImmutable {
+        if (trim($value) === '') return null;
+        $tz = wp_timezone();
+        foreach (['!Ymd', '!Y-m-d', 'Y-m-d H:i:s', '!d/m/Y'] as $format) {
+            $dt = \DateTimeImmutable::createFromFormat($format, $value, $tz);
             if ($dt !== false) return $dt;
         }
-        // Unix timestamp fallback.
-        if (is_numeric($value)) {
-            return (new \DateTime())->setTimestamp((int)$value);
+        try {
+            $dt = new \DateTimeImmutable(is_numeric($value) ? '@' . (int) $value : $value, $tz);
+        } catch (\Exception) {
+            return null;
         }
-        $ts = strtotime($value);
-        return $ts !== false ? (new \DateTime())->setTimestamp($ts) : null;
+        return $dt->setTimezone($tz);
     }
 
     /**

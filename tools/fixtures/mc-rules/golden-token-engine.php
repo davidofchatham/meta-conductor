@@ -24,8 +24,12 @@
  *     testbed, with `check`.
  *
  * Deliberately left OUT: `{date_hour:}`/`{date_minute:}` over a date-only meta
- * value. `DateTime::createFromFormat('Ymd', …)` fills the missing time from the
- * clock, so those outputs change every run — a latent bug, not behavior to pin.
+ * value. At capture time `createFromFormat('Ymd', …)` filled the missing time
+ * from the clock, so those outputs changed every run. FW-40 04 zeroed the time;
+ * H17's site-time cases pin it, and the grid stays as captured.
+ *
+ * FW-40 04 moved date parsing to site time: the `d_unix` day/hour rows were
+ * edited by hand to the New York parts, not recaptured.
  *
  * NON-MUTATING: no post is saved and no option written.
  *
