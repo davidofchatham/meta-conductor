@@ -58,7 +58,7 @@ if (!defined('ABSPATH')) {
  * applying nothing. Each child's applier subtracts what ITS parent lost. The
  * child's own resulting write fires the same hook for the child, so the
  * subtraction reaches the next level down through the same mechanism as
- * everything else. This is the first entry on `TermDispatcher::CAPTURE_HOOKS`;
+ * everything else. The hook is listed in `PropagationRules::capture_hooks()`;
  * capture is not execution, so the dispatcher stays the sole caller of
  * `apply_to_post`.
  */
@@ -119,7 +119,7 @@ class PropagationHandler extends UnifiedHandlerBase {
      *
      * `deleted_term_relationships` stays, and ONLY because what it reads stops
      * existing after the write: it records the removal and applies nothing.
-     * `TermDispatcher::CAPTURE_HOOKS` is the allow-list that says so, and H13
+     * The descriptor's `capture_hooks()` is the allow-list that says so, and H13
      * fails on any registration here that is not on it.
      */
     protected function init_hooks() {

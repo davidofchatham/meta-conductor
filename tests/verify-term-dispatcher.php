@@ -26,20 +26,20 @@
  *      rule's own write is the pass's echo rather than a new signal.
  *   5. `apply_to_post` has exactly ONE call site in the whole plugin, in the
  *      dispatcher. This is the invariant the whole ticket rests on.
- *   6. CONVERTED handlers register NOTHING outside the capture-hook allow-list,
- *      and carry no re-entrancy boolean. A hook on that allow-list must be a
- *      CAPTURE — its callback may record and must not apply.
- *   7. UNCONVERTED handlers are enumerated, and the enumeration matches which
- *      handlers still register hooks — so each conversion ticket shrinks a list
- *      that is visible in its diff, and cannot shrink it without doing the work.
- *   8. The time-based cron sweep is still registered — outside the converted
- *      handler, which registers nothing — and ENQUEUES rather than removing
+ *   6. Handlers register NOTHING outside their descriptor's `capture_hooks()`,
+ *      and carry no re-entrancy boolean. A capture hook's callback may record
+ *      and must not apply (6b). Every type is a pure applier (FW-39), so the
+ *      registry — not a dispatcher constant — is where the exceptions live.
+ *   7. (Retired with UNCONVERTED_TYPES — no type owns its apply hooks.)
+ *   8. The time-based cron sweep is still registered — outside the handler,
+ *      which registers nothing — and ENQUEUES rather than removing
  *      terms itself: a provocation names entities, a pass decides their fate.
- *   9. CONVERTED and UNCONVERTED partition the storage layer's rule types: no
- *      type is in both (double-apply) and none is in neither (silently retired).
+ *   9. Each pass runs exactly its own kind: `owns()` asks the descriptor's
+ *      `kind()`, the pass filters through it, and no dispatcher keeps a
+ *      hand-written type list.
  *  10. Cross-entity rules DECLARE their reach and the pass enqueues it: the
  *      `fan_out()` seam exists on the base, the pass marks what it returns
- *      dirty, and a converted handler that overrides it writes only the post it
+ *      dirty, and a handler that overrides it writes only the post it
  *      was handed. A handler that reached the far entity directly would
  *      reconcile it by one rule, out of authored order — which is #35, the
  *      defect #62 exists to remove, and it looks like working code.
@@ -119,22 +119,6 @@ $strip_comments = static function (string $code): string {
 };
 
 $src = $strip_comments((string) file_get_contents($dispatcher_file));
-
-/**
- * Pull a `private const NAME = [ 'a', 'b' ];` string list out of a source file.
- *
- * @param string $src  Source to read.
- * @param string $name Constant name.
- * @return string[]|null Values, or null when the constant is absent.
- */
-$const_list = static function (string $src, string $name): ?array {
-    if (!preg_match('/const\s+' . preg_quote($name, '/') . '\s*=\s*\[(.*?)\];/s', $src, $m)) {
-        return null;
-    }
-    preg_match_all('/[\'"]([^\'"]+)[\'"]/', $m[1], $vals);
-
-    return $vals[1];
-};
 
 // --- 1. Trigger union + drain ordering -------------------------------------
 // Mark-only registrations, so priority is meaningless on them; the drain's
@@ -332,46 +316,23 @@ if (count($call_sites) > 1 && !$foreign) {
     );
 }
 
-// --- 6/7. Converted vs unconverted handlers --------------------------------
-$converted   = $const_list($src, 'CONVERTED_TYPES');
-$unconverted = $const_list($src, 'UNCONVERTED_TYPES');
-$capture     = null;
-if (preg_match('/const\s+CAPTURE_HOOKS\s*=\s*(\[.*?\]\s*;)/s', $src, $cm)) {
-    // Parse the MAP, not every quoted string inside it. A flat value list makes
-    // the `$capture[$rule_type]` lookup below miss for every type, so the
-    // allow-list silently reads as empty and a legitimate capture hook is
-    // rejected — which is exactly what happened the moment CAPTURE_HOOKS
-    // stopped being `[]` (#62).
-    $capture = [];
-    if (preg_match_all('/[\'"]([^\'"]+)[\'"]\s*=>\s*\[([^\]]*)\]/', $cm[1], $entries, PREG_SET_ORDER)) {
-        foreach ($entries as $entry) {
-            preg_match_all('/[\'"]([^\'"]+)[\'"]/', $entry[2], $hooks);
-            $capture[$entry[1]] = $hooks[1];
-        }
+// --- 6. Handlers register nothing but their descriptor's capture hooks -----
+// Every rule type is a pure applier (FW-39 ticket 11 deleted the converted /
+// unconverted lists with the last hook-driven type), so the one exception list
+// is each descriptor's `capture_hooks()`. A future hook-driven type restores a
+// descriptor field and a branch here, not a dispatcher constant.
+$descriptors = \BWS\MetaConductor\RuleTypes\Registry::all();
+
+// Rule type => handler file, from the class each descriptor names. Reflection
+// only declares the class; nothing is constructed.
+$handler_files = [];
+$capture       = [];
+foreach ($descriptors as $type => $descriptor) {
+    $handler_files[$type] = basename((string) (new \ReflectionClass($descriptor->handler_class()))->getFileName());
+    if ($descriptor->capture_hooks()) {
+        $capture[$type] = $descriptor->capture_hooks();
     }
 }
-
-if ($converted === null) {
-    $errors[] = 'CONVERTED_TYPES constant not found — what a pass runs must be enumerated.';
-}
-if ($unconverted === null) {
-    $errors[] = 'UNCONVERTED_TYPES constant not found — the handlers still owning hooks must be named, so each conversion shrinks a list visible in the diff.';
-}
-if ($capture === null) {
-    $errors[] = 'CAPTURE_HOOKS constant not found — the capture-hook allow-list must be enumerated even while it is empty.';
-}
-
-// Rule type => handler file. The map is the harness's own, deliberately: it is
-// what lets the check read a handler's registrations without booting WordPress.
-$handler_files = [
-    'hierarchical_rules'                   => 'class-hierarchical-handler.php',
-    'hierarchical_level_restriction_rules' => 'class-hierarchical-level-restriction-handler.php',
-    'propagation_rules'                    => 'class-propagation-handler.php',
-    'related_rules'                        => 'class-related-handler.php',
-    'related_post_terms_rules'             => 'class-related-post-terms-handler.php',
-    'time_based_rules'                     => 'class-time-based-handler.php',
-    'title_slug_rules'                     => 'class-title-slug-handler.php',
-];
 
 /**
  * Every hook a handler file registers, as `hook@line`.
@@ -393,52 +354,26 @@ $registered_hooks = static function (string $body): array {
     return $hooks;
 };
 
-foreach (($converted ?? []) as $type) {
-    if (!isset($handler_files[$type])) {
-        $errors[] = sprintf("CONVERTED_TYPES names '%s', which maps to no handler file this harness knows.", $type);
-        continue;
-    }
-    $file = $root . '/includes/handlers/' . $handler_files[$type];
-    if (!is_file($file)) {
-        $errors[] = sprintf('Handler file for %s missing (%s).', $type, $handler_files[$type]);
-        continue;
-    }
-    $body = $strip_comments((string) file_get_contents($file));
+foreach ($handler_files as $type => $handler_file) {
+    $body = $strip_comments((string) file_get_contents($root . '/includes/handlers/' . $handler_file));
 
     $allowed = $capture[$type] ?? [];
     foreach ($registered_hooks($body) as $hook) {
         $name = substr($hook, 0, strrpos($hook, '@'));
-        if (!in_array($name, is_array($allowed) ? $allowed : [], true)) {
+        if (!in_array($name, $allowed, true)) {
             $errors[] = sprintf(
-                '%s is CONVERTED but still registers %s — the dispatcher owns the trigger union, so this rule type would run twice, once out of authored order.',
-                $handler_files[$type],
+                '%s registers %s, which its descriptor does not list in capture_hooks() — the dispatchers own every trigger, so this rule type would run twice, once out of authored order.',
+                $handler_file,
                 $hook
             );
         }
     }
 
-    if (preg_match('/private\s+(?:bool\s+)?\$processing\b/', $body)) {
+    // `$is_updating_post` is the format handler's old name for the same guard.
+    if (preg_match('/private\s+(?:bool\s+)?\$(?:processing|is_updating_post)\b/', $body)) {
         $errors[] = sprintf(
-            '%s still declares $processing — a converted handler must carry no re-entrancy boolean; the pass lock is the only guard, and a second one silences the author\'s own chain (ADR 0003, rejected option).',
-            $handler_files[$type]
-        );
-    }
-}
-
-foreach (($unconverted ?? []) as $type) {
-    if (!isset($handler_files[$type])) {
-        $errors[] = sprintf("UNCONVERTED_TYPES names '%s', which maps to no handler file this harness knows.", $type);
-        continue;
-    }
-    $file = $root . '/includes/handlers/' . $handler_files[$type];
-    if (!is_file($file)) {
-        $errors[] = sprintf('Handler file for %s missing (%s).', $type, $handler_files[$type]);
-        continue;
-    }
-    if (empty($registered_hooks($strip_comments((string) file_get_contents($file)))))  {
-        $errors[] = sprintf(
-            '%s registers no hooks but is still listed UNCONVERTED — if it has been converted, move it to CONVERTED_TYPES so the pass actually runs it; otherwise its rules now run nowhere.',
-            $handler_files[$type]
+            '%s still declares a re-entrancy boolean — the pass lock is the only guard, and a second one silences the author\'s own chain (ADR 0003, rejected option).',
+            $handler_file
         );
     }
 }
@@ -456,7 +391,7 @@ foreach (($unconverted ?? []) as $type) {
 $sweep_hook   = 'bws_taxonomy_manager_cleanup';
 $sweep_method = 'cleanup_expired_rules';
 
-if (in_array('time_based_rules', $converted ?? [], true)) {
+if (isset($descriptors['time_based_rules'])) {
     $manager_file = $root . '/includes/class-taxonomy-manager.php';
     if (!is_file($manager_file)) {
         $errors[] = 'includes/class-taxonomy-manager.php missing — cannot verify the time-based sweep is registered.';
@@ -502,39 +437,6 @@ if (in_array('time_based_rules', $converted ?? [], true)) {
     }
 }
 
-// --- 9. The two lists partition the term-kind rule types -------------------
-// A type in both would double-apply; a type in neither would be silently
-// retired, which is the failure mode that looks most like nothing happening.
-if ($converted !== null && $unconverted !== null) {
-    $term_types = $kind_types('term_rules');
-    if (empty($term_types)) {
-        $errors[] = 'The registry lists no term_rules types — cannot verify the dispatcher covers every term rule type.';
-    } else {
-        $both = array_intersect($converted, $unconverted);
-        if ($both) {
-            $errors[] = sprintf(
-                'Rule types in BOTH CONVERTED_TYPES and UNCONVERTED_TYPES (%s) — they would run twice, once from a hook and once from the pass.',
-                implode(', ', $both)
-            );
-        }
-        $covered = array_merge($converted, $unconverted);
-        $missing = array_values(array_diff($term_types, $covered));
-        if ($missing) {
-            $errors[] = sprintf(
-                'Term rule types in neither list (%s) — a type the dispatcher does not run and that owns no hooks is silently retired.',
-                implode(', ', $missing)
-            );
-        }
-        $stray = array_values(array_diff($covered, $term_types));
-        if ($stray) {
-            $errors[] = sprintf(
-                'Types listed on the term dispatcher that are not in KIND_TERM (%s) — a format-kind rule belongs to the format dispatcher (#64).',
-                implode(', ', $stray)
-            );
-        }
-    }
-}
-
 // --- 6b. An allow-listed hook must actually be a CAPTURE -------------------
 // The allow-list names hooks, not behaviour. A handler that put its apply back
 // on a hook it is already allowed to register would pass group 6 unnoticed —
@@ -564,23 +466,8 @@ $method_body = static function (string $body, string $name): ?string {
     return preg_match($pattern, $body, $m) ? $m[1] : null;
 };
 
-foreach (($capture ?? []) as $type => $hooks) {
-    if (!isset($handler_files[$type])) {
-        $errors[] = sprintf("CAPTURE_HOOKS names '%s', which maps to no handler file this harness knows.", $type);
-        continue;
-    }
-    if (!in_array($type, $converted ?? [], true)) {
-        $errors[] = sprintf(
-            "CAPTURE_HOOKS names '%s', which is not CONVERTED — an unconverted handler owns all its hooks, so an allow-list entry for it means nothing.",
-            $type
-        );
-        continue;
-    }
-    $file = $root . '/includes/handlers/' . $handler_files[$type];
-    if (!is_file($file)) {
-        continue; // already reported by group 6
-    }
-    $body = $strip_comments((string) file_get_contents($file));
+foreach ($capture as $type => $hooks) {
+    $body = $strip_comments((string) file_get_contents($root . '/includes/handlers/' . $handler_files[$type]));
 
     foreach ($hooks as $hook) {
         // add_action OR add_filter: `related_post_terms`' sever captures are
@@ -612,6 +499,35 @@ foreach (($capture ?? []) as $type => $hooks) {
                 );
             }
         }
+    }
+}
+
+// --- 9. Each pass runs exactly its own kind, as the registry says ----------
+// A kind list could still hold a row of the other kind's type; running it
+// would hand a term rule to the format seam or vice versa. Ownership is the
+// descriptor's `kind()`, asked through `owns()` — a hand-kept type list on a
+// dispatcher is what FW-39 ticket 11 deleted, and one coming back would drift
+// from the registry the first time a type is added.
+foreach (
+    [
+        'TermDispatcher'   => $dispatcher_file,
+        'FormatDispatcher' => $root . '/includes/core/class-format-dispatcher.php',
+    ] as $class => $file
+) {
+    if (!is_file($file)) {
+        continue; // reported by group 12 for the format file
+    }
+    $dsrc  = $strip_comments((string) file_get_contents($file));
+    $owns  = $method_body($dsrc, 'owns');
+    $pass  = $method_body($dsrc, $class === 'TermDispatcher' ? 'run_pass' : 'compute');
+    if ($owns === null || !preg_match('/Registry::get\(.*->kind\(\)\s*===\s*self::KIND/s', $owns)) {
+        $errors[] = "$class::owns() does not ask the registry for the type's kind — which types a pass runs must be derived from the descriptors (FW-39).";
+    }
+    if ($pass === null || !preg_match('/self::owns\(/', $pass)) {
+        $errors[] = "$class's pass does not filter its rows through self::owns() — a row of the other kind's type would reach this kind's applier seam.";
+    }
+    if (preg_match('/const\s+(?:CONVERTED_TYPES|UNCONVERTED_TYPES|CAPTURE_HOOKS|CAPTURE_QUEUE_TYPES)\b/', $dsrc, $lm)) {
+        $errors[] = "$class declares a hand-kept type list ($lm[0]) — capture and ownership facts live on the descriptors (FW-39 ticket 11).";
     }
 }
 
@@ -658,17 +574,10 @@ if (!preg_match('/function\s+enqueue_fan_out\s*\([^)]*\)\s*:\s*void\s*\{(.*?)\n 
     }
 }
 
-// A converted handler's fan_out() may SELECT; it must not write. The write is
-// what the declaration exists to avoid.
-foreach (($converted ?? []) as $type) {
-    if (!isset($handler_files[$type])) {
-        continue; // already reported by group 6
-    }
-    $file = $root . '/includes/handlers/' . $handler_files[$type];
-    if (!is_file($file)) {
-        continue;
-    }
-    $body = $strip_comments((string) file_get_contents($file));
+// A handler's fan_out() may SELECT; it must not write. The write is what the
+// declaration exists to avoid.
+foreach ($handler_files as $type => $handler_file) {
+    $body = $strip_comments((string) file_get_contents($root . '/includes/handlers/' . $handler_file));
     $fan  = $method_body($body, 'fan_out');
     if ($fan === null) {
         continue; // inherits the empty default — nothing to check
@@ -694,7 +603,7 @@ $base_file = $root . '/includes/handlers/class-unified-handler-base.php';
 if (is_file($base_file)) {
     $base_src = $strip_comments((string) file_get_contents($base_file));
     if (!preg_match('/public\s+function\s+drain_captures\s*\(\s*\)\s*:\s*array\s*\{/', $base_src)) {
-        $errors[] = 'drain_captures(): array is not declared on UnifiedHandlerBase — the dispatcher asks every converted handler for it unconditionally (#63).';
+        $errors[] = 'drain_captures(): array is not declared on UnifiedHandlerBase — the dispatcher asks it of every handler whose descriptor drains captures (#63).';
     }
 }
 
@@ -704,6 +613,9 @@ if (!preg_match('/function\s+enqueue_captures\s*\([^)]*\)\s*:\s*void\s*\{(.*?)\n
     $body = $cm2[1];
     if (!preg_match('/->drain_captures\(/', $body)) {
         $errors[] = 'enqueue_captures() does not ask handlers for their captured entities.';
+    }
+    if (!preg_match('/->drains_captures\(\)/', $body)) {
+        $errors[] = 'enqueue_captures() does not consult the descriptor\'s drains_captures() — which handlers hand captured entities over is a descriptor fact (FW-39).';
     }
     if (!preg_match('/mark_dirty\(/', $body)) {
         $errors[] = 'enqueue_captures() does not mark the captured entities dirty — a capture must ENQUEUE, exactly like a fan-out.';
@@ -724,51 +636,47 @@ if (!preg_match('/function\s+drain\s*\(\s*\)\s*:\s*void\s*\{(.*?)\n    \}/s', $s
     $errors[] = 'drain() never calls enqueue_captures() — captured severs would be recorded and never applied (#63).';
 }
 
-// A type on CAPTURE_QUEUE_TYPES must actually hand its entities over. Without
-// the override it inherits the base's empty default, which is not an error
-// anywhere else — propagation's capture is consumed by its own applier, so it
-// legitimately has none — and is a silent dead end here: the sever is recorded
-// and then never acted on, while every other path keeps working.
-$capture_queue = $const_list($src, 'CAPTURE_QUEUE_TYPES');
-if ($capture_queue === null) {
-    $errors[] = 'CAPTURE_QUEUE_TYPES constant not found — which captures name entities the queue must be TOLD about has to be enumerated, not inferred (#63).';
-}
-foreach (($capture_queue ?? []) as $type) {
-    if (!isset($capture[$type])) {
+// `drains_captures()` and a `drain_captures()` override must agree, both ways.
+// A flag without the override inherits the base's empty default: the sever is
+// recorded and then never acted on, while every other path keeps working. An
+// override without the flag is never asked — the same dead end from the other
+// side. Propagation has neither on purpose: its capture is consumed by its own
+// applier, which the queue was going to run anyway.
+foreach ($descriptors as $type => $descriptor) {
+    $overrides = $method_body(
+        $strip_comments((string) file_get_contents($root . '/includes/handlers/' . $handler_files[$type])),
+        'drain_captures'
+    ) !== null;
+
+    if ($descriptor->drains_captures() && !isset($capture[$type])) {
         $errors[] = sprintf(
-            "CAPTURE_QUEUE_TYPES names '%s', which owns no capture hooks — a queueing capture with nothing capturing into it.",
+            "%s drains captures but lists no capture_hooks() — a queueing capture with nothing capturing into it.",
             $type
         );
-        continue;
     }
-    if (!isset($handler_files[$type])) {
-        continue; // already reported above
-    }
-    $file = $root . '/includes/handlers/' . $handler_files[$type];
-    if (!is_file($file)) {
-        continue;
-    }
-    if ($method_body($strip_comments((string) file_get_contents($file)), 'drain_captures') === null) {
+    if ($descriptor->drains_captures() && !$overrides) {
         $errors[] = sprintf(
-            '%s is on CAPTURE_QUEUE_TYPES but declares no drain_captures() — it would inherit the empty default, so every entity its captures name is recorded and then silently never passed over (#63).',
+            '%s drains captures but %s declares no drain_captures() — it would inherit the empty default, so every entity its captures name is recorded and then silently never passed over (#63).',
+            $type,
+            $handler_files[$type]
+        );
+    }
+    if (!$descriptor->drains_captures() && $overrides) {
+        $errors[] = sprintf(
+            '%s declares drain_captures() but its descriptor does not drain captures — the dispatcher never asks, so what it hands over is never passed over (#63).',
             $handler_files[$type]
         );
     }
 }
 
-// And drain_captures() must not write, on ANY capture handler that has one: it
-// runs before any pass, so a write there is a rule executing with no lock held
-// and no order around it.
-foreach (($capture ?? []) as $type => $hooks) {
-    if (!isset($handler_files[$type])) {
-        continue; // already reported above
-    }
-    $file = $root . '/includes/handlers/' . $handler_files[$type];
-    if (!is_file($file)) {
-        continue;
-    }
-    $body    = $strip_comments((string) file_get_contents($file));
-    $drainer = $method_body($body, 'drain_captures');
+// And drain_captures() must not write, on ANY handler that has one: it runs
+// before any pass, so a write there is a rule executing with no lock held and
+// no order around it.
+foreach ($handler_files as $type => $handler_file) {
+    $drainer = $method_body(
+        $strip_comments((string) file_get_contents($root . '/includes/handlers/' . $handler_file)),
+        'drain_captures'
+    );
     if ($drainer === null) {
         continue; // absence is checked above, for the types it matters on
     }
@@ -793,7 +701,6 @@ foreach (($capture ?? []) as $type => $hooks) {
 // inside one drain step, which is exactly the kind of thing a refactor reorders
 // without noticing. Hence every link in it is pinned here.
 $format_file = $root . '/includes/core/class-format-dispatcher.php';
-$fmt_converted = null;
 if (!is_file($format_file)) {
     $errors[] = 'includes/core/class-format-dispatcher.php missing — the format kind has no dispatcher, so its rules run nowhere (#64).';
 } else {
@@ -882,84 +789,6 @@ if (!is_file($format_file)) {
             $errors[] = 'FormatDispatcher::write() suppresses the revision and never lifts the suppression — every later save in the request would silently stop creating revisions.';
         }
     }
-
-    // 12f. Converted/unconverted partition the FORMAT kind, exactly as groups
-    // 6/7/9 do for the term kind.
-    $fmt_converted   = $const_list($fsrc, 'CONVERTED_TYPES');
-    $fmt_unconverted = $const_list($fsrc, 'UNCONVERTED_TYPES');
-    if ($fmt_converted === null || $fmt_unconverted === null) {
-        $errors[] = 'FormatDispatcher is missing CONVERTED_TYPES / UNCONVERTED_TYPES — what a format pass runs, and what still owns hooks, must be enumerated.';
-    } else {
-        $format_types = $kind_types('format_rules');
-        if (empty($format_types)) {
-            $errors[] = 'The registry lists no format_rules types — cannot verify the format dispatcher covers every format rule type.';
-        } else {
-            $fboth = array_intersect($fmt_converted, $fmt_unconverted);
-            if ($fboth) {
-                $errors[] = sprintf('Format rule types in BOTH lists (%s) — they would run twice.', implode(', ', $fboth));
-            }
-            $fcovered = array_merge($fmt_converted, $fmt_unconverted);
-            $fmissing = array_values(array_diff($format_types, $fcovered));
-            if ($fmissing) {
-                $errors[] = sprintf(
-                    'Format rule types in neither list (%s) — a type no dispatcher runs and that owns no hooks is silently retired.',
-                    implode(', ', $fmissing)
-                );
-            }
-            $fstray = array_values(array_diff($fcovered, $format_types));
-            if ($fstray) {
-                $errors[] = sprintf(
-                    'Types listed on the format dispatcher that are not in KIND_FORMAT (%s) — a term-kind rule belongs to the term dispatcher.',
-                    implode(', ', $fstray)
-                );
-            }
-        }
-    }
-
-    // 12g. A converted FORMAT handler registers nothing and carries no
-    // re-entrancy boolean — the same bright line group 6 holds for the term
-    // kind, and the one that kills the priority-99 registration for good.
-    $fmt_capture = [];
-    if (preg_match('/const\s+CAPTURE_HOOKS\s*=\s*(\[.*?\]\s*;)/s', $fsrc, $fcm)) {
-        if (preg_match_all('/[\'"]([^\'"]+)[\'"]\s*=>\s*\[([^\]]*)\]/', $fcm[1], $fentries, PREG_SET_ORDER)) {
-            foreach ($fentries as $entry) {
-                preg_match_all('/[\'"]([^\'"]+)[\'"]/', $entry[2], $fhooks);
-                $fmt_capture[$entry[1]] = $fhooks[1];
-            }
-        }
-    } else {
-        $errors[] = 'FormatDispatcher::CAPTURE_HOOKS not found — the allow-list must be declared even while it is empty, or "a converted handler registers nothing" has an implicit exception list.';
-    }
-
-    foreach (($fmt_converted ?? []) as $type) {
-        if (!isset($handler_files[$type])) {
-            $errors[] = sprintf("FormatDispatcher::CONVERTED_TYPES names '%s', which maps to no handler file this harness knows.", $type);
-            continue;
-        }
-        $file = $root . '/includes/handlers/' . $handler_files[$type];
-        if (!is_file($file)) {
-            $errors[] = sprintf('Handler file for %s missing (%s).', $type, $handler_files[$type]);
-            continue;
-        }
-        $body    = $strip_comments((string) file_get_contents($file));
-        $allowed = $fmt_capture[$type] ?? [];
-        foreach ($registered_hooks($body) as $hook) {
-            $name = substr($hook, 0, strrpos($hook, '@'));
-            if (!in_array($name, $allowed, true)) {
-                $errors[] = sprintf(
-                    '%s is CONVERTED but still registers %s — the dispatchers own every trigger, and a format handler on its own hook is back to ordering itself against the term pass by priority (#64).',
-                    $handler_files[$type],
-                    $hook
-                );
-            }
-        }
-        if (preg_match('/private\s+(?:bool\s+)?\$(?:processing|is_updating_post)\b/', $body)) {
-            $errors[] = sprintf(
-                '%s still declares a re-entrancy boolean — the pass lock is the only guard, and a handler that no longer writes has nothing to guard against.',
-                $handler_files[$type]
-            );
-        }
-    }
 }
 
 // --- 12h. apply_to_data has exactly ONE call site, in the format dispatcher -
@@ -1010,18 +839,11 @@ if (count($data_sites) > 1 && !$foreign_data) {
 // A format applier RETURNS data; it must not write the row itself. That is what
 // keeps one save to one row update however many rules matched, and what lets
 // the deferred pre-write phase reuse the seam on data that has no row yet.
-foreach (($fmt_converted ?? []) as $type) {
-    if (!isset($handler_files[$type])) {
-        continue; // already reported above
-    }
-    $file = $root . '/includes/handlers/' . $handler_files[$type];
-    if (!is_file($file)) {
-        continue;
-    }
-    $applier = $method_body($strip_comments((string) file_get_contents($file)), 'apply_to_data');
+foreach ($kind_types('format_rules') as $type) {
+    $applier = $method_body($strip_comments((string) file_get_contents($root . '/includes/handlers/' . $handler_files[$type])), 'apply_to_data');
     if ($applier === null) {
         $errors[] = sprintf(
-            '%s is CONVERTED for the format kind but declares no apply_to_data() — it would inherit the base null, so every rule of its type reports "not mine" and silently never runs.',
+            '%s is a format-kind handler but declares no apply_to_data() — it would inherit the base null, so every rule of its type reports "not mine" and silently never runs.',
             $handler_files[$type]
         );
         continue;
@@ -1198,10 +1020,9 @@ if ($errors) {
 }
 
 printf(
-    "DISPATCHER OK — trigger union mark-only, drain after AcfWriteQueue, pass lock (entity, kind), single apply_to_post + apply_to_data call sites, fan-out + capture queue declared+enqueued, format pass driven from the shared drain AFTER the term pass; %d term converted / %d still hooked / %d capture type(s) / %d format converted (#60, #62, #63, #64).\n",
-    count($converted ?? []),
-    count($unconverted ?? []),
-    count($capture ?? []),
-    count($fmt_converted ?? [])
+    "DISPATCHER OK — trigger union mark-only, drain after AcfWriteQueue, pass lock (entity, kind), single apply_to_post + apply_to_data call sites, fan-out + capture queue declared+enqueued, format pass driven from the shared drain AFTER the term pass; %d term / %d format type(s), %d capture type(s) (#60, #62, #63, #64).\n",
+    count($kind_types('term_rules')),
+    count($kind_types('format_rules')),
+    count($capture)
 );
 exit(0);

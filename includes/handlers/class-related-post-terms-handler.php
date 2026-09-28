@@ -78,7 +78,7 @@ if (!defined('ABSPATH')) {
  * have said so is precisely what was destroyed. `related`'s #61 answer —
  * restate the condition in live state — is unavailable here for that reason, so
  * the sever is CAPTURED as it happens instead, by the three hooks on
- * `TermDispatcher::CAPTURE_HOOKS['related_post_terms_rules']`. Capture records
+ * `RelatedPostTermsRules::capture_hooks()`. Capture records
  * and applies nothing; the applier consumes the record during a pass.
  */
 class RelatedPostTermsHandler extends UnifiedHandlerBase {
@@ -205,7 +205,7 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
      *   that pairing existed so the recompute ran AFTER the source stopped
      *   resolving, and the drain is already long after.
      *
-     * `TermDispatcher::CAPTURE_HOOKS` is the allow-list that permits these
+     * The descriptor's `capture_hooks()` is the allow-list that permits these
      * three, and H13 fails on any registration here that is not on it, or on
      * any of these callbacks calling a write primitive.
      */

@@ -67,6 +67,30 @@ final class RelatedPostTermsRules extends RuleType {
     }
 
     /**
+     * Each reads a relationship the write is about to destroy: the two
+     * `acf/update_value` filters run at priority 5, before ACF replaces the
+     * value, and `before_delete_post` is the last moment a dying post's
+     * relationships can be read (arch invariant #5). What they capture is a
+     * SEVER — unrecoverable afterwards, because a link just cut and a link
+     * that never existed are the same absence (#63).
+     */
+    public function capture_hooks(): array {
+        return [
+            'acf/update_value/type=relationship',
+            'acf/update_value/type=post_object',
+            'before_delete_post',
+        ];
+    }
+
+    /**
+     * A sever names the one entity nothing points at any more — the link that
+     * named it is what the write destroyed — so no fan-out can reach it.
+     */
+    public function drains_captures(): bool {
+        return true;
+    }
+
+    /**
      * No A→B arrow: same term, same taxonomy, moved across a relationship.
      *
      * Schema: {Copy|Sync} {Taxonomy} terms {to|from} {field_label}{ on {statuses}}

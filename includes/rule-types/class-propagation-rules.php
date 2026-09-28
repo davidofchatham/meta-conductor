@@ -60,4 +60,18 @@ final class PropagationRules extends RuleType {
     public function reads_shared_fields(): array {
         return ['taxonomy', 'post_types', 'hierarchical_post_type_note', 'conflict_handling'];
     }
+
+    /**
+     * The pull applier answers "what should this child hold, given its parent"
+     * from live state, which cannot tell a term the parent HELD and lost from
+     * one the child holds independently. So the removal is captured as it
+     * happens — `deleted_term_relationships` is the only hook that sees it,
+     * including inside `wp_set_object_terms` (#62).
+     *
+     * No `drains_captures()`: the capture concerns a parent whose children its
+     * own `fan_out()` already reaches.
+     */
+    public function capture_hooks(): array {
+        return ['deleted_term_relationships'];
+    }
 }

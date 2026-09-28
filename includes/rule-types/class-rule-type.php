@@ -185,6 +185,38 @@ abstract class RuleType {
     }
 
     /**
+     * The hooks this type's handler may register — its pre-write CAPTURES.
+     *
+     * Every other hook belongs to the dispatchers; a handler that registers
+     * one not listed here runs its rules outside a pass (H13). A capture only
+     * snapshots state the write is about to destroy into a request-scoped
+     * record, which the handler's applier consumes during a pass — so the
+     * dispatcher stays the sole caller of `apply_to_post`. Listing a hook here
+     * does not register it; the handler's constructor does.
+     *
+     * @return string[] Hook names.
+     */
+    public function capture_hooks(): array {
+        return [];
+    }
+
+    /**
+     * Whether this type's captures name entities the queue must be TOLD about.
+     *
+     * True ⇒ the handler overrides `drain_captures()` and
+     * `TermDispatcher::enqueue_captures()` asks it at drain start. Not implied
+     * by `capture_hooks()`: a capture consumed by an applier the queue runs
+     * anyway needs no hand-over, while one naming an entity nothing points at
+     * any more (a severed dependent) is recorded and then silently never acted
+     * on without it (#63). H13 holds the flag and the override in step.
+     *
+     * @return bool
+     */
+    public function drains_captures(): bool {
+        return false;
+    }
+
+    /**
      * `target_key()` for a type whose target is the whole `taxonomy`.
      *
      * @param array $rule Projected row.

@@ -291,16 +291,7 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
     by a flush that now runs AFTER the restore. The plugin's own bulk apply is
     exempt: it does not write through ACF.
 
-17. **A converted handler owns no hooks, and the dispatcher is the only caller
-    of `apply_to_post`.** This INVERTS the rule every hook-driven handler was
-    written to (#60, [ADR 0003](adr/0003-ordered-rule-list-and-dispatcher.md)
-    decisions 3 and 4). `Core\TermDispatcher` owns the trigger union for the
-    `term_rules` kind; handlers of the types it has taken over are pure appliers
-    on the `apply_to_post(int, array): bool` seam. The conversion is
-    incremental, so both regimes are live — `CONVERTED_TYPES` and
-    `UNCONVERTED_TYPES` on the dispatcher name which is which, and
-    `tests/verify-term-dispatcher.php` (H13) fails if a handler's registrations
-    disagree with the side it is listed on. Four things make it correct:
+17. **A converted handler owns no hooks, and the dispatcher is the only caller of `apply_to_post`.** This INVERTS the rule every hook-driven handler was written to (#60, [ADR 0003](adr/0003-ordered-rule-list-and-dispatcher.md) decisions 3 and 4). `Core\TermDispatcher` owns the trigger union for the `term_rules` kind; handlers of the types it has taken over are pure appliers on the `apply_to_post(int, array): bool` seam. The conversion finished with #64, so every rule type is a pure applier: a pass runs each row its descriptor's `kind()` says it owns, and the only hooks a handler may register are its descriptor's `capture_hooks()` — `tests/verify-term-dispatcher.php` (H13) fails on any other registration (FW-39). A future hook-driven type would restore a descriptor field, not a dispatcher list. Four things make it correct:
 
     - *Triggers mark, they never execute.* One editor save fires `save_post`,
       `acf/save_post` and one `set_object_terms` per taxonomy touched. Executing
@@ -346,14 +337,7 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
       without nesting, and why a genuine cycle terminates on the first entity's
       held lock.
 
-    A converted handler may keep an allow-listed **capture** hook — one that
-    only snapshots pre-write state into a request-scoped queue, because the
-    state it reads does not survive the write (#12). Capture is not execution;
-    the captured value is consumed by the applier during a pass. The allow-list
-    is `TermDispatcher::CAPTURE_HOOKS`; `propagation_rules` is its first entry
-    (#62, see the cross-entity bullet below) and `related_post_terms_rules` its
-    second and larger one (#63, three hooks). H13 checks both halves — that the
-    hook is registered, and that its callback writes nothing.
+    A converted handler may keep an allow-listed **capture** hook — one that only snapshots pre-write state into a request-scoped queue, because the state it reads does not survive the write (#12). Capture is not execution; the captured value is consumed by the applier during a pass. The allow-list is each descriptor's `capture_hooks()`; `propagation_rules` declares one (#62, see the cross-entity bullet below) and `related_post_terms_rules` three (#63). H13 checks both halves — that the hook is registered, and that its callback writes nothing.
 
     **A provocation names entities; the pass decides their fate (#61).** Not
     every entry point is one of the dispatcher's own hooks — bulk apply and
@@ -433,26 +417,7 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
     under one row would license an unrelated row to empty-replace the taxonomy
     over what an earlier row had just legitimately written.
 
-    **A capture can name an entity no fan-out can reach, and needs its own way
-    into the queue (#63).** A fan-out is asked while passing over a post and
-    names entities reachable *from* it. A sever capture exists precisely because
-    the link that made the far entity reachable is what the write destroyed — or
-    because the post holding it was deleted — so there is nothing left to
-    declare from. The handler therefore hands those entities over through
-    `UnifiedHandlerBase::drain_captures()`, which `TermDispatcher::drain()` asks
-    every converted handler once per drain, before the loop. Which capture types
-    need one is enumerated (`CAPTURE_QUEUE_TYPES`), not inferred: propagation's
-    capture is consumed by an applier the queue was going to run anyway, so
-    having no override is correct there and a silent dead end for a sever.
-    Asked rather than
-    pushed: a capture callback that marked dirty itself would be reaching into
-    the dispatcher, and "a capture records and applies nothing" would stop being
-    a property H13 can read off the callback body. Consuming rather than
-    repeating: a handler that returned the same IDs on every call would refill
-    the queue faster than the drain empties it. The visible payoff is that a
-    bare `update_field()` sever — no `save_post`, no `acf/save_post` — now
-    reconciles, which was a documented dead end before (invariant #15's note,
-    fixture matrix §4).
+    **A capture can name an entity no fan-out can reach, and needs its own way into the queue (#63).** A fan-out is asked while passing over a post and names entities reachable *from* it. A sever capture exists precisely because the link that made the far entity reachable is what the write destroyed — or because the post holding it was deleted — so there is nothing left to declare from. The handler therefore hands those entities over through `UnifiedHandlerBase::drain_captures()`, which `TermDispatcher::drain()` asks once per drain, before the loop, of every handler whose descriptor `drains_captures()`. That flag is declared, not inferred from `capture_hooks()`: propagation's capture is consumed by an applier the queue was going to run anyway, so having no override is correct there and a silent dead end for a sever. H13 holds the flag and the override in step. Asked rather than pushed: a capture callback that marked dirty itself would be reaching into the dispatcher, and "a capture records and applies nothing" would stop being a property H13 can read off the callback body. Consuming rather than repeating: a handler that returned the same IDs on every call would refill the queue faster than the drain empties it. The visible payoff is that a bare `update_field()` sever — no `save_post`, no `acf/save_post` — now reconciles, which was a documented dead end before (invariant #15's note, fixture matrix §4).
 
     **The one thing live state cannot answer is a removal, and that is what a
     capture hook is for.** A term the parent HELD and then lost is, on the
