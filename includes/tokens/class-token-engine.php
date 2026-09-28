@@ -53,6 +53,26 @@ final class TokenEngine {
     }
 
     /**
+     * The token names a pattern contains, in order, repeats included — from the
+     * parser `render()` uses, so a caller never re-reads the grammar.
+     *
+     * @return string[]
+     */
+    public static function tokens(string $pattern): array {
+        return array_values(array_filter(array_column(self::segments($pattern), 'token'), fn($t) => $t !== null));
+    }
+
+    /**
+     * The date part a token renders — `date_<part>:field` or `pub_<part>` — or
+     * null for any other token.
+     */
+    public static function date_part_of(string $token): ?string {
+        [$kind, $arg] = self::split($token);
+        $prefix = $arg === null ? 'pub_' : 'date_';
+        return str_starts_with($kind, $prefix) ? substr($kind, strlen($prefix)) : null;
+    }
+
+    /**
      * Parse a meta date value. Tries the stored formats first, then a unix
      * timestamp, then anything `strtotime()` accepts.
      */
@@ -92,13 +112,14 @@ final class TokenEngine {
             return (string) $vars[$token];
         }
 
-        [$kind, $arg] = str_contains($token, ':') ? explode(':', $token, 2) : [$token, null];
+        [$kind, $arg] = self::split($token);
+        $date_part    = self::date_part_of($token);
 
         $value = match (true) {
-            $arg === null && str_starts_with($kind, 'pub_')  => self::date_part($source->published(), substr($kind, 4), $policy),
+            $date_part !== null && $arg === null              => self::date_part($source->published(), $date_part, $policy),
+            $date_part !== null                               => self::date_field($source->field($arg), $date_part, $policy),
             $arg === null                                     => '',
             $kind === 'meta'                                  => self::scalar($source->field($arg)),
-            str_starts_with($kind, 'date_')                   => self::date_field($source->field($arg), substr($kind, 5), $policy),
             $kind === 'term'                                  => self::terms($source, $arg, $policy, true),
             $kind === 'terms'                                 => self::terms($source, $arg, $policy, false),
             default                                           => '',
@@ -116,6 +137,11 @@ final class TokenEngine {
         }
 
         return $policy->sanitize($value);
+    }
+
+    /** @return array{0: string, 1: ?string} Token kind and its argument (null when bare). */
+    private static function split(string $token): array {
+        return str_contains($token, ':') ? explode(':', $token, 2) : [$token, null];
     }
 
     private static function scalar(mixed $value): string {

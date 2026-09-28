@@ -400,13 +400,12 @@ class TitleSlugHandler extends UnifiedHandlerBase {
         return $count === 0;
     }
 
-    private function detect_date_precision(string $pattern): string {
-        if (preg_match('/\{date_minute:|pub_minute\}/', $pattern)) return 'minute';
-        if (preg_match('/\{date_hour:|pub_hour\}/', $pattern))     return 'hour';
-        if (preg_match('/\{date_day:|pub_day\}/', $pattern))       return 'day';
-        if (preg_match('/\{date_month:|pub_month\}/', $pattern))   return 'month';
-        if (preg_match('/\{date_year:|pub_year\}/', $pattern))     return 'year';
-        return 'none';
+    private const PRECISION_ORDER = ['year', 'month', 'day', 'hour', 'minute'];
+
+    /** Index into PRECISION_ORDER of the finest date token in the pattern, or false. */
+    private function date_precision(string $pattern): int|false {
+        $found = array_intersect(self::PRECISION_ORDER, array_map(TokenEngine::date_part_of(...), TokenEngine::tokens($pattern)));
+        return $found ? max(array_keys($found)) : false;
     }
 
     private function get_date_parts_for_escalation(array $rule, int $post_id, object $post): array {
@@ -428,20 +427,17 @@ class TitleSlugHandler extends UnifiedHandlerBase {
     }
 
     private function escalate_date_slug(string $slug, int $post_id, object $post, array $rule): string {
-        $pattern   = $rule['slug_pattern'] ?? '';
-        $precision = $this->detect_date_precision($pattern);
-        if ($precision === 'none' && !empty($rule['title_pattern'])) {
-            $precision = $this->detect_date_precision($rule['title_pattern']);
+        $precision_index = $this->date_precision($rule['slug_pattern'] ?? '');
+        if ($precision_index === false && !empty($rule['title_pattern'])) {
+            $precision_index = $this->date_precision($rule['title_pattern']);
         }
-        $parts     = $this->get_date_parts_for_escalation($rule, $post_id, $post);
+        $parts = $this->get_date_parts_for_escalation($rule, $post_id, $post);
         if (empty($parts)) {
             return wp_unique_post_slug($slug, $post_id, $post->post_status, $post->post_type, $post->post_parent);
         }
 
         // Escalation ladder: add progressively more date precision until unique.
         // Parts insert adjacent to existing date portion, not appended to end.
-        $precision_order = ['year', 'month', 'day', 'hour', 'minute'];
-        $precision_index = array_search($precision, $precision_order, true);
         if ($precision_index === false) {
             return wp_unique_post_slug($slug, $post_id, $post->post_status, $post->post_type, $post->post_parent);
         }
@@ -449,7 +445,7 @@ class TitleSlugHandler extends UnifiedHandlerBase {
         // Build the anchor: the date string already present in the slug.
         $anchor = '';
         for ($i = 0; $i <= $precision_index; $i++) {
-            $key = $precision_order[$i];
+            $key = self::PRECISION_ORDER[$i];
             if (!empty($parts[$key])) {
                 $anchor .= ($anchor !== '' ? '-' : '') . $parts[$key];
             }
@@ -466,8 +462,8 @@ class TitleSlugHandler extends UnifiedHandlerBase {
         // Escalate: insert next date parts between anchor and remainder.
         $extra = '';
         $candidate = $slug;
-        for ($i = $precision_index + 1; $i < count($precision_order); $i++) {
-            $key = $precision_order[$i];
+        for ($i = $precision_index + 1; $i < count(self::PRECISION_ORDER); $i++) {
+            $key = self::PRECISION_ORDER[$i];
             if (empty($parts[$key])) continue;
             $extra .= '-' . $parts[$key];
             $candidate = $before . $extra . $after;

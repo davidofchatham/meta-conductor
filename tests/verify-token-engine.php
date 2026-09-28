@@ -138,6 +138,24 @@ $check('slug policy sanitizes each token and collapses dashes',
     TokenEngine::render('--{meta:a}--{meta:b}--', $src, OutputPolicy::slug(static fn(string $v) => strtolower($v)))
         === 'alpha-beta');
 
+// --- tokens() / date_part_of(): the grammar slug escalation reads. -----------
+
+$check('tokens() lists every token in order',
+    TokenEngine::tokens('{meta:a} - {term:genre} ({pub_year})') === ['meta:a', 'term:genre', 'pub_year']);
+$check('tokens() keeps a repeated token each time it appears',
+    TokenEngine::tokens('{meta:a}-{meta:a}') === ['meta:a', 'meta:a']);
+$check('tokens() on a pattern with no tokens is empty', TokenEngine::tokens('plain text') === []);
+$check('tokens() on an empty pattern is empty', TokenEngine::tokens('') === []);
+foreach (['year', 'month', 'day', 'hour', 'minute'] as $part) {
+    $check("date_part_of date_$part:field", TokenEngine::date_part_of("date_$part:start") === $part);
+    $check("date_part_of pub_$part", TokenEngine::date_part_of("pub_$part") === $part);
+}
+// The same forms render() resolves empty are not date tokens here either.
+$check('date_part_of: date_ needs a field', TokenEngine::date_part_of('date_year') === null);
+$check('date_part_of: pub_ takes no field', TokenEngine::date_part_of('pub_year:x') === null);
+$check('date_part_of: non-date tokens', TokenEngine::date_part_of('meta:date_year') === null
+    && TokenEngine::date_part_of('term:genre') === null && TokenEngine::date_part_of('default_slug') === null);
+
 // --- Report. ----------------------------------------------------------------
 
 if ($fail) {
