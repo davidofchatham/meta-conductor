@@ -655,6 +655,20 @@ Invariants asserted by H10 (`tests/verify-kind-lists.php`):
 - **`id` is the per-type index**, not the kind-list position.
 - **The registry is the enumeration.** `all_types()` and `get_kind_for_type()` read it, so there is no second list for them to drift out of step with — which is what lets `get_enabled_rules()` carry no fallback.
 
+## Token engine
+
+[includes/tokens/](../includes/tokens/)
+
+Patterns like `{meta:x} {term:tax} {pub_year}` are rendered in one place: `Tokens\TokenEngine::render()`. It splits the pattern into literal + token segments, resolves each token, drops an empty token (and the separator in front of it, when no later token resolves — FW-44 covers the mid-pattern case), and trims what is left. It knows nothing about titles or slugs. Three inputs decide everything else:
+
+- **The source** (`TokenSourceInterface`) says where values come from, and only fetches: a field by key, a taxonomy's terms, the publish date. `PostTokenSource` reads the post; it takes the format seam's data array for the publish date, so a rule's tokens see what an earlier rule in the same pass computed. The engine owns every token name and all date parsing, so a new source (FW-4's ACF row) answers those three reads and nothing more.
+- **The policy** (`OutputPolicy`) says how values are shaped, as data rather than a context string: month name or number, term name or slug, the term joiner, a value sanitizer, the duplicate-guard comparison, and whether the final trim collapses dashes. `title()` and `slug()` exist today; a new output is one more named constructor and no new branch in the engine.
+- **The caller** binds variables (`{default_title}`, `{default_slug}`), which are returned as-is and never guarded, and decides whether a duplicate guard applies by passing a guard base or not.
+
+`tokens()` lists the tokens a pattern contains from the same parser, and `parse_date()` is the one date parser — both date tokens and slug date escalation go through it, so **site time** ([CONTEXT.md](../CONTEXT.md)) is enforced once. What `TitleSlugHandler` keeps is what is genuinely title/slug: the default-title idempotency meta and inverse strip, slug mode, and uniqueness with date escalation.
+
+H17 (`tests/verify-token-engine.php`) tests the engine on host PHP over a fake source, replaying a golden table of title/slug outputs captured from the handler before the extraction (`tests/fixtures/token-engine-golden.json`).
+
 ## Apply to Existing Posts
 
 [includes/core/class-existing-posts-applier.php](../includes/core/class-existing-posts-applier.php) · [includes/admin/class-apply-page.php](../includes/admin/class-apply-page.php)
