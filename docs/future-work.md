@@ -293,6 +293,15 @@ Make term appliers return the terms they want and let `TermDispatcher` apply the
 - **Progress:** Not started. Candidates, to confirm by grep before deleting: the four `wp_ajax_bws_*` endpoints (the only JS caller left is the `assets/js/admin.js~` backup), `simulate_level_restrictions` (pre-#32 semantics), `get_handlers_summary`, `get_plugin_status`, `check_system_requirements`, `add_admin_menu`; handler-side `get_rules_summary`, `get_active_rules`, `get_upcoming_rules`, `preview_changes`, and the base's empty `reapply_for_post` (FW-42 retires its last caller).
 - **Blocked by:** — • **Interacts with:** FW-42
 
+#### FW-44 — Orphaned separators around empty tokens
+
+The token engine drops an empty token but not always the literal text around it. A separator in front of an empty token in the middle of a pattern is held and then emitted in full once a later token resolves (`{a} - {blank} - {b}` → `a - - b`), and a closing bracket after an empty token survives (`{a} ({blank})` → `a)`, `({blank}) {a}` → `) a`). Only trailing separators and a dangling opening bracket are cleaned today. The fix is a smarter empty-token removal pass in `Tokens\TokenEngine`, so every output policy gets it.
+
+- **Detail home:** none yet. Reference implementation: the `{{join}}` tag's template mode in the bws-gb-dynamic-tags-extensions repo, which already solves this problem. Its ordered removal steps are in `includes/helpers/join-helpers.php` (file docblock): whole-group excision, attached vs connective punctuation, bracket pairs around an empty token, floating separators, whitespace and orphan-connective repair. Harness: `tools/test/join-template-test.php` + `tools/test/join-test-matrix.md`; the rules are spelled out in `docs/tag-reference.md` → `{{join}}`. Reuse the rules and the test matrix, not the code (different plugin, different grammar).
+- **Progress:** Not started. The current behavior is pinned as-is by the FW-40 golden table (`tests/fixtures/token-engine-golden.json`) and H17's contract cases, found while building `token-engine-40/02`.
+- **Open:** This changes output, so it changes titles and slugs on live title/slug rules. Needs a decision on whether existing posts re-render on their next pass (the format pass runs whenever an entity is reached, so they will unless gated) and how that interacts with slug-change safety. The golden rows it changes get regenerated deliberately, not to make H17 pass.
+- **Blocked by:** — • **Interacts with:** FW-4, FW-36, FW-40
+
 ---
 
 ## Admin tools and diagnostics
