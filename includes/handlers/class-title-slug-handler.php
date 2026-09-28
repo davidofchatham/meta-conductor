@@ -2,6 +2,10 @@
 
 namespace BWS\MetaConductor\Handlers;
 
+use BWS\MetaConductor\Tokens\OutputPolicy;
+use BWS\MetaConductor\Tokens\PostTokenSource;
+use BWS\MetaConductor\Tokens\TokenEngine;
+
 if (!defined('ABSPATH')) exit;
 
 /**
@@ -128,7 +132,8 @@ class TitleSlugHandler extends UnifiedHandlerBase {
         // Both go through as_stored(), because the comparison they exist for is
         // against a value read back OUT of the post row — see that method.
         if (!empty($rule['title_pattern']) && $this->pattern_uses_default_title($rule['title_pattern'])) {
-            $default_title = $this->resolve_default_title($post_id, (object) $before, $rule);
+            $default_title = $this->resolve_default_title($post_id, (object) $before, $rule,
+                                                          new PostTokenSource($post_id, $before));
             update_post_meta($post_id, '_bws_raw_title', $this->as_stored($default_title, $post_id));
             update_post_meta($post_id, '_bws_applied_title', $this->as_stored($new_title, $post_id));
         }
@@ -151,13 +156,15 @@ class TitleSlugHandler extends UnifiedHandlerBase {
      *         `slug` is null when the rule has no slug opinion at all.
      */
     private function resolve_rule_output(array $rule, int $post_id, object $post, string $current_title): array {
+        $source = new PostTokenSource($post_id, (array) $post);
+
         // --- Title ---
         $new_title     = $current_title; // default: unchanged
         $default_title = $current_title;
         if (!empty($rule['title_pattern'])) {
-            $default_title = $this->resolve_default_title($post_id, $post, $rule);
-            $new_title = $this->resolve_pattern($rule['title_pattern'], $post_id, $post, 'title', $default_title,
-                                                $this->pattern_uses_default_title($rule['title_pattern']));
+            $default_title = $this->resolve_default_title($post_id, $post, $rule, $source);
+            $new_title = $this->render($rule['title_pattern'], $source, false, $default_title,
+                                       $this->pattern_uses_default_title($rule['title_pattern']));
             if ($new_title === '') $new_title = $current_title; // never blank a title
         }
 
@@ -167,8 +174,8 @@ class TitleSlugHandler extends UnifiedHandlerBase {
         $new_slug     = null;
         $default_slug = sanitize_title($new_title);
         if (!empty($rule['slug_pattern'])) {
-            $built = $this->resolve_pattern($rule['slug_pattern'], $post_id, $post, 'slug', $new_title,
-                                            $this->slug_keeps_default($rule));
+            $built = $this->render($rule['slug_pattern'], $source, true, $new_title,
+                                   $this->slug_keeps_default($rule));
             $new_slug = $this->apply_slug_mode($built, $default_slug, $rule['slug_mode'] ?? 'prefix', $rule['slug_pattern'] ?? '');
         } elseif (!empty($rule['title_pattern'])) {
             $new_slug = $default_slug; // implicit: derive slug from computed title
@@ -238,18 +245,25 @@ class TitleSlugHandler extends UnifiedHandlerBase {
     }
 
     // -------------------------------------------------------------------------
-    // Token resolution engine
+    // Token rendering
     // -------------------------------------------------------------------------
 
-    protected function resolve_pattern(string $pattern, int $post_id, object $post,
-                                       string $context, string $computed_title = '',
-                                       bool $guard_duplicates = true): string {
-        $default_title = $computed_title;
-        $default_slug  = sanitize_title($computed_title);
-        $segments = $this->parse_pattern_segments($pattern);
-        $out = $this->build_from_segments($segments, $post_id, $post, $context, $default_title, $default_slug,
-                                          $guard_duplicates);
-        return $this->trim_pattern_output($out, $context);
+    /**
+     * Render one title or slug pattern through `Tokens\TokenEngine`.
+     *
+     * Binds `{default_title}` / `{default_slug}` from `$computed_title`, and
+     * decides the guard base: the title itself, or its slug — whichever form
+     * the output would carry it in. Whether to guard at all is the caller's
+     * call (`pattern_uses_default_title()` / `slug_keeps_default()`).
+     */
+    private function render(string $pattern, PostTokenSource $source, bool $slug,
+                            string $computed_title = '', bool $guard = true): string {
+        $default_slug = sanitize_title($computed_title);
+        return TokenEngine::render(
+            $pattern, $source, $slug ? OutputPolicy::slug() : OutputPolicy::title(),
+            ['default_title' => $computed_title, 'default_slug' => $default_slug],
+            $guard ? ($slug ? $default_slug : $computed_title) : null
+        );
     }
 
     /**
@@ -267,194 +281,12 @@ class TitleSlugHandler extends UnifiedHandlerBase {
                || str_contains((string) ($rule['slug_pattern'] ?? ''), '{default_slug}');
     }
 
-    private function parse_pattern_segments(string $pattern): array {
-        $segments = [];
-        $offset = 0;
-        preg_match_all('/\{([^}]+)\}/', $pattern, $matches, PREG_OFFSET_CAPTURE);
-        foreach ($matches[1] as $i => $match) {
-            $token_start  = $matches[0][$i][1];
-            $token_end    = $token_start + strlen($matches[0][$i][0]);
-            $literal      = substr($pattern, $offset, $token_start - $offset);
-            $segments[]   = ['literal' => $literal, 'token' => $match[0]];
-            $offset       = $token_end;
-        }
-        $segments[] = ['literal' => substr($pattern, $offset), 'token' => null]; // trailing literal
-        return $segments;
-    }
-
-    private function build_from_segments(array $segments, int $post_id, object $post,
-                                          string $context, string $default_title,
-                                          string $default_slug, bool $guard_duplicates = true): string {
-        $result = '';
-        $pending_literal = '';
-
-        foreach ($segments as $seg) {
-            if ($seg['token'] === null) {
-                // Trailing literal: only append if we have non-empty result.
-                if ($result !== '') $result .= $seg['literal'];
-                break;
-            }
-
-            $value = $this->resolve_token($seg['token'], $post_id, $post, $context,
-                                          $default_title, $default_slug, $guard_duplicates);
-
-            if ($value !== '') {
-                $result .= $pending_literal . $seg['literal'] . $value;
-                $pending_literal = '';
-            } else {
-                // Token empty: accumulate preceding literal as pending; drop following literal
-                // by not appending seg['literal'] — it gets swallowed with next empty or ignored.
-                if ($result !== '') {
-                    $pending_literal .= $seg['literal'];
-                }
-            }
-        }
-
-        // pending_literal is a trailing separator from empty tokens — discard it.
-        return $result;
-    }
-
-    private function resolve_token(string $token, int $post_id, object $post,
-                                    string $context, string $default_title,
-                                    string $default_slug, bool $guard_duplicates = true): string {
-        // {default_title} and {default_slug} — never apply duplicate-insertion guard.
-        if ($token === 'default_title') return $default_title;
-        if ($token === 'default_slug')  return $default_slug;
-
-        $value = match(true) {
-            str_starts_with($token, 'meta:')        => $this->get_field_value(substr($token, 5), $post_id),
-            str_starts_with($token, 'date_year:')   => $this->get_date_part(substr($token, 10), $post_id, 'year'),
-            str_starts_with($token, 'date_month:')  => $this->get_date_part(substr($token, 11), $post_id, $context === 'title' ? 'month_name' : 'month'),
-            str_starts_with($token, 'date_day:')    => $this->get_date_part(substr($token, 9), $post_id, 'day'),
-            str_starts_with($token, 'date_hour:')   => $this->get_date_part(substr($token, 10), $post_id, 'hour'),
-            str_starts_with($token, 'date_minute:') => $this->get_date_part(substr($token, 12), $post_id, 'minute'),
-            $token === 'pub_year'    => $this->get_pub_part($post, 'year'),
-            $token === 'pub_month'   => $context === 'title'
-                                        ? $this->get_pub_part($post, 'month_name')
-                                        : $this->get_pub_part($post, 'month'),
-            $token === 'pub_day'     => $this->get_pub_part($post, 'day'),
-            $token === 'pub_hour'    => $this->get_pub_part($post, 'hour'),
-            $token === 'pub_minute'  => $this->get_pub_part($post, 'minute'),
-            str_starts_with($token, 'term:')        => $this->get_first_term($post_id, substr($token, 5), $context),
-            str_starts_with($token, 'terms:')       => $this->get_all_terms($post_id, substr($token, 6), $context),
-            default                                  => '',
-        };
-
-        if ($value === '') return '';
-
-        // Duplicate-insertion guard: skip a token whose value already appears in the
-        // base title/slug — but ONLY when the base survives into the output. A
-        // pattern that composes the title from scratch (`{meta:first} {meta:last}`
-        // with no `{default_title}`) discards the base, so measuring against it
-        // deletes exactly the tokens that already resolved correctly last pass:
-        // "John Smith" -> "Mr. III" -> "John Smith", flip-flopping on every
-        // save. The caller decides; see slug_keeps_default() for the slug half.
-        if ($guard_duplicates) {
-            if ($context === 'title' && $default_title !== ''
-                && mb_stripos($default_title, $value) !== false) {
-                return '';
-            }
-            if ($context === 'slug' && $default_slug !== ''
-                && str_contains($default_slug, sanitize_title($value))) {
-                return '';
-            }
-        }
-
-        // In slug context, sanitize all token output.
-        return $context === 'slug' ? sanitize_title($value) : $value;
-    }
-
-    private function trim_pattern_output(string $result, string $context): string {
-        // Strip unmatched trailing opening punctuation.
-        $result = preg_replace('/\s*[\(\[\{<]+\s*$/', '', $result);
-        // Strip leading separators.
-        $result = preg_replace('/^[\s:,\-|\/]+/', '', $result);
-        // Strip trailing separators.
-        $result = preg_replace('/[\s:,\-|\/]+$/', '', $result);
-        // Collapse multiple spaces.
-        $result = preg_replace('/\s{2,}/', ' ', $result);
-        $result = trim($result);
-
-        if ($context === 'slug') {
-            $result = preg_replace('/-{2,}/', '-', $result);
-            $result = trim($result, '-');
-        }
-
-        return $result;
-    }
-
-    private function get_field_value(string $field_name, int $post_id): string {
-        $value = get_post_meta($post_id, $field_name, true);
-        if (is_array($value) || is_object($value)) {
-            error_log(sprintf('BWS Title/Slug Handler: Field returned non-string value (field: %s)', $field_name));
-            return '';
-        }
-        return (string) $value;
-    }
-
-    private function parse_date_value(string $value): ?\DateTime {
-        foreach (['Ymd', 'Y-m-d', 'Y-m-d H:i:s', 'd/m/Y'] as $format) {
-            $dt = \DateTime::createFromFormat($format, $value);
-            if ($dt !== false) return $dt;
-        }
-        // Unix timestamp fallback.
-        if (is_numeric($value)) {
-            return (new \DateTime())->setTimestamp((int)$value);
-        }
-        $ts = strtotime($value);
-        return $ts !== false ? (new \DateTime())->setTimestamp($ts) : null;
-    }
-
-    private function get_date_part(string $field_name, int $post_id, string $part): string {
-        $raw = get_post_meta($post_id, $field_name, true);
-        if (empty($raw)) return '';
-        $dt = $this->parse_date_value((string) $raw);
-        if (!$dt) return '';
-        return $this->format_date_part($dt, $part);
-    }
-
-    private function get_pub_part(object $post, string $part): string {
-        // post_date is stored in WP's configured timezone (not PHP's server
-        // tz). Bind wp_timezone() so date tokens are correct on hosts where
-        // the two differ.
-        $dt = new \DateTimeImmutable($post->post_date, wp_timezone());
-        return $this->format_date_part($dt, $part);
-    }
-
-    private function format_date_part(\DateTimeInterface $dt, string $part): string {
-        return match($part) {
-            'year'       => $dt->format('Y'),
-            'month'      => $dt->format('m'),
-            'month_name' => $dt->format('F'),
-            'day'        => $dt->format('d'),
-            'hour'       => $dt->format('H'),
-            'minute'     => $dt->format('i'),
-            default      => '',
-        };
-    }
-
-    private function get_first_term(int $post_id, string $taxonomy, string $context): string {
-        $terms = get_the_terms($post_id, $taxonomy);
-        if (empty($terms) || is_wp_error($terms)) return '';
-        usort($terms, fn($a, $b) => strcmp($a->name, $b->name));
-        return $context === 'slug' ? $terms[0]->slug : $terms[0]->name;
-    }
-
-    private function get_all_terms(int $post_id, string $taxonomy, string $context): string {
-        $terms = get_the_terms($post_id, $taxonomy);
-        if (empty($terms) || is_wp_error($terms)) return '';
-        usort($terms, fn($a, $b) => strcmp($a->name, $b->name));
-        if ($context === 'slug') {
-            return implode('-', array_column($terms, 'slug'));
-        }
-        return implode(', ', array_column($terms, 'name'));
-    }
-
     // -------------------------------------------------------------------------
     // Idempotency: avoid double-application on re-save
     // -------------------------------------------------------------------------
 
-    protected function resolve_default_title(int $post_id, object $post, array $rule): string {
+    protected function resolve_default_title(int $post_id, object $post, array $rule,
+                                             PostTokenSource $source): string {
         $pattern = $rule['title_pattern'] ?? '';
 
         // Short-circuit: if pattern has no {default_title}, all tokens are external —
@@ -478,7 +310,7 @@ class TitleSlugHandler extends UnifiedHandlerBase {
 
         // Branch 2: user edited the title — try to recover the base by stripping the
         // rule's computed prefix/suffix (single attempt, case-insensitive).
-        $candidate = $this->try_inverse_strip($submitted, $post_id, $post, $rule);
+        $candidate = $this->try_inverse_strip($submitted, $rule, $source);
         if ($candidate !== null) {
             return $candidate;
         }
@@ -487,8 +319,7 @@ class TitleSlugHandler extends UnifiedHandlerBase {
         return $submitted;
     }
 
-    private function try_inverse_strip(string $submitted, int $post_id, object $post,
-                                        array $rule): ?string {
+    private function try_inverse_strip(string $submitted, array $rule, PostTokenSource $source): ?string {
         $pattern = $rule['title_pattern'] ?? '';
 
         // Split pattern at {default_title} to get prefix/suffix portions.
@@ -500,10 +331,10 @@ class TitleSlugHandler extends UnifiedHandlerBase {
 
         // Resolve prefix/suffix using current field values (no {default_title} token here).
         $computed_prefix = $prefix_pattern !== ''
-            ? $this->resolve_pattern($prefix_pattern, $post_id, $post, 'title', '')
+            ? $this->render($prefix_pattern, $source, false)
             : '';
         $computed_suffix = $suffix_pattern !== ''
-            ? $this->resolve_pattern($suffix_pattern, $post_id, $post, 'title', '')
+            ? $this->render($suffix_pattern, $source, false)
             : '';
 
         // Case-insensitive strip both ends.
@@ -529,7 +360,7 @@ class TitleSlugHandler extends UnifiedHandlerBase {
         // the candidate base DOES survive into the output and the production
         // resolve would have guarded it too. Reproducing that is the whole point
         // of the check — an unguarded verify would never match a guarded apply.
-        $verified = $this->resolve_pattern($pattern, $post_id, $post, 'title', $candidate, true);
+        $verified = $this->render($pattern, $source, false, $candidate, true);
         return ($verified === $submitted) ? $candidate : null;
     }
 
@@ -569,21 +400,20 @@ class TitleSlugHandler extends UnifiedHandlerBase {
         return $count === 0;
     }
 
-    private function detect_date_precision(string $pattern): string {
-        if (preg_match('/\{date_minute:|pub_minute\}/', $pattern)) return 'minute';
-        if (preg_match('/\{date_hour:|pub_hour\}/', $pattern))     return 'hour';
-        if (preg_match('/\{date_day:|pub_day\}/', $pattern))       return 'day';
-        if (preg_match('/\{date_month:|pub_month\}/', $pattern))   return 'month';
-        if (preg_match('/\{date_year:|pub_year\}/', $pattern))     return 'year';
-        return 'none';
+    private const PRECISION_ORDER = ['year', 'month', 'day', 'hour', 'minute'];
+
+    /** Index into PRECISION_ORDER of the finest date token in the pattern, or false. */
+    private function date_precision(string $pattern): int|false {
+        $found = array_intersect(self::PRECISION_ORDER, array_map(TokenEngine::date_part_of(...), TokenEngine::tokens($pattern)));
+        return $found ? max(array_keys($found)) : false;
     }
 
     private function get_date_parts_for_escalation(array $rule, int $post_id, object $post): array {
         if (!empty($rule['date_field'])) {
             $raw = get_post_meta($post_id, $rule['date_field'], true);
-            $dt  = $raw ? $this->parse_date_value((string)$raw) : null;
+            $dt  = $raw ? TokenEngine::parse_date((string)$raw) : null;
         } else {
-            $dt = new \DateTime($post->post_date); // fallback: publication date (local time)
+            $dt = TokenEngine::parse_date((string)$post->post_date); // fallback: publication date
         }
         if (!$dt) return [];
 
@@ -597,20 +427,17 @@ class TitleSlugHandler extends UnifiedHandlerBase {
     }
 
     private function escalate_date_slug(string $slug, int $post_id, object $post, array $rule): string {
-        $pattern   = $rule['slug_pattern'] ?? '';
-        $precision = $this->detect_date_precision($pattern);
-        if ($precision === 'none' && !empty($rule['title_pattern'])) {
-            $precision = $this->detect_date_precision($rule['title_pattern']);
+        $precision_index = $this->date_precision($rule['slug_pattern'] ?? '');
+        if ($precision_index === false && !empty($rule['title_pattern'])) {
+            $precision_index = $this->date_precision($rule['title_pattern']);
         }
-        $parts     = $this->get_date_parts_for_escalation($rule, $post_id, $post);
+        $parts = $this->get_date_parts_for_escalation($rule, $post_id, $post);
         if (empty($parts)) {
             return wp_unique_post_slug($slug, $post_id, $post->post_status, $post->post_type, $post->post_parent);
         }
 
         // Escalation ladder: add progressively more date precision until unique.
         // Parts insert adjacent to existing date portion, not appended to end.
-        $precision_order = ['year', 'month', 'day', 'hour', 'minute'];
-        $precision_index = array_search($precision, $precision_order, true);
         if ($precision_index === false) {
             return wp_unique_post_slug($slug, $post_id, $post->post_status, $post->post_type, $post->post_parent);
         }
@@ -618,7 +445,7 @@ class TitleSlugHandler extends UnifiedHandlerBase {
         // Build the anchor: the date string already present in the slug.
         $anchor = '';
         for ($i = 0; $i <= $precision_index; $i++) {
-            $key = $precision_order[$i];
+            $key = self::PRECISION_ORDER[$i];
             if (!empty($parts[$key])) {
                 $anchor .= ($anchor !== '' ? '-' : '') . $parts[$key];
             }
@@ -635,8 +462,8 @@ class TitleSlugHandler extends UnifiedHandlerBase {
         // Escalate: insert next date parts between anchor and remainder.
         $extra = '';
         $candidate = $slug;
-        for ($i = $precision_index + 1; $i < count($precision_order); $i++) {
-            $key = $precision_order[$i];
+        for ($i = $precision_index + 1; $i < count(self::PRECISION_ORDER); $i++) {
+            $key = self::PRECISION_ORDER[$i];
             if (empty($parts[$key])) continue;
             $extra .= '-' . $parts[$key];
             $candidate = $before . $extra . $after;

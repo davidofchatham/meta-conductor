@@ -14,8 +14,10 @@ New **rule type** entries should also state their **axes** — basis (relation /
 
 - [Item shape](#item-shape)
 - [Rule types](#rule-types)
-- [Tools and infrastructure](#tools-and-infrastructure)
+- [Correctness, Consistency, Architecture](#correctness-consistency-architecture)
+- [Admin tools and diagnostics](#admin-tools-and-diagnostics)
 - [UX polish](#ux-polish)
+- [Infrastructure and testing](#infrastructure-and-testing)
 - [Closed / retired](#closed--retired)
 - [Maintenance](#maintenance)
 
@@ -53,6 +55,8 @@ A blocker states a **code fact**, never a scheduling preference: "this cannot la
 
 ## Rule types
 
+New rule types, and new capabilities or behavior on an existing one.
+
 #### FW-1 — `acf_relationship_rules`: ACF Post Relationship Manager
 
 Set a post's `post_parent` from a populated ACF relationship or post-object field — or set the referenced posts' parent to this one, depending on direction. Distinct from `related_post_terms_rules`: same data source, different output (a real WP hierarchy edge instead of taxonomy terms).
@@ -78,7 +82,7 @@ Evolve the binary Date Window rule (in-window → apply, out → remove, fixed d
 
 - **Detail home:** `.scratch/plans/temporal-rule.md` (scoping + open questions). Domain vocab: [CONTEXT.md](../CONTEXT.md). Model decision: [ADR 0001](adr/0001-temporal-rule-general-model-constrained-ui.md).
 - **Progress:** Scoping. Absorbs the "post expires N after its date field" pattern and the previously-planned `date_based_taxonomy_rules`, folded in rather than built as a separate type. Storage settled: Options, normalized through the canonical-shape adapter, no dot-notation — **not** gated on CPT and not migrating to CPT ([ADR 0001](adr/0001-temporal-rule-general-model-constrained-ui.md) → Consequences). Since the ordered list shipped in 0.8.0 this is a `type` within `term_rules`, not its own array.
-- **Open:** ⚠️ It must expose `apply_to_post()` and register **no hooks of its own** — including its cron sweep, which becomes a candidate-post query that hands each post to the dispatcher ([ADR 0003](adr/0003-ordered-rule-list-and-dispatcher.md)).
+- **Open:** the dispatcher contract is already met by the Date Window rule it evolves: since #61 that handler exposes `apply_to_post()`, registers no hooks of its own, and its cron sweep (`expired_rule_posts()`) only selects candidate posts and hands them to the dispatcher ([ADR 0003](adr/0003-ordered-rule-list-and-dispatcher.md)). Keep it that way — the before/during/after states add boundaries the sweep must select on, not a second write path.
 - **Blocked by:** — • **Interacts with:** FW-25
 - **Phase:** targeting the 0.x line, before 1.0.0
 
@@ -88,8 +92,8 @@ Combine multiple source fields into one formatted output field — merge first/m
 
 - **Axes:** basis **intrinsic** (reads the post's own fields), effect target **field** (scalar), claim *owning*.
 - **Detail home:** `.scratch/plans/field-transformation-token-gap.md` — token-gap analysis of two real template helpers against the existing resolver, plus the repeater-scope blockers. Reachability ≈ 50% / 70% with the resolver alone (post-level); the shortfall is conditional/transform logic, markup emission, and row-scoped read/write.
-- **Progress:** Not started. Can be declared as a registry descriptor with `has_subfields() === false` ahead of its subfields — that separation is what lets it be read before its config exists (CLAUDE.md don't 6). ~60–70% of the engine exists as the TitleSlugHandler token engine (`resolve_token()`, pattern→segments→resolve-or-drop→reassemble, with empty-token + dangling-separator dropping). Net-new: a **target-field write path** (arbitrary meta/ACF key, not just `post_title`/`post_slug`), a **raw-vs-sanitize output policy** flag so literal HTML survives, and new token classes (value-filter `{term:TAX|exclude:…}`, conditional `{if_term:…}`, optional format-transform). The repeater *write* is cheap and verified (2026-06-26): `update_sub_field(['rep', $row, 'sub'], $val, $post_id)` on `acf/save_post` pri 20 maintains ACF's field-key reference meta and needs **no re-entrancy guard** — it does not re-fire `acf/save_post`/`save_post`; only `wp_update_post` would.
-- **Open:** must work **inside ACF repeater rows, not just post-level** — each row composes from its own sibling subfields into a per-row output subfield. The cost is **row-scoped token reads** (the flat resolver's `get_post_meta($post_id, KEY)` must become `get_sub_field()` in row context) plus a `have_rows()` loop. Storage TBD — run [storage-model.md](storage-model.md) when designed; likely Options + indirection unless a per-recipe draft/test lifecycle is wanted. ⚠️ **Scalar effect target**: per [ADR 0002](adr/0002-cross-rule-composition.md) two rules writing one field can only be last-writer-wins, so they **always** collide — there is no contributing mode for a scalar. Lands in the Format & Transform list where **ordering is real**: title/slug reads `{meta:field}`, so a field rule writing a key a title rule then reads is a producer→consumer pair *within* one list, and the reverse is equally possible, so the order is genuinely ambiguous and the author sequences it ([ADR 0003](adr/0003-ordered-rule-list-and-dispatcher.md)). This is also what returns the format dispatcher to **two-phase**: title/slug pre-write, this post-write on `acf/save_post` pri 20.
+- **Progress:** Not started. Can be declared as a registry descriptor with `has_subfields() === false` ahead of its subfields — that separation is what lets it be read before its config exists (CLAUDE.md don't 6). The pattern engine exists: it consumes `Tokens\` (FW-40) — `TokenEngine::render()` over a `TokenSourceInterface` and an `OutputPolicy`. Net-new: a **target-field write path** (arbitrary meta/ACF key, not just `post_title`/`post_slug`), `OutputPolicy::raw()` so literal HTML survives, an ACF-row token source, and new token kinds (value-filter `{term:TAX|exclude:…}`, conditional `{if_term:…}`, optional format-transform). The repeater *write* is cheap and verified (2026-06-26): `update_sub_field(['rep', $row, 'sub'], $val, $post_id)` on `acf/save_post` pri 20 maintains ACF's field-key reference meta and needs **no re-entrancy guard** — it does not re-fire `acf/save_post`/`save_post`; only `wp_update_post` would.
+- **Open:** must work **inside ACF repeater rows, not just post-level** — each row composes from its own sibling subfields into a per-row output subfield. The cost is **row-scoped token reads** (a row source whose `field()` answers with `get_sub_field()` in row context, where `PostTokenSource` reads post meta) plus a `have_rows()` loop. Storage TBD — run [storage-model.md](storage-model.md) when designed; likely Options + indirection unless a per-recipe draft/test lifecycle is wanted. ⚠️ **Scalar effect target**: per [ADR 0002](adr/0002-cross-rule-composition.md) two rules writing one field can only be last-writer-wins, so they **always** collide — there is no contributing mode for a scalar. Lands in the Format & Transform list where **ordering is real**: title/slug reads `{meta:field}`, so a field rule writing a key a title rule then reads is a producer→consumer pair *within* one list, and the reverse is equally possible, so the order is genuinely ambiguous and the author sequences it ([ADR 0003](adr/0003-ordered-rule-list-and-dispatcher.md)). This is also what returns the format dispatcher to **two-phase**: #64 made the format pass post-write only, and a pre-write half, when it returns, feeds the same `apply_to_data()` seam rather than a second one.
 - **Blocked by:** `decision:storage for field_transformation, via storage-model.md` • **Interacts with:** FW-5, FW-13, FW-16
 - **Phase:** 6a
 
@@ -105,7 +109,7 @@ Combine multiple source fields into one formatted output field — merge first/m
 
 #### FW-6 — `body_class_rules`: Document classes from terms/fields
 
-Let an editor declare the `body_class` branching that themes routinely hand-roll (`is-event`, `season-2026`, `status-cancelled`). The rule declares a source — taxonomy, term, or field value — and a class template; the handler hooks `body_class` and probably `post_class`, reusing the TitleSlug token engine with slug sanitization on output.
+Let an editor declare the `body_class` branching that themes routinely hand-roll (`is-event`, `season-2026`, `status-cancelled`). The rule declares a source — taxonomy, term, or field value — and a class template; the handler hooks `body_class` and probably `post_class`, rendering through `Tokens\TokenEngine` under `OutputPolicy::slug()`.
 
 - **Axes:** basis **intrinsic** (reads the post's own terms/fields), effect target **body class** — **rendered, not stored**.
 - **Detail home:** none. Raised 2026-08-12 in the cross-rule composition session.
@@ -115,7 +119,7 @@ Let an editor declare the `body_class` branching that themes routinely hand-roll
 
 #### FW-7 — `term_provisioning_rules`: Create a term per post, then apply it
 
-A CPT whose posts each need a matching term so *other* content can be tagged against them — every `team` post gets a `team` term, and player posts are tagged with it via the team relationship. Today that is hand-maintained and drifts the moment a post is renamed or added. For each post passing the filter gate, ensure a term exists in the target taxonomy (name/slug derived from the post, likely via the token engine), then apply it to related posts over a configured relation.
+A CPT whose posts each need a matching term so *other* content can be tagged against them — every `team` post gets a `team` term, and player posts are tagged with it via the team relationship. Today that is hand-maintained and drifts the moment a post is renamed or added. For each post passing the filter gate, ensure a term exists in the target taxonomy (name/slug derived from the post, likely rendered through `Tokens\TokenEngine`), then apply it to related posts over a configured relation.
 
 - **Axes:** basis **relation**, effect target **the taxonomy itself** (term existence) *plus* terms on entities.
 - **Detail home:** none. Raised 2026-08-12 in the cross-rule composition session.
@@ -157,19 +161,10 @@ The refinements deliberately left out of the `related_post_terms_rules` rework. 
   - **Tier filter** — sync only a particular hierarchy level of a taxonomy (e.g. only 2nd-level terms).
   - **Manual-survives mode** — let hand-added, non-source-derivable terms persist under Keep-in-sync; today the synced taxonomy is wholly rule-owned. **Blocked on a rejected primitive**: this needs provenance (rule-domain-vs-manual tracking), which [ADR 0002](adr/0002-cross-rule-composition.md) rejected for the third time, after ADR 0001 and §V3. Wanting it reopens that decision plugin-wide rather than being a local feature. Cheaper alternative inside the current model: expose the rule's **claim** as *contributing* instead of *owning*, which never removes anything — manual terms survive because nothing reconciles, at the cost of losing source-authoritative cleanup.
   - **True cross-taxonomy copy** — map terms by slug/name so source and target taxonomies can differ; the current copy is by ID, single taxonomy only.
-  - **Multi-level chain propagation** — a post that is BOTH a dependent (of A) and a source (for C) does not propagate to C in the same save: its term-change is suppressed by the re-entrancy guard while it is being written. Chains deeper than 2 levels need a depth-bounded re-dispatch after each write. **Confirmed as the only path by [ADR 0002](adr/0002-cross-rule-composition.md)**: cascade is suppressed within one effect target, so a rule's own write will *never* re-trigger peer term rules — waiting for the cascade is not an option that was taken away, it is one that never worked. The design is an explicit depth-bounded re-dispatch inside the handler, mirroring how propagation already walks its whole subtree itself rather than relying on cascade. Build only if a 3+ level chain appears.
+  - **Multi-level chain propagation** — a post that is BOTH a dependent (of A) and a source (for C) used not to propagate to C in the same save, and the planned fix was a depth-bounded re-dispatch inside the handler. **Probably dissolved by #63**: the handler's `fan_out()` marks each dependent dirty, each dependent gets its own full ordered pass, and a dependent that is a source under another row fans out in turn; the drain's one-pass-per-entity bound terminates it. Confirm with a 3-level sweep, then drop this bullet.
   - **Single-owner optimization** — skip the multi-source rule-union when a dependent provably has one owner (ACF `max=1` / native bidi). Negligible gain when a reverse field is configured; only matters for the meta_query fallback with large fan-out.
   - **Multiple taxonomies per rule.** `$rule['taxonomy']` is scalar, and so are `severed[post][taxonomy]`, the status gate and the capture — to sync several taxonomies across the *same* relationship you duplicate the rule once per taxonomy. Duplicating is **correct**, not a workaround: each taxonomy mirrors the source's full term set independently, so there is no correctness penalty. The only material win is **shared relationship-graph resolution** — N duplicated rules each run `dependents_of_source` / `resolve_reverse` per save, which is N cheap `get_field` reads under tier 2 (the common case) but N unindexed LIKE scans under tier 3, multiplying exactly the cost FW-11 flags. So the payoff scales with tier-3 usage and this is worth scoping *with* FW-11, not before it. Cost: scalar → array touches `recompute_dependent`, `capture_removed_dependents`, `process_severed`, every label snapshot and the storage shape — mechanical, since the per-taxonomy logic is already a clean loop boundary.
 - **Blocked by:** `decision:reopen provenance` — manual-survives only; the rest are unblocked • **Interacts with:** FW-9, FW-11, FW-19
-
-#### FW-11 — Tier-3 reverse-lookup is an unindexed query on every eligible save
-
-A pull rule with NEITHER an explicit reverse field NOR a detectable ACF bidirectional field falls back to `find_holders_referencing` — an unindexed `meta_query` LIKE over all holder posts — on every eligible save. B7 (0.5.0) removed the spurious calls on ineligible saves; the legitimate case is still O(N).
-
-- **Detail home:** [design-history/acf-reference-rework.md](design-history/acf-reference-rework.md) → the reverse-lookup tiers. The issue that framed it was #22.
-- **Progress:** Not started. Mitigated in the UI: the config warns the admin to set a reverse or bidirectional field. A code fix — a reverse index maintained on relationship-field save, or a registry built at rule-save time mapping related-post → holders — would remove the warning. Deliberately kept out of #63 even though that ticket rewrote the handler: the fix is its own design decision with its own invalidation questions, and riding it along would have widened the largest ticket in the phase with work that had no dependency on the ordering model.
-- **Open:** the reverse-lookup-resolution cluster is best decided in one sitting — this, FW-10's *multiple taxonomies per rule* (whose only material payoff is sharing exactly this resolution), and #25 (resolve fields by key, not bare name) all touch how the "other end" is resolved.
-- **Blocked by:** — • **Interacts with:** FW-10
 
 #### FW-12 — Sub-scope field for restricting rules
 
@@ -190,13 +185,25 @@ A rule whose **claim** is *restricting* (today only level-restriction) declares 
 
 **Why this is not a bug.** The behavior is documented, and the alternative — gating the format pass to save-shaped provocations — reintroduces the staleness #64 removed. This is a feature the model now has room for, not a regression to undo.
 
-#### FW-14 — Rule-type renaming on the domain axes
+#### FW-19 — Grouped / nested relationship fields for Related Post Terms
 
-Current rule-type names conflate **basis**, **effect target** and **claim** into one string, which is why `hierarchical` (term graph) and `propagation` (post graph) read as near-synonyms, as do `related` (term↔term) and `related_post_terms` (post↔post). Names should be composed from the axes once those have settled.
+`related_post_terms` is verified only for **top-level** ACF relationship/post-object fields. The field picker (`ConfigHelpers::acf_relationship_field_options()`) enumerates top-level fields only — `acf_get_fields($group_key)` does not recurse into Group / Repeater / Flexible-Content subfields — so a nested relationship field never appears as a choice.
 
-- **Detail home:** [ADR 0002](adr/0002-cross-rule-composition.md), where it was deferred. Axis definitions: [CONTEXT.md](../CONTEXT.md).
-- **Progress:** Not started. Storage keys (`related_rules`, `time_based_rules`, …) are unaffected — this is domain and UI vocabulary only. Since FW-39, each rule type's descriptor `label()` is the single rename site; descriptor class names mirror the storage keys and do not change.
-- **Blocked by:** `code:the Effect axis carries only term values` — renaming before it carries field, title and body-class values means minting names twice • **Interacts with:** FW-4, FW-5, FW-6
+- **Detail home:** [architecture.md](architecture.md) handler-invariant #6 documents the trap. Upstream context: #37.
+- **Progress:** Not started; a known capability gap, not a live bug. No current rule uses a nested field, so nothing is broken today, and the UI warns that only top-level fields are supported.
+- **Open:** **failure modes if a nested field is forced in via config.** ACF's `acf/update_value` `$field['name']` and Admin Columns v7's `get_meta_key()` both return the **bare** subfield name with the group prefix stripped, so the capture filter's `acf_field_name === $field_name` match and the planned AC-v7 reapply fallback silently miss. Additionally a **Repeater/Flex**-nested field breaks `read_relationship` entirely — `get_field('sub', $post_id)` has no row context. Group-nested `get_field('group_sub')` (qualified) does resolve, so the read is fine for Groups; only the name-matching is wrong. Sketch: (1) recurse Group subfields in the options builder, using the qualified name; (2) match by ACF **field key** (`field_xxxx`) instead of raw name everywhere `acf_field_name` is compared, or reconcile bare↔qualified — rows have stored `acf_field_key` since #25, but the capture filter still compares names; (3) Repeater/Flex support needs row-context resolution — larger, likely out of scope. Drop the top-level-only UI warning once (1)+(2) land for Groups.
+- **Blocked by:** — • **Interacts with:** FW-10
+- **Phase:** on demand — only when a real site needs a grouped relationship field
+
+#### FW-25 — Authorable claim on every rule type
+
+Only `propagation` lets the author choose a claim. `time_based` and `related` are hardcoded **owning** (they remove their target term when the trigger stops holding), `hierarchical` is contributing, `level_restriction` restricting, `title_slug` owning, and `related_post_terms` is owning-or-contributing under the name `keep_in_sync`. This item is about letting the author *change* it.
+
+- **Axes:** no change to basis or effect target — this is the **claim** axis becoming author-set where it is currently hardcoded.
+- **Detail home:** [ADR 0004](adr/0004-claim-axis-and-jurisdiction.md) for the law it must obey. The concrete, no-behavior-change half — *stating* each type's claim in its config — is FW-28.
+- **Progress:** Not started. `ConfigHelpers::claim_field()` already exists and is id-agnostic, so adding the control is cheap. The ordered rule list shipped in 0.8.0, so the configs are already one repeater with `conditions`-gated subfields — the claim field would be gated on rule `type`, and the "building it twice" concern that deferred this is now resolved.
+- **Open:** ⚠️ **constrained by ADR 0004's law** — *owning requires a statically enumerable jurisdiction*. `time_based` and `related` qualify (one configured target term each), so owning↔contributing is a genuine choice for them. `hierarchical` does **not**: its derivable set is data-dependent, which is why it already buys the forbidden cell with `_bws_auto_terms` provenance meta — offering it *owning* would need that meta generalized or a silent widening to the whole taxonomy. `level_restriction` is restricting by construction with no meaningful alternative. So this is **not one uniform dropdown**; it is a per-rule-type legality question, and that is the real work.
+- **Blocked by:** — • **Interacts with:** FW-3, FW-8, FW-12, FW-24
 
 #### FW-36 — Slug-change safety for format rules
 
@@ -211,6 +218,38 @@ A format rule that changes a published post's `post_name` moves its URL. Since #
   - **Audit trail.** A rule-driven rename leaves only the old-slug meta; nothing records which rule did it, or what provoked the pass.
 - **Blocked by:** — • **Interacts with:** FW-13, FW-16
 
+---
+
+## Correctness, Consistency, Architecture
+
+Nothing new for an author. Code or behavior that works but is wrong-shaped: an inconsistency between two surfaces, a dead surface, a seam in the wrong place, or a cost paid on every save. Most of the refactor rows are candidates the 2026-09-24 architecture review (`.scratch/plans/architecture-review-2026-09-24.html`) left out of FW-39.
+
+#### FW-11 — Tier-3 reverse-lookup is an unindexed query on every eligible save
+
+A pull rule with NEITHER an explicit reverse field NOR a detectable ACF bidirectional field falls back to `find_holders_referencing` — an unindexed `meta_query` LIKE over all holder posts — on every eligible save. B7 (0.5.0) removed the spurious calls on ineligible saves; the legitimate case is still O(N).
+
+- **Detail home:** [design-history/acf-reference-rework.md](design-history/acf-reference-rework.md) → the reverse-lookup tiers. The issue that framed it was #22.
+- **Progress:** Not started. Mitigated in the UI: the config warns the admin to set a reverse or bidirectional field. A code fix — a reverse index maintained on relationship-field save, or a registry built at rule-save time mapping related-post → holders — would remove the warning. Deliberately kept out of #63 even though that ticket rewrote the handler: the fix is its own design decision with its own invalidation questions, and riding it along would have widened the largest ticket in the phase with work that had no dependency on the ordering model.
+- **Open:** the reverse-lookup-resolution cluster is best decided in one sitting — this, FW-10's *multiple taxonomies per rule* (whose only material payoff is sharing exactly this resolution), and FW-19's key-based field matching all touch how the "other end" is resolved. #25 already made the field key each row's stored identity.
+- **Blocked by:** — • **Interacts with:** FW-10
+
+#### FW-14 — Rule-type renaming on the domain axes
+
+Current rule-type names conflate **basis**, **effect target** and **claim** into one string, which is why `hierarchical` (term graph) and `propagation` (post graph) read as near-synonyms, as do `related` (term↔term) and `related_post_terms` (post↔post). Names should be composed from the axes once those have settled.
+
+- **Detail home:** [ADR 0002](adr/0002-cross-rule-composition.md), where it was deferred. Axis definitions: [CONTEXT.md](../CONTEXT.md).
+- **Progress:** Not started. Storage keys (`related_rules`, `time_based_rules`, …) are unaffected — this is domain and UI vocabulary only. Since FW-39, each rule type's descriptor `label()` is the single rename site; descriptor class names mirror the storage keys and do not change.
+- **Blocked by:** `code:the Effect axis carries only term values` — renaming before it carries field, title and body-class values means minting names twice • **Interacts with:** FW-4, FW-5, FW-6
+
+#### FW-24 — Claim option propagation
+
+Per-rule claim overrides (stored `conflict_handling`) default to `merge` regardless of the General-tab per-taxonomy default, but authors reasonably expect rule-level to inherit from taxonomy-level unless explicitly set. Sharper now that the two surfaces share wording — both read "Claim on terms" / "Default claim on terms", so one appears to feed the other.
+
+- **Detail home:** none. Claim semantics: [ADR 0004](adr/0004-claim-axis-and-jurisdiction.md).
+- **Progress:** Not started. Small enough to take ad-hoc. The per-taxonomy default is already stored and flattened, but nothing reads it: a rule that omits its claim falls back to a hard-coded `merge` in each handler. `RuleStorage::get_raw_settings()` is the seam for the lookup and has no other reader.
+- **Open:** the handler reads the General-tab default for `$taxonomy` when the rule's own value is empty. Wants an explicit "inherit" placeholder option rather than a silent fallback, so the config shows which default is in force.
+- **Blocked by:** — • **Interacts with:** FW-25
+
 #### FW-37 — What a date-window rule's filter scopes
 
 A date-window rule's filter (`filter_taxonomies` / `filter_terms`) gates only the apply. Removal outside the window ignores it, so an in-range post that stops matching the filter keeps the target term until the window closes, then loses it whether or not it ever matched. That fits neither consistent reading. If the filter scopes **jurisdiction**, the rule should never touch a non-matching post, and the out-of-range removal reaches too far. If it is a **condition**, an in-range non-matching post should lose the term, and the rule should remove it.
@@ -219,20 +258,46 @@ A date-window rule's filter (`filter_taxonomies` / `filter_terms`) gates only th
 - **Progress:** Not started. Found in the 2026-09-24 architecture review. The current behavior is sweep-asserted (matrix §6c/§6d), so either answer changes a sweep expectation, and changes behavior if a live site runs a filtered date-window rule.
 - **Blocked by:** `decision:jurisdiction or condition` • **Interacts with:** FW-3, FW-24
 
-#### FW-38 — Whether to finish the title/slug rule's admin feedback
+#### FW-41 — Term appliers return an end state; the dispatcher writes
 
-The title/slug design planned three per-rule admin surfaces that never got built: a *last applied* line (when, on which post, the resulting title and slug), a warnings log (the last 10, e.g. a token that resolved empty or a field value that is not a string), and a Preview button showing current vs. resulting title/slug with per-token warnings. Decide whether any of them are still wanted, and in what form.
+Make term appliers return the terms they want and let `TermDispatcher` apply the claim, diff and write — the shape the format pass already has (`apply_to_data()` returns data, `FormatDispatcher` writes). Claim would be decided in one place, and FW-32's dry run would fall out of it.
 
-- **Detail home:** [design-history/title-slug-rules.md](design-history/title-slug-rules.md) → the render-method and `admin.js` sections.
-- **Progress:** Not started. The Preview is mostly covered already: the Apply page's format preview shows the resulting title and slug for sample posts in one rule's reach, without per-token warnings. Nothing produces warnings today. The only status record ever written (`bws_title_slug_rule_status`) was write-only, keyed on the positional rule id so a reorder moved it to the wrong rule, and was deleted after 0.9.0.
-- **Open:**
-  - **Scope.** A title/slug-only surface, or the per-rule "last pass result" FW-35 weighs for every type. Deciding FW-35's logging level first avoids building a title/slug store that the general answer would replace.
-  - **Identity.** Any stored per-rule record needs a key that survives reordering and deletion. The rule `id` does not.
-- **Blocked by:** `decision:whether the feedback is still wanted` • **Interacts with:** FW-35, FW-36
+- **Detail home:** [design-history/rule-type-descriptor.md](design-history/rule-type-descriptor.md) → *Out of Scope* (candidate 4 of the 2026-09-24 architecture review, rated *worth exploring*).
+- **Progress:** Not started.
+- **Open:** three appliers resist it. Level restriction's native read depends on ACF's sync reacting to its own field write; propagation writes the ACF mirror before it reads native terms; hierarchical writes `_bws_auto_terms` provenance meta mid-apply. `compute_end_state()` alone is too narrow a seam — it cannot express provenance or restriction. A whole-pass dry run also needs a state overlay, so later rules see earlier rules' results.
+- **Blocked by:** — • **Interacts with:** FW-8, FW-24, FW-25, FW-32
+
+#### FW-42 — Fold the ACF write queue into the dispatcher's queue
+
+`AcfWriteQueue`'s only job now is to call `TermDispatcher::mark_dirty()` later, from its own pending set flushed at `shutdown` p10, ahead of the drain at p20. Marking the entity dirty straight from ACF's write filter would leave one queue, and the pass lock would drop the pass's own ACF echoes.
+
+- **Detail home:** [design-history/rule-type-descriptor.md](design-history/rule-type-descriptor.md) → *Out of Scope* (candidate 6 of the 2026-09-24 architecture review, rated *worth exploring*).
+- **Progress:** Not started. `record()` has no pass-lock check (confirmed in code), so a pass's own ACF write is probably recorded and flushed after the lock is released, costing one extra full pass. Inferred, not reproduced on the testbed; passes are idempotent, so it wastes work rather than producing wrong output.
+- **Open:** what goes: the pending set, `FLUSH_CAP`, the `reapply_for_post` loop and the priority ordering against the drain. The Admin Columns v7 immediate flush (#37) routes through the queue today and needs a new caller.
+- **Blocked by:** — • **Interacts with:** —
+
+#### FW-43 — Delete the dead TaxonomyManager and handler surface
+
+`TaxonomyManager` still carries surface from before Wireframe and the dispatchers, and handlers carry read helpers nothing calls. Deleting it would leave `TaxonomyManager` as the composition root.
+
+- **Detail home:** [design-history/rule-type-descriptor.md](design-history/rule-type-descriptor.md) → *Out of Scope*; the list comes from the 2026-09-24 architecture review.
+- **Progress:** Not started. Candidates, to confirm by grep before deleting: the four `wp_ajax_bws_*` endpoints (the only JS caller left is the `assets/js/admin.js~` backup), `simulate_level_restrictions` (pre-#32 semantics), `get_handlers_summary`, `get_plugin_status`, `check_system_requirements`, `add_admin_menu`; handler-side `get_rules_summary`, `get_active_rules`, `get_upcoming_rules`, `preview_changes`, and the base's empty `reapply_for_post` (FW-42 retires its last caller).
+- **Blocked by:** — • **Interacts with:** FW-42
+
+#### FW-44 — Orphaned separators around empty tokens
+
+The token engine drops an empty token but not always the literal text around it. A separator in front of an empty token in the middle of a pattern is held and then emitted in full once a later token resolves (`{a} - {blank} - {b}` → `a - - b`), and a closing bracket after an empty token survives (`{a} ({blank})` → `a)`, `({blank}) {a}` → `) a`). Only trailing separators and a dangling opening bracket are cleaned today. The fix is a smarter empty-token removal pass in `Tokens\TokenEngine`, so every output policy gets it.
+
+- **Detail home:** none yet. Reference implementation: the `{{join}}` tag's template mode in the bws-gb-dynamic-tags-extensions repo, which already solves this problem. Its ordered removal steps are in `includes/helpers/join-helpers.php` (file docblock): whole-group excision, attached vs connective punctuation, bracket pairs around an empty token, floating separators, whitespace and orphan-connective repair. Harness: `tools/test/join-template-test.php` + `tools/test/join-test-matrix.md`; the rules are spelled out in `docs/tag-reference.md` → `{{join}}`. Reuse the rules and the test matrix, not the code (different plugin, different grammar).
+- **Progress:** Not started. The current behavior is pinned as-is by the FW-40 golden table (`tests/fixtures/token-engine-golden.json`) and H17's contract cases, found while building `token-engine-40/02`.
+- **Open:** This changes output, so it changes titles and slugs on live title/slug rules. Needs a decision on whether existing posts re-render on their next pass (the format pass runs whenever an entity is reached, so they will unless gated) and how that interacts with slug-change safety. The golden rows it changes get regenerated deliberately, not to make H17 pass.
+- **Blocked by:** — • **Interacts with:** FW-4, FW-36, FW-40
 
 ---
 
-## Tools and infrastructure
+## Admin tools and diagnostics
+
+Author-facing surfaces outside the rule editor: the Apply page and its follow-ups, validation, diagnostics, and standalone tools.
 
 #### FW-15 — Post type converter
 
@@ -244,35 +309,26 @@ Take a defined group of posts — all descendants of a page, or all posts in a t
 - **Blocked by:** — • **Interacts with:** FW-16
 - **Phase:** none. It was a candidate launch recipe inside FW-16 until that restarted as a rule-apply page (2026-09-23); a post type flip has no rule behind it, so it needs its own tool.
 
-#### FW-17 — CPT storage backend
+#### FW-30 — Rule validation has no author-visible surface
 
-Implement `Storage\CptRuleStorage` against the existing `Storage\RuleStorage` interface — a single shared CPT `bws_mc_rule` differentiated by `rule_type` meta, with per-type routing in `Storage\StorageFactory` — for a rule type that genuinely needs a list table, a draft/active lifecycle, or standard WP query power.
+Every handler carries a `validate_rule_internal()`, and `UnifiedHandlerBase` wraps it in a public `validate_rule()` that returns `['valid' => bool, 'errors' => string[]]`. Nothing in the plugin calls either on the save path: the settings page sanitizes through Wireframe's config-driven Sanitizer, and a dispatcher pass never validates — it just resolves what the row names and does nothing when that fails. So a rule that cannot work is stored, listed and run exactly like one that can, and the author is told nothing.
 
-- **Detail home:** [storage-model.md](storage-model.md).
-- **Progress:** **Deferred, unscheduled.** Was Phase 4; reassessed 2026-06-23, and Phase 4 became the ordered rule list instead. The blast-radius and clobber concerns CPT was originally reached for are covered by the version-token guard. Accumulation alone no longer triggers CPT — per-entity explosion is solved by indirection, not N rows. CPT remains a deferred *option* for a draft/test lifecycle, not a planned migration.
-- **Blocked by:** `decision:a rule type actually needs a draft/test lifecycle` • **Interacts with:** FW-4
-
-#### FW-19 — Grouped / nested relationship fields for Related Post Terms
-
-`related_post_terms` is verified only for **top-level** ACF relationship/post-object fields. The field picker (`ConfigHelpers::acf_relationship_field_options()`) enumerates top-level fields only — `acf_get_fields($group_key)` does not recurse into Group / Repeater / Flexible-Content subfields — so a nested relationship field never appears as a choice.
-
-- **Detail home:** [architecture.md](architecture.md) handler-invariant #6 documents the trap. Upstream context: #37.
-- **Progress:** Not started; a known capability gap, not a live bug. No current rule uses a nested field, so nothing is broken today, and the UI warns that only top-level fields are supported.
-- **Open:** **failure modes if a nested field is forced in via config.** ACF's `acf/update_value` `$field['name']` and Admin Columns v7's `get_meta_key()` both return the **bare** subfield name with the group prefix stripped, so the capture filter's `acf_field_name === $field_name` match and the planned AC-v7 reapply fallback silently miss. Additionally a **Repeater/Flex**-nested field breaks `read_relationship` entirely — `get_field('sub', $post_id)` has no row context. Group-nested `get_field('group_sub')` (qualified) does resolve, so the read is fine for Groups; only the name-matching is wrong. Sketch: (1) recurse Group subfields in the options builder, using the qualified name; (2) match by ACF **field key** (`field_xxxx`) instead of raw name everywhere `acf_field_name` is compared, or reconcile bare↔qualified; (3) Repeater/Flex support needs row-context resolution — larger, likely out of scope. Drop the top-level-only UI warning once (1)+(2) land for Groups.
-- **Blocked by:** — • **Interacts with:** FW-10
-- **Phase:** on demand — only when a real site needs a grouped relationship field
-
-#### FW-27 — PHPUnit harness, starting with the snapshot label helpers
-
-The repo's gates are plain-PHP `tests/verify-*.php` scripts run on bare host PHP, deliberately carrying no dev dependency. `WireframeBootstrap`'s `snapshot_*_labels` methods are the best first PHPUnit candidates in the codebase: static, pure `array → array`, hooked on `wp-wireframe/save/payload`, and load-bearing — they are what makes a collapsed repeater row readable instead of "Row 1".
-
-- **Detail home:** none. Carved out of #53 §7, from the PR #19 review; the issue that framed it was #68.
-- **Progress:** Not started. Partial coverage exists today from `verify-config-helpers.php` and `verify-propagation-labels.php`, but both assert on source strings and mappings rather than exercising the transform over real payload shapes.
+- **Detail home:** none. Surfaced fixing [#52](https://github.com/davidofchatham/meta-conductor/issues/52), where the validator's own term resolution was too lax; tightening it changed no live behavior precisely because nothing calls it.
+- **Progress:** Not started. The validators themselves are live code and are kept correct — #52 tightened `related`'s — but their only caller today is the #52 sweep step (the RuleEngine path that also called them was deleted as dead code). The base default checks `enabled` only, so the types without an override (`hierarchical_level_restriction`, `propagation`, `related_post_terms`, `time_based`) validate nothing type-specific.
 - **Open:**
-  - **The gap that matters** is the malformed or partially-populated payload. A condition-hidden subfield is *dropped* from the save payload server-side, so an absent subfield is the normal case, not an edge case — happy-path assertions do not catch a helper that fatals or silently blanks a title when one is missing.
-  - **Three decisions before any code:** whether PHPUnit runs in CI (there is no test workflow today — only `claude.yml`, `claude-code-review.yml`, `release.yml`) or stays a local gate like H1–H14; whether WP calls are stubbed or a WP test bootstrap is pulled in (the former keeps the suite runnable on bare host PHP like the existing harnesses, the latter is a far heavier dependency); and whether the plain-PHP harnesses stay — they should, since several are *source-inspection* checks that PHPUnit fits poorly.
-  - **Scope when it lands:** `require-dev` on PHPUnit plus a `/tests export-ignore` check so nothing new reaches the ZIP. Note the helpers are no longer uniform — four of the five now read the unified repeater's rows, while `snapshot_claim_override_labels` still reads the General tab's per-taxonomy default; fixtures must reflect that split rather than assume one shape.
-- **Blocked by:** — • **Interacts with:** FW-20
+  - **Decide what the surface is before wiring anything.** A REST-time rejection is the wrong instinct: a half-configured row is the normal state of a repeater being filled in, and failing the save would make the page unusable. The candidates are an advisory panel — the *Rule collisions* panel is the shipped precedent and already renders per-row warnings against a row number — or a per-row badge, or an admin notice on load.
+  - **Decide whether a failed rule stays silent at runtime.** A rule whose target term was deleted currently no-ops forever with nothing in the log at default settings. A debug-level line is cheap; a persistent per-row "last pass could not resolve X" is more useful and needs somewhere to store it.
+  - **The validators are not uniform.** They were written per handler against the pre-0.8.0 shapes; several predate `post_types` becoming an array and the ordered list. Any surface that shows their output will expose that unevenness, so an audit pass belongs in the same piece of work, not after it.
+- **Blocked by:** — • **Interacts with:** FW-29
+
+#### FW-31 — Rule-adjacent Preview / Apply
+
+A Preview / Apply-to-existing button inside each rule row, so an author can check or apply a rule without leaving it for the FW-16 page. Deferred, not out of scope: FW-16 ships the page first, and this is a second entry point onto the same applier, which takes a rule array rather than a page request so either caller can supply one.
+
+- **Detail home:** [design-history/apply-existing.md](design-history/apply-existing.md) (FW-16's spec, *Out of Scope*); the Wireframe gap is in `.scratch/plans/wireframe-js-field-type-extension-blocker.md` → Gap B.
+- **Progress:** Not started.
+- **Open:** when it starts — build Gap B on our Wireframe fork if upstream has not shipped row context, or fall back to one `action` button beside the repeater with a rule dropdown (saved rules only; stale after a reorder until reload). The in-row form has to handle unsaved edits: the button posts in-flight values, so it either previews those or refuses until saved.
+- **Blocked by:** `code:Wireframe's action field carries no repeater-row context` • **Interacts with:** FW-16, FW-23
 
 #### FW-32 — Term-rule dry run
 
@@ -301,44 +357,34 @@ Replace the minimal pairwise collision warning (#65) with an analysis over **rea
 - **Open:** defining reach once for **every** effect kind, not just terms — which is why it waits for a real field or rendered kind. Also whether to consult the claim, since two purely contributing rules cannot actually fight. With the repeater as the ordering UI, the result is advisory only: components no longer decide which rules get ordering control.
 - **Blocked by:** `code:the only effect kinds are term and title/slug` — cleared by FW-4 landing • **Interacts with:** FW-4, FW-6, FW-12, FW-25, FW-39
 
-#### FW-40 — Extract the token engine from TitleSlugHandler
+#### FW-35 — Diagnostics page rework, and whether to log
 
-Pull the pattern → segments → resolve-or-drop → trim engine out of `TitleSlugHandler` into its own module that takes a pattern, a token source and an output policy. Today a `'title'|'slug'` context string branches at every level and the title's idempotency guard is a resolver parameter, so a third output policy would mean a third branch everywhere.
+The Diagnostics page (`Admin\Diagnostics`) is a 0.3.0 stub: hidden unless `WP_DEBUG` or a filter is on, it dumps the raw settings option plus a legacy option key no build writes any more, and otherwise says "User-level diagnostics coming soon". Rework it into something an author can use, and decide alongside it whether the plugin should keep any record of what its rules did — because that record is what such a page would mostly show.
 
-- **Detail home:** [design-history/rule-type-descriptor.md](design-history/rule-type-descriptor.md) → *Out of Scope* names it (candidate 3 of the 2026-09-24 architecture review); the review itself was not kept.
-- **Progress:** Not started. The engine is tested today only by reflection on a private method, inside a docker sweep.
-- **Open:** two token sources make the seam real — the post (today) and an ACF repeater row (FW-4's row-scoped reads). Output policies title / slug / raw; title/slug keeps only its default title, inverse strip and uniqueness escalation. The timezone-naive `DateTime` in the date tokens gets fixed once, in the engine. A fake source makes the engine testable on host PHP.
-- **Blocked by:** — • **Interacts with:** FW-4, FW-6, FW-7
+- **Detail home:** none.
+- **Progress:** Not started. The plugin has no logging today: the run log and its `enable_logging` read went with the dead rule engine (#26), and the upgrade drops every table the plugin ever created, none of which had a writer left. What remains is `debug_log()` to the PHP error log under `WP_DEBUG`. Title/slug's last-result record (`bws_title_slug_rule_status`) was deleted after 0.9.0: nothing read it, and it was keyed on a positional rule id.
+- **Open:**
+  - **What the page is for.** Candidates: per-rule health (a rule whose target term or taxonomy no longer resolves — FW-30's runtime question), the ordered kind lists as the dispatcher reads them, recent pass activity, and the dev dumps kept behind `WP_DEBUG`. Drop the legacy-option dump either way.
+  - **Whether to log, and what.** A per-rule "last pass result" for every type is cheap and answers most "did my rule run" questions; a per-write audit trail is what a rule-driven slug change with no redirect (FW-36) would want, and needs a table, retention and a cleanup job. Decide the level before building storage for it — the deleted log table is the precedent for storage built ahead of a reader.
+  - **Visibility.** Whether the page stays gated behind `WP_DEBUG` / a filter or becomes a normal submenu once it has author-facing content.
+- **Blocked by:** — • **Interacts with:** FW-13, FW-30, FW-38
 
-#### FW-41 — Term appliers return an end state; the dispatcher writes
+#### FW-38 — Whether to finish the title/slug rule's admin feedback
 
-Make term appliers return the terms they want and let `TermDispatcher` apply the claim, diff and write — the shape the format pass already has (`apply_to_data()` returns data, `FormatDispatcher` writes). Claim would be decided in one place, and FW-32's dry run would fall out of it.
+The title/slug design planned three per-rule admin surfaces that never got built: a *last applied* line (when, on which post, the resulting title and slug), a warnings log (the last 10, e.g. a token that resolved empty or a field value that is not a string), and a Preview button showing current vs. resulting title/slug with per-token warnings. Decide whether any of them are still wanted, and in what form.
 
-- **Detail home:** [design-history/rule-type-descriptor.md](design-history/rule-type-descriptor.md) → *Out of Scope* (candidate 4 of the 2026-09-24 architecture review, rated *worth exploring*).
-- **Progress:** Not started.
-- **Open:** three appliers resist it. Level restriction's native read depends on ACF's sync reacting to its own field write; propagation writes the ACF mirror before it reads native terms; hierarchical writes `_bws_auto_terms` provenance meta mid-apply. `compute_end_state()` alone is too narrow a seam — it cannot express provenance or restriction. A whole-pass dry run also needs a state overlay, so later rules see earlier rules' results.
-- **Blocked by:** — • **Interacts with:** FW-8, FW-24, FW-25, FW-32
-
-#### FW-42 — Fold the ACF write queue into the dispatcher's queue
-
-`AcfWriteQueue`'s only job now is to call `TermDispatcher::mark_dirty()` later, from its own pending set flushed at `shutdown` p10, ahead of the drain at p20. Marking the entity dirty straight from ACF's write filter would leave one queue, and the pass lock would drop the pass's own ACF echoes.
-
-- **Detail home:** [design-history/rule-type-descriptor.md](design-history/rule-type-descriptor.md) → *Out of Scope* (candidate 6 of the 2026-09-24 architecture review, rated *worth exploring*).
-- **Progress:** Not started. `record()` has no pass-lock check (confirmed in code), so a pass's own ACF write is probably recorded and flushed after the lock is released, costing one extra full pass. Inferred, not reproduced on the testbed; passes are idempotent, so it wastes work rather than producing wrong output.
-- **Open:** what goes: the pending set, `FLUSH_CAP`, the `reapply_for_post` loop and the priority ordering against the drain. The Admin Columns v7 immediate flush (#37) routes through the queue today and needs a new caller.
-- **Blocked by:** — • **Interacts with:** —
-
-#### FW-43 — Delete the dead TaxonomyManager and handler surface
-
-`TaxonomyManager` still carries surface from before Wireframe and the dispatchers, and handlers carry read helpers nothing calls. Deleting it would leave `TaxonomyManager` as the composition root.
-
-- **Detail home:** [design-history/rule-type-descriptor.md](design-history/rule-type-descriptor.md) → *Out of Scope*; the list comes from the 2026-09-24 architecture review.
-- **Progress:** Not started. Candidates, to confirm by grep before deleting: the four `wp_ajax_bws_*` endpoints (the only JS caller left is the `assets/js/admin.js~` backup), `simulate_level_restrictions` (pre-#32 semantics), `get_handlers_summary`, `get_plugin_status`, `check_system_requirements`, `add_admin_menu`; handler-side `get_rules_summary`, `get_active_rules`, `get_upcoming_rules`, `preview_changes`, and the base's empty `reapply_for_post` (FW-42 retires its last caller).
-- **Blocked by:** — • **Interacts with:** FW-42
+- **Detail home:** [design-history/title-slug-rules.md](design-history/title-slug-rules.md) → the render-method and `admin.js` sections.
+- **Progress:** Not started. The Preview is mostly covered already: the Apply page's format preview shows the resulting title and slug for sample posts in one rule's reach, without per-token warnings. Nothing produces warnings today. The only status record ever written (`bws_title_slug_rule_status`) was write-only, keyed on the positional rule id so a reorder moved it to the wrong rule, and was deleted after 0.9.0.
+- **Open:**
+  - **Scope.** A title/slug-only surface, or the per-rule "last pass result" FW-35 weighs for every type. Deciding FW-35's logging level first avoids building a title/slug store that the general answer would replace.
+  - **Identity.** Any stored per-rule record needs a key that survives reordering and deletion. The rule `id` does not.
+- **Blocked by:** `decision:whether the feedback is still wanted` • **Interacts with:** FW-35, FW-36
 
 ---
 
 ## UX polish
+
+The rule editor itself: labels, row titles, field visibility, pickers.
 
 #### FW-20 — Standardized repeater row-title schema
 
@@ -370,36 +416,6 @@ Wireframe 1.0.6 (#13) added the conditions DSL to repeater subfields client-side
 
 ⚠️ **A condition-hidden subfield DROPS from the save payload.** Verify each show/hide on the test site and check that the storage adapter tolerates the absent key — subfield conditions evaluate against sibling subfields in the same row. This is the silent-data-loss trap in CLAUDE.md don't 3, which H11 exists to catch.
 
-#### FW-23 — Client-side custom field types
-
-Wireframe has no JS-side field-type *extension* API: a custom type declared via the `wp-wireframe/field_types` filter registers server-side sanitize/validate but renders as nothing in React.
-
-- **Detail home:** `.scratch/plans/wireframe-js-field-type-extension-blocker.md` (full plan).
-- **Progress:** **Partially unblocked in 1.0.6.** Its `action` field is a built-in escape hatch for the button case — a real React button that posts in-flight form values to a server hook and returns `{status, message, html}` — so the button case no longer needs the extension API. Page-level Preview and bulk Apply are implementable now via `action` on the FW-16 page. Upstream PR direction as of 2026-06-11 is *extending* the action mechanism, not adding the extension API, which is exactly why the fork path matters.
-- **Open:** two gaps.
-  - **Gap A — no JS field-type extension API (the root)** — **buildable by us, fork-releasable.** Three read sites all do `customEditComponents[type]` (`SettingsSection.js`, `mapConfig.js`, `RepeaterEdit.js`); the PR adds a registry plus a `registerFieldType()` global mirroring the existing PHP `field_types` filter. Additive, low risk. The **fork-release path** — fork Wireframe, build, tag, repoint our composer VCS dep, vendor the built fork — ships it without waiting on the upstream maintainer to merge.
-  - **Gap B — the `action` field has no repeater-row context** — **file upstream first; build on our fork only when FW-31 starts.** `ActionButton` posts page-level `useSettings()` values and routes by `fieldId` only (`action/{pageId}/{fieldId}/{actionId}`, no row index), so a button in row N cannot tell the handler which row fired. Changing the payload or route is a JS+PHP data-contract change the maintainer owns, and it collides with in-flight action PRs (#21 upload, #23 downloads — both touch the same two files, neither adds row context; upstream quiet since 2026-06). FW-16 ships without it; the in-row entry point it would enable is deferred as FW-31, not dropped. The upstream ask ([wp-wireframe#39](https://github.com/tdrayson/wp-wireframe/issues/39), filed 2026-09-23) proposes an optional request `context` carrying both row identity and action continuation — the latter is what would retire FW-33. If Gap A is forked first, Gap B rides the same fork.
-- **Blocked by:** — • **Interacts with:** FW-16, FW-26, FW-31, FW-33
-
-#### FW-24 — Claim option propagation
-
-Per-rule claim overrides (stored `conflict_handling`) default to `merge` regardless of the General-tab per-taxonomy default, but authors reasonably expect rule-level to inherit from taxonomy-level unless explicitly set. Sharper now that the two surfaces share wording — both read "Claim on terms" / "Default claim on terms", so one appears to feed the other.
-
-- **Detail home:** none. Claim semantics: [ADR 0004](adr/0004-claim-axis-and-jurisdiction.md).
-- **Progress:** Not started. Small enough to take ad-hoc. The per-taxonomy default is already stored and flattened, but nothing reads it: a rule that omits its claim falls back to a hard-coded `merge` in each handler. `RuleStorage::get_raw_settings()` is the seam for the lookup and has no other reader.
-- **Open:** the handler reads the General-tab default for `$taxonomy` when the rule's own value is empty. Wants an explicit "inherit" placeholder option rather than a silent fallback, so the config shows which default is in force.
-- **Blocked by:** — • **Interacts with:** FW-25
-
-#### FW-25 — Authorable claim on every rule type
-
-Only `propagation` lets the author choose a claim. `time_based` and `related` are hardcoded **owning** (they remove their target term when the trigger stops holding), `hierarchical` is contributing, `level_restriction` restricting, `title_slug` owning, and `related_post_terms` is owning-or-contributing under the name `keep_in_sync`. This item is about letting the author *change* it.
-
-- **Axes:** no change to basis or effect target — this is the **claim** axis becoming author-set where it is currently hardcoded.
-- **Detail home:** [ADR 0004](adr/0004-claim-axis-and-jurisdiction.md) for the law it must obey. The concrete, no-behavior-change half — *stating* each type's claim in its config — is FW-28.
-- **Progress:** Not started. `ConfigHelpers::claim_field()` already exists and is id-agnostic, so adding the control is cheap. The ordered rule list shipped in 0.8.0, so the configs are already one repeater with `conditions`-gated subfields — the claim field would be gated on rule `type`, and the "building it twice" concern that deferred this is now resolved.
-- **Open:** ⚠️ **constrained by ADR 0004's law** — *owning requires a statically enumerable jurisdiction*. `time_based` and `related` qualify (one configured target term each), so owning↔contributing is a genuine choice for them. `hierarchical` does **not**: its derivable set is data-dependent, which is why it already buys the forbidden cell with `_bws_auto_terms` provenance meta — offering it *owning* would need that meta generalized or a silent widening to the whole taxonomy. `level_restriction` is restricting by construction with no meaningful alternative. So this is **not one uniform dropdown**; it is a per-rule-type legality question, and that is the real work.
-- **Blocked by:** — • **Interacts with:** FW-3, FW-8, FW-12, FW-24
-
 #### FW-26 — Taxonomy-first cascading term picker
 
 The trigger-term and target-term dropdowns list all terms across all taxonomies. Selecting a taxonomy first, then showing only its terms, would sharply reduce noise on sites with many taxonomies and many terms.
@@ -419,38 +435,42 @@ The trigger-term and target-term dropdowns list all terms across all taxonomies.
   - **One naming overlap to settle with it:** `related_post_terms` already exposes this axis under a different name (`keep_in_sync`), so stating the claim there without reconciling the two names adds a second vocabulary rather than removing one.
 - **Blocked by:** — • **Interacts with:** FW-24, FW-25
 
-#### FW-30 — Rule validation has no author-visible surface
+---
 
-Every handler carries a `validate_rule_internal()`, and `UnifiedHandlerBase` wraps it in a public `validate_rule()` that returns `['valid' => bool, 'errors' => string[]]`. Nothing in the plugin calls either on the save path: the settings page sanitizes through Wireframe's config-driven Sanitizer, and a dispatcher pass never validates — it just resolves what the row names and does nothing when that fails. So a rule that cannot work is stored, listed and run exactly like one that can, and the author is told nothing.
+## Infrastructure and testing
 
-- **Detail home:** none. Surfaced fixing [#52](https://github.com/davidofchatham/meta-conductor/issues/52), where the validator's own term resolution was too lax; tightening it changed no live behavior precisely because nothing calls it.
-- **Progress:** Not started. The validators themselves are live code and are kept correct — #52 tightened `related`'s — but their only caller today is the #52 sweep step (the RuleEngine path that also called them was deleted as dead code). The base default checks `enabled` only, so the types without an override (`hierarchical_level_restriction`, `propagation`, `related_post_terms`, `time_based`) validate nothing type-specific.
+Storage backends, the vendored Wireframe, and the test harness.
+
+#### FW-17 — CPT storage backend
+
+Implement `Storage\CptRuleStorage` against the existing `Storage\RuleStorage` interface — a single shared CPT `bws_mc_rule` differentiated by `rule_type` meta, with per-type routing in `Storage\StorageFactory` — for a rule type that genuinely needs a list table, a draft/active lifecycle, or standard WP query power.
+
+- **Detail home:** [storage-model.md](storage-model.md).
+- **Progress:** **Deferred, unscheduled.** Was Phase 4; reassessed 2026-06-23, and Phase 4 became the ordered rule list instead. The blast-radius and clobber concerns CPT was originally reached for are covered by the version-token guard. Accumulation alone no longer triggers CPT — per-entity explosion is solved by indirection, not N rows. CPT remains a deferred *option* for a draft/test lifecycle, not a planned migration.
+- **Blocked by:** `decision:a rule type actually needs a draft/test lifecycle` • **Interacts with:** FW-4
+
+#### FW-23 — Client-side custom field types
+
+Wireframe has no JS-side field-type *extension* API: a custom type declared via the `wp-wireframe/field_types` filter registers server-side sanitize/validate but renders as nothing in React.
+
+- **Detail home:** `.scratch/plans/wireframe-js-field-type-extension-blocker.md` (full plan).
+- **Progress:** **Partially unblocked in 1.0.6.** Its `action` field is a built-in escape hatch for the button case — a real React button that posts in-flight form values to a server hook and returns `{status, message, html}` — so the button case no longer needs the extension API. Page-level Preview and bulk Apply are implementable now via `action` on the FW-16 page. Upstream PR direction as of 2026-06-11 is *extending* the action mechanism, not adding the extension API, which is exactly why the fork path matters.
+- **Open:** two gaps.
+  - **Gap A — no JS field-type extension API (the root)** — **buildable by us, fork-releasable.** Three read sites all do `customEditComponents[type]` (`SettingsSection.js`, `mapConfig.js`, `RepeaterEdit.js`); the PR adds a registry plus a `registerFieldType()` global mirroring the existing PHP `field_types` filter. Additive, low risk. The **fork-release path** — fork Wireframe, build, tag, repoint our composer VCS dep, vendor the built fork — ships it without waiting on the upstream maintainer to merge.
+  - **Gap B — the `action` field has no repeater-row context** — **file upstream first; build on our fork only when FW-31 starts.** `ActionButton` posts page-level `useSettings()` values and routes by `fieldId` only (`action/{pageId}/{fieldId}/{actionId}`, no row index), so a button in row N cannot tell the handler which row fired. Changing the payload or route is a JS+PHP data-contract change the maintainer owns, and it collides with in-flight action PRs (#21 upload, #23 downloads — both touch the same two files, neither adds row context; upstream quiet since 2026-06). FW-16 ships without it; the in-row entry point it would enable is deferred as FW-31, not dropped. The upstream ask ([wp-wireframe#39](https://github.com/tdrayson/wp-wireframe/issues/39), filed 2026-09-23) proposes an optional request `context` carrying both row identity and action continuation — the latter is what would retire FW-33. If Gap A is forked first, Gap B rides the same fork.
+- **Blocked by:** — • **Interacts with:** FW-16, FW-26, FW-31, FW-33
+
+#### FW-27 — PHPUnit harness, starting with the snapshot label helpers
+
+The repo's gates are plain-PHP `tests/verify-*.php` scripts run on bare host PHP, deliberately carrying no dev dependency. `WireframeBootstrap`'s `snapshot_*_labels` methods are the best first PHPUnit candidates in the codebase: static, pure `array → array`, hooked on `wp-wireframe/save/payload`, and load-bearing — they are what makes a collapsed repeater row readable instead of "Row 1".
+
+- **Detail home:** none. Carved out of #53 §7, from the PR #19 review; the issue that framed it was #68.
+- **Progress:** Not started. Partial coverage exists today from `verify-config-helpers.php` and `verify-propagation-labels.php`, but both assert on source strings and mappings rather than exercising the transform over real payload shapes.
 - **Open:**
-  - **Decide what the surface is before wiring anything.** A REST-time rejection is the wrong instinct: a half-configured row is the normal state of a repeater being filled in, and failing the save would make the page unusable. The candidates are an advisory panel — the *Rule collisions* panel is the shipped precedent and already renders per-row warnings against a row number — or a per-row badge, or an admin notice on load.
-  - **Decide whether a failed rule stays silent at runtime.** A rule whose target term was deleted currently no-ops forever with nothing in the log at default settings. A debug-level line is cheap; a persistent per-row "last pass could not resolve X" is more useful and needs somewhere to store it.
-  - **The validators are not uniform.** They were written per handler against the pre-0.8.0 shapes; several predate `post_types` becoming an array and the ordered list. Any surface that shows their output will expose that unevenness, so an audit pass belongs in the same piece of work, not after it.
-- **Blocked by:** — • **Interacts with:** FW-29
-
-#### FW-31 — Rule-adjacent Preview / Apply
-
-A Preview / Apply-to-existing button inside each rule row, so an author can check or apply a rule without leaving it for the FW-16 page. Deferred, not out of scope: FW-16 ships the page first, and this is a second entry point onto the same applier, which takes a rule array rather than a page request so either caller can supply one.
-
-- **Detail home:** [design-history/apply-existing.md](design-history/apply-existing.md) (FW-16's spec, *Out of Scope*); the Wireframe gap is in `.scratch/plans/wireframe-js-field-type-extension-blocker.md` → Gap B.
-- **Progress:** Not started.
-- **Open:** when it starts — build Gap B on our Wireframe fork if upstream has not shipped row context, or fall back to one `action` button beside the repeater with a rule dropdown (saved rules only; stale after a reorder until reload). The in-row form has to handle unsaved edits: the button posts in-flight values, so it either previews those or refuses until saved.
-- **Blocked by:** `code:Wireframe's action field carries no repeater-row context` • **Interacts with:** FW-16, FW-23
-
-#### FW-35 — Diagnostics page rework, and whether to log
-
-The Diagnostics page (`Admin\Diagnostics`) is a 0.3.0 stub: hidden unless `WP_DEBUG` or a filter is on, it dumps the raw settings option plus a legacy option key no build writes any more, and otherwise says "User-level diagnostics coming soon". Rework it into something an author can use, and decide alongside it whether the plugin should keep any record of what its rules did — because that record is what such a page would mostly show.
-
-- **Detail home:** none.
-- **Progress:** Not started. The plugin has no logging today: the run log and its `enable_logging` read went with the dead rule engine (#26), and the upgrade drops every table the plugin ever created, none of which had a writer left. What remains is `debug_log()` to the PHP error log under `WP_DEBUG`. Title/slug's last-result record (`bws_title_slug_rule_status`) was deleted after 0.9.0: nothing read it, and it was keyed on a positional rule id.
-- **Open:**
-  - **What the page is for.** Candidates: per-rule health (a rule whose target term or taxonomy no longer resolves — FW-30's runtime question), the ordered kind lists as the dispatcher reads them, recent pass activity, and the dev dumps kept behind `WP_DEBUG`. Drop the legacy-option dump either way.
-  - **Whether to log, and what.** A per-rule "last pass result" for every type is cheap and answers most "did my rule run" questions; a per-write audit trail is what a rule-driven slug change with no redirect (FW-13 → *Slug safety*) would want, and needs a table, retention and a cleanup job. Decide the level before building storage for it — the deleted log table is the precedent for storage built ahead of a reader.
-  - **Visibility.** Whether the page stays gated behind `WP_DEBUG` / a filter or becomes a normal submenu once it has author-facing content.
-- **Blocked by:** — • **Interacts with:** FW-13, FW-30, FW-38
+  - **The gap that matters** is the malformed or partially-populated payload. A condition-hidden subfield is *dropped* from the save payload server-side, so an absent subfield is the normal case, not an edge case — happy-path assertions do not catch a helper that fatals or silently blanks a title when one is missing.
+  - **Three decisions before any code:** whether PHPUnit runs in CI (there is no test workflow today — only `claude.yml`, `claude-code-review.yml`, `release.yml`) or stays a local gate like H1–H14; whether WP calls are stubbed or a WP test bootstrap is pulled in (the former keeps the suite runnable on bare host PHP like the existing harnesses, the latter is a far heavier dependency); and whether the plain-PHP harnesses stay — they should, since several are *source-inspection* checks that PHPUnit fits poorly.
+  - **Scope when it lands:** `require-dev` on PHPUnit plus a `/tests export-ignore` check so nothing new reaches the ZIP. Note the helpers are no longer uniform — four of the five now read the unified repeater's rows, while `snapshot_claim_override_labels` still reads the General tab's per-taxonomy default; fixtures must reflect that split rather than assume one shape.
+- **Blocked by:** — • **Interacts with:** FW-20
 
 ---
 
@@ -464,6 +484,7 @@ Shipped or cut items retire here, densely — a closed item is read in bulk and 
 | FW-18 | Text-domain string sweep | **Shipped in 0.7.0** (Phase 2b rename sweep, [#48](https://github.com/davidofchatham/meta-conductor/pull/48)) — the row survived the 2026-09-11 migration describing work already done. Every `__()` / `_e()` / `_x()` / `_n()` call site now passes `'meta-conductor'`; `'bws-meta-manager'` survives only as the Composer package name in `vendor/`. The *conversion* subsystem's identifiers (JS object, cron / AJAX / transient names) were never part of this row — they were the 2b remainder, closed by deletion with the Data Conversion page in FW-16. |
 | FW-29 | `trigger_term_id`'s `int[]` invariant is declared but not enforced | **Settled by FW-39's storage PR** (`rule-type-descriptor/01`, branch `claude/storage-projection-39`): yes, `normalize_rule_shape()` is the guaranteed boundary. Checkbox gates arrive as slug lists, `target_term_id` as `int`, `trigger_term_id` / `filter_terms` as `int[]`; every consumer re-decode and re-cast is deleted, checkbox decoding moved out of `ConfigHelpers` into storage, and H10 asserts the shape for every rule type. |
 | FW-39 | Rule-type descriptor + canonical storage projection | **Merged in [#76](https://github.com/davidofchatham/meta-conductor/pull/76) and [#77](https://github.com/davidofchatham/meta-conductor/pull/77)** (2026-09-26, 2026-09-28). #76 made storage's read projection the guaranteed canonical rule shape and deleted the pre-0.8.0 migrations behind an admin notice; #77 gave each rule type one descriptor in `RuleTypes\Registry`, the only place rule types are listed. Spec: [design-history/rule-type-descriptor.md](design-history/rule-type-descriptor.md). The review candidates it left out are FW-40, FW-41, FW-42, FW-43 and FW-5's graph split. |
+| FW-40 | Extract the token engine from TitleSlugHandler | **Built on branch `claude/token-engine-40`** (2026-09-28). The pattern engine moved into `Tokens\` ([architecture.md → Token engine](architecture.md#token-engine)); title and slug output is pinned byte-for-byte by a golden table under H17. Date tokens now parse in site time (CHANGELOG *Fixed*). Left for FW-4: `OutputPolicy::raw()` and the ACF-row source. Spec: `.scratch/token-engine-40/spec.md`, lifted to design-history on merge. |
 
 ---
 

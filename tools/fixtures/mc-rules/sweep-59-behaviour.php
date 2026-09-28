@@ -22,7 +22,7 @@
  *      available proof that the repeater's authored order reaches the handler,
  *      and the behaviour the post-type field's description now promises.
  *   3. **Tokens.** `{meta:}`, `{term:}`, `{terms:}` and `{pub_*}` are resolved
- *      through the handler against a real fixture post in both title and slug
+ *      through `Tokens\TokenEngine` (the handler's bindings, FW-40) against a real fixture post in both title and slug
  *      context, and compared against expectations computed independently from
  *      WordPress. #59 moves the config, not the engine, so these must be
  *      identical to before — which is exactly why they are asserted.
@@ -46,6 +46,9 @@ use BWS\MetaConductor\Handlers\TitleSlugHandler;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 use BWS\MetaConductor\Storage\StorageFactory;
 use BWS\MetaConductor\TaxonomyManager;
+use BWS\MetaConductor\Tokens\OutputPolicy;
+use BWS\MetaConductor\Tokens\PostTokenSource;
+use BWS\MetaConductor\Tokens\TokenEngine;
 use Wireframe\Framework\Fields\RepeaterField;
 
 require_once __DIR__ . '/lookup.php';
@@ -176,10 +179,19 @@ try {
 
     // ── 3. Tokens, resolved through the handler. ───────────────────────────
 
-    $resolve = new ReflectionMethod(TitleSlugHandler::class, 'resolve_pattern');
-    $token = static fn(string $pattern, string $context) => $resolve->invoke(
-        $handler, $pattern, $post_id, $post, $context, $post->post_title
-    );
+    // Through the public engine (FW-40), bound the way the handler binds it:
+    // defaults from the base title, the guard against the title or its slug.
+    $resolve = static function (string $pattern, string $context, string $base, bool $guard = true)
+        use ($post_id, $post): string {
+        $slug = $context === 'slug';
+        return TokenEngine::render(
+            $pattern, new PostTokenSource($post_id, (array) $post),
+            $slug ? OutputPolicy::slug() : OutputPolicy::title(),
+            ['default_title' => $base, 'default_slug' => sanitize_title($base)],
+            $guard ? ($slug ? sanitize_title($base) : $base) : null
+        );
+    };
+    $token = static fn(string $pattern, string $context) => $resolve($pattern, $context, $post->post_title);
 
     // {meta:} — expectation read straight from postmeta.
     $meta = (string) get_post_meta($post_id, 'mc_event_date', true);
@@ -237,8 +249,7 @@ try {
     // deletes exactly the tokens that resolved correctly last time — the title
     // flip-flops between the composed form and its own leftovers on every save.
 
-    $guarded = static fn(string $pattern, string $context, string $base, bool $guard)
-        => $resolve->invoke($handler, $pattern, $post_id, $post, $context, $base, $guard);
+    $guarded = $resolve;
 
     $pub_year = get_the_date('Y', $post);
     $year_base = $pub_year . ' Something';
