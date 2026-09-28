@@ -330,6 +330,9 @@ $check('a type read numbers ids within its own type',
 $check('a caller-supplied type filter cannot widen a type read',
     $interleaved->get_rules('propagation_rules', ['type' => 'hierarchical_rules'])
         === $interleaved->get_rules('propagation_rules'));
+$check('there is no post_type read filter — post-type gating is should_process_post() (#72)',
+    $interleaved->get_kind_rules(OptionRuleStorage::KIND_TERM, ['post_type' => 'page'])
+        === $interleaved->get_kind_rules(OptionRuleStorage::KIND_TERM));
 
 // =============================================================================
 // 5. get_rule() — the per-type $rule_id is an index within one type, across

@@ -310,13 +310,8 @@ class OptionRuleStorage implements RuleStorage {
                 }
             }
 
-            // Filter by post type
-            if (isset($filters['post_type']) && $matches) {
-                $post_types = $rule['post_types'] ?? [];
-                if (!in_array($filters['post_type'], $post_types, true)) {
-                    $matches = false;
-                }
-            }
+            // No post-type filter on purpose (#72): the gate is
+            // should_process_post(), and a second copy here drifted from it.
 
             if ($matches) {
                 // No id-default here: the caller projects first

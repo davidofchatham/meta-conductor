@@ -36,7 +36,6 @@ interface RuleStorage {
      * @param array  $filters Optional filters to apply:
      *                        - 'enabled' (bool): Filter by enabled status
      *                        - 'taxonomy' (string): Filter by taxonomy
-     *                        - 'post_type' (string): Filter by post type
      *                        - 'limit' (int): Limit number of results
      *                        - 'offset' (int): Offset for pagination
      * @return array Array of rules, each rule is an associative array
