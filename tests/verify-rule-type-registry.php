@@ -105,6 +105,10 @@ foreach ($all as $key => $d) {
         $reads    = new ReflectionMethod($class, 'get_rule_type');
         $instance = (new ReflectionClass($class))->newInstanceWithoutConstructor();
         $check("$key: handler reads the same storage key", $reads->invoke($instance) === $key);
+        // …and it learns that key from the registry, so the type string is
+        // spelled once — in the descriptor (ticket 12).
+        $check("$key: the registry maps the handler class back to this descriptor", Registry::for_handler($class) === $d);
+        $check("$key: handler does not spell its own type", $reads->getDeclaringClass()->getName() === UnifiedHandlerBase::class);
     }
 }
 

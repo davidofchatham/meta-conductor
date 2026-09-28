@@ -15,10 +15,6 @@ if (!defined('ABSPATH')) {
 
 class TimeBasedHandler extends UnifiedHandlerBase {
 
-    protected function get_rule_type(): string {
-        return 'time_based_rules';
-    }
-
     /**
      * Pure applier: no hooks (#61).
      *

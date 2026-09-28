@@ -11,6 +11,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **A site updating from before 0.8.0 must pass through 0.9.x.** The one-time migrations off the pre-0.8.0 rule storage are gone (see *Removed*). A site that still holds pre-0.8.0 rules and no ordered rule lists now shows an admin error notice telling its author to install 0.9.x first; until then those rules do not run. Empty pre-0.8.0 rule arrays — an old install with no rules — raise no notice.
 - A fresh install seeds only the two ordered rule lists (`term_rules`, `format_rules`), not the seven per-type arrays that sent every new site through the old upgrade path.
+- Each rule type is now declared once, in a descriptor listed by a single registry: its kind, label, handler, editor fields, shape repair, row title, reach and capture hooks. The storage lists, the editor's type choices and field visibility, the handler map and both rule passes read from it, where each used to keep its own list of rule types. No stored rule changes shape and no rule changes behavior beyond the fixes below.
 
 ### Fixed
 

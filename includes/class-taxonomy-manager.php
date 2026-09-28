@@ -8,6 +8,7 @@
 namespace BWS\MetaConductor;
 
 use BWS\MetaConductor\Handlers\HierarchicalLevelRestrictionHandler;
+use BWS\MetaConductor\Handlers\TimeBasedHandler;
 use BWS\MetaConductor\RuleTypes\Registry;
 use BWS\MetaConductor\Core\AcfWriteQueue;
 use BWS\MetaConductor\Core\TermDispatcher;
@@ -174,7 +175,7 @@ class TaxonomyManager {
         // static check can hold. The sweep is a provocation like bulk apply,
         // not an apply: it selects the posts an expired rule still holds, marks
         // them dirty on the dispatcher above and drains ordered passes.
-        add_action('bws_taxonomy_manager_cleanup', array($this->handlers['time_based_rules'], 'cleanup_expired_rules'));
+        add_action('bws_taxonomy_manager_cleanup', array($this->handlers[Registry::for_handler(TimeBasedHandler::class)->type()], 'cleanup_expired_rules'));
 
         // AC-agnostic ACF write queue (#42). Watches ACF's own write filter, so
         // EVERY write that bypasses the save_post family — AC v7 inline/bulk,

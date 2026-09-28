@@ -15,10 +15,6 @@ if (!defined('ABSPATH')) {
 
 class RelatedHandler extends UnifiedHandlerBase {
 
-    protected function get_rule_type(): string {
-        return 'related_rules';
-    }
-
     /**
      * Pure applier: no hooks (#61).
      *

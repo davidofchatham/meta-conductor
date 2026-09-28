@@ -15,6 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+use BWS\MetaConductor\RuleTypes\Registry;
 use BWS\MetaConductor\Storage\StorageFactory;
 
 abstract class UnifiedHandlerBase {
@@ -47,12 +48,17 @@ abstract class UnifiedHandlerBase {
     abstract protected function init_hooks();
 
     /**
-     * Get rule type key for settings
-     * Must be implemented by child handlers
+     * The stored rule type this handler applies, read off its descriptor.
+     *
+     * Final so no handler spells its type string again — the descriptor is
+     * the one place it lives (FW-39 ticket 12). Every handler is named by
+     * exactly one descriptor (H16).
      *
      * @return string Rule type key (e.g., 'hierarchical_rules')
      */
-    abstract protected function get_rule_type();
+    final protected function get_rule_type(): string {
+        return Registry::for_handler(static::class)->type();
+    }
 
     /**
      * Validate rule configuration (internal method)

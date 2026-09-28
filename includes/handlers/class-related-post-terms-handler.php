@@ -169,10 +169,6 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
      */
     private ?array $enabled_rules_memo = null;
 
-    protected function get_rule_type() {
-        return 'related_post_terms_rules';
-    }
-
     /** Memoized get_enabled_rules for the request. (round 8 #4) */
     private function enabled_rules(): array {
         if ($this->enabled_rules_memo === null) {

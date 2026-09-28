@@ -35,10 +35,6 @@ class HierarchicalHandler extends UnifiedHandlerBase {
      */
     protected function init_hooks() {}
 
-    protected function get_rule_type() {
-        return 'hierarchical_rules';
-    }
-
     /**
      * Apply ONE hierarchical rule to ONE post. The whole of what `on_terms_set`
      * used to do, minus the taxonomy filtering the hook signature gave it for

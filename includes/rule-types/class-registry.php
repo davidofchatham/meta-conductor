@@ -71,6 +71,25 @@ final class Registry {
     }
 
     /**
+     * The descriptor that names a handler class, or null if none does.
+     *
+     * How a handler learns its own storage key without spelling it: the type
+     * string lives in the descriptor alone (ticket 12).
+     *
+     * @param string $handler_class Fully-qualified handler class.
+     * @return RuleType|null
+     */
+    public static function for_handler(string $handler_class): ?RuleType {
+        foreach (self::all() as $descriptor) {
+            if ($descriptor->handler_class() === $handler_class) {
+                return $descriptor;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Whether a stored row's type has a descriptor — the runtime question.
      *
      * A row with no descriptor is skipped, never guessed at and never fatal:
