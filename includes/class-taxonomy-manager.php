@@ -7,13 +7,9 @@
 
 namespace BWS\MetaConductor;
 
-use BWS\MetaConductor\Handlers\HierarchicalHandler;
-use BWS\MetaConductor\Handlers\PropagationHandler;
-use BWS\MetaConductor\Handlers\RelatedHandler;
-use BWS\MetaConductor\Handlers\TimeBasedHandler;
-use BWS\MetaConductor\Handlers\RelatedPostTermsHandler;
 use BWS\MetaConductor\Handlers\HierarchicalLevelRestrictionHandler;
-use BWS\MetaConductor\Handlers\TitleSlugHandler;
+use BWS\MetaConductor\Handlers\TimeBasedHandler;
+use BWS\MetaConductor\RuleTypes\Registry;
 use BWS\MetaConductor\Core\AcfWriteQueue;
 use BWS\MetaConductor\Core\TermDispatcher;
 use BWS\MetaConductor\Core\FormatDispatcher;
@@ -144,16 +140,13 @@ class TaxonomyManager {
         // Handlers take no constructor argument: they read rules through
         // StorageFactory, not through an injected settings object. The
         // `Settings` compat shell that used to be passed here died with the
-        // last legacy handler (#55).
-        $this->handlers = array(
-			'hierarchical' => new HierarchicalHandler(),
-			'propagation' => new PropagationHandler(),
-			'related' => new RelatedHandler(),
-			'time_based' => new TimeBasedHandler(),
-			'related_post_terms' => new RelatedPostTermsHandler(),
-			'hierarchical_level_restriction' => new HierarchicalLevelRestrictionHandler(),
-			'title_slug' => new TitleSlugHandler(),
-        );
+        // last legacy handler (#55). Keyed by the stored rule type — the key
+        // a kind-list row carries, so the dispatchers look handlers up by it.
+        $this->handlers = array();
+        foreach (Registry::all() as $type => $descriptor) {
+            $class = $descriptor->handler_class();
+            $this->handlers[$type] = new $class();
+        }
 
         // The two dispatchers (#60, #64) — the sole entry points to rule
         // execution. Built BEFORE the ACF write queue because the queue marks
@@ -182,7 +175,7 @@ class TaxonomyManager {
         // static check can hold. The sweep is a provocation like bulk apply,
         // not an apply: it selects the posts an expired rule still holds, marks
         // them dirty on the dispatcher above and drains ordered passes.
-        add_action('bws_taxonomy_manager_cleanup', array($this->handlers['time_based'], 'cleanup_expired_rules'));
+        add_action('bws_taxonomy_manager_cleanup', array($this->handlers[Registry::for_handler(TimeBasedHandler::class)->type()], 'cleanup_expired_rules'));
 
         // AC-agnostic ACF write queue (#42). Watches ACF's own write filter, so
         // EVERY write that bypasses the save_post family — AC v7 inline/bulk,
@@ -573,6 +566,8 @@ class TaxonomyManager {
     
     /**
      * Get handler instance
+     *
+     * @param string $type Stored rule type (`time_based_rules`).
      */
     public function get_handler($type) {
         return $this->handlers[$type] ?? null;

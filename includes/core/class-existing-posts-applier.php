@@ -7,7 +7,7 @@
 
 namespace BWS\MetaConductor\Core;
 
-use BWS\MetaConductor\Admin\CollisionDetector;
+use BWS\MetaConductor\RuleTypes\Registry;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 use BWS\MetaConductor\Storage\StorageFactory;
 
@@ -288,7 +288,8 @@ final class ExistingPostsApplier {
      * @param string $value A `RuleChoice` dropdown value.
      * @return array `{choice, row, rows}` — `row` the chosen row, null for "All
      *               enabled rules"; `rows` those whose reach the choice covers —
-     *               or an error result when the choice is malformed or stale.
+     *               or an error result when the choice is malformed or stale,
+     *               or names a row whose type has no descriptor.
      */
     private static function choose(string $value): array {
         $choice = RuleChoice::decode($value);
@@ -311,6 +312,13 @@ final class ExistingPostsApplier {
         $row = RuleChoice::resolve($choice, $storage->get_kind_rules($choice['kind']));
         if ($row === null) {
             return self::error(__('Rules changed since this page loaded — reload the page and choose the rule again.', 'meta-conductor'));
+        }
+        if (Registry::get((string) ($row['type'] ?? '')) === null) {
+            return self::error(sprintf(
+                /* translators: %s: the stored rule type key. */
+                __('This rule\'s type (%s) is not one this version of Meta Conductor knows, so it never runs and cannot be applied. Update the plugin or delete the rule.', 'meta-conductor'),
+                (string) ($row['type'] ?? '')
+            ));
         }
 
         return ['choice' => $choice, 'row' => $row, 'rows' => [$row]];
@@ -348,9 +356,9 @@ final class ExistingPostsApplier {
     /**
      * Post IDs in the reach of these rows, ascending from the cursor.
      *
-     * Post types are each row's `CollisionDetector::written_post_types()` —
-     * empty means every public type. Deliberately conservative (CONTEXT.md →
-     * Reach): a post the rule's own gate then skips costs a no-op pass.
+     * Post types are `RuleChoice::reach_post_types()`. Deliberately
+     * conservative (CONTEXT.md → Reach): a post the rule's own gate then skips
+     * costs a no-op pass.
      *
      * @param array[]  $rows     Projected rows.
      * @param string[] $statuses `RuleChoice::reach_statuses()`.
@@ -359,24 +367,15 @@ final class ExistingPostsApplier {
      * @return int[]
      */
     private static function reach(array $rows, array $statuses, int $after, int $limit): array {
+        $types = RuleChoice::reach_post_types($rows) ?? array_values(get_post_types(['public' => true]));
+
         // [] reaches nothing (and `IN ()` is not SQL).
-        if ($statuses === []) {
+        if ($statuses === [] || $types === []) {
             return [];
         }
 
-        $types = [];
-        foreach ($rows as $rule) {
-            $written = CollisionDetector::written_post_types((string) ($rule['type'] ?? ''), $rule);
-            if ($written === []) {
-                $types = get_post_types(['public' => true]);
-                break;
-            }
-            $types = array_merge($types, $written);
-        }
-
         global $wpdb;
-        $types = array_values(array_unique($types));
-        $sql   = sprintf(
+        $sql = sprintf(
             "SELECT ID FROM {$wpdb->posts} WHERE post_type IN (%s) AND post_status IN (%s) AND ID > %%d ORDER BY ID ASC",
             implode(',', array_fill(0, count($types), '%s')),
             implode(',', array_fill(0, count($statuses), '%s'))

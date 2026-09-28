@@ -11,7 +11,8 @@
 
 namespace BWS\MetaConductor\Admin;
 
-use BWS\MetaConductor\Handlers\HierarchicalHandler;
+use BWS\MetaConductor\RuleTypes\Labels;
+use BWS\MetaConductor\RuleTypes\Registry;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 use BWS\MetaConductor\Storage\RuleStorage;
 
@@ -75,110 +76,26 @@ class WireframeBootstrap {
     }
 
     /**
-     * Related-term title. Schema (the shape the old three-token
-     * title_template rendered, now baked into one snapshot):
-     *   {trigger} → {target}{ (post types)}
-     *   e.g. "Categories: Term A → Tags: Term B (Pages)"
-     * Trigger is the taxonomy label when trigger_type=taxonomy, else the
-     * comma-joined trigger term labels.
-     *
-     * @since 0.8.0 Replaces snapshot_related_labels (#58).
-     * @param array $rule
-     * @return string Unescaped.
-     */
-    private static function related_title(array $rule): string {
-        $trigger = (($rule['trigger_type'] ?? 'term') === 'taxonomy')
-            ? self::taxonomy_label($rule['trigger_taxonomy'] ?? '')
-            : self::trigger_terms_label($rule['trigger_term_id'] ?? []);
-
-        return $trigger
-            . ' ' . "\xE2\x86\x92" . ' '
-            . self::term_label($rule['target_term_id'] ?? 0)
-            . self::scope_label($rule['post_types'] ?? []);
-    }
-
-    /**
-     * Leading marker for a disabled rule's collapsed row title, '' when enabled.
-     * Prepended to the first title_template token by each snapshot. Shared by
-     * every rule type whose repeater carries an `enabled` toggle.
-     *
-     * @param array $rule Clean rule values (the `enabled` subfield).
-     * @return string Unescaped marker (already-safe literal).
-     */
-    private static function disabled_prefix(array $rule): string {
-        // `enabled` defaults true; a rule missing the key (legacy) is treated
-        // as enabled, matching the config default and the handler gate.
-        $enabled = !array_key_exists('enabled', $rule) || !empty($rule['enabled']);
-        return $enabled ? '' : \esc_html__('[Disabled] ', 'meta-conductor');
-    }
-
-    /**
-     * ACF-reference title (architecture.md → The ordered rule repeaters).
-     * Runs PRE-storage — `acf_field_name` is still the raw
-     * "post_type:field_name:field_key" option value (before the storage adapter
-     * splits it). No A→B arrow: same term, same taxonomy, moved across a
-     * relationship.
-     *
-     * Schema: {Copy|Sync} {Taxonomy} terms {to|from} {field_label}{ on {statuses}}
-     *   Copy|Sync ← keep_in_sync (off|on)
-     *   to|from   ← holder_role (source=to/push | target=from/pull)
-     *   field_label ← acf_get_field()['label'] (clean human label), fallback name
-     *   on {statuses} ← post_status gate, only when set
-     *
-     * @since 0.8.0 Replaces snapshot_acf_reference_labels (#58).
-     * @param array $rule
-     * @return string Unescaped.
-     */
-    private static function acf_reference_title(array $rule): string {
-        $verb = !empty($rule['keep_in_sync'])
-            ? __('Sync', 'meta-conductor')
-            : __('Copy', 'meta-conductor');
-
-        // Default an ABSENT holder_role to 'target', matching the handler
-        // (holder_is_source) and the storage migration — NOT 'source'. The
-        // key is absent only for a legacy raw rule re-saved before the
-        // migration flag is set; defaulting to 'source' here would write a
-        // row title that lies about the rule's runtime direction. A new rule
-        // always carries an explicit holder_role. (PR#24 round 4 #2)
-        $prep = (($rule['holder_role'] ?? 'target') === 'source')
-            ? __('to', 'meta-conductor')
-            : __('from', 'meta-conductor');
-
-        $gate = self::status_gate_label($rule['post_status'] ?? []);
-
-        // Assemble; tolerate empty parts gracefully.
-        $title = trim(sprintf(
-            /* translators: 1: Copy/Sync 2: taxonomy 3: to/from 4: field label */
-            __('%1$s %2$s terms %3$s %4$s', 'meta-conductor'),
-            $verb,
-            self::taxonomy_label($rule['taxonomy'] ?? ''),
-            $prep,
-            self::acf_field_label($rule['acf_field_name'] ?? '', $rule['acf_field_key'] ?? '')
-        ));
-
-        if ($gate !== '') {
-            $title .= ' ' . sprintf(__('on %s', 'meta-conductor'), $gate);
-        }
-
-        return $title;
-    }
-
-    /**
      * Bake `row_title` onto every row of one kind list.
      *
      * The mechanics both kinds share, stated once: the position number, the
      * disabled marker, the single escape, and leaving a payload that carries
      * no list of this kind untouched. What differs is the per-type title
-     * schema, which is the `$title` builder each caller passes.
+     * schema, which is the row's descriptor's `row_title()`.
+     *
+     * An unrecognized or absent `type` — or one of the other kind — is named
+     * rather than left blank: the `type` select is `required`, so this should
+     * be unreachable through the admin, but a row that somehow lacks one
+     * still has to stay findable in a collapsed list.
      *
      * Runs on `wp-wireframe/save/payload`, which fires AFTER the Sanitizer (so
      * `row_title` survives despite not being an editable subfield) and before
      * the merge into saved state.
      *
-     * Each per-type builder returns UNESCAPED text and is escaped here, once —
-     * the same discipline the term/taxonomy label helpers already follow.
+     * Each `row_title()` returns UNESCAPED text and is escaped here, once —
+     * the same discipline the `RuleTypes\Labels` helpers already follow.
      *
-     * Builders read the row through `OptionRuleStorage::project_kind_rules()`:
+     * Descriptors read the row through `OptionRuleStorage::project_kind_rules()`:
      * the payload holds FORM values (`[N]` term ids, the combined ACF field
      * value), and the projection is the one place those are decoded. Only
      * `row_title` is written back onto the raw row.
@@ -198,16 +115,16 @@ class WireframeBootstrap {
      *
      * @since 0.8.0
      * @param array    $clean_values Sanitized top-level field map.
-     * @param string   $key          Kind-list key.
-     * @param callable $title        fn(array $rule): string — unescaped title.
+     * @param string $key          Kind-list key.
      * @return array
      */
-    private static function snapshot_row_titles(array $clean_values, string $key, callable $title): array {
+    private static function snapshot_row_titles(array $clean_values, string $key): array {
         if (empty($clean_values[$key]) || !is_array($clean_values[$key])) {
             return $clean_values;
         }
 
-        $position = 0;
+        $descriptors = Registry::of_kind($key);
+        $position    = 0;
 
         foreach ($clean_values[$key] as &$rule) {
             $position++;
@@ -216,9 +133,20 @@ class WireframeBootstrap {
                 continue;
             }
 
+            $type       = (string) ($rule['type'] ?? '');
+            $descriptor = $descriptors[$type] ?? null;
+            if ($descriptor) {
+                $title = $descriptor->row_title(OptionRuleStorage::project_kind_rules([$rule])[0]);
+            } elseif ($type === '') {
+                $title = __('(no rule type chosen)', 'meta-conductor');
+            } else {
+                /* translators: %s: the stored rule type key. */
+                $title = sprintf(__('(unknown rule type: %s — this rule never runs)', 'meta-conductor'), $type);
+            }
+
             $rule['row_title'] = '#' . $position . ' '
-                . self::disabled_prefix($rule)
-                . \esc_html($title(OptionRuleStorage::project_kind_rules([$rule])[0]));
+                . Labels::disabled_prefix($rule)
+                . \esc_html($title);
         }
         unset($rule);
 
@@ -248,8 +176,7 @@ class WireframeBootstrap {
     public static function snapshot_term_rule_labels(array $clean_values): array {
         return self::snapshot_row_titles(
             $clean_values,
-            OptionRuleStorage::KIND_TERM,
-            [self::class, 'term_rule_title']
+            OptionRuleStorage::KIND_TERM
         );
     }
 
@@ -271,77 +198,8 @@ class WireframeBootstrap {
     public static function snapshot_format_rule_labels(array $clean_values): array {
         return self::snapshot_row_titles(
             $clean_values,
-            OptionRuleStorage::KIND_FORMAT,
-            [self::class, 'format_rule_title']
+            OptionRuleStorage::KIND_FORMAT
         );
-    }
-
-    /**
-     * The unescaped row title for one format rule, by type.
-     *
-     * One `case` today, and a `switch` anyway: the dispatch IS the shape #59
-     * exists to establish, and collapsing it to a single expression would have
-     * to be undone by the ticket that adds the second type.
-     *
-     * @param array $rule Clean rule values.
-     * @return string Unescaped.
-     */
-    private static function format_rule_title(array $rule): string {
-        switch ((string) ($rule['type'] ?? '')) {
-            case 'title_slug_rules':
-                return self::title_slug_title($rule);
-        }
-
-        return __('(no rule type chosen)', 'meta-conductor');
-    }
-
-    /**
-     * Title & slug rule title. Schema:
-     *   {name}{ (Post type)}
-     *   e.g. "MC item slug (MC Items)"
-     *
-     * The author names these rules themselves (`name` is required), so unlike
-     * the term titles there is nothing to assemble from the mechanics — the
-     * snapshot's job here is the scope suffix and the disabled marker. A row
-     * that reached storage without a name (a fixture, an import) is NAMED
-     * rather than left blank: it is still selectable in a collapsed,
-     * reorderable list and has to stay findable.
-     *
-     * @param array $rule
-     * @return string Unescaped.
-     */
-    private static function title_slug_title(array $rule): string {
-        $name = trim((string) ($rule['name'] ?? ''));
-
-        if ($name === '') {
-            $name = __('Untitled title/slug rule', 'meta-conductor');
-        }
-
-        return $name . self::post_type_scope_label($rule['post_type'] ?? '');
-    }
-
-    /**
-     * Post-type scope SUFFIX " (Label)" for a rule that names ONE post type,
-     * '' when it names none.
-     *
-     * The scalar counterpart of scope_label(), which reads a checkboxes value.
-     * They are not one function taking either shape on purpose: a scalar
-     * `post_type` and a `post_types` gate mean different things — a lookup key
-     * versus a scope — and a helper taking either shape would have to guess
-     * which one it was handed.
-     *
-     * @param mixed $post_type Single post-type slug.
-     * @return string
-     */
-    private static function post_type_scope_label($post_type): string {
-        $slug = is_string($post_type) ? $post_type : '';
-        if ($slug === '') {
-            return '';
-        }
-
-        $obj = \get_post_type_object($slug);
-
-        return ' (' . ($obj ? $obj->label : $slug) . ')';
     }
 
     /**
@@ -438,147 +296,6 @@ class WireframeBootstrap {
     }
 
     /**
-     * The unescaped row title for one term rule, by type.
-     *
-     * An unrecognised or absent `type` is named rather than left blank: the
-     * `type` select is `required`, so this should be unreachable through the
-     * admin, but a row that somehow lacks one still has to stay findable in a
-     * collapsed list.
-     *
-     * @param array $rule Clean rule values.
-     * @return string Unescaped.
-     */
-    private static function term_rule_title(array $rule): string {
-        switch ((string) ($rule['type'] ?? '')) {
-            case 'propagation_rules':
-                return self::propagation_title($rule);
-            case 'time_based_rules':
-                return self::time_based_title($rule);
-            case 'hierarchical_rules':
-                return self::hierarchical_title($rule);
-            case 'hierarchical_level_restriction_rules':
-                return self::level_restriction_title($rule);
-            case 'related_rules':
-                return self::related_title($rule);
-            case 'related_post_terms_rules':
-                return self::acf_reference_title($rule);
-        }
-
-        return __('(no rule type chosen)', 'meta-conductor');
-    }
-
-    /**
-     * Propagation title. Schema:
-     *   {Scope: }Copy {Taxonomy} terms to children ({claim})
-     *   e.g. "Pages: Copy Breakers terms to children (owning)"
-     *        "Copy Categories terms to children (contributing)"
-     * No arrow — direction is stated in words ("to children").
-     *
-     * @param array $rule
-     * @return string Unescaped.
-     */
-    private static function propagation_title(array $rule): string {
-        return self::scope_prefix($rule['post_types'] ?? []) . sprintf(
-            /* translators: 1: taxonomy label 2: claim */
-            __('Copy %1$s terms to children (%2$s)', 'meta-conductor'),
-            self::taxonomy_label($rule['taxonomy'] ?? ''),
-            self::claim_label($rule['conflict_handling'] ?? 'merge')
-        );
-    }
-
-    /**
-     * Hierarchical inheritance title. Schema:
-     *   {Scope: }Inherit {Taxonomy}: {outcome} ({depth})
-     *   e.g. "Inherit Categories: ancestors (all levels)"
-     *        "Pages: Inherit Shakers: ancestors and descendants (one level)"
-     *
-     * The outcome phrase is derived through HierarchicalHandler::behavior_key()
-     * rather than read off the row, so a legacy row storing only the old
-     * direction/expansion pair still gets the title its behaviour deserves
-     * (#16).
-     *
-     * @since 0.8.0
-     * @param array $rule
-     * @return string Unescaped.
-     */
-    private static function hierarchical_title(array $rule): string {
-        $outcomes = [
-            'ancestors'          => __('ancestors', 'meta-conductor'),
-            'descendants_smart'  => __('descendants when none picked', 'meta-conductor'),
-            'descendants_always' => __('descendants', 'meta-conductor'),
-            'both_smart'         => __('ancestors, and descendants when none picked', 'meta-conductor'),
-            'both_always'        => __('ancestors and descendants', 'meta-conductor'),
-        ];
-
-        $key     = HierarchicalHandler::behavior_key($rule);
-        $outcome = $outcomes[$key] ?? __('nothing', 'meta-conductor');
-
-        $depth = (($rule['inheritance_depth'] ?? 'all') === 'immediate')
-            ? __('one level', 'meta-conductor')
-            : __('all levels', 'meta-conductor');
-
-        return self::scope_prefix($rule['post_types'] ?? []) . sprintf(
-            /* translators: 1: taxonomy label 2: what is applied 3: how far up/down the tree */
-            __('Inherit %1$s: %2$s (%3$s)', 'meta-conductor'),
-            self::taxonomy_label($rule['taxonomy'] ?? ''),
-            $outcome,
-            $depth
-        );
-    }
-
-    /**
-     * Level-restriction title. Schema:
-     *   {Scope: }Restrict {Taxonomy} to {mode}{, keeping ancestors}
-     *   e.g. "Restrict Shakers to one term per level"
-     *        "Pages: Restrict Shakers to the deepest level, keeping ancestors"
-     *
-     * @since 0.8.0
-     * @param array $rule
-     * @return string Unescaped.
-     */
-    private static function level_restriction_title(array $rule): string {
-        $modes = [
-            'one_per_level'   => __('one term per level', 'meta-conductor'),
-            'deepest_only'    => __('the deepest level', 'meta-conductor'),
-            'shallowest_only' => __('the shallowest level', 'meta-conductor'),
-        ];
-
-        $mode = $modes[(string) ($rule['restriction_mode'] ?? 'one_per_level')]
-            ?? $modes['one_per_level'];
-
-        $title = self::scope_prefix($rule['post_types'] ?? []) . sprintf(
-            /* translators: 1: taxonomy label 2: which depths may keep terms */
-            __('Restrict %1$s to %2$s', 'meta-conductor'),
-            self::taxonomy_label($rule['taxonomy'] ?? ''),
-            $mode
-        );
-
-        // One meaning in every mode as of 0.8.0 (#32), so the clause is shown
-        // whenever the flag is set rather than only in some modes.
-        if (!empty($rule['include_ancestors'])) {
-            $title .= __(', keeping ancestors', 'meta-conductor');
-        }
-
-        return $title;
-    }
-
-    /**
-     * Leading "Post type: " prefix for a row title, shown ONLY when the rule
-     * is restricted to specific post types. Empty (= applies to all) ⇒ '' so
-     * the title reads as a plain sentence.
-     *
-     * Unescaped — every caller feeds its result through the single esc_html()
-     * in snapshot_term_rule_labels().
-     *
-     * @param string[] $post_types Slug list.
-     * @return string Trailing ": " when present.
-     */
-    private static function scope_prefix(array $post_types): string {
-        $labels = self::post_type_labels($post_types);
-        return empty($labels) ? '' : implode(', ', $labels) . ': ';
-    }
-
-    /**
      * Assemble each General-tab claim-override row title.
      *
      * Hooked on `wp-wireframe/save/payload`. Schema:
@@ -606,8 +323,8 @@ class WireframeBootstrap {
             }
 
             $slug  = (string) ($row['taxonomy'] ?? '');
-            $tax   = self::taxonomy_label($slug);
-            $claim = self::claim_label($row['mode'] ?? 'merge');
+            $tax   = Labels::taxonomy_label($slug);
+            $claim = Labels::claim_label($row['mode'] ?? 'merge');
 
             // ': ' as a literal, matching the time-based title — a
             // placeholders-and-punctuation-only string is not worth translating.
@@ -616,260 +333,6 @@ class WireframeBootstrap {
         unset($row);
 
         return $clean_values;
-    }
-
-    /**
-     * Claim label for a stored conflict_handling value.
-     *
-     * Shared by both surfaces that print a claim: the propagation row title
-     * and the General-tab override row title.
-     *
-     * The mapping itself lives on ConfigHelpers::CLAIM_NAMES, which is also
-     * what builds the two config dropdowns — so a claim rename touches one
-     * line and cannot leave a surface stale. This method exists only to keep
-     * the snapshot helpers reading a local name (replace = owning-claim,
-     * merge = contributing-claim, skip = deferring-claim; the `-claim`
-     * qualifier disambiguates `deferring` from defer-as-postpone).
-     * See CONTEXT.md → Claim and ADR 0004.
-     *
-     * @param string $value merge|replace|skip.
-     * @return string Unescaped label.
-     */
-    private static function claim_label($value): string {
-        return Config\ConfigHelpers::claim_name(is_string($value) ? $value : 'merge');
-    }
-
-    /**
-     * Time-based (date window) title. Date-first — the window is the most
-     * salient part of a manually configured date rule — then a sentence:
-     *   {start}–{end}: Apply {target} to {scope}{ with {filter}}
-     *   - dates joined by an en dash, no surrounding spaces.
-     *   - scope = "posts" (all types) or the post-type labels (when restricted).
-     *   - filter clause only when set: specific terms → "with {Term, …}";
-     *     else taxonomies → "with any {Taxonomy} term"; neither → omitted.
-     *   e.g. "2026-05-26–2026-05-27: Apply Shakers: Grandchild ii to posts"
-     *        "2026-05-26–2026-05-27: Apply … to Pages with Breakers: Term A"
-     *
-     * @param array $rule
-     * @return string Unescaped.
-     */
-    private static function time_based_title(array $rule): string {
-        $start  = (string) ($rule['start_date'] ?? '');
-        $end    = (string) ($rule['end_date'] ?? '');
-        $target = self::term_label($rule['target_term_id'] ?? 0);
-
-        // en dash, no surrounding spaces.
-        $window = ($start !== '' || $end !== '') ? $start . "\xE2\x80\x93" . $end . ': ' : '';
-
-        $sentence = sprintf(
-            /* translators: 1: target term 2: post-type scope phrase */
-            __('Apply %1$s to %2$s', 'meta-conductor'),
-            $target !== '' ? $target : __('(no term)', 'meta-conductor'),
-            self::time_based_scope_phrase($rule['post_types'] ?? [])
-        );
-
-        return $window . $sentence . self::time_based_filter_clause($rule);
-    }
-
-    /**
-     * Scope phrase for the time-based title's "to …" clause: "posts" when the
-     * rule applies to all post types (empty post_types), else the human
-     * post-type labels ("Pages", "Posts, Pages"). Unescaped.
-     *
-     * @param string[] $post_types Slug list.
-     * @return string
-     */
-    private static function time_based_scope_phrase(array $post_types): string {
-        $labels = self::post_type_labels($post_types);
-        return empty($labels) ? __('posts', 'meta-conductor') : implode(', ', $labels);
-    }
-
-    /**
-     * Filter clause for the time-based title: " with {specific terms}" when
-     * filter_terms is set; else " with any {taxonomy} term" when
-     * filter_taxonomies is set; else '' (no filter). Unescaped.
-     *
-     * @param array $rule
-     * @return string
-     */
-    private static function time_based_filter_clause(array $rule): string {
-        $terms = self::trigger_terms_label($rule['filter_terms'] ?? []);
-        if ($terms !== '') {
-            return ' ' . sprintf(__('with %s', 'meta-conductor'), $terms);
-        }
-
-        $labels = [];
-        foreach ($rule['filter_taxonomies'] ?? [] as $slug) {
-            $label = self::taxonomy_label((string) $slug);
-            if ($label !== '') {
-                $labels[] = $label;
-            }
-        }
-        if (!empty($labels)) {
-            return ' ' . sprintf(__('with any %s term', 'meta-conductor'), implode(', ', $labels));
-        }
-
-        return '';
-    }
-
-    /**
-     * Resolve a projected ACF relationship field (bare name + key) to its clean
-     * human label via acf_get_field(). Falls back to the bare field name.
-     * (architecture.md → Canonical shape adapter)
-     *
-     * Resolves by KEY when the row carries one: two separately-created fields
-     * can share a bare name, and a row title showing the wrong field's label is
-     * how an author would be told the wrong thing about their own rule. (#25)
-     *
-     * @param string $name Bare field name.
-     * @param string $key  Field key; '' for a legacy two-part value.
-     * @return string Unescaped label.
-     */
-    private static function acf_field_label(string $name, string $key): string {
-        if ($name === '') {
-            return '';
-        }
-
-        if (function_exists('acf_get_field')) {
-            // Key first; the name is the fallback for a key that no longer
-            // resolves, so a stale row still shows a label rather than a blank.
-            $field = $key !== '' ? \acf_get_field($key) : null;
-            if (!is_array($field)) {
-                $field = \acf_get_field($name);
-            }
-            if (is_array($field) && !empty($field['label'])) {
-                return (string) $field['label'];
-            }
-        }
-        return $name;
-    }
-
-    /**
-     * Comma-joined human labels for a post_status gate. '' when no gate set.
-     *
-     * @param string[] $slugs
-     * @return string Unescaped.
-     */
-    private static function status_gate_label(array $slugs): string {
-        if (empty($slugs)) {
-            return '';
-        }
-
-        $labels = [];
-        foreach ($slugs as $slug) {
-            $obj = \get_post_status_object((string) $slug);
-            $labels[] = $obj ? $obj->label : (string) $slug;
-        }
-        return implode(', ', $labels);
-    }
-
-    /**
-     * Resolve a single term ID to "<taxonomy label>: <term name>".
-     *
-     * Returns '' when unresolvable. Used for target_term_id (single) and as a
-     * primitive for trigger_terms_label (multi).
-     *
-     * @param int $id Term ID.
-     * @return string Unescaped label.
-     */
-    private static function term_label(int $id): string {
-        if ($id <= 0) {
-            return '';
-        }
-
-        $term = \get_term($id);
-        if (!$term || \is_wp_error($term)) {
-            return '';
-        }
-
-        $tax_label = self::taxonomy_label($term->taxonomy);
-
-        return $tax_label !== '' ? $tax_label . ': ' . $term->name : $term->name;
-    }
-
-    /**
-     * Build the trigger_label for a term-type rule (V7).
-     *
-     * Maps an int[] of term ids to individual term labels and joins with ", ".
-     * Returns UNESCAPED text — the caller escapes once at injection, matching
-     * term_label/taxonomy_label/scope_label.
-     *
-     * @param int[] $ids
-     * @return string Unescaped, comma-joined label; '' if nothing resolves.
-     */
-    private static function trigger_terms_label(array $ids): string {
-        $labels = [];
-        foreach ($ids as $id) {
-            $label = self::term_label($id);
-            if ($label !== '') {
-                $labels[] = $label;
-            }
-        }
-        return implode(', ', $labels);
-    }
-
-    /**
-     * Resolve a post-type slug list to a flat array of human post-type
-     * labels. Unresolvable slugs (a
-     * type unregistered after save) are dropped. Single source for the three
-     * row-title scope formatters below. (0.6.0 review — was triplicated.)
-     *
-     * @param string[] $post_types
-     * @return string[] Post-type labels.
-     */
-    private static function post_type_labels(array $post_types): array {
-        $labels = [];
-        foreach ($post_types as $slug) {
-            $obj = \get_post_type_object((string) $slug);
-            if ($obj) {
-                $labels[] = $obj->label;
-            }
-        }
-        return $labels;
-    }
-
-    /**
-     * Post-type scope SUFFIX " (Label, Label)" for a row title, '' when the rule
-     * applies to all post types. The " (" / ")" decoration lives here, not in
-     * the template.
-     *
-     * The delimiters are deliberately BAKED INTO the stored snapshot value, not
-     * applied at render: Wireframe's `title_template` can only interpolate, so
-     * there is nowhere else to format. Consequence — if the row-title format
-     * ever changes, already-persisted `scope_label` values keep the old shape
-     * until each rule is re-saved. Same snapshot-staleness class as the term
-     * labels (V11); accepted rather than fixed, since storing raw slugs would
-     * require render-time formatting the template cannot do. (PR #19 review #4.)
-     *
-     * @param string[] $post_types
-     * @return string
-     */
-    private static function scope_label(array $post_types): string {
-        $labels = self::post_type_labels($post_types);
-        return empty($labels) ? '' : ' (' . implode(', ', $labels) . ')';
-    }
-
-    /**
-     * Resolve a taxonomy slug to its label.
-     *
-     * Uses the (plural) `label` to match the "Tax: Term" shape produced by
-     * ConfigHelpers::all_term_options() and the user-facing examples
-     * (e.g. "Shakers").
-     *
-     * @param string $slug
-     * @return string
-     */
-    private static function taxonomy_label(string $slug): string {
-        if ($slug === '') {
-            return '';
-        }
-
-        $tax = \get_taxonomy($slug);
-        if (!$tax) {
-            return '';
-        }
-
-        return $tax->label ?: $slug;
     }
 
     /**

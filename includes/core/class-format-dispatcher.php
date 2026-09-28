@@ -8,6 +8,7 @@
 namespace BWS\MetaConductor\Core;
 
 use BWS\MetaConductor\Handlers\UnifiedHandlerBase;
+use BWS\MetaConductor\RuleTypes\Registry;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 use BWS\MetaConductor\Storage\StorageFactory;
 
@@ -86,49 +87,7 @@ class FormatDispatcher {
     public const KIND = OptionRuleStorage::KIND_FORMAT;
 
     /**
-     * Rule types the dispatcher executes, as pure appliers.
-     *
-     * A type here MUST register no apply hooks of its own. The mirror of
-     * `TermDispatcher::CONVERTED_TYPES`, and H13 reads both.
-     *
-     * @var string[]
-     */
-    private const CONVERTED_TYPES = [
-        'title_slug_rules',
-    ];
-
-    /**
-     * Format rule types that still own their apply hooks.
-     *
-     * EMPTY from the start — the kind has one member and #64 converts it. Kept
-     * as the other half of the partition H13 group 9 checks, so a format type
-     * added later must be named on one side or the other rather than silently
-     * running nowhere.
-     *
-     * @var string[]
-     */
-    private const UNCONVERTED_TYPES = [];
-
-    /**
-     * Hooks a CONVERTED format handler may still register, by rule type.
-     *
-     * Empty: nothing in this kind reads state a write is about to destroy.
-     * `title_slug` resolves its tokens from live state at pass time, and the
-     * one value it used to capture pre-write — the submitted `post_title` — is
-     * exactly what the post row holds by the time the pass runs, because the
-     * pass no longer runs before the row is written.
-     *
-     * Kept as a declared constant for the same reason the term dispatcher's
-     * was while it was empty: the allow-list is what makes "a converted
-     * handler registers nothing" a property with an explicit exception list
-     * rather than an implicit one.
-     *
-     * @var array<string,string[]>
-     */
-    private const CAPTURE_HOOKS = [];
-
-    /**
-     * Handlers keyed by RULE type. Same map the term dispatcher builds.
+     * Handlers keyed by stored rule type. Same map the term dispatcher holds.
      *
      * @var array<string,UnifiedHandlerBase>
      */
@@ -163,12 +122,10 @@ class FormatDispatcher {
     /**
      * @param array<string,UnifiedHandlerBase> $handlers Handlers as built by
      *                                                   TaxonomyManager, keyed
-     *                                                   by handler type.
+     *                                                   by stored rule type.
      */
     public function __construct(array $handlers) {
-        foreach ($handlers as $handler) {
-            $this->handlers[$handler->rule_type()] = $handler;
-        }
+        $this->handlers = $handlers;
     }
 
     /**
@@ -181,13 +138,14 @@ class FormatDispatcher {
     }
 
     /**
-     * Whether a pass executes this rule type.
+     * Whether a pass of this kind executes this rule type — its descriptor's
+     * `kind()`. False for a type with no descriptor.
      *
      * @param string $rule_type Rule type key.
      * @return bool
      */
     public static function owns(string $rule_type): bool {
-        return in_array($rule_type, self::CONVERTED_TYPES, true);
+        return Registry::get($rule_type)?->kind() === self::KIND;
     }
 
     /**
@@ -297,7 +255,10 @@ class FormatDispatcher {
         foreach ($this->ordered_rules() as $rule) {
             $type = (string) ($rule['type'] ?? '');
 
-            if (!in_array($type, self::CONVERTED_TYPES, true)) {
+            if (!Registry::known($type)) {
+                continue;
+            }
+            if (!self::owns($type)) {
                 continue;
             }
             if (isset($claimed[$type])) {

@@ -75,6 +75,18 @@ $classes = [
     'BWS\\MetaConductor\\Handlers\\RelatedPostTermsHandler',
     'BWS\\MetaConductor\\Handlers\\HierarchicalLevelRestrictionHandler',
     'BWS\\MetaConductor\\Handlers\\TitleSlugHandler',
+    // RuleTypes\ (FW-39) — the descriptors and the registry that lists them.
+    // Also proves the kebab DIRECTORY mapping (RuleTypes -> rule-types/).
+    'BWS\\MetaConductor\\RuleTypes\\RuleType',
+    'BWS\\MetaConductor\\RuleTypes\\Registry',
+    'BWS\\MetaConductor\\RuleTypes\\Labels',
+    'BWS\\MetaConductor\\RuleTypes\\PropagationRules',
+    'BWS\\MetaConductor\\RuleTypes\\RelatedPostTermsRules',
+    'BWS\\MetaConductor\\RuleTypes\\TimeBasedRules',
+    'BWS\\MetaConductor\\RuleTypes\\RelatedRules',
+    'BWS\\MetaConductor\\RuleTypes\\HierarchicalRules',
+    'BWS\\MetaConductor\\RuleTypes\\HierarchicalLevelRestrictionRules',
+    'BWS\\MetaConductor\\RuleTypes\\TitleSlugRules',
     // Admin\
     'BWS\\MetaConductor\\Admin\\Diagnostics',
     'BWS\\MetaConductor\\Admin\\WireframeBootstrap',

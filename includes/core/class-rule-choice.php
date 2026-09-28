@@ -7,6 +7,7 @@
 
 namespace BWS\MetaConductor\Core;
 
+use BWS\MetaConductor\RuleTypes\Registry;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 
 // Prevent direct access
@@ -44,14 +45,6 @@ final class RuleChoice {
 
     /** Never reached, whatever a rule's gate says. */
     private const EXCLUDED_STATUSES = ['trash', 'auto-draft'];
-
-    /**
-     * Types whose `post_status` does NOT gate the post being written. On
-     * `related_post_terms` it gates the SOURCE (don't 6e(b)); narrowing the
-     * dependents by it would silently drop a draft dependent of a published
-     * source from the run.
-     */
-    private const SOURCE_STATUS_TYPES = ['related_post_terms_rules'];
 
     /**
      * Identity of a row's content: a hash of the PROJECTED row (as
@@ -153,10 +146,38 @@ final class RuleChoice {
     }
 
     /**
+     * Which post types a run over these rows may touch.
+     *
+     * The union of each row's `RuleType::written_post_types()`. A row whose
+     * type has no descriptor adds NOTHING — the pass skips it, so it writes
+     * nothing — and above all never widens the run to every post type.
+     *
+     * @param array[] $rows Projected rows.
+     * @return string[]|null Slugs; null means every public type.
+     */
+    public static function reach_post_types(array $rows): ?array {
+        $types = [];
+        foreach ($rows as $rule) {
+            $descriptor = Registry::get((string) ($rule['type'] ?? ''));
+            if ($descriptor === null) {
+                continue;
+            }
+            $written = $descriptor->written_post_types($rule);
+            if ($written === []) {
+                return null;
+            }
+            $types = array_merge($types, $written);
+        }
+
+        return array_values(array_unique($types));
+    }
+
+    /**
      * Which post statuses a run over this rule may touch.
      *
      * The rule's `post_status` where it gates the written post, else the
-     * default set. Empty or `any` means ungated, as in `should_process_post()`.
+     * default set (`RuleType::status_gates_source()`). Empty or `any` means
+     * ungated, as in `should_process_post()`.
      *
      * Can return []: a gate of only trash reaches NOTHING. Never hand [] to
      * `WP_Query` as `post_status` — it reads that as the default ("publish").
@@ -165,7 +186,7 @@ final class RuleChoice {
      * @return string[]
      */
     public static function reach_statuses(?array $row): array {
-        if ($row === null || in_array($row['type'] ?? '', self::SOURCE_STATUS_TYPES, true)) {
+        if ($row === null || Registry::get((string) ($row['type'] ?? ''))?->status_gates_source()) {
             return self::DEFAULT_STATUSES;
         }
 

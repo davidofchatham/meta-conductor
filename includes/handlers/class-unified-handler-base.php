@@ -15,6 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+use BWS\MetaConductor\RuleTypes\Registry;
 use BWS\MetaConductor\Storage\StorageFactory;
 
 abstract class UnifiedHandlerBase {
@@ -28,13 +29,6 @@ abstract class UnifiedHandlerBase {
     use TermOperations, AcfBridge;
 
     /**
-     * Handler type identifier
-     *
-     * @var string
-     */
-    protected $handler_type;
-
-    /**
      * Constructor
      *
      * Takes no arguments. The old `Settings|null $settings` parameter existed
@@ -44,7 +38,6 @@ abstract class UnifiedHandlerBase {
      * after the Phase 3 migration.
      */
     public function __construct() {
-        $this->handler_type = $this->get_handler_type();
         $this->init_hooks();
     }
 
@@ -55,35 +48,16 @@ abstract class UnifiedHandlerBase {
     abstract protected function init_hooks();
 
     /**
-     * Get handler type identifier
-     * Must be implemented by child handlers
+     * The stored rule type this handler applies, read off its descriptor.
      *
-     * @return string Handler type (e.g., 'hierarchical', 'propagation')
-     */
-    abstract public function get_handler_type();
-
-    /**
-     * Get rule type key for settings
-     * Must be implemented by child handlers
+     * Final so no handler spells its type string again — the descriptor is
+     * the one place it lives (FW-39 ticket 12). Every handler is named by
+     * exactly one descriptor (H16).
      *
      * @return string Rule type key (e.g., 'hierarchical_rules')
      */
-    abstract protected function get_rule_type();
-
-    /**
-     * Public reader for the rule type key.
-     *
-     * The dispatcher keys its handler map by RULE type, because that is what a
-     * kind-list row carries, and it resolves a handler's effect kind through
-     * the same key. `get_rule_type()` is protected and stays that way — every
-     * subclass declares it protected, so widening it in place would be a fatal
-     * on all seven. This is the one-line seam instead. (#60)
-     *
-     * @since 0.8.0
-     * @return string Rule type key (e.g. 'hierarchical_rules').
-     */
-    public function rule_type(): string {
-        return $this->get_rule_type();
+    final protected function get_rule_type(): string {
+        return Registry::for_handler(static::class)->type();
     }
 
     /**

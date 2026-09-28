@@ -37,14 +37,6 @@ class TitleSlugHandler extends UnifiedHandlerBase {
     // Required abstracts
     // -------------------------------------------------------------------------
 
-    protected function get_rule_type(): string {
-        return 'title_slug_rules';
-    }
-
-    public function get_handler_type(): string {
-        return 'title_slug';
-    }
-
     /**
      * Override base class validation. We only check 'enabled' —
      * action['type'], source_type, target_type are not applicable to title/slug rules.

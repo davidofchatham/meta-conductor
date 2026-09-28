@@ -20,14 +20,6 @@ class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
      */
     private $term_level_cache = array();
 
-    public function get_handler_type(): string {
-        return 'hierarchical_level_restriction';
-    }
-
-    protected function get_rule_type(): string {
-        return 'hierarchical_level_restriction_rules';
-    }
-
     /**
      * Pure applier: no hooks (#60).
      *
@@ -165,7 +157,7 @@ class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
      *
      * The change was free rather than breaking: level restriction runs on the
      * test site only (CLAUDE.md live-rule-type rule), so no stored rule
-     * needed migrating. Config side: TermRulesConfig::level_restriction_subfields().
+     * needed migrating. Config side: HierarchicalLevelRestrictionRules::subfields().
      *
      * @param int[]  $term_ids Term IDs currently on the post.
      * @param string $taxonomy Taxonomy slug.

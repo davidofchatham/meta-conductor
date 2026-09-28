@@ -11,6 +11,9 @@
 
 namespace BWS\MetaConductor\Storage;
 
+use BWS\MetaConductor\RuleTypes\Registry;
+use BWS\MetaConductor\RuleTypes\RuleType;
+
 // Prevent direct access
 if (!defined('ABSPATH')) {
     exit;
@@ -47,79 +50,16 @@ class OptionRuleStorage implements RuleStorage {
     const KIND_FORMAT = 'format_rules';
 
     /**
-     * Effect kind ⇒ the rule types it holds, IN ORDER.
+     * The config-migrated types of one kind, in registry order.
      *
-     * Two jobs since #66. It is the ENUMERATION of every rule type storage
-     * knows (`all_types()` flattens it, `get_kind_for_type()` inverts it) — the
-     * seven-entry `$valid_types` list that used to be a second copy is gone.
-     * Its order is the type-select order and the order fixture tooling
-     * authors by-type rules in; storage itself never re-sorts a stored list
-     * by it.
-     *
-     * The `type` value written onto each row is the legacy type key verbatim
-     * (`hierarchical_rules`, not `hierarchical`). Rule-type RENAMING stays
-     * deferred per ADR 0002/0003, and reusing the existing key means
-     * `get_enabled_rules()` can filter on `get_rule_type()` with no mapping
-     * table between the two vocabularies. Author-facing labels are a config
-     * concern (#57), not a storage one.
-     *
-     * @since 0.8.0
-     * @var array<string,string[]>
-     */
-    private const KIND_TYPES = [
-        self::KIND_TERM => [
-            'propagation_rules',
-            'related_post_terms_rules',
-            'time_based_rules',
-            'related_rules',
-            'hierarchical_rules',
-            'hierarchical_level_restriction_rules',
-        ],
-        self::KIND_FORMAT => [
-            'title_slug_rules',
-        ],
-    ];
-
-    /**
-     * Rule types whose AUTHORING SURFACE has collapsed into the ordered
-     * kind-list repeater (#57, §2 batch 1).
-     *
-     * This is the one fact that tells storage which persisted kind list is
-     * *authored* rather than *derived*, and it exists here — not on the
-     * config class — because the config classes read it to build their
-     * repeaters, and storage runs on CLI and front-end paths that must never
-     * resolve `Admin\Config` (CLAUDE.md don't #4).
-     *
-     * **Every rule type is in as of #59.** Batch 1 (#57) took the four term
-     * types not live on a real site, the two live ones (`related_rules`,
-     * `related_post_terms_rules`) followed in #58, and `title_slug_rules`
-     * joined the format repeater in #59. A row of a type absent here must NOT
-     * appear in a persisted kind list, because the repeater renders every row
-     * in the key it is bound to and Wireframe DROPS any subfield the config
-     * does not declare (`RepeaterField::sanitize`) — rendering a rule the
-     * repeater has no subfields for would silently gut it on the next save.
-     *
-     * Add a type here in the same change that gives it repeater subfields,
-     * never before. The list is now identical to the flattened KIND_TYPES,
-     * and it stays a separate constant precisely so the NEXT type
-     * (`field_transformation`) can be declared in KIND_TYPES — and therefore
-     * read — a change before its subfields exist.
-     *
-     * @since 0.8.0
-     * @var string[]
-     */
-    private const CONFIG_MIGRATED_TYPES = [
-        'propagation_rules',
-        'time_based_rules',
-        'hierarchical_rules',
-        'hierarchical_level_restriction_rules',
-        'related_rules',
-        'related_post_terms_rules',
-        'title_slug_rules',
-    ];
-
-    /**
-     * The migrated types belonging to one kind, in KIND_TYPES order.
+     * A type is declared in `RuleTypes\Registry`; it is offered and persisted
+     * only once its descriptor says the repeater declares its subfields
+     * (`has_subfields()`). A row of a type without them must NOT appear in a
+     * persisted kind list: the repeater renders every row in the key it is
+     * bound to and Wireframe DROPS any subfield the config does not declare
+     * (`RepeaterField::sanitize`), so rendering it would silently gut it on the
+     * next save. That split is what lets the next type (`field_transformation`)
+     * be declared — and therefore read — a change before its subfields exist.
      *
      * Empty ⇒ no repeater is bound to that kind's list yet, so the config
      * classes render no rows for it.
@@ -129,24 +69,22 @@ class OptionRuleStorage implements RuleStorage {
      * @return string[]
      */
     public static function migrated_types_for_kind(string $kind): array {
-        return array_values(array_intersect(
-            self::KIND_TYPES[$kind] ?? [],
-            self::CONFIG_MIGRATED_TYPES
+        return array_keys(array_filter(
+            Registry::of_kind($kind),
+            static fn(RuleType $d): bool => $d->has_subfields()
         ));
     }
 
     /**
-     * Every rule type storage knows, flattened out of KIND_TYPES in kind order.
+     * Every rule type storage knows, in registry order.
      *
-     * The single enumeration since #66 — the seven-entry `$valid_types` list it
-     * replaces was a second copy that could drift out of step with the kind map
-     * and read zero rules for a type that fell out of one of them.
+     * The registry is the single enumeration; this is a view of it.
      *
      * @since 0.8.0
      * @return string[]
      */
     public static function all_types(): array {
-        return array_merge(...array_values(self::KIND_TYPES));
+        return array_keys(Registry::all());
     }
 
     /**
@@ -244,22 +182,12 @@ class OptionRuleStorage implements RuleStorage {
     /**
      * Which kind list a rule type lives in.
      *
-     * Every type storage knows is covered — the kind map IS the enumeration
-     * since #66 (`all_types()` flattens it), so there is no second list for it
-     * to drift out of step with.
-     *
      * @since 0.8.0
-     * @param string $type Legacy rule type key.
+     * @param string $type Storage type key.
      * @return string Kind key, or '' if the type is unknown.
      */
     public function get_kind_for_type(string $type): string {
-        foreach (self::KIND_TYPES as $kind => $types) {
-            if (in_array($type, $types, true)) {
-                return $kind;
-            }
-        }
-
-        return '';
+        return Registry::get($type)?->kind() ?? '';
     }
 
     /**
@@ -295,7 +223,7 @@ class OptionRuleStorage implements RuleStorage {
      * @return array Rules in authored order.
      */
     public function get_kind_rules(string $kind, array $filters = []): array {
-        if (!isset(self::KIND_TYPES[$kind])) {
+        if (Registry::of_kind($kind) === []) {
             return [];
         }
 
@@ -459,10 +387,8 @@ class OptionRuleStorage implements RuleStorage {
      *   - `target_term_id` → int. The FormTokenField stores [N]; that is a FORM
      *     shape, never a runtime one.
      *   - `trigger_term_id`, `filter_terms` → int[], deduped, zeros dropped.
-     *   - ACF relationship field: "post_type:field_name:field_key" → split into
-     *     scalar post_type + bare acf_field_name + acf_field_key (#25; a legacy
-     *     two-part value yields an empty key, which callers read as "resolve by
-     *     name", i.e. pre-#25 behavior)
+     *   - Per-type fields → the type descriptor's `normalize()` (today only
+     *     `RelatedPostTermsRules`, which splits the combined ACF field values)
      *
      * Read-only: nothing writes the projection back, so widening it needs no
      * migration. Admin code holding raw form values runs them through
@@ -488,29 +414,9 @@ class OptionRuleStorage implements RuleStorage {
             }
         }
 
-        if ($type === 'related_post_terms_rules') {
-            if (!empty($rule['acf_field_name'])) {
-                [$pt, $bare, $key]         = self::split_acf_field_value((string) $rule['acf_field_name']);
-                $rule['acf_field_name']    = $bare;
-                $rule['acf_field_key']     = $key;
-                if ($pt !== null) {
-                    $rule['post_type'] = $pt;
-                } elseif (!isset($rule['post_type'])) {
-                    $rule['post_type'] = '';
-                }
-            }
-
-            // Reverse field is stored in the same option format; the handler
-            // wants the bare field name and, since #25, the key beside it.
-            // (SPEC §V6)
-            if (!empty($rule['reverse_acf_field_name'])) {
-                [, $rbare, $rkey]                 = self::split_acf_field_value((string) $rule['reverse_acf_field_name']);
-                $rule['reverse_acf_field_name']   = $rbare;
-                $rule['reverse_acf_field_key']    = $rkey;
-            }
-        }
-
-        return $rule;
+        // Per-type branch: the descriptor's own normalize(). An unknown type
+        // passes through with only the shared projection.
+        return Registry::get($type)?->normalize($rule) ?? $rule;
     }
 
     /**

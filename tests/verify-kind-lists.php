@@ -60,6 +60,9 @@ function post_type_exists(string $post_type): bool {
 
 require dirname(__DIR__) . '/includes/storage/class-rule-storage.php';
 require dirname(__DIR__) . '/includes/storage/class-option-rule-storage.php';
+// The type enumeration is RuleTypes\Registry's (FW-39); let it autoload.
+define('BWS_META_CONDUCTOR_PATH', dirname(__DIR__) . '/');
+require dirname(__DIR__) . '/autoload.php';
 
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 

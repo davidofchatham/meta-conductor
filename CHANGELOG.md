@@ -11,9 +11,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **A site updating from before 0.8.0 must pass through 0.9.x.** The one-time migrations off the pre-0.8.0 rule storage are gone (see *Removed*). A site that still holds pre-0.8.0 rules and no ordered rule lists now shows an admin error notice telling its author to install 0.9.x first; until then those rules do not run. Empty pre-0.8.0 rule arrays — an old install with no rules — raise no notice.
 - A fresh install seeds only the two ordered rule lists (`term_rules`, `format_rules`), not the seven per-type arrays that sent every new site through the old upgrade path.
+- Each rule type is now declared once, in a descriptor listed by a single registry: its kind, label, handler, editor fields, shape repair, row title, reach and capture hooks. The storage lists, the editor's type choices and field visibility, the handler map and both rule passes read from it, where each used to keep its own list of rule types. No stored rule changes shape and no rule changes behavior beyond the fixes below.
 
 ### Fixed
 
+- **A stored rule of a type this version does not know is no longer treated as reaching every post type.** On *Apply to Existing Posts* such a rule reached every public post type; now the dropdown marks it *(unknown type)*, choosing it is refused with a message, and it adds nothing to an *All enabled rules* run. The collision check reports it instead of skipping it, its row title says so on the rules page, and rule passes skip it with one debug-log line per request.
 - **A date-window rule missing a start or end date now does nothing.** An empty end date compared as long expired, so the rule stripped its target term from every post in scope on every save and on the daily cleanup. The editor requires both dates, but a row written by hand or by an import was not held to that.
 - **A level-restriction rule no longer rewrites a post it has nothing to change on.** Restricting could return the same terms in a different order, which counted as a change: every pass made a redundant term write and reordered the value stored in the post's ACF taxonomy field.
 

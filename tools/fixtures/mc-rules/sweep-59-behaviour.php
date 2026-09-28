@@ -128,7 +128,7 @@ try {
         ($read[0]['slug_pattern'] ?? '') === 'first-{default_slug}'
         && ($read[0]['slug_mode'] ?? '') === 'replace');
 
-    $handler = TaxonomyManager::get_instance()->get_handler('title_slug');
+    $handler = TaxonomyManager::get_instance()->get_handler('title_slug_rules');
     $note('the title_slug handler is live', $handler instanceof TitleSlugHandler);
 
     // First-match-wins moved off `find_matching_rule()` in #64: the format

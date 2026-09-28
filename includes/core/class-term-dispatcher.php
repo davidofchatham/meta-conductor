@@ -8,6 +8,7 @@
 namespace BWS\MetaConductor\Core;
 
 use BWS\MetaConductor\Handlers\UnifiedHandlerBase;
+use BWS\MetaConductor\RuleTypes\Registry;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 use BWS\MetaConductor\Storage\StorageFactory;
 
@@ -87,17 +88,16 @@ if (!defined('ABSPATH')) {
  * hook records what a write is about to destroy; the entity that record
  * concerns is, by construction, one nothing points at any more — a dependent
  * whose relationship was just severed, a deleted holder's dependents. So the
- * dispatcher asks every converted handler for those entities at drain start
+ * dispatcher asks every handler that drains captures for those entities at drain start
  * (`enqueue_captures()` → `UnifiedHandlerBase::drain_captures()`) and marks
  * them, which is what makes a sever reach a full ordered pass by the same route
  * a save does (#63).
  *
- * THE CONVERSION IS COMPLETE FOR THIS KIND. `CONVERTED_TYPES` is what a pass
- * runs and now holds every term rule type; `UNCONVERTED_TYPES` is empty (#63)
- * and stays as the other half of the partition, so a term type added later must
- * be named on one side or the other. H13 (tests/verify-term-dispatcher.php)
- * reads both constants and fails if a handler's registrations disagree with the
- * side it is listed on.
+ * EVERY RULE TYPE IS A PURE APPLIER. A pass runs every row of its kind, and the
+ * only hooks a handler may register are its descriptor's `capture_hooks()`
+ * (FW-39). A future type that arrives hook-driven restores a descriptor field,
+ * not a list here. H13 (tests/verify-term-dispatcher.php) checks each handler's
+ * registrations against its descriptor.
  *
  * THE QUEUE IS SHARED, THE PASSES ARE NOT (#64). Cross-KIND order is derived,
  * not authored (ADR 0003 decision 2): `title_slug` reads terms and writes none,
@@ -156,9 +156,9 @@ class TermDispatcher {
      * changed costs reads and writes nothing — but the queue is a fixpoint
      * iteration and something has to stop it. Two things could otherwise run
      * away: a declared fan-out is collected once per rule per pass whether or
-     * not the apply changed anything (see enqueue_fan_out()), and an
-     * unconverted handler still writing another post from its own hooks can
-     * mark an entity that then marks it back.
+     * not the apply changed anything (see enqueue_fan_out()), and a capture
+     * or a bare ACF write landing mid-drain can mark an entity that then marks
+     * it back.
      *
      * The common shapes need exactly one pass each — nothing fans UPWARD, so a
      * tree drained from its root passes every node once and this cap never
@@ -170,113 +170,7 @@ class TermDispatcher {
     private const MAX_PASSES_PER_DRAIN = 3;
 
     /**
-     * Rule types the dispatcher executes, as pure appliers.
-     *
-     * A type here MUST register no apply hooks of its own; a type in
-     * UNCONVERTED_TYPES MUST NOT be executed here, or its rules would run
-     * twice — once from its hooks and once from the pass.
-     *
-     * @var string[]
-     */
-    private const CONVERTED_TYPES = [
-        'hierarchical_rules',
-        'hierarchical_level_restriction_rules',
-        'time_based_rules',
-        'related_rules',
-        'propagation_rules',
-        'related_post_terms_rules',
-    ];
-
-    /**
-     * Rule types that still own their apply hooks.
-     *
-     * EMPTY as of #63 — every term-kind rule type is a pure applier and the
-     * dispatcher runs all of them. Kept rather than deleted because it is half
-     * of the partition group 9 checks: a term type added later must land in one
-     * list or the other, and a new type that arrives hook-driven (as every type
-     * here once was) needs somewhere to be named while it is.
-     *
-     * Named rather than inferred so the list shrinking was visible in the diff
-     * of each conversion ticket: #61 took time_based + related, #62
-     * propagation, #63 related_post_terms.
-     *
-     * @var string[]
-     */
-    private const UNCONVERTED_TYPES = [];
-
-    /**
-     * Hooks a CONVERTED handler may still register, by rule type.
-     *
-     * A capture hook only snapshots pre-write state into a request-scoped
-     * queue, because the state it reads no longer exists after the write.
-     * Capture is not execution: the captured value is consumed by the
-     * handler's applier during a pass, so the dispatcher stays the sole caller
-     * of `apply_to_post`.
-     *
-     * `propagation_rules` is the first entry (#62). Its pull applier answers
-     * "what should this child hold, given its parent" from live state, and
-     * live state cannot answer the one question that needs history: a term the
-     * parent HELD and then lost is, on the child, indistinguishable from a term
-     * the child holds independently. Nothing on either post records which. So
-     * the removal itself is captured as it happens — `deleted_term_relationships`
-     * is the only hook that sees it, including on the plain
-     * `wp_set_object_terms` path where WP drops terms through an internal
-     * `wp_remove_object_terms` — and each child's applier subtracts what its
-     * parent lost. The capture writes to a request-scoped map and applies
-     * nothing.
-     *
-     * `related_post_terms_rules` is the second and larger entry (#63). All
-     * three of its hooks read a relationship that the write is about to
-     * destroy: the two `acf/update_value` filters fire at priority 5, before
-     * ACF replaces the field's value, and `before_delete_post` is the last
-     * moment a dying post's relationships can be read at all — there is no
-     * field-update hook on a delete (invariant #5). What they capture is a
-     * SEVER, and it is unrecoverable afterwards for the reason a pull applier
-     * exists: in the post-write graph a link that was just cut and a link that
-     * never existed are the same absence.
-     *
-     * Its captures name entities no fan-out can reach, so they reach the queue
-     * through the other half of the capture contract —
-     * `UnifiedHandlerBase::drain_captures()`, which `enqueue_captures()` asks
-     * every converted handler at drain start.
-     *
-     * @var array<string,string[]>
-     */
-    private const CAPTURE_HOOKS = [
-        'propagation_rules'        => ['deleted_term_relationships'],
-        'related_post_terms_rules' => [
-            'acf/update_value/type=relationship',
-            'acf/update_value/type=post_object',
-            'before_delete_post',
-        ],
-    ];
-
-    /**
-     * Capture types whose records name entities the QUEUE would not otherwise
-     * hear about, and which therefore must implement `drain_captures()`.
-     *
-     * Not every capture needs one, which is why this is a second list rather
-     * than an inference from CAPTURE_HOOKS. `propagation_rules` records a
-     * removal on a post whose children are already reached by its own
-     * `fan_out()`, so its captured value is consumed by an applier the queue
-     * was going to run anyway. `related_post_terms_rules` records a SEVER, and
-     * the whole point of a sever is that the link naming the affected entity is
-     * the thing that was destroyed — nothing points at it, no fan-out can
-     * declare it, and without a `drain_captures()` the record would be made and
-     * then silently never acted on. That failure is invisible: every other path
-     * still works and the dependent simply keeps a term whose source is gone.
-     *
-     * H13 reads this list and fails if a type on it has no `drain_captures()`
-     * override.
-     *
-     * @var string[]
-     */
-    private const CAPTURE_QUEUE_TYPES = [
-        'related_post_terms_rules',
-    ];
-
-    /**
-     * Handlers keyed by RULE type (`hierarchical_rules`), not handler type.
+     * Handlers keyed by stored rule type (`hierarchical_rules`).
      *
      * A kind-list row carries its rule type, so that is the key a pass has in
      * hand. Every handler is in the map, including format-kind ones — the map
@@ -343,16 +237,14 @@ class TermDispatcher {
     /**
      * @param array<string,UnifiedHandlerBase> $handlers Handlers as built by
      *                                                   TaxonomyManager, keyed
-     *                                                   by handler type.
+     *                                                   by stored rule type.
      * @param FormatDispatcher|null            $format   Format-kind dispatcher
      *                                                   to run after each
      *                                                   entity's term pass.
      */
     public function __construct(array $handlers, ?FormatDispatcher $format = null) {
-        foreach ($handlers as $handler) {
-            $this->handlers[$handler->rule_type()] = $handler;
-        }
-        $this->format = $format;
+        $this->handlers = $handlers;
+        $this->format   = $format;
     }
 
     /**
@@ -365,14 +257,14 @@ class TermDispatcher {
     }
 
     /**
-     * Whether a pass executes this rule type, as opposed to the type still
-     * running itself off its own hooks.
+     * Whether a pass of this kind executes this rule type — its descriptor's
+     * `kind()`. False for a type with no descriptor.
      *
      * @param string $rule_type Rule type key.
      * @return bool
      */
     public static function owns(string $rule_type): bool {
-        return in_array($rule_type, self::CONVERTED_TYPES, true);
+        return Registry::get($rule_type)?->kind() === self::KIND;
     }
 
     /**
@@ -601,8 +493,8 @@ class TermDispatcher {
      * One full ordered pass over one entity.
      *
      * Every enabled rule of this kind, in AUTHORED order, each recomputing from
-     * live state. Rules of unconverted types are skipped — their own hooks
-     * already ran them, and running them here too would double-apply.
+     * live state. A row of another kind's type is skipped (`owns()`). A row
+     * whose type has no descriptor is skipped and logged (`Registry::known()`).
      *
      * The lock is taken for the whole pass and released in `finally`, so a
      * handler throwing cannot strand it and silence the entity for the rest of
@@ -628,7 +520,10 @@ class TermDispatcher {
             foreach ($this->ordered_rules() as $rule) {
                 $type = (string) ($rule['type'] ?? '');
 
-                if (!in_array($type, self::CONVERTED_TYPES, true)) {
+                if (!Registry::known($type)) {
+                    continue;
+                }
+                if (!self::owns($type)) {
                     continue;
                 }
                 $handler = $this->handlers[$type] ?? null;
@@ -680,7 +575,7 @@ class TermDispatcher {
     }
 
     /**
-     * Mark the entities a converted handler's CAPTURE hooks named (#63).
+     * Mark the entities a handler's CAPTURE hooks named (#63).
      *
      * The second way into the queue that is not a trigger, and it exists for
      * the entities a fan-out structurally cannot reach: a capture fires because
@@ -701,10 +596,13 @@ class TermDispatcher {
      * a handler does. A capture that arrives later still gets a drain of its
      * own — `shutdown` always runs, and it is a second drain after the save
      * one.
+     *
+     * Only types whose descriptor `drains_captures()` are asked; H13 holds that
+     * flag and the handler's override in step.
      */
     private function enqueue_captures(): void {
         foreach ($this->handlers as $type => $handler) {
-            if (!in_array($type, self::CONVERTED_TYPES, true)) {
+            if (!Registry::get($type)?->drains_captures()) {
                 continue;
             }
             foreach ($handler->drain_captures() as $entity_id) {

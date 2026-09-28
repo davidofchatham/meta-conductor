@@ -319,7 +319,7 @@ switch ( $step ) {
 		mc_assert( '§52  get_term() on a ghost id answers WP_Error…', is_wp_error( $probe ), true );
 		mc_assert( '§52  …which is TRUTHY — the laxity the bare test had', (bool) $probe, true );
 
-		$handler = \BWS\MetaConductor\TaxonomyManager::get_instance()->get_handler( 'related' );
+		$handler = \BWS\MetaConductor\TaxonomyManager::get_instance()->get_handler( 'related_rules' );
 
 		// §52 — the fix's discriminating check. Validation is the surface that
 		// took the bare test, so this is what failed before it: a rule pointing

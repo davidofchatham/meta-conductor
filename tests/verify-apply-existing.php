@@ -211,6 +211,17 @@ foreach (['propagation_rules', 'related_rules', 'time_based_rules', 'hierarchica
 $check('related_post_terms never narrows — post_status gates the source there',
     $reach(['type' => 'related_post_terms_rules', 'post_status' => ['publish' => true]]) === $default);
 
+// Post types (ticket 10). null = every public type.
+$types = fn(array $rows) => RuleChoice::reach_post_types(OptionRuleStorage::project_kind_rules($rows));
+$ghost = ['type' => 'nope_rules', 'post_types' => []];
+
+$check('a known row with no post_types reaches every type',
+    $types([['type' => 'hierarchical_rules', 'post_types' => []]]) === null);
+$check('a row with no descriptor reaches nothing, never every type',
+    $types([$ghost]) === []);
+$check('an unknown row does not widen a known row\'s reach',
+    $types([$ghost, ['type' => 'hierarchical_rules', 'post_types' => ['page' => true]]]) === ['page']);
+
 // --- 5. Disabled-row override (dispatcher pass rows). -----------------------
 
 $names = fn(array $rows) => array_column($rows, 'row_title');
@@ -262,6 +273,8 @@ $check('a stale stored position is replaced by the real one',
     === 'Format rules: #1 X');
 $check('an untitled row is labeled by its type',
     in_array('Format rules: #1 title_slug_rules', ApplyPage::choice_options([], [['type' => 'title_slug_rules']]), true));
+$check('a row with no descriptor is marked in the dropdown',
+    in_array('Term rules: #1 (unknown type) nope_rules', ApplyPage::choice_options([['type' => 'nope_rules']], []), true));
 
 // --- Report. ----------------------------------------------------------------
 

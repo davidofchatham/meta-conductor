@@ -36,13 +36,14 @@ spl_autoload_register(function ($class) {
 
 	// Last part is the class/interface name -> WordPress file naming.
 	// Examples: TermDispatcher -> class-term-dispatcher.php, WireframeBootstrap -> class-wireframe-bootstrap.php
+	$kebab      = static fn(string $s): string => strtolower(preg_replace('/([a-z])([A-Z])/', '$1-$2', $s));
 	$class_name = array_pop($path_parts);
-	$filename   = 'class-' . strtolower(preg_replace('/([a-z])([A-Z])/', '$1-$2', $class_name)) . '.php';
+	$filename   = 'class-' . $kebab($class_name) . '.php';
 
-	// Build full path with lowercase directories.
+	// Directories are kebab too: RuleTypes -> rule-types/.
 	$directory = BWS_META_CONDUCTOR_PATH . 'includes/';
 	if (!empty($path_parts)) {
-		$directory .= strtolower(implode('/', $path_parts)) . '/';
+		$directory .= implode('/', array_map($kebab, $path_parts)) . '/';
 	}
 
 	$file = $directory . $filename;
