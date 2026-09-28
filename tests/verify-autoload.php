@@ -87,6 +87,10 @@ $classes = [
     'BWS\\MetaConductor\\RuleTypes\\HierarchicalRules',
     'BWS\\MetaConductor\\RuleTypes\\HierarchicalLevelRestrictionRules',
     'BWS\\MetaConductor\\RuleTypes\\TitleSlugRules',
+    // Tokens\ (FW-40) — the pattern engine title/slug renders through.
+    'BWS\\MetaConductor\\Tokens\\TokenEngine',
+    'BWS\\MetaConductor\\Tokens\\PostTokenSource',
+    'BWS\\MetaConductor\\Tokens\\OutputPolicy',
     // Admin\
     'BWS\\MetaConductor\\Admin\\Diagnostics',
     'BWS\\MetaConductor\\Admin\\WireframeBootstrap',
@@ -108,6 +112,7 @@ $classes = [
 
 $interfaces = [
     'BWS\\MetaConductor\\Storage\\RuleStorage',
+    'BWS\\MetaConductor\\Tokens\\TokenSourceInterface',
 ];
 
 // Handler traits composed into UnifiedHandlerBase (0.6.3). class_exists() does

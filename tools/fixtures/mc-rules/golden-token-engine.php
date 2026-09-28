@@ -13,9 +13,11 @@
  * result, so H17's stub sanitizer is a lookup, not a reimplementation.
  *
  * Two tables:
- *   - `resolver` — `resolve_pattern()` over a grid: every token kind x title/slug
+ *   - `resolver` — one pattern over a grid: every token kind x title/slug
  *     x empty/non-empty x guard on/off x default title bound or not, plus
- *     separator and punctuation edge cases. H17 replays these.
+ *     separator and punctuation edge cases. H17 replays these. Captured from
+ *     the handler's `resolve_pattern()`; since the extraction (FW-40 02) it
+ *     runs through `Tokens\TokenEngine` with the handler's bindings.
  *   - `rules` — `resolve_rule_output()` for whole rules (the live site's two
  *     patterns, the fixture rule, one per slug mode, the idempotency branches).
  *     That method stays in the handler, so these are checked here, on the
@@ -36,6 +38,9 @@
 
 use BWS\MetaConductor\Handlers\TitleSlugHandler;
 use BWS\MetaConductor\TaxonomyManager;
+use BWS\MetaConductor\Tokens\OutputPolicy;
+use BWS\MetaConductor\Tokens\PostTokenSource;
+use BWS\MetaConductor\Tokens\TokenEngine;
 
 require_once __DIR__ . '/lookup.php';
 
@@ -88,7 +93,17 @@ $with = static function (array $src, callable $fn) {
     }
 };
 
-$resolve = new ReflectionMethod(TitleSlugHandler::class, 'resolve_pattern');
+// What the handler's `render()` does with one pattern (FW-40 02): bind the
+// defaults from the computed title, guard against the title or its slug.
+$resolve = static function (string $pattern, int $post_id, object $post, string $context,
+                            string $base, bool $guard): string {
+    $slug = $context === 'slug';
+    return TokenEngine::render(
+        $pattern, new PostTokenSource($post_id, (array) $post), $slug ? OutputPolicy::slug() : OutputPolicy::title(),
+        ['default_title' => $base, 'default_slug' => sanitize_title($base)],
+        $guard ? ($slug ? sanitize_title($base) : $base) : null
+    );
+};
 $rule_out = new ReflectionMethod(TitleSlugHandler::class, 'resolve_rule_output');
 
 // ── The resolver grid ───────────────────────────────────────────────────────
@@ -175,8 +190,8 @@ foreach ($patterns as $pattern) {
     foreach (['title', 'slug'] as $context) {
         foreach ($bases as $base) {
             foreach ([true, false] as $guard) {
-                $out = $with($grid_src, static fn() => $resolve->invoke(
-                    $handler, $pattern, $post_id, $post_obj, $context, $base, $guard
+                $out = $with($grid_src, static fn() => $resolve(
+                    $pattern, $post_id, $post_obj, $context, $base, $guard
                 ));
                 $resolver_rows[] = [
                     'pattern' => $pattern, 'context' => $context,
