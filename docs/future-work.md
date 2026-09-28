@@ -222,7 +222,7 @@ A format rule that changes a published post's `post_name` moves its URL. Since #
 
 ## Correctness, Consistency, Architecture
 
-Nothing new for an author. Code or behavior that works but is wrong-shaped: an inconsistency between two surfaces, a dead surface, a seam in the wrong place, or a cost paid on every save. Most of the refactor rows are candidates the 2026-09-24 architecture review left out of FW-39.
+Nothing new for an author. Code or behavior that works but is wrong-shaped: an inconsistency between two surfaces, a dead surface, a seam in the wrong place, or a cost paid on every save. Most of the refactor rows are candidates the 2026-09-24 architecture review (`.scratch/plans/architecture-review-2026-09-24.html`) left out of FW-39.
 
 #### FW-11 — Tier-3 reverse-lookup is an unindexed query on every eligible save
 
@@ -262,7 +262,7 @@ A date-window rule's filter (`filter_taxonomies` / `filter_terms`) gates only th
 
 Pull the pattern → segments → resolve-or-drop → trim engine out of `TitleSlugHandler` into its own module that takes a pattern, a token source and an output policy. Today a `'title'|'slug'` context string branches at every level and the title's idempotency guard is a resolver parameter, so a third output policy would mean a third branch everywhere.
 
-- **Detail home:** [design-history/rule-type-descriptor.md](design-history/rule-type-descriptor.md) → *Out of Scope* names it (candidate 3 of the 2026-09-24 architecture review); the review itself was not kept.
+- **Detail home:** [design-history/rule-type-descriptor.md](design-history/rule-type-descriptor.md) → *Out of Scope* names it (candidate 3 of the 2026-09-24 architecture review); the review itself: `.scratch/plans/architecture-review-2026-09-24.html` → candidate 3.
 - **Progress:** Not started. The engine is tested today only by reflection on a private method, inside a docker sweep.
 - **Open:** two token sources make the seam real — the post (today) and an ACF repeater row (FW-4's row-scoped reads). Output policies title / slug / raw; title/slug keeps only its default title, inverse strip and uniqueness escalation. The timezone-naive `DateTime` in the date tokens gets fixed once, in the engine. A fake source makes the engine testable on host PHP.
 - **Blocked by:** — • **Interacts with:** FW-4, FW-6, FW-7
