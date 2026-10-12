@@ -467,7 +467,7 @@ Wireframe 1.1.0 added features nothing here uses yet. Weigh each against a real 
 - **Detail home:** none. Raised by the upgrade to Wireframe 1.1.0.
 - **Progress:** Not started. The upgrade itself adopted nothing, by decision.
 - **Open:**
-  - **The config linter / JSON Schema as an H-gate.** Upstream's `ConfigValidator` validates a page config against its own schema. It ran clean over both of our pages on the testbed at the upgrade. As a host-PHP gate it would catch config mistakes the hand-written H11/H12 maps do not.
+  - **The JSON Schema (or the config linter) as an H-gate.** Upstream ships two checks. The runtime `ConfigValidator` (under `WP_DEBUG`) ran clean over both of our pages on the testbed at the upgrade, but it does not check condition operators. An unknown one such as `'=='` evaluates false and silently drops its subfield on every save, and the linter reports nothing (measured on 1.1.0). The shipped `schema/config.schema.json` does list the valid operators, so a host-PHP gate that checks our configs against the schema would catch that trap, along with other config mistakes the hand-written H11/H12 maps miss. Prefer the schema over the linter.
   - **`can_save` on the Apply page.** Its rule choice and limit persist as settings, though a run keeps the limit it started with. Is the Save button there meaningful?
   - **`header_actions`** — would the collision check or diagnostics read better as a header button?
   - **`download` payloads and table CSV export** — e.g. a collision report or diagnostics export.
