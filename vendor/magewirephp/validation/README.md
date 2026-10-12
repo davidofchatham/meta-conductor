@@ -1,12 +1,12 @@
-Rakit Validation - PHP Standalone Validation Library
-======================================================
+# Magewire PHP - Standalone Validation Library
 
-[![Build Status](https://img.shields.io/travis/rakit/validation.svg?style=flat-square)](https://travis-ci.org/rakit/validation)
-[![Coverage Status](https://coveralls.io/repos/github/rakit/validation/badge.svg?branch=setup_coveralls)](https://coveralls.io/github/rakit/validation)
-[![License](http://img.shields.io/:license-mit-blue.svg?style=flat-square)](http://doge.mit-license.org)
+> **⚠️ Fork:** This package is a fork and drop-in replacement of [rakit/validation](https://github.com/rakit/validation) (it continues to use the original `Rakit\Validation` namespace). 
+Thanks to the original authors for their great work.
 
+[![CI](https://github.com/magewirephp/validation/actions/workflows/ci.yml/badge.svg)](https://github.com/magewirephp/validation/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/magewirephp/validation)](https://github.com/magewirephp/validation/blob/main/LICENSE.md)
 
-PHP Standalone library for validating data. Inspired by `Illuminate\Validation` Laravel.
+PHP Standalone library for validating data. Forked from `rakit/validation` which was inspired by `Illuminate\Validation` Laravel.
 
 ## Features
 
@@ -19,18 +19,18 @@ PHP Standalone library for validating data. Inspired by `Illuminate\Validation` 
 
 ## Requirements
 
-* PHP 7.0 or higher
+* PHP 8.1 - 8.5
 * Composer for installation
 
 ## Quick Start
 
-#### Installation
+### Installation
 
 ```
-composer require "rakit/validation"
+composer require "magewirephp/validation"
 ```
 
-#### Usage
+### Usage
 
 There are two ways to validating data with this library. Using `make` to make validation object,
 then validate it using `validate`. Or just use `validate`.

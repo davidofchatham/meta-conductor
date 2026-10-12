@@ -25,6 +25,17 @@ define('META_CONDUCTOR_PLUGIN_URL', plugin_dir_url(__FILE__));
 // META_CONDUCTOR_PLUGIN_DIR; the kebab autoloader keys off this.
 define('BWS_META_CONDUCTOR_PATH', plugin_dir_path(__FILE__));
 
+// Composer autoloader (WP Wireframe + magewirephp/validation), required when
+// this file loads, NOT inside bws_meta_manager_init(). From Wireframe 1.1 the
+// copies bundled on a site register with a shared registry, which locks the
+// newest one at plugins_loaded (priority PHP_INT_MIN). A copy registered later
+// is never considered, so loading this on plugins_loaded p10 would let any
+// older copy that registered in time serve our pages. The PHP floor gates it
+// because the vendored code needs 8.1 syntax; init() shows the notice.
+if (version_compare(PHP_VERSION, '8.1', '>=') && file_exists(META_CONDUCTOR_PLUGIN_DIR . 'vendor/autoload.php')) {
+    require_once META_CONDUCTOR_PLUGIN_DIR . 'vendor/autoload.php';
+}
+
 /**
  * Check if BWS Meta Manager class exists to prevent conflicts
  */
@@ -38,11 +49,6 @@ if (!function_exists('bws_meta_manager_init')) {
         if (version_compare(PHP_VERSION, '8.1', '<')) {
             add_action('admin_notices', 'bws_meta_manager_php_version_notice');
             return;
-        }
-
-        // Composer autoloader (WP Wireframe + rakit/validation)
-        if (file_exists(META_CONDUCTOR_PLUGIN_DIR . 'vendor/autoload.php')) {
-            require_once META_CONDUCTOR_PLUGIN_DIR . 'vendor/autoload.php';
         }
 
         // PSR-4 autoloader for plugin classes (BWS\MetaConductor\). Loaded after

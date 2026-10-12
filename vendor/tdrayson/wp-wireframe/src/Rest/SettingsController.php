@@ -7,6 +7,7 @@ namespace Wireframe\Rest;
 use Wireframe\App;
 use Wireframe\Framework\Access\AccessResolver;
 use Wireframe\Framework\Access\ConfigAccessMap;
+use Wireframe\Framework\Access\PageFlags;
 use Wireframe\Framework\Conditions;
 use Wireframe\Framework\ConfigLoader;
 use Wireframe\Framework\Fields\FieldRegistry;
@@ -118,8 +119,8 @@ final class SettingsController
         return new WP_REST_Response([
             'config'   => apply_filters('wp-wireframe/config/for_user', $filtered, $page['page_id'], $map),
             'values'   => Settings::resolvedFor($page['option_key'], $page['config']),
-            'canSave'  => !empty($map->editable),
-            'canReset' => $map->canReset && !empty($map->editable),
+            'canSave'  => PageFlags::canSave($page, $map),
+            'canReset' => PageFlags::canReset($page, $map),
         ]);
     }
 
@@ -134,7 +135,17 @@ final class SettingsController
      */
     private static function saveSettings(WP_REST_Request $request, string $internalId): WP_REST_Response|WP_Error
     {
-        $page    = App::page($internalId);
+        $page = App::page($internalId);
+        $map  = self::accessMap($page);
+
+        if (!PageFlags::canSave($page, $map)) {
+            return new WP_Error(
+                'rest_cannot_save',
+                __('Saving is disabled for this page.', App::textDomain($page['prefix'])),
+                ['status' => 403]
+            );
+        }
+
         $payload = $request->get_json_params();
 
         if (!is_array($payload)) {
@@ -148,7 +159,6 @@ final class SettingsController
         $optionKey  = $page['option_key'];
         $configSlug = $page['config'];
         $fields     = ConfigLoader::flatFields($configSlug);
-        $map        = self::accessMap($page);
 
         // Drop any fields the user can't edit. Repeater subfields share the
         // parent field's editability (see AccessResolver::resolveForConfig).
@@ -180,7 +190,7 @@ final class SettingsController
         // fill in defaults for non-editable fields and we'd merge them over
         // legitimate saved values. Include repeater subfields (`parent.sub`)
         // when their parent is editable so subfield validation still runs.
-        $editableFields = self::scopeFieldsToEditable($fields, $editableTopLevel);
+        $editableFields = self::scopeFields($fields, $editableTopLevel);
 
         $savedValues   = Settings::allFor($optionKey);
         $mergedValues  = array_merge($savedValues, $payload);
@@ -242,10 +252,18 @@ final class SettingsController
      * declared default on the next read). Fields the user cannot edit are
      * preserved untouched, mirroring the save flow's merge semantics.
      */
-    private static function resetSettings(string $internalId): WP_REST_Response
+    private static function resetSettings(string $internalId): WP_REST_Response|WP_Error
     {
         $page = App::page($internalId);
         $map  = self::accessMap($page);
+
+        if (!PageFlags::canReset($page, $map)) {
+            return new WP_Error(
+                'rest_cannot_reset',
+                __('Resetting is disabled for this page.', App::textDomain($page['prefix'])),
+                ['status' => 403]
+            );
+        }
 
         if ($map->isLegacy()) {
             Settings::resetFor($page['option_key']);
@@ -271,17 +289,22 @@ final class SettingsController
 
     /**
      * Build (and cache per request) the AccessMap for the given page.
+     *
+     * @param array $page Page entry from App::page().
      */
-    private static function accessMap(array $page): ConfigAccessMap
+    public static function accessMap(array $page): ConfigAccessMap
     {
         static $cache = [];
         $key = $page['prefix'] . '__' . $page['page_id'];
 
-        if (!isset($cache[$key])) {
-            $config = ConfigLoader::load($page['config']);
-            $resolver = new AccessResolver($page['capability']);
-            $cache[$key] = $resolver->resolveForConfig($config);
+        if (isset($cache[$key])) {
+            return $cache[$key];
         }
+
+        $config   = ConfigLoader::load($page['config']);
+        $resolver = new AccessResolver($page['capability']);
+
+        $cache[$key] = $resolver->resolveForConfig($config);
 
         return $cache[$key];
     }
@@ -293,48 +316,39 @@ final class SettingsController
      * @param list<string> $editable Full editable list including subfield IDs.
      * @return list<string>
      */
-    private static function editableTopLevelIds(array $editable): array
+    public static function editableTopLevelIds(array $editable): array
     {
         $top = [];
 
         foreach ($editable as $fieldId) {
-            if (!str_contains($fieldId, '.')) {
-                $top[] = $fieldId;
+            if (str_contains($fieldId, '.')) {
+                continue;
             }
+
+            $top[] = $fieldId;
         }
 
         return array_values(array_unique($top));
     }
 
     /**
-     * Slice a flat-fields map down to a user's editable scope.
+     * Slice a flat-fields map down to the given top-level fields and their
+     * repeater subfields (stored as `parent.sub` keys).
      *
-     * Keeps the requested top-level fields and any of their repeater
-     * subfields (stored as `parent.sub` keys). Used to constrain what
-     * Validator and Sanitizer act on so non-editable fields don't trip
-     * validation or get overwritten with defaults.
-     *
-     * @param array<string, array> $fields            Flat fields from ConfigLoader::flatFields().
-     * @param list<string>         $editableTopLevel  Top-level field IDs the user may write.
+     * @param array<string, array> $fields      Flat fields from ConfigLoader::flatFields().
+     * @param list<string>         $topLevelIds Top-level field IDs to keep.
      * @return array<string, array>
      */
-    private static function scopeFieldsToEditable(array $fields, array $editableTopLevel): array
+    public static function scopeFields(array $fields, array $topLevelIds): array
     {
-        $allowed = array_flip($editableTopLevel);
+        $allowed = array_flip($topLevelIds);
         $scoped  = [];
 
         foreach ($fields as $fieldId => $fieldConfig) {
-            if (isset($allowed[$fieldId])) {
-                $scoped[$fieldId] = $fieldConfig;
-                continue;
-            }
+            $parentId = explode('.', $fieldId, 2)[0];
 
-            // Repeater subfields keep their parent's editability.
-            if (str_contains($fieldId, '.')) {
-                $parentId = explode('.', $fieldId, 2)[0];
-                if (isset($allowed[$parentId])) {
-                    $scoped[$fieldId] = $fieldConfig;
-                }
+            if (isset($allowed[$fieldId]) || isset($allowed[$parentId])) {
+                $scoped[$fieldId] = $fieldConfig;
             }
         }
 

@@ -26,3 +26,4 @@ A file here is **not** an ADR. An ADR states a decision and its consequences in 
 | [acf-reference-rework.md](acf-reference-rework.md) | `related_post_terms` rework + Phase 3 migration | 2026-09-11 |
 | [apply-existing.md](apply-existing.md) | *Apply to existing posts* page (FW-16), replacing Data Conversion | 2026-09-24 |
 | [rule-type-descriptor.md](rule-type-descriptor.md) | Rule-type descriptors + registry, canonical storage projection (FW-39) | 2026-09-28 |
+| [token-engine.md](token-engine.md) | `Tokens\` module extracted from `TitleSlugHandler`, site-time date tokens (FW-40) | 2026-09-28 |

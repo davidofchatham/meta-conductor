@@ -112,7 +112,7 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
    rule?) before any expensive reverse lookup or query. (B7/V17)
 
 9. **Sibling-conditional subfields use real `conditions`, not description text.**
-   Wireframe 1.0.6 (#13) evaluates subfield-level `conditions` against the other
+   Wireframe (since 1.0.6, #13; still true of 1.1.0) evaluates subfield-level `conditions` against the other
    subfields in the same repeater row, client- AND server-side
    ([Conditions.php](../vendor/tdrayson/wp-wireframe/src/Framework/Conditions.php),
    `RepeaterField` honors it). A subfield only meaningful when a sibling holds a
@@ -567,7 +567,7 @@ Boot path: [class-wireframe-bootstrap.php](../includes/admin/class-wireframe-boo
 
 **One repeater per effect kind**, each bound to that kind's persisted list — `term_rules` (#57, #58) and `format_rules` (#59) ([ADR 0003](adr/0003-ordered-rule-list-and-dispatcher.md)). No tab holds a per-type section any more. Each row carries a `type` select — storing the **legacy type key verbatim** (`hierarchical_rules`, not `hierarchical`), so `get_enabled_rules()` filters on `get_rule_type()` with no mapping table — and every type-specific subfield is `conditions`-gated on it. Restrict stopped being a tab because a level-restriction rule writes terms like every other rule in the list; Personalize went because it described rule types that do not exist yet.
 
-Two Wireframe constraints drive the shape, both verified against the vendored 1.0.6: there is **no cross-repeater ordering primitive** (so an ordered list spanning rule types must be one repeater), and there is **no flexible content** (so that repeater has one fixed subfield superset, gated per type).
+Two Wireframe constraints drive the shape, both still true of the vendored 1.1.0: there is **no cross-repeater ordering primitive** (so an ordered list spanning rule types must be one repeater), and there is **no flexible content** (so that repeater has one fixed subfield superset, gated per type).
 
 **The hazard, and why it earns a harness.** `RepeaterField::sanitize` rebuilds each row from *declared subfields only*, skipping any whose `conditions` evaluate false, and runs **before** the `wp-wireframe/save/payload` filter. So an undeclared key cannot be injected post-hoc, and a condition-hidden subfield is **dropped from storage entirely**. Three consequences:
 
@@ -590,14 +590,17 @@ Row titles are a **save-time snapshot** (`row_title`, rendered by `title_templat
 Replaces a ~2,000-line hand-rolled god-class settings file plus 1,700-line jQuery template-cloning admin.js. Wireframe gives us:
 
 - React-based repeater fields with sortable/collapsible/duplicate
-- Server-side validation via Rakit
+- Server-side validation via `magewirephp/validation` (Rakit syntax)
 - REST endpoints for save/load
 - `@wordpress/components` UI consistency
 
 ### Wireframe quirks worth knowing
 
-- **No client-side field type extension API** (stock Wireframe). Custom field types declared via `wp-wireframe/field_types` filter handle sanitize/validate server-side but don't render in React. Use stock field types only — *unless* we ship our own Wireframe fork that adds the JS registry (Gap A), which is buildable and fork-releasable: see [FW-23](future-work.md#fw-23--client-side-custom-field-types).
-- **Dot-notation field IDs are skipped by Sanitizer** ([src/Framework/Sanitizer.php](../vendor/tdrayson/wp-wireframe/src/Framework/Sanitizer.php)). Don't use `field.subkey` syntax for save fields — use repeaters with subfields instead.
+The Wireframe facts themselves are kept, stamped by version, in the maintainers' shared WP Wireframe reference. What follows is only what they mean here.
+
+- **No client-side field type extension API.** A type declared through the `wp-wireframe/field_types` filter sanitizes server-side but renders nothing in React. Use stock field types. We do not ship a Wireframe fork: since 1.1.0 the newest bundled copy on a site serves every plugin's classes, so a fork would either lose to a newer upstream copy or override everyone else's. The JS registry (Gap A) goes upstream; see [FW-23](future-work.md#fw-23--client-side-custom-field-types).
+- **Dot-notation field IDs are skipped by the Sanitizer.** Use repeaters with subfields for save fields.
+- **Another plugin can supply our Wireframe (1.1.0+).** Classes load from the newest copy registered at `plugins_loaded`, so a site with a newer bundled copy runs that copy's code under our pages. Nothing here touches a `Wireframe\` class before `plugins_loaded`. **The Composer autoloader must be required when `meta-conductor.php` loads, not inside `bws_meta_manager_init()`**: the registry picks the newest copy at `plugins_loaded` priority `PHP_INT_MIN` and never considers a copy registered after that, so loading it on `plugins_loaded` priority 10 let an older copy that registered in time serve our pages (measured on the testbed with an older-labeled copy in a mu-plugin).
 
 Fixed upstream in 1.0.6 (no longer quirks): single-page `App::boot()` honors `menu_slug` (#5); subfield-level `conditions` evaluate client-side (#13); admin-screen body class anchors on the `_page_{menu_slug}` suffix instead of a substring (#6).
 
