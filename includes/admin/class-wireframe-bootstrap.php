@@ -405,7 +405,7 @@ class WireframeBootstrap {
         ]);
 
         // Apply to Existing Posts, a submenu of the page above (FW-16). Its
-        // OWN boot call, not a second `pages[]` entry: Wireframe 1.0.6 merges
+        // OWN boot call, not a second `pages[]` entry: Wireframe (1.0.6–1.1.0) merges
         // the boot-level option key OVER a page's (`$perBoot + [...]` in
         // `App::resolvePages()`), so as a sibling entry this page would save
         // into `bws_meta_conductor_settings`. Built after the repair above,

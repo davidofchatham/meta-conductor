@@ -112,7 +112,7 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
    rule?) before any expensive reverse lookup or query. (B7/V17)
 
 9. **Sibling-conditional subfields use real `conditions`, not description text.**
-   Wireframe 1.0.6 (#13) evaluates subfield-level `conditions` against the other
+   Wireframe (since 1.0.6, #13; still true of 1.1.0) evaluates subfield-level `conditions` against the other
    subfields in the same repeater row, client- AND server-side
    ([Conditions.php](../vendor/tdrayson/wp-wireframe/src/Framework/Conditions.php),
    `RepeaterField` honors it). A subfield only meaningful when a sibling holds a
