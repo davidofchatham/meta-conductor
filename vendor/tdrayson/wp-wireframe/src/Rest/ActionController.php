@@ -5,16 +5,19 @@ declare(strict_types=1);
 namespace Wireframe\Rest;
 
 use Wireframe\App;
+use Wireframe\Framework\Access\AccessResolver;
+use Wireframe\Framework\Access\ConfigAccessMap;
 use Wireframe\Framework\ConfigLoader;
 use Wireframe\Framework\Sanitizer;
 use Wireframe\Framework\Unhandled;
+use Wireframe\Settings;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
 use WP_REST_Server;
 
 /**
- * REST controller for `action` fields.
+ * REST controller for `action` fields and page `header_actions`.
  *
  * One generic route per page dispatches each button press to a per-button
  * WordPress filter:
@@ -27,9 +30,13 @@ use WP_REST_Server;
  *            $request
  *        )
  *
+ *   POST /{prefix}/v1/header_action/{pageId}/{actionId}
+ *      → apply_filters("{$prefix}/header_action/{$pageId}/{$actionId}", …same args)
+ *
  * The handler receives the page's in-flight form values, sanitized through
  * the same per-type handlers the save flow uses — so it can read sibling
- * field selections without having to re-sanitize them.
+ * field selections without having to re-sanitize them. In RBAC mode the
+ * values are scoped to the user's access first (see scopeToAccess()).
  *
  * Security boundaries:
  *  - `permission_callback` reuses `SettingsController::checkPermission()`,
@@ -39,8 +46,13 @@ use WP_REST_Server;
  *    the target is actually an `action` field.
  *  - The requested `actionId` must be declared in `args.buttons[]` (or be
  *    the sugar single-button case where it equals the field id).
+ *  - Header actions must be declared without an `href`, and 403 when the
+ *    user fails the action's `access` rule.
  *  - `Sanitizer::sanitize()` only iterates configured fields, so unknown
  *    keys in the payload are dropped (no mass assignment).
+ *  - `$values` never holds fields the user can't view, nor a client-supplied
+ *    value for a field the user can only view. `$request` still carries the
+ *    raw body, so handlers must read `$values`.
  *  - Config carries no callable references, so there is no callable target
  *    name to leak into the page source.
  */
@@ -58,6 +70,14 @@ final class ActionController
                 [
                     'methods'             => WP_REST_Server::CREATABLE,
                     'callback'            => fn(WP_REST_Request $r) => self::run($r, $internalId),
+                    'permission_callback' => fn() => SettingsController::checkPermission($internalId),
+                ],
+            ]);
+
+            register_rest_route($namespace, '/header_action/' . $page['page_id'] . '/(?P<action>[a-zA-Z0-9_.-]+)', [
+                [
+                    'methods'             => WP_REST_Server::CREATABLE,
+                    'callback'            => fn(WP_REST_Request $r) => self::runHeaderAction($r, $internalId),
                     'permission_callback' => fn() => SettingsController::checkPermission($internalId),
                 ],
             ]);
@@ -84,12 +104,55 @@ final class ActionController
             );
         }
 
-        $values = self::sanitizeIncomingValues($request, $page);
-        $hook   = App::hookName(
+        $hook = App::hookName(
             $page['prefix'],
             'action/' . $page['page_id'] . '/' . $fieldId . '/' . $actionId
         );
 
+        return self::dispatch($hook, $request, $page);
+    }
+
+    private static function runHeaderAction(WP_REST_Request $request, string $internalId): WP_REST_Response|WP_Error
+    {
+        $page     = App::page($internalId);
+        $actionId = (string) $request['action'];
+        $action   = self::findHeaderAction($page, $actionId);
+
+        if ($action === null || !empty($action['href'])) {
+            return new WP_Error(
+                'wireframe_unknown_action',
+                sprintf('Header action "%s" is not declared.', $actionId),
+                ['status' => 404]
+            );
+        }
+
+        $resolver = new AccessResolver($page['capability']);
+
+        if ($resolver->visibleHeaderActions([$action]) === []) {
+            return new WP_Error(
+                'rest_forbidden',
+                sprintf('You are not allowed to run header action "%s".', $actionId),
+                ['status' => 403]
+            );
+        }
+
+        $hook = App::hookName($page['prefix'], 'header_action/' . $page['page_id'] . '/' . $actionId);
+
+        return self::dispatch($hook, $request, $page);
+    }
+
+    /**
+     * Fire a dispatch filter with the request's scoped, sanitized values and
+     * turn its result into a REST response.
+     *
+     * @param string          $hook    Filter name.
+     * @param WP_REST_Request $request The originating request.
+     * @param array           $page    Page entry from App::page().
+     * @return WP_REST_Response|WP_Error
+     */
+    private static function dispatch(string $hook, WP_REST_Request $request, array $page): WP_REST_Response|WP_Error
+    {
+        $values = self::sanitizeIncomingValues($request, $page);
         $result = apply_filters($hook, Unhandled::get(), $values, $request);
 
         if ($result instanceof Unhandled) {
@@ -135,20 +198,98 @@ final class ActionController
     }
 
     /**
-     * Run the JSON body's `values` through the same sanitizer chain Save uses.
+     * Scope the JSON body's `values` to the user's access, then run them
+     * through the same sanitizer chain Save uses.
+     *
+     * @param WP_REST_Request $request The originating request.
+     * @param array           $page    Page entry from App::page().
+     * @return array<string, mixed> Field ID → sanitized value.
      */
     private static function sanitizeIncomingValues(WP_REST_Request $request, array $page): array
     {
-        $body    = $request->get_json_params();
-        $payload = is_array($body['values'] ?? null) ? $body['values'] : [];
+        $payload = self::postedValues($request);
 
         if ($payload === []) {
             return [];
         }
 
         $fields = ConfigLoader::flatFields($page['config']);
+        $map    = SettingsController::accessMap($page);
 
-        return Sanitizer::sanitize($payload, $fields);
+        if ($map->isLegacy()) {
+            return self::sanitizeForHandler($payload, $fields);
+        }
+
+        [$payload, $fields] = self::scopeToAccess($payload, $fields, $map, $page);
+
+        return self::sanitizeForHandler($payload, $fields);
+    }
+
+    /**
+     * Read the JSON body's `values` object.
+     *
+     * @param WP_REST_Request $request The originating request.
+     * @return array<string, mixed> Posted values, or an empty array when absent or malformed.
+     */
+    private static function postedValues(WP_REST_Request $request): array
+    {
+        $values = $request->get_json_params()['values'] ?? null;
+
+        if (!is_array($values)) {
+            return [];
+        }
+
+        return $values;
+    }
+
+    /**
+     * Run values through the same sanitizer chain Save uses.
+     *
+     * @param array<string, mixed> $payload Values to sanitize.
+     * @param array<string, array> $fields  Flat fields to sanitize against.
+     * @return array<string, mixed> Field ID → sanitized value.
+     */
+    private static function sanitizeForHandler(array $payload, array $fields): array
+    {
+        // Include stateless fields so transient inputs (e.g. `upload`) reach the
+        // action handler — they're passed through here, never persisted.
+        return Sanitizer::sanitize($payload, $fields, [], true);
+    }
+
+    /**
+     * Restrict a payload and its field set to what the user could do in the UI.
+     *
+     * Fields the user can't view are dropped from both, so the handler never sees them (not even
+     * as a default). View-only fields carry their stored value, or the default when unsaved.
+     *
+     * @param array<string, mixed> $payload Posted values.
+     * @param array<string, array> $fields  Flat fields from ConfigLoader::flatFields().
+     * @param ConfigAccessMap      $map     The user's access map for the page.
+     * @param array                $page    Page entry from App::page().
+     * @return array{0: array<string, mixed>, 1: array<string, array>} Scoped payload and fields.
+     */
+    private static function scopeToAccess(array $payload, array $fields, ConfigAccessMap $map, array $page): array
+    {
+        $viewable = $map->viewableFieldIds();
+        $editable = SettingsController::editableTopLevelIds($map->editable);
+        $readOnly = array_diff($viewable, $editable);
+
+        $posted = self::onlyKeys($payload, $editable);
+        $stored = self::onlyKeys(Settings::allFor($page['option_key']), $readOnly);
+
+        return [$posted + $stored, SettingsController::scopeFields($fields, $viewable)];
+    }
+
+    /**
+     * Keep only the given keys.
+     *
+     * @param array<string, mixed> $values Keyed values.
+     * @param list<string>         $keys   Keys to keep.
+     * @return array<string, mixed>
+     */
+    private static function onlyKeys(array $values, array $keys): array
+    {
+        return array_intersect_key($values, array_flip($keys));
     }
 
     /**
@@ -185,5 +326,16 @@ final class ActionController
         }
 
         return $field;
+    }
+
+    private static function findHeaderAction(array $page, string $actionId): ?array
+    {
+        foreach (ConfigLoader::load($page['config'])['header_actions'] ?? [] as $action) {
+            if ((string) ($action['id'] ?? '') === $actionId) {
+                return $action;
+            }
+        }
+
+        return null;
     }
 }

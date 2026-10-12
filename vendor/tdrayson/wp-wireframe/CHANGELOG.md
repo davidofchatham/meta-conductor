@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.1.0] - 2026-10-12
+
+### Features
+- `{prefix}/can_save` / `{prefix}/can_reset` filters, enforced by the REST endpoints; Save and Reset hide on stateless-only pages (#36).
+- `header_actions` page config key: link or dispatched buttons beside Save/Reset, via `{prefix}/header_action/{pageId}/{id}` (#37).
+- `editor` field accepts native `wp.editor` settings via `args`: `tinymce`, `quicktags`, `media_buttons`, `wpautop`, `rows` (#19).
+- New `upload` field: temporary local files passed to actions, never stored in the media library (#21).
+- Actions can return a `download` payload; `table` fields export the full dataset to CSV (#23).
+- `menu_icon` accepts a custom SVG, inline or as a file path (#29).
+- Tabs and sections without their own `access` key are shown only when the user can view one of their fields (#30).
+- JSON Schema for page configs, plus a runtime config linter under `WP_DEBUG` (#31).
+- **Behaviour change:** the `action` field's label spacer is now opt-in via `args.label_spacer` (#42).
+
+### Fixes
+- Media picker pre-selects the stored attachments when opened (#17).
+- Swap abandoned `rakit/validation` for its maintained fork `magewirephp/validation`, silencing PHP 8.4 deprecation notices (#33).
+- `editor` subfields initialise in every repeater row and survive collapse, reorder and removal (#38).
+- Plugins bundling the release zip no longer fatal on a shared Composer autoloader class; every copy registers and the newest one's classes load (#35, reported by @christianvanthof).
+- Action and header action handlers only receive values for fields the user can view; view-only fields carry the stored value, not the posted one (#51).
+
 ## [1.0.6] - 2026-06-04
 
 ### Features

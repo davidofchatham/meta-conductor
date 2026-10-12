@@ -6,6 +6,5 @@ $vendorDir = dirname(__DIR__);
 $baseDir = dirname($vendorDir);
 
 return array(
-    'Wireframe\\' => array($vendorDir . '/tdrayson/wp-wireframe/src'),
-    'Rakit\\Validation\\' => array($vendorDir . '/rakit/validation/src'),
+    'Rakit\\Validation\\' => array($vendorDir . '/magewirephp/validation/src'),
 );

@@ -53,6 +53,12 @@ WP Wireframe is a library, not a standalone plugin. Bundle a copy inside your ow
 
 Add the GitHub repo to your plugin's `composer.json` — no Packagist needed:
 
+```bash
+composer config repositories.tdrayson/wp-wireframe git https://github.com/tdrayson/wp-wireframe
+```
+
+\- or -
+
 ```json
 {
     "repositories": [
@@ -60,17 +66,16 @@ Add the GitHub repo to your plugin's `composer.json` — no Packagist needed:
             "type": "vcs",
             "url": "https://github.com/tdrayson/wp-wireframe"
         }
-    ],
-    "require": {
-        "tdrayson/wp-wireframe": "^1.0"
-    }
+    ]
 }
 ```
 
-Then install:
+\- then -
+
+Install:
 
 ```bash
-composer install
+composer require tdrayson/wp-wireframe
 ```
 
 And require Composer's autoloader from your plugin's main file:
@@ -92,7 +97,17 @@ require_once __DIR__ . '/vendor/wp-wireframe/vendor/autoload.php';
 
 ---
 
-That's it — no separate plugin to install or activate. If multiple plugins each bundle their own copy, they share one class definition at runtime and boot independently under their own prefixes.
+That's it — no separate plugin to install or activate.
+
+### Multiple plugins, one framework
+
+Any number of plugins can bundle their own copy. Each copy registers its version, and from `plugins_loaded` on every plugin uses the classes from the newest copy, booting independently under its own prefix.
+
+- Require the autoloader when your plugin file loads, and don't use `Wireframe\` classes before `plugins_loaded`: a newer copy may not have registered yet. Booting on `init`, as below, is fine. With `WP_DEBUG` on, early use triggers a `_doing_it_wrong` notice.
+- Classes resolve through the running copy's `autoload-map.php`, so a newer copy can bundle a dependency an older one doesn't know about.
+- With `WP_DEBUG` on, copies spanning more than one major version trigger a notice naming each plugin, the version it bundles, and the version running.
+- `Wireframe\Versions::registered()` lists every copy found with its version and source plugin; `Wireframe\Versions::active()` is the one in use.
+- A copy prefixed with [Strauss](https://github.com/BrianHenryIE/strauss) gets its own namespace and registry, so it stays isolated.
 
 ---
 
@@ -202,7 +217,7 @@ my-plugin/
 └── vendor/
     └── wp-wireframe/          # Extracted from the release zip
         ├── src/
-        └── vendor/            # rakit/validation
+        └── vendor/            # magewirephp/validation
 ```
 
 ---
@@ -226,6 +241,20 @@ Wireframe\App::boot([
 ```
 
 Everything except `prefix` has a sensible default. `config` accepts either a PHP file path or an inline array — see [Config Structure](#config-structure).
+
+### Menu Icon
+
+`menu_icon` accepts anything [`add_menu_page()`](https://developer.wordpress.org/reference/functions/add_menu_page/) does — a dashicon slug, an image URL, a `data:` URI, or `'none'` — plus two custom-SVG conveniences:
+
+```php
+// Inline SVG markup.
+'menu_icon' => '<svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="..."/></svg>',
+
+// Path to an .svg file shipped with your plugin.
+'menu_icon' => __DIR__ . '/assets/icon.svg',
+```
+
+Both are base64-encoded into a `data:image/svg+xml` URI for you. Use `fill="currentColor"` (or no `fill` at all) so the icon inherits the admin colour scheme and highlight states, exactly like a dashicon. File paths must resolve to a readable `.svg` under the WordPress content/plugin/theme tree (or the wp-wireframe package); anything else falls back to being passed through unchanged.
 
 ### Submenu Pages
 
@@ -363,6 +392,27 @@ return [
 ```
 
 No tabs = no tab bar. No sections = fields render in a single card.
+
+### Schema & validation
+
+A JSON Schema for the config structure ships at [`schema/config.schema.json`](./schema/config.schema.json). It covers all three input formats, the common field keys, the conditions DSL, the `access` shapes, and per-type `args` constraints (e.g. choice fields require `args.options`, repeaters require `args.subfields`). Point your editor at it to get autocomplete and inline validation while authoring JSON configs.
+
+In VS Code, map it in `.vscode/settings.json`:
+
+```jsonc
+{
+  "json.schemas": [
+    {
+      "fileMatch": ["**/config/*.json", "**/wireframe.config.json"],
+      "url": "./vendor/wp-wireframe/schema/config.schema.json"
+    }
+  ]
+}
+```
+
+Or reference it inline from a JSON config with `"$schema": "./vendor/wp-wireframe/schema/config.schema.json"`.
+
+**Runtime check (opt-in).** When `WP_DEBUG` is enabled, every booted config is linted on admin screens and a warning notice lists any structural problems — unknown field types, choice fields missing `options`, duplicate IDs, out-of-range `columns`, and so on (also written to the PHP error log). It's a focused sanity check against the live field registry; the JSON Schema above remains the full contract. Nothing runs when `WP_DEBUG` is off, so production is unaffected.
 
 ---
 
@@ -578,6 +628,8 @@ Restrict who can view or edit a tab, section, or field with the optional `access
 ],
 ```
 
+**Section/tab access bubbles up from fields.** A tab or section that declares **no** `access` key of its own derives its visibility from its children: it's shown to anyone who can view at least one field inside it, and hidden when they can view none. So you only need to annotate `access` on the fields — there's no need to restate the rule on the section just to keep it from rendering as an empty card. Add an explicit `access` key to a tab/section only when you want to gate it top-down regardless of its fields (as in `danger_zone` above).
+
 #### Defaults at a glance
 
 Role-based access is **strictly opt-in**. If a page config contains zero `access` keys anywhere, behavior is identical to previous versions — `manage_options` required for everything. The table below describes what kicks in once at least one `access` key is declared on the page:
@@ -590,12 +642,14 @@ Role-based access is **strictly opt-in**. If a page config contains zero `access
 | `access` shorthand `'editor'`                        | Applied to both `view` and `edit`                                                                             | Use long form `['view' => …, 'edit' => …]` to split                                            |
 | `access` arrays                                      | Logical OR — any match grants access                                                                          | n/a                                                                                            |
 | `edit` without `view`                                | Implicitly denied                                                                                             | `edit` always requires `view`                                                                  |
-| Tab / section / field with no `access` key           | Inherits from parent (ultimately the page capability)                                                         | Add an `access` key                                                                            |
+| Field with no `access` key                           | Inherits from its section/tab (ultimately the page capability)                                                | Add an `access` key                                                                            |
+| Tab / section with no `access` key                   | Visibility bubbles up from its children — shown if the user can view ≥1 descendant field, hidden if none      | Add an explicit `access` key to gate it top-down instead                                       |
 | Non-viewable elements                                | Stripped from the config sent to the browser entirely                                                         | `wp-wireframe/config/for_user` filter                                                          |
 | Non-editable but viewable fields                     | Rendered with the input disabled; server rejects any writes                                                   | n/a                                                                                            |
 | Empty tab/section after filtering                    | Auto-hidden                                                                                                   | n/a                                                                                            |
 | Save endpoint                                        | Merges editable fields into existing values — fields outside the user's scope are never touched               | `wp-wireframe/save/editable_fields` and `wp-wireframe/save/payload`                            |
 | Reset endpoint                                       | Resets only the user's editable fields (admins with full access naturally reset everything)                   | `wp-wireframe/access/can_reset` filter                                                         |
+| Action / header action `$values`                     | Only fields the user can view; view-only fields carry the stored value (or default), never the posted one     | n/a                                                                                            |
 | Reset eligibility                                    | Any user with at least one editable field on the page may reset                                               | `wp-wireframe/access/can_reset` returns false                                                  |
 | Save / Reset buttons                                 | Hidden when the user has no editable fields                                                                   | n/a                                                                                            |
 | REST permission callback (legacy, no `access` keys)  | `current_user_can($page['capability'])`                                                                       | Page declares an `access` key → switches to RBAC mode                                          |
@@ -626,7 +680,7 @@ Custom field types receive a `field.readOnly` prop on their Edit component when 
 
 ### Action Field
 
-Run a server-side handler from a button. The current (in-flight) form values are sent along, so the handler can read sibling fields. Config is **pure data** — no PHP callables — and the handler is wired via `add_filter` anywhere in your plugin.
+Run a server-side handler from a button. The current (in-flight) form values are sent along, so the handler can read sibling fields. On a page using [role-based access](#role-based-access), `$values` holds only the fields the user can view, and view-only fields carry their stored value rather than whatever was posted. Read `$values`, not the raw request body. Config is **pure data** — no PHP callables — and the handler is wired via `add_filter` anywhere in your plugin.
 
 #### Single-button (sugar)
 
@@ -737,6 +791,27 @@ Default value is a private `Unhandled` sentinel — if no listener attaches, the
 - Any `html` you return is rendered raw on the client. Escape anything user-derived with `esc_html()`, `wp_kses_post()`, or assemble the HTML server-side from trusted strings.
 - No PHP callables live in the config, so no callable target names leak into the page source.
 
+### Header Actions
+
+Add buttons to the page header, next to Save / Reset, with the page-level `header_actions` key:
+
+```php
+return [
+    'title'          => __('Orders', 'my-plugin'),
+    'header_actions' => [
+        ['id' => 'export',      'label' => __('Export JSON', 'my-plugin'), 'href' => $exportUrl, 'target' => '_blank'],
+        ['id' => 'recalculate', 'label' => __('Recalculate', 'my-plugin'), 'variant' => 'primary', 'confirm' => __('Are you sure?', 'my-plugin'), 'access' => 'manage_options'],
+    ],
+    'tabs' => [ /* … */ ],
+];
+
+add_filter('my-plugin/header_action/{pageId}/recalculate', function ($unhandled, array $values, WP_REST_Request $request) {
+    return ['status' => 'success', 'message' => __('Recalculated.', 'my-plugin')];
+}, 10, 3);
+```
+
+A button with `href` is a plain link. Any other button works like an [action field](#action-field) button: it posts the in-flight form values to `{prefix}/header_action/{pageId}/{id}` and takes the same `variant`, `destructive`, `confirm` and response shape (`html` opens in a modal). `access` uses the [field format](#role-based-access) and defaults to the page capability; running a button is an edit, so a user needs its `edit` rule (which falls back to `view`). Buttons the user can't run are never sent to the browser, and their route returns `403`.
+
 ### Validation
 
 ```php
@@ -749,7 +824,7 @@ Default value is a private `Unhandled` sentinel — if no listener attaches, the
 ],
 ```
 
-Built-in validation is automatic per field type (email format, URL format, numeric bounds, color hex, date/time format). Add custom rules via the `validation` key using [rakit/validation](https://github.com/rakit/validation) syntax.
+Built-in validation is automatic per field type (email format, URL format, numeric bounds, color hex, date/time format). Add custom rules via the `validation` key using [magewirephp/validation](https://github.com/magewirephp/validation) (rakit/validation) syntax.
 
 ### Layout Grid
 
@@ -898,6 +973,20 @@ add_action('my-plugin/settings_reset', function (string $pageId) {
 });
 ```
 
+`{prefix}/can_save` and `{prefix}/can_reset` receive `(bool $value, string $pageId, ConfigAccessMap $map)` and decide whether the Save / Reset buttons show. They are enforced server-side too: when either resolves `false`, the matching REST endpoint returns a 403. Both default to `false` when every editable field is stateless (`html`, `table`, `action`, ...).
+
+```php
+// Hide Save on a read-only status page
+add_filter('my-plugin/can_save', function (bool $canSave, string $pageId, $map) {
+    return $pageId === 'status' ? false : $canSave;
+}, 10, 3);
+
+// Only administrators may reset
+add_filter('my-plugin/can_reset', function (bool $canReset, string $pageId, $map) {
+    return $canReset && current_user_can('manage_options');
+}, 10, 3);
+```
+
 The field type registry is shared across every plugin, so its filter is global:
 
 ```php
@@ -922,6 +1011,7 @@ The `action` and `table` field types dispatch through per-page, per-field filter
 | Hook                                                          | Type   | Purpose                                                                                     |
 | ------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------- |
 | `{prefix}/action/{pageId}/{fieldId}/{actionId}`               | filter | Handle a button press on an `action` field. See [Action Field](#action-field).              |
+| `{prefix}/header_action/{pageId}/{actionId}`                  | filter | Handle a header button press. See [Header Actions](#header-actions).                        |
 | `{prefix}/table/{pageId}/{fieldId}/data`                      | filter | Row fetch for a `table` field. Receives `$query`, returns `['items', 'total']`.             |
 | `{prefix}/table/{pageId}/{fieldId}/{actionId}`                | filter | Row / bulk action on a `table` field. Receives `$ids`, `$request`.                          |
 | `{prefix}/table/{pageId}/{fieldId}/detail/fetch`              | filter | Load a single entry for the detail view. Receives `$entryId`, `$request`.                   |
@@ -1016,6 +1106,8 @@ npm run start    # watch mode
 npm run build    # production build → src/assets/
 ```
 
+To release, bump the version in `bootstrap.php` (the `Versions::register()` call) and tag `v{version}`. The release workflow fails if the two differ.
+
 ---
 
 ## License
@@ -1028,4 +1120,4 @@ GPL-2.0-or-later
 
 Built by [Taylor Drayson](https://github.com/tdrayson).
 
-Uses [@wordpress/components](https://developer.wordpress.org/block-editor/reference-guides/packages/packages-components/), [@wordpress/admin-ui](https://github.com/WordPress/gutenberg/tree/trunk/packages/admin-ui), and [rakit/validation](https://github.com/rakit/validation).
+Uses [@wordpress/components](https://developer.wordpress.org/block-editor/reference-guides/packages/packages-components/), [@wordpress/admin-ui](https://github.com/WordPress/gutenberg/tree/trunk/packages/admin-ui), and [magewirephp/validation](https://github.com/magewirephp/validation) (a maintained fork of rakit/validation).

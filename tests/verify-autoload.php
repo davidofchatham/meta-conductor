@@ -41,7 +41,7 @@ foreach ([
 
 $root = dirname(__DIR__);
 
-// Composer autoloader first (Wireframe, rakit) — namespaced classes that extend
+// Composer autoloader first (Wireframe, magewirephp/validation) — namespaced classes that extend
 // or implement vendor types need these resolvable at declare time.
 $vendor = $root . '/vendor/autoload.php';
 if (is_file($vendor)) {

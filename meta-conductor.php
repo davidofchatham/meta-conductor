@@ -40,7 +40,9 @@ if (!function_exists('bws_meta_manager_init')) {
             return;
         }
 
-        // Composer autoloader (WP Wireframe + rakit/validation)
+        // Composer autoloader (WP Wireframe + magewirephp/validation). From
+        // Wireframe 1.1 the newest bundled copy on the site serves the
+        // classes, locked at plugins_loaded — don't touch Wireframe\ before then.
         if (file_exists(META_CONDUCTOR_PLUGIN_DIR . 'vendor/autoload.php')) {
             require_once META_CONDUCTOR_PLUGIN_DIR . 'vendor/autoload.php';
         }
