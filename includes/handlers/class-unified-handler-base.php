@@ -259,10 +259,10 @@ abstract class UnifiedHandlerBase {
      * single `wp_update_post()` at the end of the pass, which is what keeps one
      * save to one row update however many rules matched.
      *
-     * It is also the shape the deferred two-phase split needs (ADR 0003): when
-     * `field_transformation` lands and the format pass gains a pre-write half,
-     * that half can hand `wp_insert_post_data`'s own `$data` array to this same
-     * seam, because the seam never assumed the row existed.
+     * The same array carries field effects: a Computed field rule sets
+     * `fields[<name>]` / `field_keys[<name>]` and the dispatcher persists them
+     * (docs/architecture.md → Field effects ride the $data seam). The format
+     * pass stays post-write only.
      *
      * NULL MEANS "NOT MINE". Returning null says this rule does not apply to
      * this entity at all — wrong post type, no pattern, nothing to say. It is
@@ -282,8 +282,8 @@ abstract class UnifiedHandlerBase {
      *
      * @param array $data    Post data as the previous rule left it. Keys: ID,
      *                       post_title, post_name, post_type, post_status,
-     *                       post_date, post_parent. Only post_title and
-     *                       post_name are written back.
+     *                       post_date, post_parent, fields, field_keys. Only
+     *                       post_title, post_name and fields are written back.
      * @param int   $post_id Entity being passed over.
      * @param array $rule    One enabled rule (canonical shape).
      * @return array|null Post data, or null when the rule does not apply here.

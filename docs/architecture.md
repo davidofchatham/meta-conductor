@@ -454,7 +454,7 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
       queue removes. H13 pins the sequence, both halves: that the format pass is
       reached from the drain at all, and that it is reached *after* the term
       pass.
-    - **The format applier seam is data-in/data-out**, not `apply_to_post`. A term rule's effect is a set of term relationships, so its applier writes and reports a boolean; a format rule's effect is the post ROW, and several rules can land on one row. So `apply_to_data(array, int, array): ?array` hands post data along the list and the *dispatcher* performs the single `wp_update_post()` at the end — one save, one row update, however many rules matched. It is also the shape the deferred two-phase split needs: when `field_transformation` lands, a pre-write phase can feed `wp_insert_post_data`'s own `$data` to the same seam. `null` means "this rule does not apply here", which is distinct from returning the data unchanged, and the difference is what decides first-match-wins. The applier writes nothing at all, not even per-rule state: `FormatDispatcher::run_pass()` is `compute()` (runs the appliers, returns before/after, writes nothing — the format preview's entry point) then `write()`, which calls each answering rule's `commit_data()` (title/slug's idempotency meta) before the row update.
+    - **The format applier seam is data-in/data-out**, not `apply_to_post`. A term rule's effect is a set of term relationships, so its applier writes and reports a boolean; a format rule's effect is the post ROW, and several rules can land on one row. So `apply_to_data(array, int, array): ?array` hands post data along the list and the *dispatcher* performs the single `wp_update_post()` at the end — one save, one row update, however many rules matched. It also carries field effects: see [Field effects ride the `$data` seam](#field-effects-ride-the-data-seam). `null` means "this rule does not apply here", which is distinct from returning the data unchanged, and the difference is what decides first-match-wins. The applier writes nothing at all, not even per-rule state: `FormatDispatcher::run_pass()` is `compute()` (runs the appliers, returns before/after, writes nothing — the format preview's entry point) then `write()`, which calls each answering rule's `commit_data()` (title/slug's idempotency meta) before the row update.
     - **The pre-write phase could not survive the conversion.** `title_slug` ran
       half of itself on `wp_insert_post_data` so the editor saw final values
       without a second update. That half runs *before* terms land, so a
@@ -657,6 +657,16 @@ Invariants asserted by H10 (`tests/verify-kind-lists.php`):
 - **The pre-0.8.0 guard** fires on legacy rows with no kind list, and on nothing else.
 - **`id` is the per-type index**, not the kind-list position.
 - **The registry is the enumeration.** `all_types()` and `get_kind_for_type()` read it, so there is no second list for them to drift out of step with — which is what lets `get_enabled_rules()` carry no fallback.
+
+### Field effects ride the `$data` seam
+
+**The format pass stays post-write only; a Computed field rule (`field_transformation_rules`) returns its value in the seam's data array and the dispatcher writes it.** The array gains two maps: `fields[<name>]`, the computed value keyed by the field's **name** (tokens name fields by name), and `field_keys[<name>]`, the ACF **field key** the rule stores and the value is written by. `FormatDispatcher::write()` persists the difference through `update_field($key, …)` *before* the single row update, so the field's hidden reference row is maintained and neither `acf/save_post` nor `save_post` fires. A value equal to what the field holds is not written, and an all-empty result writes `''`. The handler registers nothing and writes nothing — H13 holds its `apply_to_data()` to no write primitive (`update_field` included) and `write_fields()` to a by-key write.
+
+- **Slash the value.** `update_field()` unslashes on the way to `update_metadata()`, so an unslashed `a` stores as `ab`; the dispatcher passes `wp_slash()`ed values, as it does for the row update.
+- **The ACF write queue is stood down for the write** (`meta_conductor_acf_reapply_enabled` returns false inside `write_fields()`). Otherwise the pass's own `update_field()` would record the post and queue a second, idempotent pass at shutdown.
+- **`run_pass()` counts honestly:** a rule counts when it changed the title or slug, plus one per field written — not per rule that merely answered.
+
+*Rejected alternative — a pre-write phase.* ADR 0003 expected the format dispatcher to split in two when field rules landed, with a `wp_insert_post_data` half beside the post-write one. It did not need to. A field write is post meta, which `wp_insert_post_data` never carries, and the post-write pass already sees the current pass's terms; a pre-write phase would reintroduce the stale-term read that #64 removed and gain nothing a meta write needs. If a future effect genuinely has to land before the row is written, it feeds this same seam rather than a second one.
 
 ## Token engine
 

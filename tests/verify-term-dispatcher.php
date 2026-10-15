@@ -788,6 +788,18 @@ if (!is_file($format_file)) {
         if (!preg_match('/remove_filter\(\s*[\'"]wp_revisions_to_keep[\'"]/', $write_body)) {
             $errors[] = 'FormatDispatcher::write() suppresses the revision and never lifts the suppression — every later save in the request would silently stop creating revisions.';
         }
+        // Field effects ride the seam: the dispatcher persists `fields`, by ACF
+        // field KEY, BEFORE the row update, and only there (the handler is held
+        // to no write primitive in 12h).
+        $fields_at = strpos($write_body, 'write_fields(');
+        $update_at = strpos($write_body, 'wp_update_post(');
+        if ($fields_at === false || ($update_at !== false && $fields_at > $update_at)) {
+            $errors[] = 'FormatDispatcher::write() does not call write_fields() before the row update — computed fields would not be persisted by the pass.';
+        }
+        $write_fields = $method_body($fsrc, 'write_fields');
+        if ($write_fields === null || !preg_match('/update_field\(\s*\$key/', $write_fields)) {
+            $errors[] = 'FormatDispatcher::write_fields() must write through update_field() by the ACF field KEY — a name write skips the field\'s reference row on a first write.';
+        }
     }
 }
 
@@ -851,7 +863,9 @@ foreach ($kind_types('format_rules') as $type) {
     // The meta and option writes too, since FW-16 03: the compute step runs the
     // appliers for a preview, so anything an applier writes is written by a
     // preview. Per-rule state belongs in commit_data(), which only write() calls.
-    foreach (['wp_update_post', 'wp_insert_post', 'update_post_meta', 'update_option'] as $effect) {
+    // `update_field` joined the list with the Computed field rule: its value
+    // rides `$data['fields']` and FormatDispatcher::write_fields() persists it.
+    foreach (['wp_update_post', 'wp_insert_post', 'update_post_meta', 'update_option', 'update_field', 'add_post_meta'] as $effect) {
         if (preg_match('/\b' . preg_quote($effect, '/') . '\s*\(/', $applier)) {
             $errors[] = sprintf(
                 '%s::apply_to_data() calls %s() — a format applier returns data; the dispatcher writes the row and commit_data() the per-rule state (#64, FW-16 03).',

@@ -130,6 +130,9 @@ $settings = [
     'title_slug_rules' => [
         ['name' => 'S1', 'enabled' => true, 'post_type' => 'event', 'title_pattern' => '{term:sport}'],
     ],
+    'field_transformation_rules' => [
+        ['name' => 'F1', 'enabled' => true, 'post_type' => 'event', 'target_field' => 'field_x', 'pattern' => '{term:sport}'],
+    ],
     // Non-rule globals: never rows, never a guard trigger.
     'conflict_handling_overrides' => [['taxonomy' => 'category', 'mode' => 'replace']],
     'manual_processing_enabled'   => true,
@@ -143,6 +146,7 @@ $all_types = [
     'related_post_terms_rules',
     'hierarchical_level_restriction_rules',
     'title_slug_rules',
+    'field_transformation_rules',
 ];
 
 // The same rules in the kind-list shape, KIND_TYPES order — what a 0.8.0+ site
@@ -198,7 +202,7 @@ $flat = OptionRuleStorage::all_types();
 sort($flat);
 $sorted_all = $all_types;
 sort($sorted_all);
-$check('all_types() is exactly the seven rule types', $flat === $sorted_all);
+$check('all_types() is exactly the eight rule types', $flat === $sorted_all);
 
 $check('every rule type maps to its kind', array_map(
     static fn(string $t): string => $storage->get_kind_for_type($t),
@@ -210,6 +214,7 @@ $check('every rule type maps to its kind', array_map(
     'term_rules',
     'term_rules',
     'term_rules',
+    'format_rules',
     'format_rules',
 ]);
 $check('an unknown type maps to no kind', $storage->get_kind_for_type('nope_rules') === '');
@@ -236,7 +241,7 @@ $check('the term kind reports its migrated types — all six as of #58',
     ]);
 $check('the format kind reports its migrated type (#59)',
     OptionRuleStorage::migrated_types_for_kind(OptionRuleStorage::KIND_FORMAT)
-        === ['title_slug_rules']);
+        === ['title_slug_rules', 'field_transformation_rules']);
 
 // =============================================================================
 // 4. THE READ — projection, normalization, and the per-type `id`.

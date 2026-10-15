@@ -51,7 +51,7 @@ $posts       = array_keys( $m['posts'] );
 $owned_types = $m['defines']['post_types'];
 $owned_tax   = $m['defines']['taxonomies'];
 
-// The 7 rule-type keys of bws_meta_conductor_settings (OptionRuleStorage).
+// The 8 rule-type keys of bws_meta_conductor_settings (OptionRuleStorage).
 $valid_types = array(
 	'hierarchical_rules',
 	'propagation_rules',
@@ -60,6 +60,7 @@ $valid_types = array(
 	'related_post_terms_rules',
 	'hierarchical_level_restriction_rules',
 	'title_slug_rules',
+	'field_transformation_rules',
 );
 
 // ── composes_on: family-standard two-key shape.

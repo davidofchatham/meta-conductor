@@ -449,4 +449,81 @@ class ConfigHelpers {
 
         return $placeholder_row + $fields_cache;
     }
+
+    /**
+     * ACF field types a Computed field rule may write: those that hold one
+     * composed string. Relationship, gallery, group and the like are not
+     * offered, so a pattern cannot be pointed at a field that would reject it.
+     */
+    public const COMPUTED_TARGET_TYPES = ['text', 'textarea', 'wysiwyg', 'number', 'email', 'url'];
+
+    /**
+     * The Computed field rule's target select: top-level ACF fields a pattern
+     * can be stored in, keyed by ACF FIELD KEY (the identity that survives a
+     * rename), labelled with the post types and group they belong to.
+     *
+     * One entry per field, not per post type — the key is the option, and a
+     * group located on several post types would otherwise repeat it. The post
+     * types ride in the label instead. A static list cannot follow the row's
+     * own `post_type` select, so the author picks both.
+     *
+     * Empty (placeholder only) when ACF is unavailable. Like the relationship
+     * list, nothing is cached before ACF is confirmed loaded.
+     *
+     * @return array<string,string> field key => label.
+     */
+    public static function acf_computed_target_options(): array {
+        static $fields_cache = null;
+
+        $placeholder_row = ['' => __('— Select ACF field —', 'meta-conductor')];
+
+        if ($fields_cache !== null) {
+            return $placeholder_row + $fields_cache;
+        }
+        if (!function_exists('acf_get_field_groups') || !function_exists('acf_get_fields')) {
+            return $placeholder_row;
+        }
+
+        $fields_cache = [];
+        $post_types   = get_post_types(['public' => true], 'objects');
+        unset($post_types['attachment']);
+
+        foreach ($post_types as $post_type) {
+            foreach ((array) acf_get_field_groups(['post_type' => $post_type->name]) as $group) {
+                foreach ((array) acf_get_fields($group['key']) as $field) {
+                    $key = (string) ($field['key'] ?? '');
+                    if ($key === '' || !in_array($field['type'] ?? '', self::COMPUTED_TARGET_TYPES, true)) {
+                        continue;
+                    }
+                    $fields_cache[$key]['label'] = sprintf('%s (%s)', $field['label'] ?? $field['name'], $field['name'] ?? '')
+                        . ((string) ($group['title'] ?? '') !== '' ? ' — ' . $group['title'] : '');
+                    $fields_cache[$key]['types'][] = $post_type->label;
+                }
+            }
+        }
+
+        foreach ($fields_cache as $key => $entry) {
+            $fields_cache[$key] = $entry['label'] . ' [' . implode(', ', $entry['types']) . ']';
+        }
+
+        return $placeholder_row + $fields_cache;
+    }
+
+    /**
+     * A field's human label from its ACF field key, or '' when the key is
+     * empty or no longer resolves. Row titles use it; a stale key shows
+     * nothing rather than a raw `field_…` string.
+     *
+     * @param string $key ACF field key.
+     * @return string Unescaped.
+     */
+    public static function acf_field_label(string $key): string {
+        if ($key === '' || !function_exists('acf_get_field')) {
+            return '';
+        }
+
+        $field = \acf_get_field($key);
+
+        return is_array($field) ? (string) ($field['label'] ?? '') : '';
+    }
 }

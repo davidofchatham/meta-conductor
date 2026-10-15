@@ -79,6 +79,11 @@ function bws_fixture_mc_rules_register_types() {
  *   mc_event_date — date_picker Ymd (title_slug {meta:}/{date_*:} tokens +
  *                   escalation date_field).
  *
+ * group_mc_computed_fields (mc_item) — the Computed field rule's surface:
+ *   mc_cf_first / mc_cf_last — text SOURCE fields.
+ *   mc_cf_display            — text TARGET (output = text).
+ *   mc_cf_display_html       — wysiwyg TARGET (output = html).
+ *
  * group_mc_section_fields (mc_section):
  *   mc_related_items — relationship → mc_item (related_post_terms holder field).
  *   mc_primary_item  — post_object → mc_item (pull/post_object variant, sweep-time).
@@ -207,6 +212,25 @@ function bws_fixture_mc_rules_register_acf() {
 		)
 	);
 
+
+	// Computed field rule (FW-4): two text sources, a text target and a
+	// wysiwyg target. Its own group so no other sweep's mc_item field set
+	// changes. Keys are the identity the rule stores.
+	acf_add_local_field_group(
+		array(
+			'key'      => 'group_mc_computed_fields',
+			'title'    => 'MC Computed Fields',
+			'location' => array(
+				array( array( 'param' => 'post_type', 'operator' => '==', 'value' => 'mc_item' ) ),
+			),
+			'fields'   => array(
+				array( 'key' => 'field_mc_cf_first', 'name' => 'mc_cf_first', 'label' => 'CF First', 'type' => 'text' ),
+				array( 'key' => 'field_mc_cf_last', 'name' => 'mc_cf_last', 'label' => 'CF Last', 'type' => 'text' ),
+				array( 'key' => 'field_mc_cf_display', 'name' => 'mc_cf_display', 'label' => 'CF Display', 'type' => 'text' ),
+				array( 'key' => 'field_mc_cf_display_html', 'name' => 'mc_cf_display_html', 'label' => 'CF Display HTML', 'type' => 'wysiwyg' ),
+			),
+		)
+	);
 
 	// DECOY group (#25). A SECOND relationship field named `mc_related_items`,
 	// on the SAME post type as the real one, in a different group, pointing at

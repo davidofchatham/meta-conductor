@@ -51,8 +51,10 @@ $settings = get_option(OptionRuleStorage::OPTION_NAME, []);
 $rows     = $settings[OptionRuleStorage::KIND_FORMAT] ?? [];
 
 $note('format_rules is populated', !empty($rows));
-$note('every format row is a title/slug rule',
-    array_values(array_unique(array_column($rows, 'type'))) === ['title_slug_rules']);
+// The format list holds title/slug rules and, since FW-4, Computed field rules.
+$format_types = ['title_slug_rules', 'field_transformation_rules'];
+$note('every format row is a known format rule type',
+    array_diff(array_column($rows, 'type'), $format_types) === []);
 $note('the legacy title_slug_rules array is gone from storage (#66)',
     !array_key_exists('title_slug_rules', $settings));
 
@@ -84,9 +86,11 @@ $sanitized = RepeaterField::sanitize($rows, $field['args']);
 
 $note('sanitize keeps every row', count($sanitized) === count($rows));
 
-// Keys TitleSlugHandler READS — these must survive a save unchanged.
+// Keys the format handlers READ — these must survive a save unchanged. The
+// last three are the Computed field rule's, stored by ACF field KEY.
 $must_survive = ['type', 'enabled', 'post_type', 'title_pattern', 'slug_pattern',
-                 'slug_mode', 'date_escalation', 'date_field', 'name'];
+                 'slug_mode', 'date_escalation', 'date_field', 'name',
+                 'target_field', 'pattern', 'output'];
 
 foreach ($rows as $i => $row) {
     foreach ($must_survive as $key) {
@@ -105,7 +109,7 @@ foreach ($rows as $i => $row) {
 // onto title_slug_rules any more), so the list has to survive it in place.
 $note('the sanitized list keeps every row', count($sanitized) === count($rows));
 $note('every sanitized row is still typed',
-    array_values(array_unique(array_column($sanitized, 'type'))) === ['title_slug_rules']);
+    array_column($sanitized, 'type') === array_column($rows, 'type'));
 
 echo $fail ? "\nSWEEP-59 FAIL: " . count($fail) . " failed\n" : "\nSWEEP-59 OK\n";
 exit($fail ? 1 : 0);

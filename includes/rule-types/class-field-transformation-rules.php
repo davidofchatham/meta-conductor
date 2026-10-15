@@ -1,0 +1,143 @@
+<?php
+/**
+ * Descriptor for `field_transformation_rules` rows — the Computed field rule.
+ *
+ * @since 0.10.0
+ */
+
+namespace BWS\MetaConductor\RuleTypes;
+
+use BWS\MetaConductor\Admin\Config\ConfigHelpers;
+use BWS\MetaConductor\Handlers\FieldTransformationHandler;
+use BWS\MetaConductor\Storage\OptionRuleStorage;
+
+// Prevent direct access
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+/**
+ * Named after the storage key `field_transformation_rules`, not a domain name —
+ * FW-14 renames `label()` only. The editor calls it a Computed field.
+ */
+final class FieldTransformationRules extends RuleType {
+
+    public function type(): string {
+        return 'field_transformation_rules';
+    }
+
+    public function kind(): string {
+        return OptionRuleStorage::KIND_FORMAT;
+    }
+
+    public function label(): string {
+        return __('Computed field — store a pattern\'s output in an ACF field', 'meta-conductor');
+    }
+
+    public function handler_class(): string {
+        return FieldTransformationHandler::class;
+    }
+
+    /**
+     * The rule writes through ACF, so without it there is nothing to write to:
+     * the type is not offered and the handler skips any row already stored.
+     */
+    public function available(): bool {
+        return function_exists('acf_get_field') && function_exists('update_field');
+    }
+
+    /**
+     * One field, keyed by its ACF field KEY — the only identity that survives a
+     * rename. The scheme is `field|`, not the `fields|` post-field scheme the
+     * title/slug rule owns: that one is first-match-wins by post type, whereas
+     * two rules on one field are order-decided (the later write wins).
+     */
+    public function target_key(array $rule): ?string {
+        $key = trim((string) ($rule['target_field'] ?? ''));
+
+        return $key === '' ? null : 'field|' . $key;
+    }
+
+    /**
+     * The scalar `post_type`; see `TitleSlugRules::written_post_types()` for
+     * why a row without one yields `['']` rather than [].
+     */
+    public function written_post_types(array $rule): array {
+        return [trim((string) ($rule['post_type'] ?? ''))];
+    }
+
+    /**
+     * Schema:
+     *   {name} — {field_label}{ (Post type)}
+     *   e.g. "Display line — Display name (MC Items)"
+     *
+     * The author names the row (`name` is required on the shared frame); the
+     * snapshot adds what a long list needs to be scanned — which field it
+     * writes, on which post type.
+     */
+    public function row_title(array $row): string {
+        $name = trim((string) ($row['name'] ?? ''));
+
+        if ($name === '') {
+            $name = __('Untitled computed field rule', 'meta-conductor');
+        }
+
+        $field = ConfigHelpers::acf_field_label((string) ($row['target_field'] ?? ''));
+
+        return $name
+            . ($field !== '' ? ' — ' . $field : '')
+            . Labels::post_type_scope_label($row['post_type'] ?? '');
+    }
+
+    /**
+     * Every field here is gated to this type (the kind config stamps it). The
+     * shared format frame — type, enabled, name, post_type, row_title — is
+     * read by this handler too and stays ungated.
+     *
+     * No bare `{word}` in a description (CLAUDE.md don't 4b); the colon tokens
+     * are safe.
+     *
+     * @return array[]
+     */
+    public function subfields(): array {
+        return [
+            [
+                'id'          => 'target_field',
+                'type'        => 'select',
+                'label'       => __('Target field', 'meta-conductor'),
+                'description' => __('The ACF field that holds the computed value. Only text, text area, editor, number, email and URL fields are listed. The rule remembers the field itself, so renaming it in ACF does not break the rule.', 'meta-conductor'),
+                'default'     => '',
+                'required'    => true,
+                'columns'     => 12,
+                'args'        => [
+                    'options' => ConfigHelpers::acf_computed_target_options(),
+                ],
+            ],
+            [
+                'id'          => 'pattern',
+                'type'        => 'text',
+                'label'       => __('Pattern', 'meta-conductor'),
+                'description' => __('Built from the same tokens as a title & slug pattern, such as {meta:first_name}, {term:taxonomy} or {date_year:field}. If every token is empty the field is cleared.', 'meta-conductor'),
+                'required'    => true,
+                'columns'     => 12,
+                'args'        => [
+                    'placeholder' => __('e.g. {meta:first_name} {meta:last_name}', 'meta-conductor'),
+                ],
+            ],
+            [
+                'id'          => 'output',
+                'type'        => 'select',
+                'label'       => __('Output', 'meta-conductor'),
+                'description' => __('Text stores values exactly as they resolve. HTML keeps the markup you write in the pattern and escapes the values placed into it.', 'meta-conductor'),
+                'default'     => 'text',
+                'columns'     => 12,
+                'args'        => [
+                    'options' => [
+                        'text' => __('Text — values stored as they are', 'meta-conductor'),
+                        'html' => __('HTML — pattern markup kept, values escaped', 'meta-conductor'),
+                    ],
+                ],
+            ],
+        ];
+    }
+}

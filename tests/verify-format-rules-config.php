@@ -104,6 +104,28 @@ if (!function_exists('get_post_type_object')) {
     }
 }
 
+// A stand-in ACF, because the Computed field rule is offered only where ACF is
+// active and its target select reads field groups. One group on mc_item: two
+// writable targets, a relationship and a repeater, which must NOT be offered.
+$GLOBALS['h12_acf_fields'] = [
+    'field_a' => ['key' => 'field_a', 'name' => 'display_name', 'label' => 'Display name', 'type' => 'text'],
+    'field_b' => ['key' => 'field_b', 'name' => 'bio_html', 'label' => 'Bio', 'type' => 'wysiwyg'],
+    'field_c' => ['key' => 'field_c', 'name' => 'friends', 'label' => 'Friends', 'type' => 'relationship'],
+    'field_d' => ['key' => 'field_d', 'name' => 'roster', 'label' => 'Roster', 'type' => 'repeater'],
+];
+if (!function_exists('acf_get_field_groups')) {
+    function acf_get_field_groups($args = []) {
+        return ($args['post_type'] ?? '') === 'mc_item' ? [['key' => 'group_a', 'title' => 'Group A']] : [];
+    }
+}
+if (!function_exists('acf_get_fields')) {
+    function acf_get_fields($group_key) { return $group_key === 'group_a' ? array_values($GLOBALS['h12_acf_fields']) : []; }
+}
+if (!function_exists('acf_get_field')) {
+    function acf_get_field($key) { return $GLOBALS['h12_acf_fields'][$key] ?? false; }
+}
+if (!function_exists('update_field')) { function update_field() { return true; } }
+
 require dirname(__DIR__) . '/vendor/autoload.php';
 require dirname(__DIR__) . '/autoload.php';
 
@@ -129,7 +151,7 @@ $subfields = $field['args']['subfields'];
 
 // --- The repeater is bound to the persisted kind list. ----------------------
 
-$check('the format kind has a migrated type at all (#59)', $TYPES === ['title_slug_rules']);
+$check('the format kind has its migrated types (#59)', $TYPES === ['title_slug_rules', 'field_transformation_rules']);
 $check('repeater binds the format kind list', $field['id'] === $KIND);
 $check('repeater is sortable (order is authored)', !empty($field['args']['sortable']));
 $check('row title template resolves the snapshot', $field['args']['title_template'] === '{row_title}');
@@ -236,6 +258,10 @@ $expected_visible = [
         'title_pattern', 'token_reference', 'slug_pattern', 'slug_mode',
         'date_escalation', 'date_field', 'row_title',
     ],
+    'field_transformation_rules' => [
+        'type', 'enabled', 'name', 'post_type',
+        'target_field', 'pattern', 'output', 'row_title',
+    ],
 ];
 
 foreach ($TYPES as $type) {
@@ -266,6 +292,30 @@ foreach ($subfields as $s) {
 }
 $check('every key the title/slug handler reads survives a save',
     empty(array_diff($handler_reads, $visible_title_slug)));
+
+// The Computed field handler's read contract, stated apart from the set above
+// for the same reason. `target_field` is stored by ACF FIELD KEY.
+$visible_field = [];
+foreach ($subfields as $s) {
+    if (Conditions::evaluate($s['conditions'] ?? null, ['type' => 'field_transformation_rules'])) {
+        $visible_field[] = $s['id'];
+    }
+}
+$check('every key the computed field handler reads survives a save',
+    empty(array_diff(['enabled', 'post_type', 'target_field', 'pattern', 'output'], $visible_field)));
+$check('title/slug mechanics are not offered on a computed field row',
+    !array_intersect(['title_pattern', 'slug_pattern', 'slug_mode', 'date_escalation', 'date_field'], $visible_field));
+$check('computed field mechanics are not offered on a title/slug row',
+    !array_intersect(['target_field', 'pattern', 'output'], $visible_title_slug));
+
+// The target select: ACF field KEYS, only the types a composed string fits.
+$check('the target select stores ACF field keys, writable types only',
+    array_keys($by_id['target_field']['args']['options']) === ['', 'field_a', 'field_b']);
+$check('a target option names its field, group and post type',
+    $by_id['target_field']['args']['options']['field_a'] === 'Display name (display_name) — Group A [MC Items]');
+$check('the output select offers text (the default) and html',
+    array_keys($by_id['output']['args']['options']) === ['text', 'html']
+    && ($by_id['output']['default'] ?? '') === 'text');
 
 // An untyped row (freshly added) shows the shared frame only.
 $untyped = [];
@@ -299,6 +349,15 @@ $check('a row naming no post type carries no scope suffix',
 $check('an unresolvable post type falls back to its slug',
     $title(['type' => 'title_slug_rules', 'name' => 'X', 'post_type' => 'gone'])
         === 'X (gone)');
+// The Computed field row names the field it writes and the post type.
+$check('a computed field row title names its target field and post type',
+    $title(['type' => 'field_transformation_rules', 'name' => 'Display line', 'post_type' => 'mc_item', 'target_field' => 'field_a'])
+        === 'Display line — Display name (MC Items)');
+$check('a computed field row whose key no longer resolves shows no field',
+    $title(['type' => 'field_transformation_rules', 'name' => 'Display line', 'post_type' => 'mc_item', 'target_field' => 'field_gone'])
+        === 'Display line (MC Items)');
+$check('an unnamed computed field row is named rather than left blank',
+    str_starts_with($title(['type' => 'field_transformation_rules', 'post_type' => 'mc_item']), 'Untitled computed field rule'));
 // The uniform marker the term list gained in #57 — the whole reason the live
 // {name} template was replaced by a snapshot.
 $check('a disabled row carries the uniform prefix',

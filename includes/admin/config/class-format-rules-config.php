@@ -4,11 +4,10 @@
  * "how a post's own fields read" (ADR 0003 decision 1, spec #53 §2,
  * ticket #59).
  *
- * The `term_rules` collapse's smaller twin. `title_slug` is the only member of
- * the `format_rules` kind today, so there is no condition-gating pressure yet
- * — and that is precisely why the shape is established now: when
- * `field_transformation` lands it is a row type added to an existing list, not
- * a tab restructured around a second section.
+ * The `term_rules` collapse's smaller twin: `title_slug` and, since FW-4, the
+ * Computed field rule (`field_transformation_rules`) are the members of the
+ * `format_rules` kind. The second type was a row type added to the existing
+ * list, not a tab restructured around a second section.
  *
  * ## The hazard this file is written around
  *
@@ -91,7 +90,9 @@ class FormatRulesConfig {
         $options = ['' => __('— Select rule type —', 'meta-conductor')];
 
         foreach (self::types() as $type) {
-            $options[$type] = Registry::get($type)->label();
+            if (Registry::get($type)->available()) {
+                $options[$type] = Registry::get($type)->label();
+            }
         }
 
         return $options;
@@ -237,7 +238,7 @@ class FormatRulesConfig {
                 'label'       => __('Post type', 'meta-conductor'),
                 // Says the thing the old label left implicit, and which the
                 // ordered list finally makes visible: order decides the winner.
-                'description' => __('The post type this rule acts on. If two rules name the same post type, the higher one wins and the lower one never runs.', 'meta-conductor'),
+                'description' => __('The post type this rule acts on. If two title & slug rules name the same post type, the higher one wins and the lower one never runs.', 'meta-conductor'),
                 'default'     => '',
                 'required'    => true,
                 'columns'     => 12,

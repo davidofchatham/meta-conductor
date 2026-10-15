@@ -57,10 +57,10 @@ if (!defined('ABSPATH')) {
  * report a boolean. A format rule's effect is the post row itself, and several
  * rules can land on one row — so the appliers hand a post-data array along the
  * list and THIS class performs the single write at the end. That is what keeps
- * one save to one `wp_update_post()` however many rules matched, and it is the
- * shape the pre-write phase needs: when `field_transformation` lands and the
- * pass splits in two (ADR 0003), the pre-write half can feed
- * `wp_insert_post_data`'s own `$data` array into the same seam unchanged.
+ * one save to one `wp_update_post()` however many rules matched. The same array
+ * carries field effects: a Computed field rule sets `fields[<name>]` (and the
+ * ACF field key in `field_keys[<name>]`), and `write()` persists the difference
+ * through ACF's write-by-key before the row update.
  *
  * FIRST MATCH OF A TYPE WINS. `apply_to_data()` returns null for a rule that
  * does not apply to the entity, and once a rule of some type has returned data
@@ -71,15 +71,20 @@ if (!defined('ABSPATH')) {
  * pass, so a second format rule type still composes with this one in list
  * order.
  *
- * WHY EVERY APPLY IS NOW POST-WRITE. The old handler split itself across
- * `wp_insert_post_data` (pre-write, for rules reading no meta) and
- * `acf/save_post` p99 (post-write, for rules reading meta). The pre-write half
- * cannot survive this ticket: it runs BEFORE the term pass, so a
+ * FIELD EFFECTS RIDE THE `$data` SEAM; THE FORMAT PASS STAYS POST-WRITE ONLY
+ * (docs/architecture.md → "Field effects ride the $data seam"). The old handler
+ * split itself across `wp_insert_post_data` (pre-write, for rules reading no
+ * meta) and `acf/save_post` p99 (post-write, for rules reading meta). The
+ * pre-write half cannot survive #64: it runs BEFORE the term pass, so a
  * `{term:TAX}` pattern would read the previous save's terms — the exact defect
- * the ticket exists to remove. The cost is one extra `wp_update_post()` per
- * save that actually changes something, with the revision the update would
- * otherwise create suppressed and the redirect's slug cache flushed, both of
- * which the post-write half already had to do.
+ * that ticket exists to remove. ADR 0003 anticipated that the pass would split
+ * in two again when `field_transformation` landed; it did not need to. A field
+ * write is post meta, which `wp_insert_post_data` never carries, and the
+ * post-write pass already sees the current pass's terms. REJECTED ALTERNATIVE:
+ * a pre-write phase — it would reintroduce the stale-term read and gain nothing
+ * a meta write needs. The cost of post-write is one extra `wp_update_post()` per
+ * save that changes the row, with the revision it would create suppressed and
+ * the redirect's slug cache flushed.
  */
 class FormatDispatcher {
 
@@ -189,7 +194,7 @@ class FormatDispatcher {
      * keyed on the term kind).
      *
      * @param int $post_id Entity to pass over.
-     * @return int Rules that changed the post data.
+     * @return int Rules that changed the title or slug, plus fields written.
      */
     public function run_pass(int $post_id): int {
         if ($post_id <= 0 || TermDispatcher::pass_active($post_id, self::KIND)) {
@@ -205,10 +210,13 @@ class FormatDispatcher {
         try {
             $result = $this->compute($post_id);
             if ($result !== null) {
-                $this->write($post_id, $result);
+                $changed = $this->write($post_id, $result);
                 foreach ($result['applied'] as $step) {
-                    if ($step['after'] !== $step['before']) {
-                        $changed++;
+                    foreach (['post_title', 'post_name'] as $column) {
+                        if ($step['after'][$column] !== $step['before'][$column]) {
+                            $changed++;
+                            break;
+                        }
                     }
                 }
             }
@@ -299,8 +307,9 @@ class FormatDispatcher {
     }
 
     /**
-     * Write a `compute()` result: each answering rule's `commit_data()`, then
-     * the row, if it differs from what the row holds.
+     * Write a `compute()` result: each answering rule's `commit_data()`, the
+     * computed fields (`write_fields()`), then the row, if it differs from what
+     * the row holds.
      *
      * The per-rule state goes first because it did when the appliers wrote it
      * themselves, and the row update below can drain a re-pass that reads it.
@@ -318,8 +327,9 @@ class FormatDispatcher {
      *
      * @param int   $post_id Entity.
      * @param array $result  What `compute()` returned for it.
+     * @return int Fields written.
      */
-    private function write(int $post_id, array $result): void {
+    private function write(int $post_id, array $result): int {
         foreach ($result['applied'] as $step) {
             $this->handlers[$step['rule']['type']]->commit_data($step['before'], $step['after'], $post_id, $step['rule']);
         }
@@ -327,6 +337,8 @@ class FormatDispatcher {
         $before = $result['before'];
         $after  = $result['after'];
         $update = ['ID' => $post_id];
+
+        $written = $this->write_fields($post_id, $after);
 
         // SLASHED, because `wp_update_post()` expects it. It slashes only the
         // fields it re-reads from the existing row and then `wp_insert_post()`
@@ -344,7 +356,7 @@ class FormatDispatcher {
         }
 
         if (count($update) === 1) {
-            return;
+            return $written;
         }
 
         add_filter('wp_revisions_to_keep', '__return_zero');
@@ -353,15 +365,58 @@ class FormatDispatcher {
         } finally {
             remove_filter('wp_revisions_to_keep', '__return_zero');
         }
+
+        return $written;
     }
 
     /**
-     * The post fields a format applier may read, and the two it may change.
+     * Persist the pass's computed fields: each value that differs from what the
+     * field holds, written by ACF field KEY so ACF maintains the field's
+     * reference row. The write fires neither `acf/save_post` nor `save_post`, so
+     * it provokes no pass of its own; the write queue's `acf/update_value`
+     * listener is switched off for it, or every write would queue a second,
+     * idempotent pass at shutdown.
+     *
+     * SLASHED, like the row update below: `update_field()` unslashes its value
+     * on the way to `update_metadata()`, so an unslashed `a` stores as `ab`.
+     *
+     * An unchanged value is not written, and an all-empty result writes `''` —
+     * the stored value must not outlive its sources. Compared as strings: ACF
+     * stores every supported target type as one.
+     *
+     * @param int   $post_id Entity.
+     * @param array $after   `compute()`'s final data.
+     * @return int Fields written.
+     */
+    private function write_fields(int $post_id, array $after): int {
+        $written = 0;
+        if (empty($after['fields']) || !function_exists('update_field')) {
+            return $written;
+        }
+
+        add_filter('meta_conductor_acf_reapply_enabled', '__return_false');
+        try {
+            foreach ($after['fields'] as $name => $value) {
+                $key = (string) ($after['field_keys'][$name] ?? '');
+                if ($key !== '' && (string) get_post_meta($post_id, $name, true) !== (string) $value) {
+                    update_field($key, wp_slash((string) $value), $post_id);
+                    $written++;
+                }
+            }
+        } finally {
+            remove_filter('meta_conductor_acf_reapply_enabled', '__return_false');
+        }
+
+        return $written;
+    }
+
+    /**
+     * The post fields a format applier may read, and what it may change: the
+     * title and slug, and the `fields` map.
      *
      * A plain array rather than the WP_Post, because the seam is data-in/
      * data-out: an applier composes with the one before it by editing what it
-     * was handed, and the pre-write phase this shape is designed for has no
-     * post object at all — only `wp_insert_post_data`'s `$data`.
+     * was handed.
      *
      * @param \WP_Post $post Entity under pass.
      * @return array
@@ -375,6 +430,10 @@ class FormatDispatcher {
             'post_status' => (string) $post->post_status,
             'post_date'   => (string) $post->post_date,
             'post_parent' => (int) $post->post_parent,
+            // Field effects: computed values by field NAME, and the ACF field
+            // KEY each is written by. Empty until a Computed field rule sets one.
+            'fields'      => [],
+            'field_keys'  => [],
         ];
     }
 

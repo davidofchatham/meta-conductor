@@ -117,12 +117,12 @@ $pairs = fn(array $found) => array_map(fn($f) => [$f['a']['index'], $f['b']['ind
 // row with every target-naming field filled, must name exactly one scheme.
 
 $desc = fn(string $type) => Registry::get($type);
-$full = ['taxonomy' => 'mc_topic', 'target_term_id' => 21, 'post_type' => 'mc_item'];
+$full = ['taxonomy' => 'mc_topic', 'target_term_id' => 21, 'post_type' => 'mc_item', 'target_field' => 'field_mc_x'];
 
 foreach (Registry::all() as $type => $descriptor) {
     $key = $descriptor->target_key(['type' => $type] + $full);
     $check("$type resolves to a target scheme",
-        is_string($key) && in_array(explode('|', $key)[0], ['taxonomy', 'term', 'fields'], true));
+        is_string($key) && in_array(explode('|', $key)[0], ['taxonomy', 'term', 'fields', 'field'], true));
 }
 
 // --- 2. Target keys. --------------------------------------------------------

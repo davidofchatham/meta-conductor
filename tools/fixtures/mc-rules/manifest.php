@@ -12,7 +12,7 @@
 
 return array(
 	'blueprint'   => 'mc-rules',
-	'version'     => 6, // 6: ACF field-identity decoy (#25) — group_mc_decoy_fields declares a SECOND `mc_related_items` relationship field on mc_section, pointing at a different target post type, so bare-name resolution is provably wrong and key resolution provably right. 5: related_post_terms reverse-field coverage — explicit reverse (mc_parent_section, tier 1) on the existing rule + a native-bidi pair (mc_bidi_items/mc_bidi_sections on section-bidi/item-bidi, mc_flag, tier 2) for the #43 dependent-end sever. 4: section-child independent term moved native→ACF field (both channels agree; propagation ACF-merge no longer clobbers it). 3: item-solo-a/b clobber-free subjects. 2: composes_on two-key shape. 1: initial.
+	'version'     => 7, // 7: Computed field rule (FW-4) — group_mc_computed_fields (text sources, text + wysiwyg targets), the item-computed subject, and a field_transformation_rules baseline. 6: ACF field-identity decoy (#25) — group_mc_decoy_fields declares a SECOND `mc_related_items` relationship field on mc_section, pointing at a different target post type, so bare-name resolution is provably wrong and key resolution provably right. 5: related_post_terms reverse-field coverage — explicit reverse (mc_parent_section, tier 1) on the existing rule + a native-bidi pair (mc_bidi_items/mc_bidi_sections on section-bidi/item-bidi, mc_flag, tier 2) for the #43 dependent-end sever. 4: section-child independent term moved native→ACF field (both channels agree; propagation ACF-merge no longer clobbers it). 3: item-solo-a/b clobber-free subjects. 2: composes_on two-key shape. 1: initial.
 	// Family-standard shape — matches layout-states and view-structures.
 	// bin/seed-all.sh --only builds its dependency graph from this.
 	'composes_on' => array(
@@ -23,7 +23,7 @@ return array(
 	'defines' => array(
 		'post_types' => array( 'mc_item', 'mc_section' ),
 		'taxonomies' => array( 'mc_topic', 'mc_flag' ),
-		'acf_groups' => array( 'group_mc_fields', 'group_mc_section_fields', 'group_mc_decoy_fields' ),
+		'acf_groups' => array( 'group_mc_fields', 'group_mc_section_fields', 'group_mc_decoy_fields', 'group_mc_computed_fields' ),
 	),
 
 	// ── mc_topic tree (hierarchical, 4 levels) + mc_flag (flat) ──────────
@@ -82,6 +82,10 @@ return array(
 		'item-slug-a' => array( 'post_type' => 'mc_item', 'post_name' => 'mc-slug-probe-a', 'post_title' => 'Slug Probe' ),
 		'item-slug-b' => array( 'post_type' => 'mc_item', 'post_name' => 'mc-slug-probe-b', 'post_title' => 'Slug Probe' ),
 
+		// Computed field rule subject (FW-4): carries the two source values and
+		// is the only mc_item with them, so the baseline rule writes here alone.
+		'item-computed' => array( 'post_type' => 'mc_item', 'post_name' => 'mc-item-computed', 'post_title' => 'MC Item Computed' ),
+
 		// Propagation chain: grand → parent → child (+ draft sibling).
 		'section-grand'  => array( 'post_type' => 'mc_section', 'post_name' => 'mc-grand', 'post_title' => 'MC Section Grand' ),
 		'section-parent' => array( 'post_type' => 'mc_section', 'post_name' => 'mc-parent', 'post_title' => 'MC Section Parent', 'parent' => 'section-grand' ),
@@ -118,6 +122,7 @@ return array(
 			'mc_event_date'     => '20300315',              // title_slug {meta:} token
 			'mc_parent_section' => array( 'section-holder' ), // tier-1 reverse (see below)
 		),
+		'item-computed'  => array( 'mc_cf_first' => 'Ada', 'mc_cf_last' => 'Lovelace' ),
 		'item-slug-a'    => array( 'mc_event_date' => '20300401' ),
 		'item-slug-b'    => array( 'mc_event_date' => '20300401' ), // same date → slug collision
 		// Relationship values: fixture slugs resolved to IDs at seed.
@@ -282,6 +287,19 @@ return array(
 				'slug_mode'       => 'replace',
 				'date_escalation' => true,
 				'date_field'      => 'mc_event_date',
+			),
+		),
+
+		// FW-4 — Computed field. Stored by ACF field KEY; the sweep authors the
+		// html and multi-rule cases itself.
+		'field_transformation_rules' => array(
+			array(
+				'enabled'      => true,
+				'name'         => 'MC computed display',
+				'post_type'    => 'mc_item',
+				'target_field' => 'field_mc_cf_display',
+				'pattern'      => '{meta:mc_cf_first} {meta:mc_cf_last}',
+				'output'       => 'text',
 			),
 		),
 	),

@@ -36,6 +36,7 @@ final class Registry {
         HierarchicalRules::class,
         HierarchicalLevelRestrictionRules::class,
         TitleSlugRules::class,
+        FieldTransformationRules::class,
     ];
 
     /**
