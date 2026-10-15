@@ -40,6 +40,7 @@
  *   wp eval-file .../sweep-64-format.php idempotent  # a second pass changes nothing
  *   wp eval-file .../sweep-64-format.php s1          # write, let shutdown drain
  *   wp eval-file .../sweep-64-format.php s2          # assert what s1's shutdown did
+ *   wp eval-file .../sweep-64-format.php separators  # FW-44: orphaned separators self-correct
  *   wp eval-file .../sweep-64-format.php restore
  *
  * @package Meta_Conductor
@@ -337,6 +338,32 @@ switch ( $step ) {
 		mc_assert( '§64m  …and its slug', mc64_slug( $subject ), 'mc-item-solo-a-coastal' );
 		break;
 
+	// ----------------------------------------------------------- separators
+	// FW-44: a title seeded with the OLD engine's output for an empty middle
+	// token (`Base - - Harbor`, recorded as the applied title the way a real
+	// save left it) corrects on the next pass — no gate, no legacy mode.
+	case 'separators':
+		mc64_setup( array(), array( array(
+			'enabled'       => true,
+			'name'          => 'Sweep 64 separators',
+			'post_type'     => 'mc_item',
+			'title_pattern' => '{default_title} - {meta:mc64_none} - {term:mc_topic}',
+		) ) );
+		mc64_arm( $subject, array( mc_tid( 'topic-harbor' ) ) );
+
+		$old = MC64_BASE_TITLE . ' - - Harbor';
+		mc64_rename_back( $subject, $old, MC64_BASE_SLUG );
+		update_post_meta( $subject, '_bws_raw_title', MC64_BASE_TITLE );
+		update_post_meta( $subject, '_bws_applied_title', $old );
+
+		mc64_dispatcher()->mark_dirty( $subject );
+		mc64_dispatcher()->drain();
+		WP_CLI::log( '[separators] ' . $old . '  ->  ' . mc64_title( $subject ) );
+
+		mc_assert( '§64n  the orphaned separator is gone on the next pass', mc64_title( $subject ), MC64_BASE_TITLE . ' - Harbor' );
+		mc_assert( '§64o  the stored base is still the base', (string) get_post_meta( $subject, '_bws_raw_title', true ), MC64_BASE_TITLE );
+		break;
+
 	// -------------------------------------------------------------- restore
 	case 'restore':
 		mc64_rename_back( $subject, MC64_BASE_TITLE, MC64_BASE_SLUG );
@@ -352,5 +379,5 @@ switch ( $step ) {
 		break;
 
 	default:
-		WP_CLI::error( "Unknown step '{$step}'. Use: terms | provoke | bulk | idempotent | s1 | s2 | restore" );
+		WP_CLI::error( "Unknown step '{$step}'. Use: terms | provoke | bulk | idempotent | s1 | s2 | separators | restore" );
 }

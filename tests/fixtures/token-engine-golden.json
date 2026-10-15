@@ -5737,14 +5737,14 @@
             "context": "title",
             "computed_title": "",
             "guard": true,
-            "out": "Harbor Light - - Coastal"
+            "out": "Harbor Light - Coastal"
         },
         {
             "pattern": "{meta:name} - {meta:blank} - {meta:other}",
             "context": "title",
             "computed_title": "",
             "guard": false,
-            "out": "Harbor Light - - Coastal"
+            "out": "Harbor Light - Coastal"
         },
         {
             "pattern": "{meta:name} - {meta:blank} - {meta:other}",
@@ -5758,21 +5758,21 @@
             "context": "title",
             "computed_title": "Harbor Light Coastal 2026 April",
             "guard": false,
-            "out": "Harbor Light - - Coastal"
+            "out": "Harbor Light - Coastal"
         },
         {
             "pattern": "{meta:name} - {meta:blank} - {meta:other}",
             "context": "slug",
             "computed_title": "",
             "guard": true,
-            "out": "harbor-light - - coastal"
+            "out": "harbor-light - coastal"
         },
         {
             "pattern": "{meta:name} - {meta:blank} - {meta:other}",
             "context": "slug",
             "computed_title": "",
             "guard": false,
-            "out": "harbor-light - - coastal"
+            "out": "harbor-light - coastal"
         },
         {
             "pattern": "{meta:name} - {meta:blank} - {meta:other}",
@@ -5786,21 +5786,21 @@
             "context": "slug",
             "computed_title": "Harbor Light Coastal 2026 April",
             "guard": false,
-            "out": "harbor-light - - coastal"
+            "out": "harbor-light - coastal"
         },
         {
             "pattern": "{meta:name} - {meta:blank} - {meta:missing} - {meta:other}",
             "context": "title",
             "computed_title": "",
             "guard": true,
-            "out": "Harbor Light - - - Coastal"
+            "out": "Harbor Light - Coastal"
         },
         {
             "pattern": "{meta:name} - {meta:blank} - {meta:missing} - {meta:other}",
             "context": "title",
             "computed_title": "",
             "guard": false,
-            "out": "Harbor Light - - - Coastal"
+            "out": "Harbor Light - Coastal"
         },
         {
             "pattern": "{meta:name} - {meta:blank} - {meta:missing} - {meta:other}",
@@ -5814,21 +5814,21 @@
             "context": "title",
             "computed_title": "Harbor Light Coastal 2026 April",
             "guard": false,
-            "out": "Harbor Light - - - Coastal"
+            "out": "Harbor Light - Coastal"
         },
         {
             "pattern": "{meta:name} - {meta:blank} - {meta:missing} - {meta:other}",
             "context": "slug",
             "computed_title": "",
             "guard": true,
-            "out": "harbor-light - - - coastal"
+            "out": "harbor-light - coastal"
         },
         {
             "pattern": "{meta:name} - {meta:blank} - {meta:missing} - {meta:other}",
             "context": "slug",
             "computed_title": "",
             "guard": false,
-            "out": "harbor-light - - - coastal"
+            "out": "harbor-light - coastal"
         },
         {
             "pattern": "{meta:name} - {meta:blank} - {meta:missing} - {meta:other}",
@@ -5842,77 +5842,77 @@
             "context": "slug",
             "computed_title": "Harbor Light Coastal 2026 April",
             "guard": false,
-            "out": "harbor-light - - - coastal"
+            "out": "harbor-light - coastal"
         },
         {
             "pattern": "{meta:name} ({meta:blank})",
             "context": "title",
             "computed_title": "",
             "guard": true,
-            "out": "Harbor Light)"
+            "out": "Harbor Light"
         },
         {
             "pattern": "{meta:name} ({meta:blank})",
             "context": "title",
             "computed_title": "",
             "guard": false,
-            "out": "Harbor Light)"
+            "out": "Harbor Light"
         },
         {
             "pattern": "{meta:name} ({meta:blank})",
             "context": "title",
-            "computed_title": "Harbor Light Coastal 2026 April",
-            "guard": true,
-            "out": ""
-        },
-        {
-            "pattern": "{meta:name} ({meta:blank})",
-            "context": "title",
-            "computed_title": "Harbor Light Coastal 2026 April",
-            "guard": false,
-            "out": "Harbor Light)"
-        },
-        {
-            "pattern": "{meta:name} ({meta:blank})",
-            "context": "slug",
-            "computed_title": "",
-            "guard": true,
-            "out": "harbor-light)"
-        },
-        {
-            "pattern": "{meta:name} ({meta:blank})",
-            "context": "slug",
-            "computed_title": "",
-            "guard": false,
-            "out": "harbor-light)"
-        },
-        {
-            "pattern": "{meta:name} ({meta:blank})",
-            "context": "slug",
             "computed_title": "Harbor Light Coastal 2026 April",
             "guard": true,
             "out": ""
         },
         {
             "pattern": "{meta:name} ({meta:blank})",
+            "context": "title",
+            "computed_title": "Harbor Light Coastal 2026 April",
+            "guard": false,
+            "out": "Harbor Light"
+        },
+        {
+            "pattern": "{meta:name} ({meta:blank})",
+            "context": "slug",
+            "computed_title": "",
+            "guard": true,
+            "out": "harbor-light"
+        },
+        {
+            "pattern": "{meta:name} ({meta:blank})",
+            "context": "slug",
+            "computed_title": "",
+            "guard": false,
+            "out": "harbor-light"
+        },
+        {
+            "pattern": "{meta:name} ({meta:blank})",
+            "context": "slug",
+            "computed_title": "Harbor Light Coastal 2026 April",
+            "guard": true,
+            "out": ""
+        },
+        {
+            "pattern": "{meta:name} ({meta:blank})",
             "context": "slug",
             "computed_title": "Harbor Light Coastal 2026 April",
             "guard": false,
-            "out": "harbor-light)"
+            "out": "harbor-light"
         },
         {
             "pattern": "({meta:blank}) {meta:name}",
             "context": "title",
             "computed_title": "",
             "guard": true,
-            "out": ") Harbor Light"
+            "out": "Harbor Light"
         },
         {
             "pattern": "({meta:blank}) {meta:name}",
             "context": "title",
             "computed_title": "",
             "guard": false,
-            "out": ") Harbor Light"
+            "out": "Harbor Light"
         },
         {
             "pattern": "({meta:blank}) {meta:name}",
@@ -5926,21 +5926,21 @@
             "context": "title",
             "computed_title": "Harbor Light Coastal 2026 April",
             "guard": false,
-            "out": ") Harbor Light"
+            "out": "Harbor Light"
         },
         {
             "pattern": "({meta:blank}) {meta:name}",
             "context": "slug",
             "computed_title": "",
             "guard": true,
-            "out": ") harbor-light"
+            "out": "harbor-light"
         },
         {
             "pattern": "({meta:blank}) {meta:name}",
             "context": "slug",
             "computed_title": "",
             "guard": false,
-            "out": ") harbor-light"
+            "out": "harbor-light"
         },
         {
             "pattern": "({meta:blank}) {meta:name}",
@@ -5954,7 +5954,7 @@
             "context": "slug",
             "computed_title": "Harbor Light Coastal 2026 April",
             "guard": false,
-            "out": ") harbor-light"
+            "out": "harbor-light"
         },
         {
             "pattern": "{meta:name} (",
@@ -6017,14 +6017,14 @@
             "context": "title",
             "computed_title": "",
             "guard": true,
-            "out": "Harbor Light]"
+            "out": "Harbor Light"
         },
         {
             "pattern": "{meta:name} [{meta:blank}]",
             "context": "title",
             "computed_title": "",
             "guard": false,
-            "out": "Harbor Light]"
+            "out": "Harbor Light"
         },
         {
             "pattern": "{meta:name} [{meta:blank}]",
@@ -6038,21 +6038,21 @@
             "context": "title",
             "computed_title": "Harbor Light Coastal 2026 April",
             "guard": false,
-            "out": "Harbor Light]"
+            "out": "Harbor Light"
         },
         {
             "pattern": "{meta:name} [{meta:blank}]",
             "context": "slug",
             "computed_title": "",
             "guard": true,
-            "out": "harbor-light]"
+            "out": "harbor-light"
         },
         {
             "pattern": "{meta:name} [{meta:blank}]",
             "context": "slug",
             "computed_title": "",
             "guard": false,
-            "out": "harbor-light]"
+            "out": "harbor-light"
         },
         {
             "pattern": "{meta:name} [{meta:blank}]",
@@ -6066,7 +6066,7 @@
             "context": "slug",
             "computed_title": "Harbor Light Coastal 2026 April",
             "guard": false,
-            "out": "harbor-light]"
+            "out": "harbor-light"
         },
         {
             "pattern": "- {meta:name} -",
@@ -6703,7 +6703,7 @@
             "context": "title",
             "computed_title": "Harbor Light Coastal 2026 April",
             "guard": true,
-            "out": "Coastal Waters, Harbor)"
+            "out": "Coastal Waters, Harbor"
         },
         {
             "pattern": "{terms:mc_topic} ({pub_year})",
@@ -6731,7 +6731,7 @@
             "context": "slug",
             "computed_title": "Harbor Light Coastal 2026 April",
             "guard": true,
-            "out": "coastal-waters-harbor)"
+            "out": "coastal-waters-harbor"
         },
         {
             "pattern": "{terms:mc_topic} ({pub_year})",
