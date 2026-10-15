@@ -56,7 +56,7 @@ class FieldTransformationHandler extends UnifiedHandlerBase {
 
         $data['fields'][$name]     = TokenEngine::render(
             $pattern,
-            new PostTokenSource($post_id, $data),
+            new PostTokenSource($post_id, $data, $name),
             ($rule['output'] ?? 'text') === 'html' ? OutputPolicy::html() : OutputPolicy::text(),
             ['default_title' => (string) ($data['post_title'] ?? '')]
         );

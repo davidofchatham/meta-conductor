@@ -121,6 +121,13 @@ foreach ($all as $key => $d) {
         $d->available() === ($key === 'field_transformation_rules' ? function_exists('acf_get_field') : true));
 }
 
+// The format pass's first-match gate is a descriptor fact (FW-4 ticket 04):
+// true only for the title/slug lookup table, so a Computed field rule composes.
+foreach ($all as $key => $d) {
+    $check("$key: first_match_wins() is true only for title_slug_rules",
+        $d->first_match_wins() === ($key === 'title_slug_rules'));
+}
+
 // The runtime question the dispatchers ask before running a row (ticket 10).
 $check('a registered type is known', Registry::known('hierarchical_rules'));
 $check('a type with no descriptor is not known — the pass skips it', !Registry::known('nope_rules'));

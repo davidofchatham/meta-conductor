@@ -51,6 +51,11 @@ final class TitleSlugRules extends RuleType {
         return trim((string) ($rule['post_type'] ?? '')) === '' ? null : 'fields|title_slug';
     }
 
+    /** A lookup table keyed by post type: the first matching rule is the only one that runs. */
+    public function first_match_wins(): bool {
+        return true;
+    }
+
     /**
      * The scalar `post_type`. Never []: a row without one resolves no target
      * (see `target_key()`), and if one ever reached here `['']` intersects

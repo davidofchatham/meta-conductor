@@ -10,6 +10,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - **Computed field rule.** A new rule type in the *Format & Transform* list stores a pattern's output in an ACF field on every post of the rule's post type. Pick a post type, the target field (text, text area, editor, number, email or URL — the rule remembers the field itself, so renaming it in ACF does not break the rule), a pattern built from the same tokens as title & slug patterns, and *Text* or *HTML* output. Text stores values exactly as they resolve; HTML keeps the markup you write and escapes the values placed into it. The field is rewritten only when its value changes, and cleared when every token in the pattern is empty. The type appears only while ACF is active.
+- **Computed field rules compose with the rest of the *Format & Transform* list.** Two rules for different fields both apply; two for the same field resolve by list order (the later one wins). A title or slug rule ordered after a Computed field rule reads the value it just computed in the same save; ordered before, it reads the stored value. Title & slug rules keep first-match-wins. A pattern that names its own target field reads it as empty, so the value does not grow on every save.
 
 ### Changed
 

@@ -62,9 +62,12 @@ if (!defined('ABSPATH')) {
  * ACF field key in `field_keys[<name>]`), and `write()` persists the difference
  * through ACF's write-by-key before the row update.
  *
- * FIRST MATCH OF A TYPE WINS. `apply_to_data()` returns null for a rule that
- * does not apply to the entity, and once a rule of some type has returned data
- * the remaining rules OF THAT TYPE are skipped. This is `title_slug`'s
+ * FIRST MATCH OF A TYPE WINS — FOR A TYPE WHOSE DESCRIPTOR SAYS SO.
+ * `apply_to_data()` returns null for a rule that does not apply to the entity,
+ * and once a rule of a `first_match_wins()` type has returned data the
+ * remaining rules OF THAT TYPE are skipped. A type that is not
+ * (`field_transformation`) runs every applicable rule in list order, so the
+ * last write to a field wins. This is `title_slug`'s
  * documented semantics — a rule set is a lookup table keyed by post type, not a
  * set of independently-scoped rules (#59) — and enforcing it here rather than
  * in the handler is what keeps the handler stateless. It is per TYPE, not per
@@ -269,7 +272,8 @@ class FormatDispatcher {
             if (!self::owns($type)) {
                 continue;
             }
-            if (isset($claimed[$type])) {
+            $first_match = Registry::get($type)->first_match_wins();
+            if ($first_match && isset($claimed[$type])) {
                 continue;
             }
             $handler = $this->handlers[$type] ?? null;
@@ -282,7 +286,9 @@ class FormatDispatcher {
                 continue;
             }
 
-            $claimed[$type] = true;
+            if ($first_match) {
+                $claimed[$type] = true;
+            }
             $applied[]      = ['rule' => $rule, 'before' => $data, 'after' => $next];
             $data           = $next;
         }

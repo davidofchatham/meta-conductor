@@ -27,6 +27,12 @@
  *   wp eval-file .../sweep-computed-field.php save       # an editor-shaped save computes the field
  *   wp eval-file .../sweep-computed-field.php s1         # bare update_field(), let shutdown drain
  *   wp eval-file .../sweep-computed-field.php s2         # assert what s1's shutdown did
+ *   wp eval-file .../sweep-computed-field.php two-fields         # different fields both written (ticket 04)
+ *   wp eval-file .../sweep-computed-field.php same-field         # same field: later wins; swap swaps
+ *   wp eval-file .../sweep-computed-field.php title-after        # title rule after a field rule reads the pending value
+ *   wp eval-file .../sweep-computed-field.php title-before       # title rule before it reads the stored value
+ *   wp eval-file .../sweep-computed-field.php title-first-match  # two title rules: first wins
+ *   wp eval-file .../sweep-computed-field.php self-ref           # own-target token is empty; stable over 3 passes
  *   wp eval-file .../sweep-computed-field.php restore    # baseline rules, clean subject, post_name check
  *
  * @package Meta_Conductor
@@ -45,6 +51,7 @@ const MCF_HTML = 'field_mc_cf_display_html';
 /** One Computed field row. */
 function mcf_rule( array $over = array() ) {
 	return array_merge( array(
+		'type'         => 'field_transformation_rules',
 		'enabled'      => true,
 		'name'         => 'Sweep computed display',
 		'post_type'    => 'mc_item',
@@ -80,6 +87,41 @@ function mcf_arm( $post_id, $first, $last ) {
 	$r = new ReflectionProperty( $d, 'dirty' );
 	$r->setAccessible( true );
 	$r->setValue( $d, array() );
+}
+
+/** Make `$rows` — Computed field and title/slug rows in the given order — the format list. */
+function mcf_setup_list( array $rows ) {
+	mc_isolate( array() );
+	mc_write_ordered_rules( $rows, \BWS\MetaConductor\Storage\OptionRuleStorage::KIND_FORMAT );
+}
+
+/** A title/slug row that sets the title from the computed display field. */
+function mcf_title_rule( array $over = array() ) {
+	return array_merge( array(
+		'type'          => 'title_slug_rules',
+		'enabled'       => true,
+		'name'          => 'Sweep title from display',
+		'post_type'     => 'mc_item',
+		'title_pattern' => '{meta:mc_cf_display}',
+	), $over );
+}
+
+/** Put a value in the stored display field without a pass running. */
+function mcf_stored_display( $post_id, $value ) {
+	add_filter( 'meta_conductor_acf_reapply_enabled', '__return_false', 99 );
+	update_field( MCF_TEXT, $value, $post_id );
+	remove_filter( 'meta_conductor_acf_reapply_enabled', '__return_false', 99 );
+}
+
+/**
+ * Put the subject's title and slug back. A title rule renames it, and the
+ * subject is found by slug — so every step that renames it ends here, or the
+ * next step cannot find it (don't 6f(e)).
+ */
+function mcf_reset_identity( $post_id ) {
+	add_filter( 'meta_conductor_acf_reapply_enabled', '__return_false', 99 );
+	wp_update_post( array( 'ID' => $post_id, 'post_title' => 'MC Item Computed', 'post_name' => 'mc-item-computed' ) );
+	remove_filter( 'meta_conductor_acf_reapply_enabled', '__return_false', 99 );
 }
 
 /** A stored meta value read past the object cache; null when the key is absent. */
@@ -210,6 +252,83 @@ switch ( $step ) {
 
 	case 's2':
 		mc_assert( '§68p  shutdown drained the bare write into the computed field', mcf_meta( $subject, 'mc_cf_display' ), 'Grace Lovelace' );
+		break;
+
+	// --- Composition in the format list (ticket 04) -------------------------
+
+	case 'two-fields':
+		mcf_setup_list( array(
+			mcf_rule( array( 'pattern' => '{meta:mc_cf_first}' ) ),
+			mcf_rule( array( 'target_field' => MCF_HTML, 'pattern' => '{meta:mc_cf_last}' ) ),
+		) );
+		mcf_arm( $subject, 'Ada', 'Lovelace' );
+		mcf_pass( $subject );
+
+		mc_assert( '§69a  two rules, two fields: the first is written', mcf_meta( $subject, 'mc_cf_display' ), 'Ada' );
+		mc_assert( '§69b  two rules, two fields: the second is written', mcf_meta( $subject, 'mc_cf_display_html' ), 'Lovelace' );
+		break;
+
+	case 'same-field':
+		$first = mcf_rule( array( 'pattern' => '{meta:mc_cf_first}' ) );
+		$last  = mcf_rule( array( 'pattern' => '{meta:mc_cf_last}' ) );
+
+		mcf_setup_list( array( $first, $last ) );
+		mcf_arm( $subject, 'Ada', 'Lovelace' );
+		mcf_pass( $subject );
+		mc_assert( '§69c  same field: the later rule in the list wins', mcf_meta( $subject, 'mc_cf_display' ), 'Lovelace' );
+
+		mcf_setup_list( array( $last, $first ) );
+		mcf_arm( $subject, 'Ada', 'Lovelace' );
+		mcf_pass( $subject );
+		mc_assert( '§69d  swapping the order swaps the winner', mcf_meta( $subject, 'mc_cf_display' ), 'Ada' );
+		break;
+
+	// The title rule reads {meta:mc_cf_display}: ordered after the field rule it
+	// sees the value computed in this pass; ordered before, the stored one.
+	case 'title-after':
+		mcf_setup_list( array( mcf_rule(), mcf_title_rule() ) );
+		mcf_arm( $subject, 'Ada', 'Lovelace' );
+		mcf_stored_display( $subject, 'Stored Old' );
+		mcf_pass( $subject );
+
+		mc_assert( '§69e  a title rule ordered after the field rule reads the pending value', get_post( $subject )->post_title, 'Ada Lovelace' );
+		mc_assert( '§69f  and the field holds it', mcf_meta( $subject, 'mc_cf_display' ), 'Ada Lovelace' );
+		mcf_reset_identity( $subject );
+		break;
+
+	case 'title-before':
+		mcf_setup_list( array( mcf_title_rule(), mcf_rule() ) );
+		mcf_arm( $subject, 'Ada', 'Lovelace' );
+		mcf_stored_display( $subject, 'Stored Old' );
+		mcf_pass( $subject );
+
+		mc_assert( '§69g  a title rule ordered before the field rule reads the stored value', get_post( $subject )->post_title, 'Stored Old' );
+		mc_assert( '§69h  the field still takes the new value', mcf_meta( $subject, 'mc_cf_display' ), 'Ada Lovelace' );
+		mcf_reset_identity( $subject );
+		break;
+
+	case 'title-first-match':
+		mcf_setup_list( array(
+			mcf_title_rule( array( 'title_pattern' => '{meta:mc_cf_first}' ) ),
+			mcf_title_rule( array( 'title_pattern' => '{meta:mc_cf_last}' ) ),
+		) );
+		mcf_arm( $subject, 'Ada', 'Lovelace' );
+		mcf_pass( $subject );
+
+		mc_assert( '§69i  two title rules on one post type: the first matches, the second never runs', get_post( $subject )->post_title, 'Ada' );
+		mcf_reset_identity( $subject );
+		break;
+
+	case 'self-ref':
+		mcf_setup_list( array( mcf_rule( array( 'pattern' => '{meta:mc_cf_display} {meta:mc_cf_last}' ) ) ) );
+		mcf_arm( $subject, 'Ada', 'Lovelace' );
+		mcf_stored_display( $subject, 'Stale' );
+		$one = mcf_pass( $subject );
+		mc_assert( '§69j  a token naming the rule\'s own target resolves empty', mcf_meta( $subject, 'mc_cf_display' ), 'Lovelace' );
+		$two   = mcf_pass( $subject );
+		$three = mcf_pass( $subject );
+		mc_assert( '§69k  stable across three consecutive passes', mcf_meta( $subject, 'mc_cf_display' ), 'Lovelace' );
+		mc_assert( '§69l  and the later passes write nothing', $two + $three, 0 );
 		break;
 
 	case 'restore':

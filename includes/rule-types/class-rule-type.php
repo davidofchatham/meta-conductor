@@ -186,6 +186,21 @@ abstract class RuleType {
     }
 
     /**
+     * Whether the FIRST rule of this type that applies to an entity ends the
+     * type's turn in a format pass — the rest are skipped.
+     *
+     * True only for a rule set that is a lookup table keyed by post type
+     * (`title_slug_rules`, #59). False ⇒ every applicable rule runs in authored
+     * order and a later write supersedes an earlier one. Meaningful for the
+     * format kind only; the term dispatcher never asks.
+     *
+     * @return bool
+     */
+    public function first_match_wins(): bool {
+        return false;
+    }
+
+    /**
      * Whether `post_status` gates a SOURCE post rather than the post written.
      *
      * When true, the rule's status gate must not narrow the posts a run
