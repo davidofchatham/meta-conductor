@@ -148,13 +148,13 @@ $check('slug policy sanitizes each token and collapses dashes',
 // format (here a pattern with nothing to resolve renders ''). `{N}` is slot N's
 // value; '' is an empty token.
 
-$cleanup = static function (array $values, string $format) use ($title): string {
+$cleanup = static function (array $values, string $format, ?OutputPolicy $policy = null) use ($title): string {
     $meta = [];
     foreach ($values as $n => $v) {
         $meta["v$n"] = $v;
     }
     $pattern = preg_replace('/\{(\d+)\}/', '{meta:v$1}', $format);
-    return TokenEngine::render($pattern, new FakeTokenSource($meta), $title);
+    return TokenEngine::render($pattern, new FakeTokenSource($meta), $policy ?? $title);
 };
 $dense = ['Dr.', 'Tom', 'M', 'Smith', 'Jr.', 'PhD', 'USN (Ret.)'];
 $name  = '{1} {2} {3}. {4} {5}, {6}, {7}';
@@ -224,6 +224,13 @@ foreach ($rows as [$label, $expected, $values, $format]) {
     $got = $cleanup(array_combine(range(1, count($values)), $values), $format);
     $check("cleanup: $label — " . json_encode($format) . ' expected ' . json_encode($expected) . ' got ' . json_encode($got),
         $got === $expected);
+    // Text and HTML outputs (FW-4) share the cleanup: no value above carries a
+    // character either policy would change, so every row renders identically.
+    foreach (['text' => OutputPolicy::text(), 'html' => OutputPolicy::html()] as $policy_label => $policy) {
+        $got = $cleanup(array_combine(range(1, count($values)), $values), $format, $policy);
+        $check("cleanup ($policy_label policy): $label — expected " . json_encode($expected) . ' got ' . json_encode($got),
+            $got === $expected);
+    }
 }
 
 // Value characters are never mistaken for the pattern's: a value that opens
@@ -236,6 +243,53 @@ $check('slug policy: empty middle token', TokenEngine::render('{meta:a}-{meta:bl
     OutputPolicy::slug(static fn(string $v) => strtolower($v))) === 'alpha-beta');
 $check('slug policy: empty bracketed token', TokenEngine::render('{meta:a} ({meta:blank})', $src,
     OutputPolicy::slug(static fn(string $v) => strtolower($v))) === 'alpha');
+
+// --- Text and HTML outputs (FW-4). ------------------------------------------
+// Both: month NAMES, term NAMES, ', ' joiner (the title choices — a stored
+// field is read by people, not routed through a URL), and no duplicate guard.
+
+$text = OutputPolicy::text();
+$html = OutputPolicy::html();
+$psrc = new FakeTokenSource(
+    ['amp' => 'Smith & Jones', 'tag' => '<b>x</b>', 'q' => '"a" \'b\'', 'dash' => 'a--b', 'a' => 'Alpha', 'b' => 'Beta', 'blank' => ''],
+    ['genre' => [['Rock & Roll', 'rock-roll'], ['<i>Jazz</i>', 'jazz']]],
+    new \DateTimeImmutable('2026-03-05 10:00:00', new \DateTimeZone('America/New_York'))
+);
+$p = static fn(string $pattern, OutputPolicy $policy, ?string $base = null, array $vars = [])
+    => TokenEngine::render($pattern, $psrc, $policy, $vars, $base);
+
+$check('text: values stored exactly as resolved',
+    $p('{meta:amp}', $text) === 'Smith & Jones' && $p('{meta:tag}', $text) === '<b>x</b>'
+    && $p('{meta:q}', $text) === '"a" \'b\'');
+$check('text: dashes inside a value are not collapsed', $p('{meta:dash}', $text) === 'a--b');
+$check('text: dashes between tokens are not collapsed', $p('{meta:a}--{meta:b}', $text) === 'Alpha--Beta');
+$check('text: pattern literals verbatim', $p('<b>{meta:a}</b>', $text) === '<b>Alpha</b>');
+$check('text: month name, term names sorted and comma-joined, first term',
+    $p('{pub_month} {terms:genre} {term:genre}', $text) === 'March <i>Jazz</i>, Rock & Roll <i>Jazz</i>');
+
+$check('html: literal markup kept, token value escaped',
+    $p('<span class="cap">{meta:tag}</span>', $html) === '<span class="cap">&lt;b&gt;x&lt;/b&gt;</span>');
+$check('html: ampersand and both quote kinds in a value escaped',
+    $p('{meta:amp}', $html) === 'Smith &amp; Jones' && $p('{meta:q}', $html) === '&quot;a&quot; &#039;b&#039;');
+$check('html: an already-escaped value is escaped again, never trusted',
+    TokenEngine::render('{meta:e}', new FakeTokenSource(['e' => '&lt;']), $html) === '&amp;lt;');
+$check('html: term names escaped, joiner and month name unchanged',
+    $p('{pub_month}: {terms:genre}', $html) === 'March: &lt;i&gt;Jazz&lt;/i&gt;, Rock &amp; Roll'
+    && $p('{term:genre}', $html) === '&lt;i&gt;Jazz&lt;/i&gt;');
+$check('html: a bound variable is a token value too, escaped',
+    $p('<p>{default_title}</p>', $html, null, ['default_title' => 'A <u>B</u>']) === '<p>A &lt;u&gt;B&lt;/u&gt;</p>');
+$check('text: a bound variable is returned as-is',
+    $p('{default_title}', $text, null, ['default_title' => 'A <u>B</u>']) === 'A <u>B</u>');
+$check('title and slug still return a bound variable untouched',
+    $p('{default_title}', $title, null, ['default_title' => 'A & B']) === 'A & B'
+    && $p('{default_title}', OutputPolicy::slug(static fn(string $v) => strtoupper($v)), null, ['default_title' => 'a b']) === 'a b');
+$check('html: an empty token still takes its brackets, markup around it stays',
+    $p('<b>{meta:a}</b> ({meta:blank})', $html) === '<b>Alpha</b>');
+
+foreach (['text' => $text, 'html' => $html] as $label => $policy) {
+    $check("$label: no duplicate guard even when a base is passed",
+        $p('{meta:a} {meta:b}', $policy, 'the alpha one') === 'Alpha Beta');
+}
 
 // --- tokens() / date_part_of(): the grammar slug escalation reads. -----------
 

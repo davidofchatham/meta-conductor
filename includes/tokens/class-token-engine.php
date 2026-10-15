@@ -29,7 +29,7 @@ final class TokenEngine {
      * @param string               $pattern    Pattern to render.
      * @param TokenSourceInterface $source     Where token values come from.
      * @param OutputPolicy         $policy     How they are shaped.
-     * @param array                $vars       Bound tokens by name, returned as-is and never guarded.
+     * @param array                $vars       Bound tokens by name, never guarded; returned as-is unless the policy escapes them (`html()`).
      * @param string|null          $guard_base Duplicate-insertion guard: a resolved token whose value
      *                                         already appears in this string is dropped, compared as
      *                                         the policy says. Null (or '') means no guard.
@@ -132,7 +132,7 @@ final class TokenEngine {
     private static function resolve(string $token, TokenSourceInterface $source, OutputPolicy $policy,
                                     array $vars, ?string $guard_base): string {
         if (array_key_exists($token, $vars)) {
-            return (string) $vars[$token];
+            return $policy->bound((string) $vars[$token]);
         }
 
         [$kind, $arg] = self::split($token);
