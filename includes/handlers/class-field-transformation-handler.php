@@ -51,8 +51,9 @@ class FieldTransformationHandler extends UnifiedHandlerBase {
         }
 
         $pattern = (string) ($rule['pattern'] ?? '');
+        // Empty `post_types` is "none", not "all" — see the descriptor.
         if ($pattern === ''
-            || empty($rule['post_type']) || $rule['post_type'] !== ($data['post_type'] ?? '')) {
+            || !in_array($data['post_type'] ?? '', (array) ($rule['post_types'] ?? []), true)) {
             return null;
         }
 

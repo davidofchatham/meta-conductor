@@ -23,7 +23,9 @@
  *   wp eval-file .../sweep-computed-field.php unchanged  # a second pass writes nothing
  *   wp eval-file .../sweep-computed-field.php empty      # every source empty clears the field to ''
  *   wp eval-file .../sweep-computed-field.php disabled   # a disabled rule writes nothing
- *   wp eval-file .../sweep-computed-field.php other      # a post outside the rule's post type is untouched
+ *   wp eval-file .../sweep-computed-field.php other      # a post outside the rule's post types is untouched
+ *   wp eval-file .../sweep-computed-field.php multi-type # one rule naming two post types writes both, and only those
+ *   wp eval-file .../sweep-computed-field.php no-types   # a rule with no post type checked writes nothing anywhere
  *   wp eval-file .../sweep-computed-field.php save       # an editor-shaped save computes the field
  *   wp eval-file .../sweep-computed-field.php s1         # bare update_field(), let shutdown drain
  *   wp eval-file .../sweep-computed-field.php s2         # assert what s1's shutdown did
@@ -68,7 +70,7 @@ function mcf_rule( array $over = array() ) {
 		'type'         => 'field_transformation_rules',
 		'enabled'      => true,
 		'name'         => 'Sweep computed display',
-		'post_type'    => 'mc_item',
+		'post_types'   => array( 'mc_item' ),
 		'target_field' => MCF_TEXT,
 		'pattern'      => '{meta:mc_cf_first} {meta:mc_cf_last}',
 		'output'       => 'text',
@@ -81,7 +83,7 @@ function mcf_row_rule( array $over = array() ) {
 		'type'            => 'field_transformation_rules',
 		'enabled'         => true,
 		'name'            => 'Sweep roster line',
-		'post_type'       => 'mc_item',
+		'post_types'      => array( 'mc_item' ),
 		'target_repeater' => MCF_ROSTER,
 		'target_subfield' => MCF_LINE,
 		'pattern'         => '{meta:position} / {meta:height} / {meta:weight}',
@@ -317,6 +319,38 @@ switch ( $step ) {
 
 		mc_assert( '§68n  a post outside the rule\'s post type is untouched', mcf_meta( $control, 'mc_cf_display' ), null );
 		delete_post_meta( $control, 'mc_cf_first' );
+		break;
+
+	// One rule, two post types: the control (mc_section) is written as well as
+	// the subject (mc_item). The control's meta is cleaned up by `restore`.
+	case 'multi-type':
+		mcf_setup( array( mcf_rule( array( 'post_types' => array( 'mc_item', 'mc_section' ) ) ) ) );
+		mcf_arm( $subject, 'Ada', 'Lovelace' );
+		update_post_meta( $control, 'mc_cf_first', 'Grace' );
+		update_post_meta( $control, 'mc_cf_last', 'Hopper' );
+		delete_post_meta( $control, 'mc_cf_display' );
+		mcf_pass( $subject );
+		mcf_pass( $control );
+
+		mc_assert( '§71a  a rule naming two post types writes the first', mcf_meta( $subject, 'mc_cf_display' ), 'Ada Lovelace' );
+		mc_assert( '§71b  ...and the second', mcf_meta( $control, 'mc_cf_display' ), 'Grace Hopper' );
+
+		mcf_setup( array( mcf_rule( array( 'post_types' => array( 'mc_section' ) ) ) ) );
+		mcf_arm( $subject, 'Ada', 'Lovelace' );
+		mcf_pass( $subject );
+		mc_assert( '§71c  a post type the rule does not name is untouched', mcf_meta( $subject, 'mc_cf_display' ), null );
+		break;
+
+	case 'no-types':
+		mcf_setup( array( mcf_rule( array( 'post_types' => array() ) ) ) );
+		mcf_arm( $subject, 'Ada', 'Lovelace' );
+		update_post_meta( $control, 'mc_cf_first', 'Grace' );
+		delete_post_meta( $control, 'mc_cf_display' );
+		mcf_pass( $subject );
+		mcf_pass( $control );
+
+		mc_assert( '§71d  no post type checked: the subject is untouched', mcf_meta( $subject, 'mc_cf_display' ), null );
+		mc_assert( '§71e  no post type checked: no other post type is written either', mcf_meta( $control, 'mc_cf_display' ), null );
 		break;
 
 	case 'save':
@@ -603,6 +637,9 @@ switch ( $step ) {
 		foreach ( array( 'mc_cf_display', 'mc_cf_display_html' ) as $name ) {
 			delete_post_meta( $subject, $name );
 			delete_post_meta( $subject, '_' . $name );
+		}
+		foreach ( array( 'mc_cf_first', 'mc_cf_last', 'mc_cf_display', '_mc_cf_display' ) as $name ) {
+			delete_post_meta( $control, $name );
 		}
 		remove_filter( 'meta_conductor_acf_reapply_enabled', '__return_false', 99 );
 

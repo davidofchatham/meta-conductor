@@ -7,6 +7,7 @@
 
 namespace BWS\MetaConductor\RuleTypes;
 
+use BWS\MetaConductor\Admin\Config\ConfigHelpers;
 use BWS\MetaConductor\Handlers\TitleSlugHandler;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 
@@ -98,6 +99,25 @@ final class TitleSlugRules extends RuleType {
      */
     public function subfields(): array {
         return [
+            [
+                // Scalar, not a `post_types` checkboxes scope.
+                // `TitleSlugHandler::rule_matches()` reads this key by name
+                // and the format pass stops at the FIRST title & slug rule
+                // matching the post's type, so the value is a lookup key
+                // rather than a scope, and two rules on one post type means
+                // the lower one never runs.
+                'id'          => 'post_type',
+                'type'        => 'select',
+                'label'       => __('Post type', 'meta-conductor'),
+                // Order decides the winner, so the description says so.
+                'description' => __('The post type this rule acts on. If two title & slug rules name the same post type, the higher one wins and the lower one never runs.', 'meta-conductor'),
+                'default'     => '',
+                'required'    => true,
+                'columns'     => 12,
+                'args'        => [
+                    'options' => ConfigHelpers::format_post_type_options(__('— Select post type —', 'meta-conductor')),
+                ],
+            ],
             [
                 'id'          => 'title_pattern',
                 'type'        => 'text',

@@ -296,7 +296,7 @@ return array(
 			array(
 				'enabled'      => true,
 				'name'         => 'MC computed display',
-				'post_type'    => 'mc_item',
+				'post_types'   => array( 'mc_item' ),
 				'target_field' => 'field_mc_cf_display',
 				'pattern'      => '{meta:mc_cf_first} {meta:mc_cf_last}',
 				'output'       => 'text',

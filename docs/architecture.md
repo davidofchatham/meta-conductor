@@ -503,11 +503,14 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
       keying would warn on every pair of them. An advisory that fires that
       often gets ignored, which is worse than none.
     - **The post types are the ones a rule WRITES.** Two rule types do not
-      answer that with `post_types`: the format types name one in a scalar
-      `post_type`, and the ACF-reference rule has no `post_types` subfield (#58)
-      and writes its *dependent* end — unconstrained under `holder_role=source`,
-      exactly as `dependent_post_type()` reports it. Empty means every post
-      type, so the test over-reports and never under-reports.
+      answer that with `post_types`: title & slug names one in a scalar
+      `post_type` (and the Computed field rule a `post_types` list of its own),
+      and the ACF-reference rule has no `post_types` subfield (#58) and writes
+      its *dependent* end — unconstrained under `holder_role=source`, exactly as
+      `dependent_post_type()` reports it. Empty means every post type, so the
+      test over-reports and never under-reports. The exception is a Computed
+      field row with no post type checked, which writes nothing: its target key
+      is null, so it is half-authored rather than a collision.
     - **Targets must be EQUAL, not nested.** A taxonomy-wide rule is not paired
       with a term rule whose term lives in that taxonomy, and the claim axis is
       not consulted at all. Both pairings are real, and both belong to the

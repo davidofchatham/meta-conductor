@@ -19,26 +19,21 @@
  * half through Wireframe's REAL `Conditions::evaluate()`; the dynamic half is
  * `tools/fixtures/mc-rules/sweep-59-roundtrip.php` on the testbed.
  *
- * With one type the failure that matters most is the *ungated* one: a shared
- * subfield is shared with nothing yet, so an accidental gate on `post_type` or
- * `name` would drop it for the only type there is. H12 asserts the shared
+ * The failure that matters most is the *ungated* one: an accidental gate on
+ * `name` or `enabled` would drop it for every type. H12 asserts the shared
  * frame carries no `conditions` key at all.
  *
  * ## What is shared and what is gated
  *
- * Shared frame: `type`, `enabled`, `name`, `post_type`, `row_title`. Every one
- * of them is a question any format rule has to answer — which rule is this,
- * does it run, what is it called, what does it act on. Gated to
- * `title_slug_rules`: the patterns, the slug mode, and the collision-avoidance
- * pair, which are the mechanics of *this* transformation and mean nothing to
- * the next one.
- *
- * `post_type` is a SCALAR select here, not the shared `post_types` checkboxes
- * the term list uses, because the format pass is first-match-wins per rule type
- * (`TitleSlugHandler::rule_matches()`, #64) on one post type — a rule set is a lookup table keyed by
- * post type, not a set of independently-scoped rules. Unifying the two gates
- * is a handler change, deliberately out of #59's scope (it is a move, and the
- * ticket asks that stored rules survive it intact).
+ * Shared frame: `type`, `enabled`, `name`, `row_title`. Every one of them is a
+ * question any format rule has to answer — which rule is this, does it run,
+ * what is it called. Everything else is gated to the descriptor that declares
+ * it, including the post-type scope: `title_slug_rules` owns a SCALAR
+ * `post_type` select (the format pass is first-match-wins per rule type, so
+ * the value is a lookup key into a table keyed by post type), and
+ * `field_transformation_rules` owns a `post_types` checkboxes list (its rules
+ * compose in list order, so a scope is what it needs). The two are different
+ * questions, which is why they are two subfields and not one shared one.
  *
  * The stored `type` value is the LEGACY TYPE KEY VERBATIM (`title_slug_rules`,
  * not `title_slug`), for the same reason it is in the term list: rule-type
@@ -107,9 +102,9 @@ class FormatRulesConfig {
             'title'    => __('Format & Transform', 'meta-conductor'),
             'sections' => [
                 // Same collision advisory the term tab leads with (#65), from
-                // the same builder. On this kind it reports the one thing the
-                // `post_type` description already warns about in prose: two
-                // rules on one post type, where the lower never runs.
+                // the same builder. On this kind it reports what the title &
+                // slug `post_type` description already warns about in prose:
+                // two rules on one post type, where the lower never runs.
                 CollisionDetector::section(OptionRuleStorage::KIND_FORMAT),
                 self::section(),
             ],
@@ -227,41 +222,6 @@ class FormatRulesConfig {
                     'placeholder' => __('e.g. Personnel Title & Slug', 'meta-conductor'),
                 ],
             ],
-            [
-                // Scalar, not the shared post_types checkboxes — see the file
-                // docblock. `TitleSlugHandler::rule_matches()` reads this key
-                // by name and the format pass stops at the FIRST rule of the
-                // type matching the post's type, so the value is a lookup key rather than a scope, and
-                // two rules on one post type means the lower one never runs.
-                'id'          => 'post_type',
-                'type'        => 'select',
-                'label'       => __('Post type', 'meta-conductor'),
-                // Says the thing the old label left implicit, and which the
-                // ordered list finally makes visible: order decides the winner.
-                'description' => __('The post type this rule acts on. If two title & slug rules name the same post type, the higher one wins and the lower one never runs.', 'meta-conductor'),
-                'default'     => '',
-                'required'    => true,
-                'columns'     => 12,
-                'args'        => [
-                    'options' => self::post_type_options_no_attachment(),
-                ],
-            ],
         ];
-    }
-
-    /**
-     * Public post types minus attachment (title/slug rules don't apply to media).
-     */
-    private static function post_type_options_no_attachment(): array {
-        $post_types = get_post_types(['public' => true], 'objects');
-        unset($post_types['attachment']);
-
-        // Shares ConfigHelpers' single slug ⇒ label loop (#38 cluster 1); the
-        // attachment filter is this caller's business, which is exactly why
-        // that helper takes objects rather than a registry query.
-        return ConfigHelpers::label_options(
-            $post_types,
-            __('— Select post type —', 'meta-conductor')
-        );
     }
 }

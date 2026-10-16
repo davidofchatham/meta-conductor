@@ -211,18 +211,25 @@ $check('type select warns that changing it clears the old type\'s settings',
 $by_id = [];
 foreach ($subfields as $s) { $by_id[$s['id']] = $s; }
 
-foreach (['type', 'enabled', 'name', 'post_type', 'row_title'] as $shared) {
+foreach (['type', 'enabled', 'name', 'row_title'] as $shared) {
     $check("shared subfield '$shared' exists",     isset($by_id[$shared]));
     $check("shared subfield '$shared' is ungated", !isset($by_id[$shared]['conditions']));
 }
 
-// `post_type` is SCALAR here, not the term list's `post_types` checkboxes —
-// TitleSlugHandler::rule_matches() reads one slug, first match wins.
-// Swapping in the shared checkbox builder would silently stop every rule
-// matching, since the handler compares the value to $post->post_type.
-$check('post_type is a single-value select, not the shared checkboxes gate',
+// The post-type scope is NOT shared: title & slug owns a scalar `post_type`
+// (a lookup key, first match wins) and Computed field a `post_types` checkboxes
+// list (rules compose, so a rule may cover several types). Each is gated to its
+// own type — an ungated copy would persist junk on the other type's rows.
+$check('post_type is a single-value select, gated to title & slug',
     ($by_id['post_type']['type'] ?? '') === 'select'
-    && !isset($by_id['post_types']));
+    && ($by_id['post_type']['conditions']['value'] ?? null) === ['title_slug_rules']);
+$check('post_types is a checkboxes list, gated to computed field',
+    ($by_id['post_types']['type'] ?? '') === 'checkboxes'
+    && ($by_id['post_types']['conditions']['value'] ?? null) === ['field_transformation_rules']);
+$check('the computed field scope drops attachment and has no placeholder row',
+    array_keys($by_id['post_types']['args']['options']) === ['post', 'page', 'mc_item']);
+$check('the computed field scope says none checked does nothing',
+    str_contains(strtolower($by_id['post_types']['description'] ?? ''), 'does nothing'));
 $check('post_type is required', !empty($by_id['post_type']['required']));
 $check('the post-type select drops attachment',
     !array_key_exists('attachment', $by_id['post_type']['args']['options']));
@@ -238,7 +245,7 @@ $check('the post-type description states first-match-wins',
 
 // --- Gated subfields name only real types, via `in`. ------------------------
 
-$ungated  = ['type', 'enabled', 'name', 'post_type', 'row_title'];
+$ungated  = ['type', 'enabled', 'name', 'row_title'];
 $gated_ok = true;
 $gate_covers = [];
 foreach ($subfields as $s) {
@@ -275,7 +282,7 @@ $expected_visible = [
         'date_escalation', 'date_field', 'row_title',
     ],
     'field_transformation_rules' => [
-        'type', 'enabled', 'name', 'post_type',
+        'type', 'enabled', 'name', 'post_types',
         'target_field', 'target_repeater', 'target_subfield', 'pattern', 'output', 'row_title',
     ],
 ];
@@ -318,7 +325,7 @@ foreach ($subfields as $s) {
     }
 }
 $check('every key the computed field handler reads survives a save',
-    empty(array_diff(['enabled', 'post_type', 'target_field', 'target_repeater', 'target_subfield', 'pattern', 'output'], $visible_field)));
+    empty(array_diff(['enabled', 'post_types', 'target_field', 'target_repeater', 'target_subfield', 'pattern', 'output'], $visible_field)));
 $check('title/slug mechanics are not offered on a computed field row',
     !array_intersect(['title_pattern', 'slug_pattern', 'slug_mode', 'date_escalation', 'date_field'], $visible_field));
 $check('computed field mechanics are not offered on a title/slug row',
@@ -352,7 +359,7 @@ foreach ($subfields as $s) {
     }
 }
 $check('an untyped row shows only the shared frame',
-    $untyped === ['type', 'enabled', 'name', 'post_type', 'row_title']);
+    $untyped === ['type', 'enabled', 'name', 'row_title']);
 
 // --- Row titles. -------------------------------------------------------------
 
@@ -378,16 +385,19 @@ $check('an unresolvable post type falls back to its slug',
         === 'X (gone)');
 // The Computed field row names the field it writes and the post type.
 $check('a computed field row title names its target field and post type',
-    $title(['type' => 'field_transformation_rules', 'name' => 'Display line', 'post_type' => 'mc_item', 'target_field' => 'field_a'])
+    $title(['type' => 'field_transformation_rules', 'name' => 'Display line', 'post_types' => ['mc_item'], 'target_field' => 'field_a'])
         === 'Display line — Display name (MC Items)');
 $check('a computed field row whose key no longer resolves shows no field',
-    $title(['type' => 'field_transformation_rules', 'name' => 'Display line', 'post_type' => 'mc_item', 'target_field' => 'field_gone'])
+    $title(['type' => 'field_transformation_rules', 'name' => 'Display line', 'post_types' => ['mc_item'], 'target_field' => 'field_gone'])
         === 'Display line (MC Items)');
 $check('a computed field row targeting a repeater subfield names repeater and subfield',
-    $title(['type' => 'field_transformation_rules', 'name' => 'Line', 'post_type' => 'mc_item', 'target_repeater' => 'field_d', 'target_subfield' => 'field_d_line'])
+    $title(['type' => 'field_transformation_rules', 'name' => 'Line', 'post_types' => ['mc_item'], 'target_repeater' => 'field_d', 'target_subfield' => 'field_d_line'])
         === 'Line — Roster › Line (MC Items)');
 $check('an unnamed computed field row is named rather than left blank',
-    str_starts_with($title(['type' => 'field_transformation_rules', 'post_type' => 'mc_item']), 'Untitled computed field rule'));
+    str_starts_with($title(['type' => 'field_transformation_rules', 'post_types' => ['mc_item']]), 'Untitled computed field rule'));
+$check('a computed field row naming several post types lists them all',
+    $title(['type' => 'field_transformation_rules', 'name' => 'Display line', 'post_types' => ['mc_item', 'page'], 'target_field' => 'field_a'])
+        === 'Display line — Display name (MC Items, Pages)');
 // The uniform marker the term list gained in #57 — the whole reason the live
 // {name} template was replaced by a snapshot.
 $check('a disabled row carries the uniform prefix',

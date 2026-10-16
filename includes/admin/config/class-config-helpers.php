@@ -145,6 +145,21 @@ class ConfigHelpers {
     }
 
     /**
+     * Public post types minus attachment — format rules rewrite a post's own
+     * fields, which don't apply to media. Both format descriptors offer this
+     * list: title & slug as a select (pass a placeholder), Computed field as
+     * checkboxes (pass none).
+     *
+     * @return array<string,string>
+     */
+    public static function format_post_type_options(?string $placeholder = null): array {
+        $post_types = get_post_types(['public' => true], 'objects');
+        unset($post_types['attachment']);
+
+        return self::label_options($post_types, $placeholder);
+    }
+
+    /**
      * The shared body of every "limit this rule to …" checkboxes subfield.
      *
      * All of them are the same field: checkboxes, full width, empty means

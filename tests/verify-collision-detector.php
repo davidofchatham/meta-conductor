@@ -132,7 +132,7 @@ $pairs = fn(array $found) => array_map(fn($f) => [$f['a']['index'], $f['b']['ind
 // row with every target-naming field filled, must name exactly one scheme.
 
 $desc = fn(string $type) => Registry::get($type);
-$full = ['taxonomy' => 'mc_topic', 'target_term_id' => 21, 'post_type' => 'mc_item', 'target_field' => 'field_mc_x'];
+$full = ['taxonomy' => 'mc_topic', 'target_term_id' => 21, 'post_type' => 'mc_item', 'post_types' => ['mc_item'], 'target_field' => 'field_mc_x'];
 
 foreach (Registry::all() as $type => $descriptor) {
     $key = $descriptor->target_key(['type' => $type] + $full);
@@ -540,7 +540,7 @@ $check('a blank format row collides with nothing',
 // --- 10b. The Computed field rule: one ACF field is the target (FW-4). -------
 
 $cf = fn(array $over = []) => $over + [
-    'type' => 'field_transformation_rules', 'enabled' => true, 'post_type' => 'mc_item',
+    'type' => 'field_transformation_rules', 'enabled' => true, 'post_types' => ['mc_item'],
     'target_field' => 'field_mc_a', 'pattern' => '{meta:first}', 'row_title' => 'Display',
 ];
 
@@ -555,7 +555,11 @@ $check('and says the lower rule decides',
 $check('a different target field is independent',
     $scan($KIND_FORMAT, [$cf(), $cf(['target_field' => 'field_mc_b'])]) === []);
 $check('disjoint post types are independent',
-    $scan($KIND_FORMAT, [$cf(), $cf(['post_type' => 'mc_section'])]) === []);
+    $scan($KIND_FORMAT, [$cf(), $cf(['post_types' => ['mc_section']])]) === []);
+$check('two rows on one field with NO post type checked are half-authored, not colliding',
+    $scan($KIND_FORMAT, [$cf(['post_types' => []]), $cf(['post_types' => []])]) === []);
+$check('overlapping post type lists collide',
+    count($scan($KIND_FORMAT, [$cf(['post_types' => ['mc_item', 'page']]), $cf(['post_types' => ['page', 'mc_section']])])) === 1);
 $check('a blank target field collides with nothing',
     $scan($KIND_FORMAT, [$cf(['target_field' => '']), $cf(['target_field' => ''])]) === []);
 $check('a disabled rule does not collide',
@@ -586,7 +590,7 @@ $check('and drops it once the pattern is fixed', !str_contains($self->row_title(
 // --- 10c. Repeater-row targets: one subfield across every row (FW-4 06). ----
 
 $rr = fn(array $over = []) => $over + [
-    'type' => 'field_transformation_rules', 'enabled' => true, 'post_type' => 'mc_item',
+    'type' => 'field_transformation_rules', 'enabled' => true, 'post_types' => ['mc_item'],
     'target_repeater' => 'field_mc_r', 'target_subfield' => 'field_mc_rl', 'pattern' => '{meta:pos}', 'row_title' => 'Roster line',
 ];
 
@@ -597,7 +601,7 @@ $check('the finding names the subfield and its repeater',
 $check('a different subfield of the same repeater is independent',
     $scan($KIND_FORMAT, [$rr(), $rr(['target_subfield' => 'field_mc_rp'])]) === []);
 $check('the same subfield on disjoint post types is independent',
-    $scan($KIND_FORMAT, [$rr(), $rr(['post_type' => 'mc_section'])]) === []);
+    $scan($KIND_FORMAT, [$rr(), $rr(['post_types' => ['mc_section']])]) === []);
 $check('a row rule and a post-level rule on the repeater itself are independent',
     $scan($KIND_FORMAT, [$rr(), $cf(['target_field' => 'field_mc_r'])]) === []);
 $check('a repeater with no subfield picked resolves no target',

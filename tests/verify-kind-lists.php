@@ -131,7 +131,7 @@ $settings = [
         ['name' => 'S1', 'enabled' => true, 'post_type' => 'event', 'title_pattern' => '{term:sport}'],
     ],
     'field_transformation_rules' => [
-        ['name' => 'F1', 'enabled' => true, 'post_type' => 'event', 'target_field' => 'field_x', 'pattern' => '{term:sport}'],
+        ['name' => 'F1', 'enabled' => true, 'post_types' => ['event'], 'target_field' => 'field_x', 'pattern' => '{term:sport}'],
     ],
     // Non-rule globals: never rows, never a guard trigger.
     'conflict_handling_overrides' => [['taxonomy' => 'category', 'mode' => 'replace']],

@@ -62,9 +62,16 @@ final class FieldTransformationRules extends RuleType {
      * title/slug rule owns: that one is first-match-wins by post type, whereas
      * two rules on one field are order-decided (the later write wins). A row
      * rule's target is one subfield of one repeater, `row|<repeater>|<subfield>`;
-     * a repeater with no subfield picked yet is unfinished, not a target.
+     * a repeater with no subfield picked yet is unfinished, not a target. So is
+     * a row with no post type checked: the handler skips it, and without the
+     * null two such rows on one field would be reported as colliding (their
+     * written types are both `['']`, which overlap).
      */
     public function target_key(array $rule): ?string {
+        if ((array) ($rule['post_types'] ?? []) === []) {
+            return null;
+        }
+
         if ($this->is_row_rule($rule)) {
             $sub = trim((string) ($rule['target_subfield'] ?? ''));
 
@@ -77,11 +84,15 @@ final class FieldTransformationRules extends RuleType {
     }
 
     /**
-     * The scalar `post_type`; see `TitleSlugRules::written_post_types()` for
-     * why a row without one yields `['']` rather than [].
+     * The checked `post_types`. A row with none checked applies to nothing (the
+     * handler skips it), so it yields `['']` — which intersects nothing — rather
+     * than [], which would claim every post type; see
+     * `TitleSlugRules::written_post_types()`.
      */
     public function written_post_types(array $rule): array {
-        return [trim((string) ($rule['post_type'] ?? ''))];
+        $types = array_values(array_filter(array_map('strval', (array) ($rule['post_types'] ?? []))));
+
+        return $types ?: [''];
     }
 
     /**
@@ -124,14 +135,21 @@ final class FieldTransformationRules extends RuleType {
 
         return $name
             . ($field !== '' ? ' — ' . $field : '')
-            . Labels::post_type_scope_label($row['post_type'] ?? '')
+            . Labels::scope_label((array) ($row['post_types'] ?? []))
             . ($this->self_references($row) ? ' — ⚠ ' . __('pattern names its own target field', 'meta-conductor') : '');
     }
 
     /**
      * Every field here is gated to this type (the kind config stamps it). The
-     * shared format frame — type, enabled, name, post_type, row_title — is
-     * read by this handler too and stays ungated.
+     * shared format frame — type, enabled, name, row_title — is read by this
+     * handler too and stays ungated.
+     *
+     * `post_types` is this type's own scope, checkboxes like the term list's:
+     * these rules compose in list order, so unlike title & slug (first match
+     * per post type) one rule may cover several types. Unlike the term list,
+     * none checked means NOTHING, not every type — a field write on a type
+     * whose ACF group lacks the field would store orphan meta. The attachment
+     * type is not offered (see `ConfigHelpers::format_post_type_options()`).
      *
      * No bare `{word}` in a description (CLAUDE.md don't 4b); the colon tokens
      * are safe.
@@ -140,6 +158,13 @@ final class FieldTransformationRules extends RuleType {
      */
     public function subfields(): array {
         return [
+            ConfigHelpers::post_types_field([
+                'label'       => __('Post types', 'meta-conductor'),
+                'description' => __('The post types this rule writes to. Check at least one — a rule with none checked does nothing.', 'meta-conductor'),
+                'args'        => [
+                    'options' => ConfigHelpers::format_post_type_options(),
+                ],
+            ]),
             [
                 'id'          => 'target_field',
                 'type'        => 'select',
@@ -155,7 +180,7 @@ final class FieldTransformationRules extends RuleType {
                 'id'          => 'target_repeater',
                 'type'        => 'select',
                 'label'       => __('Repeater', 'meta-conductor'),
-                'description' => __('To write one subfield in every row of a repeater, pick the repeater here and the subfield below, and leave the target field empty. Inside a row, field and date tokens read the other subfields of that row; term and publish-date tokens read the post. A subfield inside a nested repeater or group resolves empty.', 'meta-conductor'),
+                'description' => __('To write one subfield in every row of a repeater, pick the repeater here and the subfield in the Subfield selector, and leave the target field empty. Inside a row, field and date tokens read the other subfields of that row; term and publish-date tokens read the post. A subfield inside a nested repeater or group resolves empty.', 'meta-conductor'),
                 'default'     => '',
                 'columns'     => 6,
                 'args'        => [
@@ -166,7 +191,7 @@ final class FieldTransformationRules extends RuleType {
                 'id'          => 'target_subfield',
                 'type'        => 'select',
                 'label'       => __('Subfield', 'meta-conductor'),
-                'description' => __('Must belong to the repeater picked on the left. Only text, text area, editor, number, email and URL subfields are listed.', 'meta-conductor'),
+                'description' => __('Must belong to the repeater picked in the Repeater selector. Only text, text area, editor, number, email and URL subfields are listed.', 'meta-conductor'),
                 'default'     => '',
                 'columns'     => 6,
                 'args'        => [

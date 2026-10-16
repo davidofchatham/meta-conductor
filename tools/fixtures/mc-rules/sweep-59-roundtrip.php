@@ -62,7 +62,7 @@ $titled = array_filter($rows, static fn($r) => ($r['row_title'] ?? '') !== '');
 $note('every row carries a repaired row_title', count($titled) === count($rows));
 
 foreach ($rows as $i => $r) {
-    $note("row $i names a post type", !empty($r['post_type']));
+    $note("row $i names a post type", !empty($r['post_type']) || !empty($r['post_types']));
     $note("row $i row_title carries the post-type scope",
         str_contains((string) ($r['row_title'] ?? ''), '('));
 }
@@ -88,7 +88,7 @@ $note('sanitize keeps every row', count($sanitized) === count($rows));
 
 // Keys the format handlers READ — these must survive a save unchanged. The
 // last three are the Computed field rule's, stored by ACF field KEY.
-$must_survive = ['type', 'enabled', 'post_type', 'title_pattern', 'slug_pattern',
+$must_survive = ['type', 'enabled', 'post_type', 'post_types', 'title_pattern', 'slug_pattern',
                  'slug_mode', 'date_escalation', 'date_field', 'name',
                  'target_field', 'pattern', 'output'];
 
