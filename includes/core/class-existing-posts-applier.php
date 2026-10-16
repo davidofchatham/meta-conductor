@@ -7,6 +7,7 @@
 
 namespace BWS\MetaConductor\Core;
 
+use BWS\MetaConductor\Admin\Config\ConfigHelpers;
 use BWS\MetaConductor\RuleTypes\Registry;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 use BWS\MetaConductor\Storage\StorageFactory;
@@ -127,6 +128,7 @@ final class ExistingPostsApplier {
 
         $deadline = microtime(true) + (float) apply_filters('meta_conductor_apply_time_box', self::TIME_BOX);
         $done     = true;
+        $fields   = self::field_names($choice);
 
         try {
             if ($row !== null) {
@@ -145,9 +147,9 @@ final class ExistingPostsApplier {
                     break;
                 }
 
-                $before = self::snapshot($post_id);
+                $before = self::snapshot($post_id, $fields);
                 $terms->drain_post($post_id);
-                $diff = self::diff($post_id, $before, self::snapshot($post_id));
+                $diff = self::diff($post_id, $before, self::snapshot($post_id, $fields));
 
                 $state['cursor'] = $post_id;
                 $state['processed']++;
@@ -207,7 +209,9 @@ final class ExistingPostsApplier {
      *               `total` (posts in reach), `posts` (term choice: the newest
      *               PREVIEW_POSTS as `{post_id, title, edit_link}`), `sample`
      *               (format: `{post_id, title: [current, result], slug:
-     *               [current, result]}`) and `note` ('' without a sample).
+     *               [current, result], fields: {name: [stored, result]}}` —
+     *               `fields` only the computed fields whose value would
+     *               change) and `note` ('' without a sample).
      */
     public static function preview(string $value): array {
         $chosen = self::choose($value);
@@ -268,6 +272,7 @@ final class ExistingPostsApplier {
                     'post_id' => $post_id,
                     'title'   => [$computed['before']['post_title'], $computed['after']['post_title']],
                     'slug'    => [$computed['before']['post_name'], $computed['after']['post_name']],
+                    'fields'  => self::field_changes($post_id, $computed['after']['fields']),
                 ];
             }
         } finally {
@@ -390,13 +395,59 @@ final class ExistingPostsApplier {
     }
 
     /**
-     * What the report compares: title, slug, and the terms (id => name) the
-     * post holds in each of its type's taxonomies.
+     * The ACF field NAMES the format pass writes, for the report: the target of
+     * every Computed field row the pass runs (the enabled rows, plus the chosen
+     * one when it is a disabled format row), resolved from the stored key.
      *
-     * @param int $post_id
+     * @param array $choice A decoded `RuleChoice`.
+     * @return string[]
+     */
+    private static function field_names(array $choice): array {
+        $include = !$choice['all'] && $choice['kind'] === FormatDispatcher::KIND ? $choice['fingerprint'] : null;
+        $names   = [];
+        foreach (RuleChoice::pass_rows(StorageFactory::get_instance()->get_kind_rules(FormatDispatcher::KIND), $include) as $rule) {
+            $key = Registry::get((string) ($rule['type'] ?? ''))?->target_key($rule);
+            if ($key === null || !str_starts_with($key, 'field|')) {
+                continue;
+            }
+            $name = ConfigHelpers::acf_field_name(substr($key, strlen('field|')));
+            if ($name !== '') {
+                $names[] = $name;
+            }
+        }
+
+        return array_values(array_unique($names));
+    }
+
+    /**
+     * The computed values that differ from what a post stores, `name =>
+     * [stored, computed]`.
+     *
+     * @param int                 $post_id
+     * @param array<string,string> $computed A format pass's `fields` map.
+     * @return array<string,array{0:string,1:string}>
+     */
+    private static function field_changes(int $post_id, array $computed): array {
+        $changes = [];
+        foreach ($computed as $name => $value) {
+            $stored = (string) get_post_meta($post_id, (string) $name, true);
+            if ($stored !== (string) $value) {
+                $changes[$name] = [$stored, (string) $value];
+            }
+        }
+
+        return $changes;
+    }
+
+    /**
+     * What the report compares: title, slug, the terms (id => name) the post
+     * holds in each of its type's taxonomies, and the named computed fields.
+     *
+     * @param int      $post_id
+     * @param string[] $fields Computed field names to read, from `field_names()`.
      * @return array|null Null when the post is gone.
      */
-    private static function snapshot(int $post_id): ?array {
+    private static function snapshot(int $post_id, array $fields): ?array {
         $post = get_post($post_id);
         if (!$post instanceof \WP_Post) {
             return null;
@@ -408,7 +459,12 @@ final class ExistingPostsApplier {
             $terms[$taxonomy] = is_wp_error($held) ? [] : $held;
         }
 
-        return ['title' => $post->post_title, 'slug' => $post->post_name, 'terms' => $terms];
+        $values = [];
+        foreach ($fields as $name) {
+            $values[$name] = (string) get_post_meta($post_id, $name, true);
+        }
+
+        return ['title' => $post->post_title, 'slug' => $post->post_name, 'terms' => $terms, 'fields' => $values];
     }
 
     /**
@@ -419,14 +475,15 @@ final class ExistingPostsApplier {
      * @param array|null $after  snapshot() after it.
      * @return array|null `{post_id, title: [before, after]|null, slug:
      *                    [before, after]|null, terms: {taxonomy: {added:
-     *                    names[], removed: names[]}}}`.
+     *                    names[], removed: names[]}}, fields: {name: [before,
+     *                    after]}}`.
      */
     private static function diff(int $post_id, ?array $before, ?array $after): ?array {
         if ($before === null || $after === null) {
             return null;
         }
 
-        $row = ['post_id' => $post_id, 'title' => null, 'slug' => null, 'terms' => []];
+        $row = ['post_id' => $post_id, 'title' => null, 'slug' => null, 'terms' => [], 'fields' => []];
         foreach (['title', 'slug'] as $field) {
             if ($before[$field] !== $after[$field]) {
                 $row[$field] = [$before[$field], $after[$field]];
@@ -442,7 +499,13 @@ final class ExistingPostsApplier {
             }
         }
 
-        return $row['title'] === null && $row['slug'] === null && $row['terms'] === [] ? null : $row;
+        foreach ($after['fields'] as $name => $value) {
+            if ($value !== ($before['fields'][$name] ?? '')) {
+                $row['fields'][$name] = [$before['fields'][$name] ?? '', $value];
+            }
+        }
+
+        return $row['title'] === null && $row['slug'] === null && $row['terms'] === [] && $row['fields'] === [] ? null : $row;
     }
 
     /**

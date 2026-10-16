@@ -2,6 +2,7 @@
 
 namespace BWS\MetaConductor\Handlers;
 
+use BWS\MetaConductor\Admin\Config\ConfigHelpers;
 use BWS\MetaConductor\RuleTypes\Registry;
 use BWS\MetaConductor\Tokens\OutputPolicy;
 use BWS\MetaConductor\Tokens\PostTokenSource;
@@ -48,8 +49,7 @@ class FieldTransformationHandler extends UnifiedHandlerBase {
             return null;
         }
 
-        $field = \acf_get_field($key);
-        $name  = is_array($field) ? (string) ($field['name'] ?? '') : '';
+        $name = ConfigHelpers::acf_field_name($key);
         if ($name === '') {
             return null;
         }

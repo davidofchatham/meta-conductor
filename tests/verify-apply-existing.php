@@ -222,6 +222,18 @@ $check('a row with no descriptor reaches nothing, never every type',
 $check('an unknown row does not widen a known row\'s reach',
     $types([$ghost, ['type' => 'hierarchical_rules', 'post_types' => ['page' => true]]]) === ['page']);
 
+// The Computed field rule (FW-4): reach is its `post_type` and nothing else, and
+// it owns no `post_status` gate, so statuses stay the default set.
+$cf = ['type' => 'field_transformation_rules', 'enabled' => true, 'name' => 'Display', 'post_type' => 'book', 'target_field' => 'field_x', 'pattern' => '{meta:a}'];
+$check('a Computed field rule reaches exactly its post type', $types([$cf]) === ['book']);
+$check('two Computed field rules reach the union of their post types',
+    $types([$cf, ['post_type' => 'page'] + $cf]) === ['book', 'page']);
+$check('beside a term rule, the reach is the union of each rule\'s own',
+    $types([$cf, ['type' => 'hierarchical_rules', 'post_types' => ['page' => true]]]) === ['book', 'page']);
+$check('a Computed field rule with no post type reaches no real type, never every type',
+    $types([['post_type' => ''] + $cf]) === ['']);
+$check('a Computed field rule reaches the default statuses', $reach($cf) === $default);
+
 // --- 5. Disabled-row override (dispatcher pass rows). -----------------------
 
 $names = fn(array $rows) => array_column($rows, 'row_title');
@@ -273,6 +285,11 @@ $check('a stale stored position is replaced by the real one',
     === 'Format rules: #1 X');
 $check('an untitled row is labeled by its type',
     in_array('Format rules: #1 title_slug_rules', ApplyPage::choice_options([], [['type' => 'title_slug_rules']]), true));
+$cf_titled = ['type' => 'field_transformation_rules', 'row_title' => '#2 Display — Display name (Books)', 'post_type' => 'book'];
+$check('a Computed field rule is offered in the format group with its own row title',
+    in_array('Format rules: #2 Display — Display name (Books)', ApplyPage::choice_options([], [$formats[0], $cf_titled]), true));
+$check('and its value decodes back to its own row',
+    RuleChoice::resolve(RuleChoice::decode(RuleChoice::encode($KIND_FORMAT, 1, $cf_titled)), [$formats[0], $cf_titled]) === $cf_titled);
 $check('a row with no descriptor is marked in the dropdown',
     in_array('Term rules: #1 (unknown type) nope_rules', ApplyPage::choice_options([['type' => 'nope_rules']], []), true));
 

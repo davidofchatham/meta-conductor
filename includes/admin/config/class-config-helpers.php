@@ -526,4 +526,21 @@ class ConfigHelpers {
 
         return is_array($field) ? (string) ($field['label'] ?? '') : '';
     }
+
+    /**
+     * A field's name (its meta key) from its ACF field key, or '' when the key
+     * is empty or no longer resolves.
+     *
+     * @param string $key ACF field key.
+     * @return string
+     */
+    public static function acf_field_name(string $key): string {
+        if ($key === '' || !function_exists('acf_get_field')) {
+            return '';
+        }
+
+        $field = \acf_get_field($key);
+
+        return is_array($field) ? (string) ($field['name'] ?? '') : '';
+    }
 }

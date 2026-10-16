@@ -10,6 +10,7 @@ namespace BWS\MetaConductor\RuleTypes;
 use BWS\MetaConductor\Admin\Config\ConfigHelpers;
 use BWS\MetaConductor\Handlers\FieldTransformationHandler;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
+use BWS\MetaConductor\Tokens\TokenEngine;
 
 // Prevent direct access
 if (!defined('ABSPATH')) {
@@ -67,8 +68,21 @@ final class FieldTransformationRules extends RuleType {
     }
 
     /**
+     * Whether the pattern reads the rule's own target field. The handler
+     * resolves such a token empty (a pattern cannot compound across passes), so
+     * the row is almost certainly not what its author meant — the row title
+     * says so, which is the advisory on the rules page. False when ACF cannot
+     * name the field.
+     */
+    public function self_references(array $rule): bool {
+        $name = ConfigHelpers::acf_field_name(trim((string) ($rule['target_field'] ?? '')));
+
+        return $name !== '' && in_array($name, TokenEngine::field_names((string) ($rule['pattern'] ?? '')), true);
+    }
+
+    /**
      * Schema:
-     *   {name} — {field_label}{ (Post type)}
+     *   {name} — {field_label}{ (Post type)}{ — ⚠ pattern names its own target field}
      *   e.g. "Display line — Display name (MC Items)"
      *
      * The author names the row (`name` is required on the shared frame); the
@@ -86,7 +100,8 @@ final class FieldTransformationRules extends RuleType {
 
         return $name
             . ($field !== '' ? ' — ' . $field : '')
-            . Labels::post_type_scope_label($row['post_type'] ?? '');
+            . Labels::post_type_scope_label($row['post_type'] ?? '')
+            . ($this->self_references($row) ? ' — ⚠ ' . __('pattern names its own target field', 'meta-conductor') : '');
     }
 
     /**

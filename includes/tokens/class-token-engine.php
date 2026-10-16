@@ -81,6 +81,23 @@ final class TokenEngine {
     }
 
     /**
+     * The field names a pattern reads — the argument of every `meta:` and
+     * `date_<part>:` token, in order, repeats included.
+     *
+     * @return string[]
+     */
+    public static function field_names(string $pattern): array {
+        $names = [];
+        foreach (self::tokens($pattern) as $token) {
+            [$kind, $arg] = self::split($token);
+            if ($arg !== null && ($kind === 'meta' || self::date_part_of($token) !== null)) {
+                $names[] = $arg;
+            }
+        }
+        return $names;
+    }
+
+    /**
      * The date part a token renders — `date_<part>:field` or `pub_<part>` — or
      * null for any other token.
      */

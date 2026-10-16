@@ -84,6 +84,18 @@ if (!function_exists('get_post_type_object')) {
     }
 }
 
+// A stand-in for ACF's field lookup: the field's label and name by KEY. Absent
+// from the shim above on purpose — only the Computed field cases read it.
+if (!function_exists('acf_get_field')) {
+    function acf_get_field($key) {
+        $fields = [
+            'field_mc_a' => ['key' => 'field_mc_a', 'label' => 'Display name', 'name' => 'display_name'],
+            'field_mc_b' => ['key' => 'field_mc_b', 'label' => 'Sort name',    'name' => 'sort_name'],
+        ];
+        return $fields[$key] ?? false;
+    }
+}
+
 require dirname(__DIR__) . '/vendor/autoload.php';
 require dirname(__DIR__) . '/autoload.php';
 
@@ -521,6 +533,52 @@ $s_format_blank = $s_format;
 $s_format_blank[1]['post_type'] = '';
 $check('a blank format row collides with nothing',
     $scan($KIND_FORMAT, $s_format_blank) === []);
+
+// --- 10b. The Computed field rule: one ACF field is the target (FW-4). -------
+
+$cf = fn(array $over = []) => $over + [
+    'type' => 'field_transformation_rules', 'enabled' => true, 'post_type' => 'mc_item',
+    'target_field' => 'field_mc_a', 'pattern' => '{meta:first}', 'row_title' => 'Display',
+];
+
+$cf_pair = $scan($KIND_FORMAT, [$cf(), $cf(['row_title' => 'Display (second)'])]);
+$check('two Computed field rules on one field and post type collide', count($cf_pair) === 1);
+$check('and take the order message, not first-match-wins (the later write wins)',
+    $codes($cf_pair) === ['shared_target']);
+$check('the finding names the field by its label',
+    str_contains(CollisionDetector::message($cf_pair[0]), 'the “Display name” field'));
+$check('and says the lower rule decides',
+    str_contains(CollisionDetector::message($cf_pair[0]), 'lower in the list'));
+$check('a different target field is independent',
+    $scan($KIND_FORMAT, [$cf(), $cf(['target_field' => 'field_mc_b'])]) === []);
+$check('disjoint post types are independent',
+    $scan($KIND_FORMAT, [$cf(), $cf(['post_type' => 'mc_section'])]) === []);
+$check('a blank target field collides with nothing',
+    $scan($KIND_FORMAT, [$cf(['target_field' => '']), $cf(['target_field' => ''])]) === []);
+$check('a disabled rule does not collide',
+    $scan($KIND_FORMAT, [$cf(), $cf(['enabled' => false])]) === []);
+$check('claim is not consulted — the pair collides whatever either row claims',
+    count($scan($KIND_FORMAT, [$cf(['claim' => 'merge']), $cf(['claim' => 'replace'])])) === 1);
+$check('a Computed field rule and a title/slug rule on one post type are independent',
+    $scan($KIND_FORMAT, [$cf(), $s_format[0]]) === []);
+$check('an unresolvable field key is named by the key, not dropped',
+    str_contains(CollisionDetector::message(
+        $scan($KIND_FORMAT, [$cf(['target_field' => 'field_gone']), $cf(['target_field' => 'field_gone'])])[0]
+    ), 'field_gone'));
+
+// The self-reference advisory rides the row title (the collapsed row is what the
+// author scans): it appears when the pattern reads the rule's own target and goes
+// when the pattern is fixed.
+$self  = Registry::get('field_transformation_rules');
+$bad   = $cf(['pattern' => '{meta:display_name} {meta:last}']);
+$bad_d = $cf(['pattern' => '{date_year:display_name}']);
+$ok    = $cf(['pattern' => '{meta:first} {meta:last}']);
+$check('a pattern naming its own target field is a self-reference',
+    $self->self_references($bad) && $self->self_references($bad_d));
+$check('a pattern naming other fields is not', !$self->self_references($ok));
+$check('an unresolvable target is not flagged', !$self->self_references($cf(['target_field' => 'field_gone', 'pattern' => '{meta:display_name}'])));
+$check('the row title carries the advisory', str_contains($self->row_title($bad), '⚠'));
+$check('and drops it once the pattern is fixed', !str_contains($self->row_title($ok), '⚠'));
 
 // --- 11. The section both tabs render. --------------------------------------
 

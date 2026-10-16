@@ -281,10 +281,11 @@ final class ApplyPage {
 
         if ($result['sample'] !== []) {
             $html .= '<table class="widefat striped"><thead><tr><th>' . esc_html__('Post', 'meta-conductor') . '</th><th>'
-                . esc_html__('Title', 'meta-conductor') . '</th><th>' . esc_html__('Slug', 'meta-conductor') . '</th></tr></thead><tbody>';
+                . esc_html__('Title', 'meta-conductor') . '</th><th>' . esc_html__('Slug', 'meta-conductor') . '</th><th>'
+                . esc_html__('Fields', 'meta-conductor') . '</th></tr></thead><tbody>';
             foreach ($result['sample'] as $row) {
                 $html .= '<tr><td>' . esc_html('#' . $row['post_id']) . '</td><td>' . self::change($row['title'])
-                    . '</td><td>' . self::change($row['slug']) . '</td></tr>';
+                    . '</td><td>' . self::change($row['slug']) . '</td><td>' . self::field_lines($row['fields']) . '</td></tr>';
             }
             $html .= '</tbody></table>';
         }
@@ -318,6 +319,9 @@ final class ApplyPage {
                 if ($row['slug'] !== null) {
                     $lines[] = esc_html__('Slug:', 'meta-conductor') . ' ' . self::change($row['slug']);
                 }
+                if (!empty($row['fields'])) {
+                    $lines[] = self::field_lines($row['fields']);
+                }
                 foreach ($row['terms'] as $taxonomy => $delta) {
                     $parts = [];
                     if ($delta['added'] !== []) {
@@ -345,6 +349,19 @@ final class ApplyPage {
         $html .= '<p><em>' . esc_html($result['note']) . '</em></p>';
 
         return ['status' => $result['done'] ? 'success' : 'info', 'message' => $result['message'], 'html' => $html];
+    }
+
+    /**
+     * @param array<string,array{0:string,1:string}> $fields Field name => [before, after].
+     * @return string Escaped, one line per field; '' when there are none.
+     */
+    private static function field_lines(array $fields): string {
+        $lines = [];
+        foreach ($fields as $name => $pair) {
+            $lines[] = esc_html($name) . ': ' . self::change($pair);
+        }
+
+        return implode('<br>', $lines);
     }
 
     /**

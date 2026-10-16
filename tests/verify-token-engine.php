@@ -309,6 +309,14 @@ $check('date_part_of: pub_ takes no field', TokenEngine::date_part_of('pub_year:
 $check('date_part_of: non-date tokens', TokenEngine::date_part_of('meta:date_year') === null
     && TokenEngine::date_part_of('term:genre') === null && TokenEngine::date_part_of('default_slug') === null);
 
+// --- field_names(): the fields a pattern reads (self-reference advisory). ----
+
+$check('field_names() lists meta and date field arguments, in order',
+    TokenEngine::field_names('{meta:a} {date_year:b} {meta:a}') === ['a', 'b', 'a']);
+$check('field_names() skips terms, bare dates and plain tokens',
+    TokenEngine::field_names('{term:genre} {terms:genre} {pub_year} {default_slug}') === []);
+$check('field_names() on a pattern with no tokens is empty', TokenEngine::field_names('plain') === []);
+
 // --- Date parsing reads site time (04). --------------------------------------
 // Site New York, server Auckland: a leak of the server zone lands on a
 // different day from both UTC and the site.
