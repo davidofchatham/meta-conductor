@@ -317,6 +317,37 @@ $check('field_names() skips terms, bare dates and plain tokens',
     TokenEngine::field_names('{term:genre} {terms:genre} {pub_year} {default_slug}') === []);
 $check('field_names() on a pattern with no tokens is empty', TokenEngine::field_names('plain') === []);
 
+// --- Repeater-row context (FW-4 06). -----------------------------------------
+// `{meta:x}` and `{date_*:x}` read the ROW's sibling x; terms, publish date and
+// the bound default title read the post. No fallback from row to post meta.
+
+$post_src = new FakeTokenSource(
+    ['first' => 'POST-FIRST', 'only_on_post' => 'Post'],
+    ['season' => [['Fall', 'fall']]],
+    new \DateTimeImmutable('2026-03-04 10:00:00', new \DateTimeZone('America/New_York'))
+);
+$row_src = new \BWS\MetaConductor\Tokens\RowTokenSource($post_src, [
+    'first'  => 'Ada',
+    'last'   => 'Lovelace',
+    'born'   => '18151210',
+    'blank'  => '',
+    'nested' => ['x' => 'y'],
+]);
+$row = static fn(string $pattern, array $vars = []) => TokenEngine::render($pattern, $row_src, $title, $vars);
+
+$check('row: {meta:x} reads the sibling subfield, not the post meta', $row('{meta:first} {meta:last}') === 'Ada Lovelace');
+$check('row: {date_*:x} reads the sibling subfield', $row('{date_year:born} {date_month:born} {date_day:born}') === '1815 December 10');
+$check('row: {term:} and {terms:} read the post', $row('{meta:first} ({term:season})') === 'Ada (Fall)');
+$check('row: {pub_year} reads the post', $row('{meta:first} {pub_year}') === 'Ada 2026');
+$check('row: bound {default_title} is passed through', $row('{meta:first} / {default_title}', ['default_title' => 'Roster']) === 'Ada / Roster');
+$check('row: a name only the post has resolves empty (no fallback)', $row('{meta:only_on_post}') === '');
+$check('row: a nested (array) subfield resolves empty', $row('{meta:first} {meta:nested}') === 'Ada');
+$check('row: an unknown subfield resolves empty and its separator is cleaned', $row('{meta:first} - {meta:nope} - {meta:last}') === 'Ada - Lovelace');
+
+$own = new \BWS\MetaConductor\Tokens\RowTokenSource($post_src, ['first' => 'Ada', 'line' => 'old line'], 'line');
+$check('row: the rule\'s own target subfield resolves empty (self-reference)',
+    TokenEngine::render('{meta:first} {meta:line}', $own, $title) === 'Ada');
+
 // --- Date parsing reads site time (04). --------------------------------------
 // Site New York, server Auckland: a leak of the server zone lands on a
 // different day from both UTC and the site.

@@ -113,16 +113,32 @@ $GLOBALS['h12_acf_fields'] = [
     'field_c' => ['key' => 'field_c', 'name' => 'friends', 'label' => 'Friends', 'type' => 'relationship'],
     'field_d' => ['key' => 'field_d', 'name' => 'roster', 'label' => 'Roster', 'type' => 'repeater'],
 ];
+// The repeater's own subfields: two writable, one nested group (not offered).
+$GLOBALS['h12_acf_subfields'] = [
+    'field_d' => [
+        ['key' => 'field_d_line', 'name' => 'line', 'label' => 'Line', 'type' => 'text'],
+        ['key' => 'field_d_pos', 'name' => 'pos', 'label' => 'Position', 'type' => 'text'],
+        ['key' => 'field_d_grp', 'name' => 'grp', 'label' => 'Group', 'type' => 'group'],
+    ],
+];
 if (!function_exists('acf_get_field_groups')) {
     function acf_get_field_groups($args = []) {
         return ($args['post_type'] ?? '') === 'mc_item' ? [['key' => 'group_a', 'title' => 'Group A']] : [];
     }
 }
 if (!function_exists('acf_get_fields')) {
-    function acf_get_fields($group_key) { return $group_key === 'group_a' ? array_values($GLOBALS['h12_acf_fields']) : []; }
+    function acf_get_fields($parent) {
+        $parent = is_array($parent) ? $parent['key'] : $parent; // ACF takes the field ARRAY for a repeater's subfields.
+        return $parent === 'group_a' ? array_values($GLOBALS['h12_acf_fields']) : ($GLOBALS['h12_acf_subfields'][$parent] ?? []);
+    }
 }
 if (!function_exists('acf_get_field')) {
-    function acf_get_field($key) { return $GLOBALS['h12_acf_fields'][$key] ?? false; }
+    function acf_get_field($key) {
+        foreach ($GLOBALS['h12_acf_subfields'] as $subs) {
+            foreach ($subs as $sub) { if ($sub['key'] === $key) { return $sub; } }
+        }
+        return $GLOBALS['h12_acf_fields'][$key] ?? false;
+    }
 }
 if (!function_exists('update_field')) { function update_field() { return true; } }
 
@@ -260,7 +276,7 @@ $expected_visible = [
     ],
     'field_transformation_rules' => [
         'type', 'enabled', 'name', 'post_type',
-        'target_field', 'pattern', 'output', 'row_title',
+        'target_field', 'target_repeater', 'target_subfield', 'pattern', 'output', 'row_title',
     ],
 ];
 
@@ -302,17 +318,28 @@ foreach ($subfields as $s) {
     }
 }
 $check('every key the computed field handler reads survives a save',
-    empty(array_diff(['enabled', 'post_type', 'target_field', 'pattern', 'output'], $visible_field)));
+    empty(array_diff(['enabled', 'post_type', 'target_field', 'target_repeater', 'target_subfield', 'pattern', 'output'], $visible_field)));
 $check('title/slug mechanics are not offered on a computed field row',
     !array_intersect(['title_pattern', 'slug_pattern', 'slug_mode', 'date_escalation', 'date_field'], $visible_field));
 $check('computed field mechanics are not offered on a title/slug row',
-    !array_intersect(['target_field', 'pattern', 'output'], $visible_title_slug));
+    !array_intersect(['target_field', 'target_repeater', 'target_subfield', 'pattern', 'output'], $visible_title_slug));
 
 // The target select: ACF field KEYS, only the types a composed string fits.
 $check('the target select stores ACF field keys, writable types only',
     array_keys($by_id['target_field']['args']['options']) === ['', 'field_a', 'field_b']);
 $check('a target option names its field, group and post type',
     $by_id['target_field']['args']['options']['field_a'] === 'Display name (display_name) — Group A [MC Items]');
+// Row targets: both selects store ACF KEYS. The repeater select offers repeaters
+// only (and a "none" placeholder, which is the post-level default); the subfield
+// select offers each repeater's direct writable subfields, not a nested group.
+$check('the repeater select offers repeaters only, plus the post-level placeholder',
+    array_keys($by_id['target_repeater']['args']['options']) === ['', 'field_d']);
+$check('the subfield select offers direct writable subfields, not the nested group',
+    array_keys($by_id['target_subfield']['args']['options']) === ['', 'field_d_line', 'field_d_pos']);
+$check('a subfield option is led by its repeater',
+    str_starts_with($by_id['target_subfield']['args']['options']['field_d_line'], 'Roster › Line'));
+$check('the post-level target is no longer required (a row rule leaves it empty)',
+    empty($by_id['target_field']['required']));
 $check('the output select offers text (the default) and html',
     array_keys($by_id['output']['args']['options']) === ['text', 'html']
     && ($by_id['output']['default'] ?? '') === 'text');
@@ -356,6 +383,9 @@ $check('a computed field row title names its target field and post type',
 $check('a computed field row whose key no longer resolves shows no field',
     $title(['type' => 'field_transformation_rules', 'name' => 'Display line', 'post_type' => 'mc_item', 'target_field' => 'field_gone'])
         === 'Display line (MC Items)');
+$check('a computed field row targeting a repeater subfield names repeater and subfield',
+    $title(['type' => 'field_transformation_rules', 'name' => 'Line', 'post_type' => 'mc_item', 'target_repeater' => 'field_d', 'target_subfield' => 'field_d_line'])
+        === 'Line — Roster › Line (MC Items)');
 $check('an unnamed computed field row is named rather than left blank',
     str_starts_with($title(['type' => 'field_transformation_rules', 'post_type' => 'mc_item']), 'Untitled computed field rule'));
 // The uniform marker the term list gained in #57 — the whole reason the live

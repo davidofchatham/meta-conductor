@@ -510,6 +510,52 @@ class ConfigHelpers {
     }
 
     /**
+     * The Computed field rule's row-target selects: top-level repeaters, and the
+     * writable subfields of every repeater, both keyed by ACF field KEY. A
+     * subfield's label leads with its repeater's, because the static list cannot
+     * follow the repeater select beside it; the handler checks the pair belongs
+     * together. Only DIRECT subfields — a nested repeater or group is not offered.
+     *
+     * @return array{repeaters: array<string,string>, subfields: array<string,string>}
+     */
+    public static function acf_computed_row_options(): array {
+        static $cache = null;
+
+        $none = ['' => __('— None (write a post-level field) —', 'meta-conductor')];
+        if ($cache !== null) {
+            return ['repeaters' => $none + $cache['repeaters'], 'subfields' => ['' => __('— Select subfield —', 'meta-conductor')] + $cache['subfields']];
+        }
+        if (!function_exists('acf_get_field_groups') || !function_exists('acf_get_fields')) {
+            return ['repeaters' => $none, 'subfields' => ['' => __('— Select subfield —', 'meta-conductor')]];
+        }
+
+        $cache      = ['repeaters' => [], 'subfields' => []];
+        $post_types = get_post_types(['public' => true], 'objects');
+        unset($post_types['attachment']);
+
+        foreach ($post_types as $post_type) {
+            foreach ((array) acf_get_field_groups(['post_type' => $post_type->name]) as $group) {
+                foreach ((array) acf_get_fields($group['key']) as $field) {
+                    $key = (string) ($field['key'] ?? '');
+                    if ($key === '' || ($field['type'] ?? '') !== 'repeater') {
+                        continue;
+                    }
+                    $label = (string) ($field['label'] ?? $field['name']);
+                    $cache['repeaters'][$key] = sprintf('%s (%s)', $label, $field['name'] ?? '');
+                    foreach ((array) acf_get_fields($field) as $sub) {
+                        $sub_key = (string) ($sub['key'] ?? '');
+                        if ($sub_key !== '' && in_array($sub['type'] ?? '', self::COMPUTED_TARGET_TYPES, true)) {
+                            $cache['subfields'][$sub_key] = sprintf('%s › %s (%s)', $label, $sub['label'] ?? $sub['name'], $sub['name'] ?? '');
+                        }
+                    }
+                }
+            }
+        }
+
+        return ['repeaters' => $none + $cache['repeaters'], 'subfields' => ['' => __('— Select subfield —', 'meta-conductor')] + $cache['subfields']];
+    }
+
+    /**
      * A field's human label from its ACF field key, or '' when the key is
      * empty or no longer resolves. Row titles use it; a stale key shows
      * nothing rather than a raw `field_…` string.

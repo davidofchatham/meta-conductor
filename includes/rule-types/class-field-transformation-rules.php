@@ -48,12 +48,29 @@ final class FieldTransformationRules extends RuleType {
     }
 
     /**
+     * Whether the row targets a repeater's subfield rather than a post-level
+     * field. A chosen repeater decides it, even beside a stored `target_field`
+     * (the hidden half of a row whose author switched modes).
+     */
+    public function is_row_rule(array $rule): bool {
+        return trim((string) ($rule['target_repeater'] ?? '')) !== '';
+    }
+
+    /**
      * One field, keyed by its ACF field KEY — the only identity that survives a
      * rename. The scheme is `field|`, not the `fields|` post-field scheme the
      * title/slug rule owns: that one is first-match-wins by post type, whereas
-     * two rules on one field are order-decided (the later write wins).
+     * two rules on one field are order-decided (the later write wins). A row
+     * rule's target is one subfield of one repeater, `row|<repeater>|<subfield>`;
+     * a repeater with no subfield picked yet is unfinished, not a target.
      */
     public function target_key(array $rule): ?string {
+        if ($this->is_row_rule($rule)) {
+            $sub = trim((string) ($rule['target_subfield'] ?? ''));
+
+            return $sub === '' ? null : 'row|' . trim((string) $rule['target_repeater']) . '|' . $sub;
+        }
+
         $key = trim((string) ($rule['target_field'] ?? ''));
 
         return $key === '' ? null : 'field|' . $key;
@@ -75,14 +92,15 @@ final class FieldTransformationRules extends RuleType {
      * name the field.
      */
     public function self_references(array $rule): bool {
-        $name = ConfigHelpers::acf_field_name(trim((string) ($rule['target_field'] ?? '')));
+        $target = $this->is_row_rule($rule) ? ($rule['target_subfield'] ?? '') : ($rule['target_field'] ?? '');
+        $name   = ConfigHelpers::acf_field_name(trim((string) $target));
 
         return $name !== '' && in_array($name, TokenEngine::field_names((string) ($rule['pattern'] ?? '')), true);
     }
 
     /**
      * Schema:
-     *   {name} — {field_label}{ (Post type)}{ — ⚠ pattern names its own target field}
+     *   {name} — {field_label | repeater › subfield}{ (Post type)}{ — ⚠ pattern names its own target field}
      *   e.g. "Display line — Display name (MC Items)"
      *
      * The author names the row (`name` is required on the shared frame); the
@@ -96,7 +114,13 @@ final class FieldTransformationRules extends RuleType {
             $name = __('Untitled computed field rule', 'meta-conductor');
         }
 
-        $field = ConfigHelpers::acf_field_label((string) ($row['target_field'] ?? ''));
+        if ($this->is_row_rule($row)) {
+            $sub      = ConfigHelpers::acf_field_label((string) ($row['target_subfield'] ?? ''));
+            $repeater = ConfigHelpers::acf_field_label((string) $row['target_repeater']);
+            $field    = $sub !== '' ? ($repeater !== '' ? $repeater . ' › ' : '') . $sub : '';
+        } else {
+            $field = ConfigHelpers::acf_field_label((string) ($row['target_field'] ?? ''));
+        }
 
         return $name
             . ($field !== '' ? ' — ' . $field : '')
@@ -120,12 +144,33 @@ final class FieldTransformationRules extends RuleType {
                 'id'          => 'target_field',
                 'type'        => 'select',
                 'label'       => __('Target field', 'meta-conductor'),
-                'description' => __('The ACF field that holds the computed value. Only text, text area, editor, number, email and URL fields are listed. The rule remembers the field itself, so renaming it in ACF does not break the rule.', 'meta-conductor'),
+                'description' => __('The ACF field that holds the computed value. Only text, text area, editor, number, email and URL fields are listed. The rule remembers the field itself, so renaming it in ACF does not break the rule. Leave empty when the rule writes a repeater subfield instead.', 'meta-conductor'),
                 'default'     => '',
-                'required'    => true,
                 'columns'     => 12,
                 'args'        => [
                     'options' => ConfigHelpers::acf_computed_target_options(),
+                ],
+            ],
+            [
+                'id'          => 'target_repeater',
+                'type'        => 'select',
+                'label'       => __('Repeater', 'meta-conductor'),
+                'description' => __('To write one subfield in every row of a repeater, pick the repeater here and the subfield below, and leave the target field empty. Inside a row, field and date tokens read the other subfields of that row; term and publish-date tokens read the post. A subfield inside a nested repeater or group resolves empty.', 'meta-conductor'),
+                'default'     => '',
+                'columns'     => 6,
+                'args'        => [
+                    'options' => ConfigHelpers::acf_computed_row_options()['repeaters'],
+                ],
+            ],
+            [
+                'id'          => 'target_subfield',
+                'type'        => 'select',
+                'label'       => __('Subfield', 'meta-conductor'),
+                'description' => __('Must belong to the repeater picked on the left. Only text, text area, editor, number, email and URL subfields are listed.', 'meta-conductor'),
+                'default'     => '',
+                'columns'     => 6,
+                'args'        => [
+                    'options' => ConfigHelpers::acf_computed_row_options()['subfields'],
                 ],
             ],
             [

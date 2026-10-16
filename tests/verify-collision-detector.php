@@ -91,6 +91,9 @@ if (!function_exists('acf_get_field')) {
         $fields = [
             'field_mc_a' => ['key' => 'field_mc_a', 'label' => 'Display name', 'name' => 'display_name'],
             'field_mc_b' => ['key' => 'field_mc_b', 'label' => 'Sort name',    'name' => 'sort_name'],
+            'field_mc_r' => ['key' => 'field_mc_r', 'label' => 'Roster',       'name' => 'roster', 'type' => 'repeater'],
+            'field_mc_rl' => ['key' => 'field_mc_rl', 'label' => 'Line',       'name' => 'line', 'parent' => 'field_mc_r'],
+            'field_mc_rp' => ['key' => 'field_mc_rp', 'label' => 'Position',   'name' => 'pos',  'parent' => 'field_mc_r'],
         ];
         return $fields[$key] ?? false;
     }
@@ -579,6 +582,32 @@ $check('a pattern naming other fields is not', !$self->self_references($ok));
 $check('an unresolvable target is not flagged', !$self->self_references($cf(['target_field' => 'field_gone', 'pattern' => '{meta:display_name}'])));
 $check('the row title carries the advisory', str_contains($self->row_title($bad), '⚠'));
 $check('and drops it once the pattern is fixed', !str_contains($self->row_title($ok), '⚠'));
+
+// --- 10c. Repeater-row targets: one subfield across every row (FW-4 06). ----
+
+$rr = fn(array $over = []) => $over + [
+    'type' => 'field_transformation_rules', 'enabled' => true, 'post_type' => 'mc_item',
+    'target_repeater' => 'field_mc_r', 'target_subfield' => 'field_mc_rl', 'pattern' => '{meta:pos}', 'row_title' => 'Roster line',
+];
+
+$rr_pair = $scan($KIND_FORMAT, [$rr(), $rr(['row_title' => 'Roster line (second)'])]);
+$check('two row rules on one repeater and subfield collide', count($rr_pair) === 1 && $codes($rr_pair) === ['shared_target']);
+$check('the finding names the subfield and its repeater',
+    str_contains(CollisionDetector::message($rr_pair[0]), 'the “Line” field in every “Roster” row'));
+$check('a different subfield of the same repeater is independent',
+    $scan($KIND_FORMAT, [$rr(), $rr(['target_subfield' => 'field_mc_rp'])]) === []);
+$check('the same subfield on disjoint post types is independent',
+    $scan($KIND_FORMAT, [$rr(), $rr(['post_type' => 'mc_section'])]) === []);
+$check('a row rule and a post-level rule on the repeater itself are independent',
+    $scan($KIND_FORMAT, [$rr(), $cf(['target_field' => 'field_mc_r'])]) === []);
+$check('a repeater with no subfield picked resolves no target',
+    $scan($KIND_FORMAT, [$rr(['target_subfield' => '']), $rr(['target_subfield' => ''])]) === []);
+$check('a row rule is not read as a post-level one when target_field is also stored',
+    count($scan($KIND_FORMAT, [$rr(['target_field' => 'field_mc_a']), $rr()])) === 1);
+$check('a row rule naming its own subfield is a self-reference',
+    $self->self_references($rr(['pattern' => '{meta:pos} {meta:line}'])) && !$self->self_references($rr()));
+$check('the row title names the subfield and repeater',
+    str_contains($self->row_title($rr(['name' => 'Roster line'])), 'Line') && str_contains($self->row_title($rr(['name' => 'Roster line'])), 'Roster'));
 
 // --- 11. The section both tabs render. --------------------------------------
 

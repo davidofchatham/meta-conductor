@@ -92,6 +92,7 @@ $classes = [
     // Tokens\ (FW-40) — the pattern engine title/slug renders through.
     'BWS\\MetaConductor\\Tokens\\TokenEngine',
     'BWS\\MetaConductor\\Tokens\\PostTokenSource',
+    'BWS\\MetaConductor\\Tokens\\RowTokenSource',
     'BWS\\MetaConductor\\Tokens\\OutputPolicy',
     // Admin\
     'BWS\\MetaConductor\\Admin\\Diagnostics',

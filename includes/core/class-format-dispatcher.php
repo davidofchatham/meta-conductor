@@ -59,8 +59,9 @@ if (!defined('ABSPATH')) {
  * list and THIS class performs the single write at the end. That is what keeps
  * one save to one `wp_update_post()` however many rules matched. The same array
  * carries field effects: a Computed field rule sets `fields[<name>]` (and the
- * ACF field key in `field_keys[<name>]`), and `write()` persists the difference
- * through ACF's write-by-key before the row update.
+ * ACF field key in `field_keys[<name>]`; a row-target rule sets cells in `rows`),
+ * and `write()` persists the difference through ACF's write-by-key before the
+ * row update.
  *
  * FIRST MATCH OF A TYPE WINS — FOR A TYPE WHOSE DESCRIPTOR SAYS SO.
  * `apply_to_data()` returns null for a rule that does not apply to the entity,
@@ -386,6 +387,8 @@ class FormatDispatcher {
      * SLASHED, like the row update below: `update_field()` unslashes its value
      * on the way to `update_metadata()`, so an unslashed `a` stores as `ab`.
      *
+     * Row cells go through `update_sub_field()` and follow the same rules.
+     *
      * An unchanged value is not written, and an all-empty result writes `''` —
      * the stored value must not outlive its sources. Compared as strings: ACF
      * stores every supported target type as one.
@@ -396,7 +399,7 @@ class FormatDispatcher {
      */
     private function write_fields(int $post_id, array $after): int {
         $written = 0;
-        if (empty($after['fields']) || !function_exists('update_field')) {
+        if ((empty($after['fields']) && empty($after['rows'])) || !function_exists('update_field')) {
             return $written;
         }
 
@@ -407,6 +410,21 @@ class FormatDispatcher {
                 if ($key !== '' && (string) get_post_meta($post_id, $name, true) !== (string) $value) {
                     update_field($key, wp_slash((string) $value), $post_id);
                     $written++;
+                }
+            }
+
+            // Repeater-row cells, by repeater key, 1-based row and subfield key.
+            // ACF's subfield write keeps the field-key reference row and fires
+            // no save hook, like the field write above. Compared as strings
+            // against the cell's stored meta, so an unchanged row is not written.
+            foreach ($after['rows'] ?? [] as $repeater_key => $by_row) {
+                foreach ($by_row as $row => $cells) {
+                    foreach ($cells as $sub_key => $cell) {
+                        if (function_exists('update_sub_field') && (string) get_post_meta($post_id, $cell['meta'], true) !== (string) $cell['value']) {
+                            update_sub_field([$repeater_key, $row, $sub_key], wp_slash((string) $cell['value']), $post_id);
+                            $written++;
+                        }
+                    }
                 }
             }
         } finally {
@@ -440,6 +458,9 @@ class FormatDispatcher {
             // KEY each is written by. Empty until a Computed field rule sets one.
             'fields'      => [],
             'field_keys'  => [],
+            // Repeater-row cells a row rule sets: repeater key => 1-based row =>
+            // subfield key => {name, meta, label, value}.
+            'rows'        => [],
         ];
     }
 

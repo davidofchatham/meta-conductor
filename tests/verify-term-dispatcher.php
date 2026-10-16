@@ -800,6 +800,9 @@ if (!is_file($format_file)) {
         if ($write_fields === null || !preg_match('/update_field\(\s*\$key/', $write_fields)) {
             $errors[] = 'FormatDispatcher::write_fields() must write through update_field() by the ACF field KEY — a name write skips the field\'s reference row on a first write.';
         }
+        if ($write_fields === null || !preg_match('/update_sub_field\(\s*\[\s*\$repeater_key\s*,\s*\$row\s*,\s*\$sub_key\s*\]/', $write_fields)) {
+            $errors[] = 'FormatDispatcher::write_fields() must write a repeater cell through update_sub_field() addressed by repeater KEY, 1-based row and subfield KEY.';
+        }
     }
 }
 
@@ -865,7 +868,7 @@ foreach ($kind_types('format_rules') as $type) {
     // preview. Per-rule state belongs in commit_data(), which only write() calls.
     // `update_field` joined the list with the Computed field rule: its value
     // rides `$data['fields']` and FormatDispatcher::write_fields() persists it.
-    foreach (['wp_update_post', 'wp_insert_post', 'update_post_meta', 'update_option', 'update_field', 'add_post_meta'] as $effect) {
+    foreach (['wp_update_post', 'wp_insert_post', 'update_post_meta', 'update_option', 'update_field', 'update_sub_field', 'add_post_meta'] as $effect) {
         if (preg_match('/\b' . preg_quote($effect, '/') . '\s*\(/', $applier)) {
             $errors[] = sprintf(
                 '%s::apply_to_data() calls %s() — a format applier returns data; the dispatcher writes the row and commit_data() the per-rule state (#64, FW-16 03).',

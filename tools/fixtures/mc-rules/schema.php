@@ -83,6 +83,10 @@ function bws_fixture_mc_rules_register_types() {
  *   mc_cf_first / mc_cf_last — text SOURCE fields.
  *   mc_cf_display            — text TARGET (output = text).
  *   mc_cf_display_html       — wysiwyg TARGET (output = html).
+ *   mc_cf_roster             — repeater (FW-4 06), roster-style: position / height /
+ *                              weight / since (date_picker Ymd) text-ish siblings,
+ *                              `line` the row-rule TARGET, and `grp` a NESTED group
+ *                              (inner) — a row token naming it must resolve empty.
  *
  * group_mc_section_fields (mc_section):
  *   mc_related_items — relationship → mc_item (related_post_terms holder field).
@@ -228,6 +232,29 @@ function bws_fixture_mc_rules_register_acf() {
 				array( 'key' => 'field_mc_cf_last', 'name' => 'mc_cf_last', 'label' => 'CF Last', 'type' => 'text' ),
 				array( 'key' => 'field_mc_cf_display', 'name' => 'mc_cf_display', 'label' => 'CF Display', 'type' => 'text' ),
 				array( 'key' => 'field_mc_cf_display_html', 'name' => 'mc_cf_display_html', 'label' => 'CF Display HTML', 'type' => 'wysiwyg' ),
+				array(
+					'key'        => 'field_mc_cf_roster',
+					'name'       => 'mc_cf_roster',
+					'label'      => 'CF Roster',
+					'type'       => 'repeater',
+					'layout'     => 'table',
+					'sub_fields' => array(
+						array( 'key' => 'field_mc_cf_roster_position', 'name' => 'position', 'label' => 'Position', 'type' => 'text' ),
+						array( 'key' => 'field_mc_cf_roster_height', 'name' => 'height', 'label' => 'Height', 'type' => 'text' ),
+						array( 'key' => 'field_mc_cf_roster_weight', 'name' => 'weight', 'label' => 'Weight', 'type' => 'text' ),
+						array( 'key' => 'field_mc_cf_roster_since', 'name' => 'since', 'label' => 'Since', 'type' => 'date_picker', 'display_format' => 'd/m/Y', 'return_format' => 'd/m/Y' ),
+						array( 'key' => 'field_mc_cf_roster_line', 'name' => 'line', 'label' => 'Line', 'type' => 'text' ),
+						array(
+							'key'        => 'field_mc_cf_roster_grp',
+							'name'       => 'grp',
+							'label'      => 'Group',
+							'type'       => 'group',
+							'sub_fields' => array(
+								array( 'key' => 'field_mc_cf_roster_inner', 'name' => 'inner', 'label' => 'Inner', 'type' => 'text' ),
+							),
+						),
+					),
+				),
 			),
 		)
 	);

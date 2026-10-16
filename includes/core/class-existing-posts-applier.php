@@ -272,7 +272,7 @@ final class ExistingPostsApplier {
                     'post_id' => $post_id,
                     'title'   => [$computed['before']['post_title'], $computed['after']['post_title']],
                     'slug'    => [$computed['before']['post_name'], $computed['after']['post_name']],
-                    'fields'  => self::field_changes($post_id, $computed['after']['fields']),
+                    'fields'  => self::field_changes($post_id, $computed['after']),
                 ];
             }
         } finally {
@@ -397,7 +397,9 @@ final class ExistingPostsApplier {
     /**
      * The ACF field NAMES the format pass writes, for the report: the target of
      * every Computed field row the pass runs (the enabled rows, plus the chosen
-     * one when it is a disabled format row), resolved from the stored key.
+     * one when it is a disabled format row), resolved from the stored key. A row
+     * rule's target is `repeater[].subfield`, which `snapshot()` expands per post
+     * to the rows that post holds.
      *
      * @param array $choice A decoded `RuleChoice`.
      * @return string[]
@@ -407,10 +409,19 @@ final class ExistingPostsApplier {
         $names   = [];
         foreach (RuleChoice::pass_rows(StorageFactory::get_instance()->get_kind_rules(FormatDispatcher::KIND), $include) as $rule) {
             $key = Registry::get((string) ($rule['type'] ?? ''))?->target_key($rule);
-            if ($key === null || !str_starts_with($key, 'field|')) {
+            if ($key === null) {
                 continue;
             }
-            $name = ConfigHelpers::acf_field_name(substr($key, strlen('field|')));
+            if (str_starts_with($key, 'row|')) {
+                [$repeater, $sub] = explode('|', substr($key, strlen('row|')), 2);
+                $repeater         = ConfigHelpers::acf_field_name($repeater);
+                $sub              = ConfigHelpers::acf_field_name($sub);
+                $name             = $repeater !== '' && $sub !== '' ? $repeater . '[].' . $sub : '';
+            } elseif (str_starts_with($key, 'field|')) {
+                $name = ConfigHelpers::acf_field_name(substr($key, strlen('field|')));
+            } else {
+                continue;
+            }
             if ($name !== '') {
                 $names[] = $name;
             }
@@ -423,16 +434,29 @@ final class ExistingPostsApplier {
      * The computed values that differ from what a post stores, `name =>
      * [stored, computed]`.
      *
-     * @param int                 $post_id
-     * @param array<string,string> $computed A format pass's `fields` map.
+     * Repeater-row cells are listed beside the fields, labelled
+     * `repeater[row].subfield`.
+     *
+     * @param int   $post_id
+     * @param array $after   A format pass's final data (`fields` and `rows`).
      * @return array<string,array{0:string,1:string}>
      */
-    private static function field_changes(int $post_id, array $computed): array {
+    private static function field_changes(int $post_id, array $after): array {
         $changes = [];
-        foreach ($computed as $name => $value) {
+        foreach ($after['fields'] as $name => $value) {
             $stored = (string) get_post_meta($post_id, (string) $name, true);
             if ($stored !== (string) $value) {
                 $changes[$name] = [$stored, (string) $value];
+            }
+        }
+        foreach ($after['rows'] as $by_row) {
+            foreach ($by_row as $cells) {
+                foreach ($cells as $cell) {
+                    $stored = (string) get_post_meta($post_id, $cell['meta'], true);
+                    if ($stored !== (string) $cell['value']) {
+                        $changes[$cell['label']] = [$stored, (string) $cell['value']];
+                    }
+                }
             }
         }
 
@@ -461,7 +485,15 @@ final class ExistingPostsApplier {
 
         $values = [];
         foreach ($fields as $name) {
-            $values[$name] = (string) get_post_meta($post_id, $name, true);
+            if (!str_contains($name, '[].')) {
+                $values[$name] = (string) get_post_meta($post_id, $name, true);
+                continue;
+            }
+            [$repeater, $sub] = explode('[].', $name, 2);
+            $rows             = (int) get_post_meta($post_id, $repeater, true);
+            for ($row = 1; $row <= $rows; $row++) {
+                $values[$repeater . '[' . $row . '].' . $sub] = (string) get_post_meta($post_id, $repeater . '_' . ($row - 1) . '_' . $sub, true);
+            }
         }
 
         return ['title' => $post->post_title, 'slug' => $post->post_name, 'terms' => $terms, 'fields' => $values];
