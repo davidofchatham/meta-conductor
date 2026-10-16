@@ -84,8 +84,7 @@ function mcf_row_rule( array $over = array() ) {
 		'enabled'         => true,
 		'name'            => 'Sweep roster line',
 		'post_types'      => array( 'mc_item' ),
-		'target_repeater' => MCF_ROSTER,
-		'target_subfield' => MCF_LINE,
+		'target_field'    => 'row|' . MCF_ROSTER . '|' . MCF_LINE,
 		'pattern'         => '{meta:position} / {meta:height} / {meta:weight}',
 		'output'          => 'text',
 	), $over );

@@ -283,7 +283,7 @@ $expected_visible = [
     ],
     'field_transformation_rules' => [
         'type', 'enabled', 'name', 'post_types',
-        'target_field', 'target_repeater', 'target_subfield', 'pattern', 'output', 'row_title',
+        'target_field', 'pattern', 'output', 'row_title',
     ],
 ];
 
@@ -325,27 +325,24 @@ foreach ($subfields as $s) {
     }
 }
 $check('every key the computed field handler reads survives a save',
-    empty(array_diff(['enabled', 'post_types', 'target_field', 'target_repeater', 'target_subfield', 'pattern', 'output'], $visible_field)));
+    empty(array_diff(['enabled', 'post_types', 'target_field', 'pattern', 'output'], $visible_field)));
 $check('title/slug mechanics are not offered on a computed field row',
     !array_intersect(['title_pattern', 'slug_pattern', 'slug_mode', 'date_escalation', 'date_field'], $visible_field));
 $check('computed field mechanics are not offered on a title/slug row',
-    !array_intersect(['target_field', 'target_repeater', 'target_subfield', 'pattern', 'output'], $visible_title_slug));
+    !array_intersect(['target_field', 'pattern', 'output'], $visible_title_slug));
 
 // The target select: ACF field KEYS, only the types a composed string fits.
-$check('the target select stores ACF field keys, writable types only',
-    array_keys($by_id['target_field']['args']['options']) === ['', 'field_a', 'field_b']);
 $check('a target option names its field, group and post type',
     $by_id['target_field']['args']['options']['field_a'] === 'Display name (display_name) — Group A [MC Items]');
-// Row targets: both selects store ACF KEYS. The repeater select offers repeaters
-// only (and a "none" placeholder, which is the post-level default); the subfield
-// select offers each repeater's direct writable subfields, not a nested group.
-$check('the repeater select offers repeaters only, plus the post-level placeholder',
-    array_keys($by_id['target_repeater']['args']['options']) === ['', 'field_d']);
-$check('the subfield select offers direct writable subfields, not the nested group',
-    array_keys($by_id['target_subfield']['args']['options']) === ['', 'field_d_line', 'field_d_pos']);
+// Row targets ride the same select: one entry per direct writable subfield of a
+// repeater, keyed `row|<repeater key>|<subfield key>` — not the nested group.
+$check('the target select offers post-level fields, then row subfields',
+    array_keys($by_id['target_field']['args']['options']) === ['', 'field_a', 'field_b', 'row|field_d|field_d_line', 'row|field_d|field_d_pos']);
 $check('a subfield option is led by its repeater',
-    str_starts_with($by_id['target_subfield']['args']['options']['field_d_line'], 'Roster › Line'));
-$check('the post-level target is no longer required (a row rule leaves it empty)',
+    str_starts_with($by_id['target_field']['args']['options']['row|field_d|field_d_line'], 'Roster › Line'));
+$check('the repeater and subfield selects are gone',
+    !isset($by_id['target_repeater']) && !isset($by_id['target_subfield']));
+$check('the target is not required (an empty one is an unfinished rule, not an error)',
     empty($by_id['target_field']['required']));
 $check('the output select offers text (the default) and html',
     array_keys($by_id['output']['args']['options']) === ['text', 'html']
@@ -391,7 +388,7 @@ $check('a computed field row whose key no longer resolves shows no field',
     $title(['type' => 'field_transformation_rules', 'name' => 'Display line', 'post_types' => ['mc_item'], 'target_field' => 'field_gone'])
         === 'Display line (MC Items)');
 $check('a computed field row targeting a repeater subfield names repeater and subfield',
-    $title(['type' => 'field_transformation_rules', 'name' => 'Line', 'post_types' => ['mc_item'], 'target_repeater' => 'field_d', 'target_subfield' => 'field_d_line'])
+    $title(['type' => 'field_transformation_rules', 'name' => 'Line', 'post_types' => ['mc_item'], 'target_field' => 'row|field_d|field_d_line'])
         === 'Line — Roster › Line (MC Items)');
 $check('an unnamed computed field row is named rather than left blank',
     str_starts_with($title(['type' => 'field_transformation_rules', 'post_types' => ['mc_item']]), 'Untitled computed field rule'));

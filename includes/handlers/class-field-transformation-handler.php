@@ -57,8 +57,11 @@ class FieldTransformationHandler extends UnifiedHandlerBase {
             return null;
         }
 
-        if (Registry::for_handler(static::class)->is_row_rule($rule)) {
-            return $this->apply_to_rows($data, $post_id, $rule, $pattern);
+        $descriptor = Registry::for_handler(static::class);
+        if ($descriptor->is_row_rule($rule)) {
+            $row = $descriptor->row_target($rule);
+
+            return $row === null ? null : $this->apply_to_rows($data, $post_id, $row, $rule, $pattern);
         }
 
         $key = trim((string) ($rule['target_field'] ?? ''));
@@ -86,10 +89,12 @@ class FieldTransformationHandler extends UnifiedHandlerBase {
      * One subfield, every row. Null when the pair does not resolve — a repeater
      * that is not one, a subfield that is not a writable DIRECT child of it — or
      * the post has no rows.
+     *
+     * @param array{repeater:string,sub:string} $row Keys parsed from `target_field`.
      */
-    private function apply_to_rows(array $data, int $post_id, array $rule, string $pattern): ?array {
-        $repeater_key = trim((string) ($rule['target_repeater'] ?? ''));
-        $sub_key      = trim((string) ($rule['target_subfield'] ?? ''));
+    private function apply_to_rows(array $data, int $post_id, array $row, array $rule, string $pattern): ?array {
+        $repeater_key = $row['repeater'];
+        $sub_key      = $row['sub'];
         $repeater     = $repeater_key !== '' ? \acf_get_field($repeater_key) : false;
 
         if (!is_array($repeater) || ($repeater['type'] ?? '') !== 'repeater') {

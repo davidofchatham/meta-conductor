@@ -591,7 +591,7 @@ $check('and drops it once the pattern is fixed', !str_contains($self->row_title(
 
 $rr = fn(array $over = []) => $over + [
     'type' => 'field_transformation_rules', 'enabled' => true, 'post_types' => ['mc_item'],
-    'target_repeater' => 'field_mc_r', 'target_subfield' => 'field_mc_rl', 'pattern' => '{meta:pos}', 'row_title' => 'Roster line',
+    'target_field' => 'row|field_mc_r|field_mc_rl', 'pattern' => '{meta:pos}', 'row_title' => 'Roster line',
 ];
 
 $rr_pair = $scan($KIND_FORMAT, [$rr(), $rr(['row_title' => 'Roster line (second)'])]);
@@ -599,15 +599,19 @@ $check('two row rules on one repeater and subfield collide', count($rr_pair) ===
 $check('the finding names the subfield and its repeater',
     str_contains(CollisionDetector::message($rr_pair[0]), 'the “Line” field in every “Roster” row'));
 $check('a different subfield of the same repeater is independent',
-    $scan($KIND_FORMAT, [$rr(), $rr(['target_subfield' => 'field_mc_rp'])]) === []);
+    $scan($KIND_FORMAT, [$rr(), $rr(['target_field' => 'row|field_mc_r|field_mc_rp'])]) === []);
 $check('the same subfield on disjoint post types is independent',
     $scan($KIND_FORMAT, [$rr(), $rr(['post_types' => ['mc_section']])]) === []);
 $check('a row rule and a post-level rule on the repeater itself are independent',
     $scan($KIND_FORMAT, [$rr(), $cf(['target_field' => 'field_mc_r'])]) === []);
-$check('a repeater with no subfield picked resolves no target',
-    $scan($KIND_FORMAT, [$rr(['target_subfield' => '']), $rr(['target_subfield' => ''])]) === []);
-$check('a row rule is not read as a post-level one when target_field is also stored',
-    count($scan($KIND_FORMAT, [$rr(['target_field' => 'field_mc_a']), $rr()])) === 1);
+$check('a row value with no subfield resolves no target',
+    $scan($KIND_FORMAT, [$rr(['target_field' => 'row|field_mc_r|']), $rr(['target_field' => 'row|field_mc_r|'])]) === []);
+foreach (['row|field_mc_r', 'row|field_mc_r|field_mc_rl|extra', 'row||field_mc_rl', 'row|'] as $bad_row) {
+    $check("a malformed row value `$bad_row` resolves no target",
+        $scan($KIND_FORMAT, [$rr(['target_field' => $bad_row]), $rr(['target_field' => $bad_row])]) === []);
+}
+$check('a row value is not read as a post-level field',
+    $scan($KIND_FORMAT, [$rr(['target_field' => 'row|field_mc_r|']), $cf(['target_field' => 'row|field_mc_r|'])]) === []);
 $check('a row rule naming its own subfield is a self-reference',
     $self->self_references($rr(['pattern' => '{meta:pos} {meta:line}'])) && !$self->self_references($rr()));
 $check('the row title names the subfield and repeater',

@@ -11,6 +11,7 @@
 
 namespace BWS\MetaConductor\Admin\Config;
 
+use BWS\MetaConductor\RuleTypes\FieldTransformationRules;
 use BWS\MetaConductor\RuleTypes\Registry;
 
 if (!defined('ABSPATH')) {
@@ -482,6 +483,10 @@ class ConfigHelpers {
      * types ride in the label instead. A static list cannot follow the row's
      * own `post_type` select, so the author picks both.
      *
+     * Writable DIRECT subfields of top-level repeaters follow the post-level
+     * fields, one entry each, keyed `row|<repeater key>|<subfield key>` so the
+     * single select carries the pair (see `FieldTransformationRules::ROW_PREFIX`).
+     *
      * Empty (placeholder only) when ACF is unavailable. Like the relationship
      * list, nothing is cached before ACF is confirmed loaded.
      *
@@ -489,11 +494,12 @@ class ConfigHelpers {
      */
     public static function acf_computed_target_options(): array {
         static $fields_cache = null;
+        static $rows_cache   = [];
 
         $placeholder_row = ['' => __('— Select ACF field —', 'meta-conductor')];
 
         if ($fields_cache !== null) {
-            return $placeholder_row + $fields_cache;
+            return $placeholder_row + $fields_cache + $rows_cache;
         }
         if (!function_exists('acf_get_field_groups') || !function_exists('acf_get_fields')) {
             return $placeholder_row;
@@ -507,6 +513,17 @@ class ConfigHelpers {
             foreach ((array) acf_get_field_groups(['post_type' => $post_type->name]) as $group) {
                 foreach ((array) acf_get_fields($group['key']) as $field) {
                     $key = (string) ($field['key'] ?? '');
+                    if ($key !== '' && ($field['type'] ?? '') === 'repeater') {
+                        // One entry per writable DIRECT subfield; the pair is the option key.
+                        foreach ((array) acf_get_fields($field) as $sub) {
+                            $sub_key = (string) ($sub['key'] ?? '');
+                            if ($sub_key !== '' && in_array($sub['type'] ?? '', self::COMPUTED_TARGET_TYPES, true)) {
+                                $rows_cache[FieldTransformationRules::ROW_PREFIX . $key . '|' . $sub_key]
+                                    = sprintf('%1$s › %2$s (%3$s)', $field['label'] ?? $field['name'], $sub['label'] ?? $sub['name'], $sub['name'] ?? '');
+                            }
+                        }
+                        continue;
+                    }
                     if ($key === '' || !in_array($field['type'] ?? '', self::COMPUTED_TARGET_TYPES, true)) {
                         continue;
                     }
@@ -521,53 +538,7 @@ class ConfigHelpers {
             $fields_cache[$key] = $entry['label'] . ' [' . implode(', ', $entry['types']) . ']';
         }
 
-        return $placeholder_row + $fields_cache;
-    }
-
-    /**
-     * The Computed field rule's row-target selects: top-level repeaters, and the
-     * writable subfields of every repeater, both keyed by ACF field KEY. A
-     * subfield's label leads with its repeater's, because the static list cannot
-     * follow the repeater select beside it; the handler checks the pair belongs
-     * together. Only DIRECT subfields — a nested repeater or group is not offered.
-     *
-     * @return array{repeaters: array<string,string>, subfields: array<string,string>}
-     */
-    public static function acf_computed_row_options(): array {
-        static $cache = null;
-
-        $none = ['' => __('— None (write a post-level field) —', 'meta-conductor')];
-        if ($cache !== null) {
-            return ['repeaters' => $none + $cache['repeaters'], 'subfields' => ['' => __('— Select subfield —', 'meta-conductor')] + $cache['subfields']];
-        }
-        if (!function_exists('acf_get_field_groups') || !function_exists('acf_get_fields')) {
-            return ['repeaters' => $none, 'subfields' => ['' => __('— Select subfield —', 'meta-conductor')]];
-        }
-
-        $cache      = ['repeaters' => [], 'subfields' => []];
-        $post_types = get_post_types(['public' => true], 'objects');
-        unset($post_types['attachment']);
-
-        foreach ($post_types as $post_type) {
-            foreach ((array) acf_get_field_groups(['post_type' => $post_type->name]) as $group) {
-                foreach ((array) acf_get_fields($group['key']) as $field) {
-                    $key = (string) ($field['key'] ?? '');
-                    if ($key === '' || ($field['type'] ?? '') !== 'repeater') {
-                        continue;
-                    }
-                    $label = (string) ($field['label'] ?? $field['name']);
-                    $cache['repeaters'][$key] = sprintf('%s (%s)', $label, $field['name'] ?? '');
-                    foreach ((array) acf_get_fields($field) as $sub) {
-                        $sub_key = (string) ($sub['key'] ?? '');
-                        if ($sub_key !== '' && in_array($sub['type'] ?? '', self::COMPUTED_TARGET_TYPES, true)) {
-                            $cache['subfields'][$sub_key] = sprintf('%s › %s (%s)', $label, $sub['label'] ?? $sub['name'], $sub['name'] ?? '');
-                        }
-                    }
-                }
-            }
-        }
-
-        return ['repeaters' => $none + $cache['repeaters'], 'subfields' => ['' => __('— Select subfield —', 'meta-conductor')] + $cache['subfields']];
+        return $placeholder_row + $fields_cache + $rows_cache;
     }
 
     /**
