@@ -120,6 +120,7 @@ class FormatRulesConfig {
             'title'       => __('Format rules, in order', 'meta-conductor'),
             'description' => __('Every rule that rewrites a post\'s own fields, in the order they run. Drag a rule up to let it act before the ones below it.', 'meta-conductor'),
             'fields'      => [
+                ConfigHelpers::token_reference_field(),
                 [
                     'id'    => OptionRuleStorage::KIND_FORMAT,
                     'type'  => 'repeater',

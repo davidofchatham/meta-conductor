@@ -49,6 +49,55 @@ class ConfigHelpers {
     }
 
     /**
+     * The token reference, a section-level `html` field above the format
+     * repeater so it stays in view while any rule is edited (it used to sit
+     * inside the title & slug row, which the Computed field rule never saw).
+     *
+     * Every `<code>` is click-to-copy: `WireframeBootstrap::enqueue_token_copy()`
+     * delegates on `.mc-token`. The text copied is the token verbatim, so
+     * `{meta:field_name}` still needs its placeholder replaced.
+     */
+    public static function token_reference_field(): array {
+        $tok = static fn(string ...$tokens): string => implode(' / ', array_map(
+            static fn(string $t): string => '<code class="mc-token" style="cursor:pointer;" title="' . esc_attr__('Click to copy', 'meta-conductor') . '">' . esc_html($t) . '</code>',
+            $tokens
+        ));
+
+        $rows = [
+            [$tok('{meta:field_name}'), __('Raw field value', 'meta-conductor'), __('Sanitized value', 'meta-conductor')],
+            [$tok('{default_title}'), __('Title before this rule runs', 'meta-conductor'), '—'],
+            [$tok('{default_slug}'), '—', __('Slug derived from computed title', 'meta-conductor')],
+            [$tok('{date_year:field}'), '2024', '2024'],
+            [$tok('{date_month:field}'), __('March', 'meta-conductor'), '03'],
+            [$tok('{date_day:field}'), '15', '15'],
+            [$tok('{date_hour:field}'), '14', '14'],
+            [$tok('{date_minute:field}'), '30', '30'],
+            [$tok('{pub_year}'), __('2024 (publication date, local time)', 'meta-conductor'), '2024'],
+            [$tok('{pub_month}'), __('March', 'meta-conductor'), '03'],
+            [$tok('{pub_day}', '{pub_hour}', '{pub_minute}'), __('Same numeric pattern as above', 'meta-conductor'), ''],
+            [$tok('{term:taxonomy}'), __('First term name (alpha)', 'meta-conductor'), __('First term slug', 'meta-conductor')],
+            [$tok('{terms:taxonomy}'), __('All term names, comma-joined', 'meta-conductor'), __('All slugs, hyphen-joined', 'meta-conductor')],
+        ];
+
+        $html  = '<details><summary style="cursor:pointer;"><strong>' . esc_html__('Available tokens', 'meta-conductor') . '</strong> <span style="font-weight:normal;">— ' . esc_html__('click a token to copy it. Computed field rules use the Title output column; the Slug output column and {default_slug} are for title & slug rules only.', 'meta-conductor') . '</span></summary>';
+        $html .= '<table class="widefat" style="margin-top:8px;font-size:12px;"><thead><tr><th>' . esc_html__('Token', 'meta-conductor') . '</th><th>' . esc_html__('Title output', 'meta-conductor') . '</th><th>' . esc_html__('Slug output', 'meta-conductor') . '</th></tr></thead><tbody>';
+
+        foreach ($rows as $row) {
+            $html .= '<tr><td>' . $row[0] . '</td><td>' . esc_html($row[1]) . '</td><td>' . esc_html($row[2]) . '</td></tr>';
+        }
+
+        return [
+            'id'      => 'token_reference',
+            'type'    => 'html',
+            'columns' => 12,
+            'args'    => [
+                'variant' => 'info',
+                'content' => $html . '</tbody></table></details>',
+            ],
+        ];
+    }
+
+    /**
      * A `conditions` clause restricting a kind-repeater subfield to the given
      * rule types.
      *

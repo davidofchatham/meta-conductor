@@ -73,6 +73,43 @@ class WireframeBootstrap {
 
         // The Apply page's button filters — REST requests, like the re-check.
         ApplyPage::init();
+
+        add_action('admin_enqueue_scripts', [self::class, 'enqueue_token_copy']);
+    }
+
+    /**
+     * Click-to-copy for the token reference (`ConfigHelpers::token_reference_field()`).
+     * Wireframe renders `html` content as markup, so a script cannot ride in it;
+     * this delegates from the document on the `.mc-token` class instead, which
+     * also survives the React re-renders that replace the nodes.
+     */
+    public static function enqueue_token_copy(string $hook): void {
+        if ($hook !== 'toplevel_page_meta-conductor') {
+            return;
+        }
+
+        wp_register_script('bws-mc-token-copy', false, [], META_CONDUCTOR_VERSION, true);
+        wp_enqueue_script('bws-mc-token-copy');
+        wp_add_inline_script('bws-mc-token-copy', <<<'JS'
+document.addEventListener('click', function (e) {
+    var el = e.target.closest && e.target.closest('.mc-token');
+    if (!el) { return; }
+    var done = function () {
+        el.style.background = '#c3e6cb';
+        setTimeout(function () { el.style.background = ''; }, 600);
+    };
+    // Clipboard API needs a secure context; fall back to selecting the text.
+    if (navigator.clipboard) {
+        navigator.clipboard.writeText(el.textContent).then(done, function () {});
+    } else {
+        var r = document.createRange();
+        r.selectNodeContents(el);
+        var s = window.getSelection();
+        s.removeAllRanges();
+        s.addRange(r);
+    }
+});
+JS);
     }
 
     /**

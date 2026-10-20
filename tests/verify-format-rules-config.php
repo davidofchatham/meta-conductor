@@ -162,7 +162,7 @@ $check = function (string $name, bool $cond) use (&$fail, &$total) {
 $KIND      = OptionRuleStorage::KIND_FORMAT;
 $TYPES     = OptionRuleStorage::migrated_types_for_kind($KIND);
 $section   = FormatRulesConfig::section();
-$field     = $section['fields'][0];
+$field     = current(array_filter($section['fields'], fn($f) => ($f['id'] ?? '') === $KIND));
 $subfields = $field['args']['subfields'];
 
 // --- The repeater is bound to the persisted kind list. ----------------------
@@ -278,7 +278,7 @@ $check('no subfield uses not_in',
 $expected_visible = [
     'title_slug_rules' => [
         'type', 'enabled', 'name', 'post_type',
-        'title_pattern', 'token_reference', 'slug_pattern', 'slug_mode',
+        'title_pattern', 'slug_pattern', 'slug_mode',
         'date_escalation', 'date_field', 'row_title',
     ],
     'field_transformation_rules' => [
@@ -486,11 +486,13 @@ $fmt_tab = $tabs[1];
 $check('the format tab holds the advisory and the list', count($fmt_tab['sections']) === 2);
 $check('the collision advisory leads the tab (#65)',
     $fmt_tab['sections'][0]['id'] === $KIND . '_collisions');
-$check('and the ordered format list follows it',
-    $fmt_tab['sections'][1]['fields'][0]['id'] === $KIND);
+// The token reference leads the section, so it is in view above the list.
+$check('and the ordered format list follows it, behind the token reference',
+    ($fmt_tab['sections'][1]['fields'][0]['id'] ?? '') === 'token_reference'
+    && ($fmt_tab['sections'][1]['fields'][1]['id'] ?? '') === $KIND);
 // The note under the list is the tab's only pointer to the Apply page.
 $check('the Apply page note is still on the tab',
-    ($section['fields'][1]['id'] ?? '') === 'title_slug_actions_note');
+    ($section['fields'][2]['id'] ?? '') === 'title_slug_actions_note');
 
 // --- No bare {token} in any description, on EITHER ordered list. ------------
 //
