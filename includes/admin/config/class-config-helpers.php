@@ -79,7 +79,8 @@ class ConfigHelpers {
             [$tok('{terms:taxonomy}'), __('All term names, comma-joined', 'meta-conductor'), __('All slugs, hyphen-joined', 'meta-conductor')],
         ];
 
-        $html  = '<details><summary style="cursor:pointer;"><strong>' . esc_html__('Available tokens', 'meta-conductor') . '</strong> <span style="font-weight:normal;">— ' . esc_html__('click a token to copy it. Computed field rules use the Title output column; the Slug output column and {default_slug} are for title & slug rules only.', 'meta-conductor') . '</span></summary>';
+        $html  = '<details><summary style="cursor:pointer;"><strong>' . esc_html__('Available tokens', 'meta-conductor') . '</strong></summary>';
+        $html .= '<p style="margin:8px 0 0;">' . esc_html__('Click a token to copy it. Computed field rules use the Title output column; the Slug output column and {default_slug} are for title & slug rules only.', 'meta-conductor') . '</p>';
         $html .= '<table class="widefat" style="margin-top:8px;font-size:12px;"><thead><tr><th>' . esc_html__('Token', 'meta-conductor') . '</th><th>' . esc_html__('Title output', 'meta-conductor') . '</th><th>' . esc_html__('Slug output', 'meta-conductor') . '</th></tr></thead><tbody>';
 
         foreach ($rows as $row) {

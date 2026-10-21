@@ -471,6 +471,18 @@ The trigger-term and target-term dropdowns list all terms across all taxonomies.
   - **One naming overlap to settle with it:** `related_post_terms` already exposes this axis under a different name (`keep_in_sync`), so stating the claim there without reconciling the two names adds a second vocabulary rather than removing one.
 - **Blocked by:** — • **Interacts with:** FW-24, FW-25
 
+#### FW-50 — Generate tokens for the fields a rule can actually use
+
+The *Available tokens* reference lists token shapes with placeholders (`{meta:field}`, `{term:taxonomy}`, `{date_year:field}`), so an author has to know their own field names and taxonomy slugs and type them in. Offer the concrete tokens for the post types the rule is scoped to, ready to click and copy.
+
+- **Detail home:** none yet.
+- **Progress:** Not started. Raised while moving the reference's intro text out of the accordion title (unreleased, FW-4 branch).
+- **Open:**
+  - **Where it lives.** The reference is one shared block above both rule types' list, but the useful set depends on a rule's own *Post types*, so a per-rule generated list (or a picker that inserts into the pattern field) is a different surface from the shared table. Click-to-copy is already in place; whether to add click-to-insert depends on what Wireframe offers (see FW-23).
+  - **What counts as available.** Registered taxonomies for the rule's post types, ACF fields on their field groups (including repeater subfields, which a Computed field rule can already target), and plain meta keys seen in use. Which of those are worth enumerating on a site with many fields is the real question.
+  - **Date fields.** One date field yields several tokens (`{date_year:}`, `{date_month:}`, …), so the list needs grouping, not one row per token.
+- **Blocked by:** — • **Interacts with:** FW-4, FW-23, FW-49
+
 ---
 
 ## Infrastructure and testing
