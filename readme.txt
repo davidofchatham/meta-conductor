@@ -8,7 +8,7 @@ Stable tag: 0.9.0
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Rule-based automation for WordPress taxonomies, meta fields, and post titles/slugs.
+Rule-based automation for WordPress taxonomies, meta fields, post titles/slugs, and computed field values.
 
 == Description ==
 
@@ -17,9 +17,10 @@ Meta Conductor adds rule-driven automation to WordPress taxonomies and meta fiel
 * Auto-set terms based on hierarchy, related posts (ACF), related terms, or date windows
 * Cascade terms from parent post to children
 * Generate titles and slugs from token patterns with collision avoidance
+* Store a composed value (a display name, a roster line) in an ACF field, or in one subfield of every row of a repeater, from the same token patterns
 * Restrict which depths of a hierarchical taxonomy a post may carry
 
-Rules are authored as two ordered lists — one for rules that write terms, one for rules that format titles and slugs — and they run in the order you put them in. The *Apply to Existing Posts* page runs them over posts that already exist.
+Rules are authored as two ordered lists — one for rules that write terms, one for rules that format titles and slugs or compute field values — and they run in the order you put them in. The *Apply to Existing Posts* page runs them over posts that already exist.
 
 == Installation ==
 
