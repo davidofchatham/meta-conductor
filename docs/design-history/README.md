@@ -27,3 +27,4 @@ A file here is **not** an ADR. An ADR states a decision and its consequences in 
 | [apply-existing.md](apply-existing.md) | *Apply to existing posts* page (FW-16), replacing Data Conversion | 2026-09-24 |
 | [rule-type-descriptor.md](rule-type-descriptor.md) | Rule-type descriptors + registry, canonical storage projection (FW-39) | 2026-09-28 |
 | [token-engine.md](token-engine.md) | `Tokens\` module extracted from `TitleSlugHandler`, site-time date tokens (FW-40) | 2026-09-28 |
+| [field-transformation.md](field-transformation.md) | Computed field rules (`field_transformation_rules`, FW-4) + separator cleanup around empty tokens (FW-44) | 2026-10-22 |

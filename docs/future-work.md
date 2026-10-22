@@ -86,17 +86,6 @@ Evolve the binary Date Window rule (in-window → apply, out → remove, fixed d
 - **Blocked by:** — • **Interacts with:** FW-25
 - **Phase:** targeting the 0.x line, before 1.0.0
 
-#### FW-4 — `field_transformation_rules`: Computed Field Output
-
-Combine multiple source fields into one formatted output field — merge first/middle/last into a display name, combine date + time into a sortable datetime, format a phone number, derive a bio string from stats. The rule declares an output meta key plus a template.
-
-- **Axes:** basis **intrinsic** (reads the post's own fields), effect target **field** (scalar), claim *owning*.
-- **Detail home:** `.scratch/field-transformation/spec.md` (spec + build tickets `field-transformation/01`–`07`, shared with FW-44). Earlier token-gap analysis of the two real use cases: `.scratch/plans/field-transformation-token-gap.md`. The no-pre-write-phase decision: [architecture.md → Field effects ride the `$data` seam](architecture.md#field-effects-ride-the-data-seam).
-- **Progress:** Built on `feature/field-transformation`. A Computed field rule is a row type in `format_rules` (Options storage), writes an ACF field by key — post-level, or one subfield across every row of a repeater from that row's own siblings — through the format dispatcher's field write on the `$data` seam, with text/html output policies over `Tokens\` (FW-40). It composes by list order with title/slug rules, and joins the collision check, the preview and *Apply to Existing Posts*.
-- **Open:** what v1 deliberately left out is tracked elsewhere: plain (non-ACF) meta targets are FW-46, a consumer-before-producer order lint is FW-47, value-filter and conditional tokens are FW-49. Format transforms (height from feet + inches, boolean → label) stay in site PHP as a documented boundary, and there is no `{post:x}` escape token or nested-repeater read in a row rule.
-- **Blocked by:** — • **Interacts with:** FW-5, FW-13, FW-16, FW-44, FW-46, FW-47, FW-49
-- **Phase:** 6a
-
 #### FW-5 — `relationship_field_rules`: Set a field across a relationship
 
 `related_post_terms_rules` already copies *terms* across an ACF relationship; the same edge should carry a *field value* — an event's venue post supplying its address into each session, or a team post pushing a season label onto every player. Same holder/direction model (the ACF field pins the holder post type, `holder_role` says which end is authoritative), with the effect swapped from terms to a target meta/ACF key.
@@ -223,7 +212,7 @@ A format rule that changes a published post's `post_name` moves its URL. Since #
 Let a Computed field rule write a plain post meta key, not only an ACF field picked by key. FW-4's v1 is ACF-only, so its type appears only while ACF is active.
 
 - **Axes:** as FW-4 — basis **intrinsic**, effect target **field** (scalar), claim *owning*.
-- **Detail home:** `.scratch/field-transformation/spec.md` → *Out of Scope*.
+- **Detail home:** [design-history/field-transformation.md](design-history/field-transformation.md) → *Out of Scope*.
 - **Progress:** Not started. Left out of FW-4's v1 on purpose.
 - **Open:** the acceptance bar: a name that matches an ACF field still routes through ACF's write (so its field-key reference stays intact), and a `_`-prefixed key is refused, because those are core's and other plugins' private meta. Also whether the type stays hidden without ACF once it can work without it.
 - **Blocked by:** — • **Interacts with:** FW-4, FW-5
@@ -232,7 +221,7 @@ Let a Computed field rule write a plain post meta key, not only an ACF field pic
 
 New token kinds for the pattern engine: a value filter (`{term:TAX|exclude:…}`) and a conditional (`{if_term:…}`). They are the part of FW-4's two real use cases that plain substitution cannot reach.
 
-- **Detail home:** `.scratch/field-transformation/spec.md` → *Out of Scope* and *Further Notes*; the earlier gap analysis is `.scratch/plans/field-transformation-token-gap.md`.
+- **Detail home:** [design-history/field-transformation.md](design-history/field-transformation.md) → *Out of Scope* and *Further Notes*; the earlier gap analysis is `.scratch/plans/field-transformation-token-gap.md`.
 - **Progress:** Not started. Deferred from FW-4's v1, which was judged on the plain-substitution part landing cleanly.
 - **Open:** whether the real use cases still need them once v1 runs on them, or whether the remainder stays in site PHP alongside format transforms. Any new token kind lands in `Tokens\` so title/slug and Computed field rules both get it, and adds rows to the H17 golden table deliberately.
 - **Blocked by:** `decision:the real use cases still need them after v1` • **Interacts with:** FW-4, FW-44
@@ -302,14 +291,6 @@ Make term appliers return the terms they want and let `TermDispatcher` apply the
 - **Detail home:** [design-history/rule-type-descriptor.md](design-history/rule-type-descriptor.md) → *Out of Scope*; the list comes from the 2026-09-24 architecture review.
 - **Progress:** Not started. Candidates, to confirm by grep before deleting: the four `wp_ajax_bws_*` endpoints (the only JS caller left is the `assets/js/admin.js~` backup), `simulate_level_restrictions` (pre-#32 semantics), `get_handlers_summary`, `get_plugin_status`, `check_system_requirements`, `add_admin_menu`; handler-side `get_rules_summary`, `get_active_rules`, `get_upcoming_rules`, `preview_changes`, and the base's empty `reapply_for_post` (FW-42 retires its last caller).
 - **Blocked by:** — • **Interacts with:** FW-42
-
-#### FW-44 — Orphaned separators around empty tokens
-
-The token engine drops an empty token but not always the literal text around it. A separator in front of an empty token in the middle of a pattern is held and then emitted in full once a later token resolves (`{a} - {blank} - {b}` → `a - - b`), and a closing bracket after an empty token survives (`{a} ({blank})` → `a)`, `({blank}) {a}` → `) a`). Only trailing separators and a dangling opening bracket are cleaned today. The fix is a smarter empty-token removal pass in `Tokens\TokenEngine`, so every output policy gets it.
-
-- **Detail home:** `.scratch/field-transformation/spec.md` → *Separator cleanup*. Reference implementation: the `{{join}}` tag's template mode in the bws-gb-dynamic-tags-extensions repo, which already solves this problem. Its ordered removal steps are in `includes/helpers/join-helpers.php` (file docblock): whole-group excision, attached vs connective punctuation, bracket pairs around an empty token, floating separators, whitespace and orphan-connective repair. Harness: `tools/test/join-template-test.php` + `tools/test/join-test-matrix.md`; the rules are spelled out in `docs/tag-reference.md` → `{{join}}`. Reuse the rules and the test matrix, not the code (different plugin, different grammar).
-- **Progress:** Built on `feature/field-transformation` (`field-transformation/01`). Middle and bracketed empty tokens no longer leave punctuation behind; edge gaps keep the old reading. There is no gate: existing posts correct on their next format pass. The golden table was regenerated deliberately, and its slug rows differ only in punctuation core strips anyway.
-- **Blocked by:** — • **Interacts with:** FW-4, FW-36, FW-40, FW-49
 
 #### FW-48 — Retire this repo's ADRs into the architecture anchors
 
@@ -411,7 +392,7 @@ The title/slug design planned three per-rule admin surfaces that never got built
 
 Warn when a format rule reading `{meta:x}` is ordered before the Computed field rule that writes `x` for an overlapping post type. The order is legal — the reader then sees the stored value, not this pass's — but it is usually a mistake, and nothing tells the author.
 
-- **Detail home:** `.scratch/field-transformation/spec.md` → *Out of Scope*.
+- **Detail home:** [design-history/field-transformation.md](design-history/field-transformation.md) → *Out of Scope*.
 - **Progress:** Not started. The composition it lints shipped with FW-4: a later rule reads an earlier rule's computed value in the same pass.
 - **Open:** whether it is its own advisory or a case of FW-34's reach analysis, since both walk the same reach and order. Row targets read their own row's siblings, so a row-rule pair is the same check one level down.
 - **Blocked by:** — • **Interacts with:** FW-4, FW-34
@@ -541,11 +522,13 @@ Shipped or cut items retire here, densely — a closed item is read in bulk and 
 
 | Id | Item | Outcome |
 |---|---|---|
+| FW-4 | `field_transformation_rules`: Computed Field Output | **Merged in [#80](https://github.com/davidofchatham/meta-conductor/pull/80)** (2026-10-22, Phase 6a). A *Computed field* row in `format_rules` writes a pattern into an ACF field by key — post-level, or one subfield across every row of a repeater from that row's siblings — through `FormatDispatcher::write_fields()` on the `$data` seam, with `text()` / `html()` output policies. It composes by list order with title/slug rules and joins the collision check, the preview and *Apply to Existing Posts*. No pre-write phase was reintroduced ([architecture.md → Field effects ride the `$data` seam](architecture.md#field-effects-ride-the-data-seam)). Spec: [design-history/field-transformation.md](design-history/field-transformation.md). Left out of v1: FW-46, FW-47, FW-49; format transforms stay in site PHP. |
 | FW-16 | Apply rules to existing posts | **Merged in [#75](https://github.com/davidofchatham/meta-conductor/pull/75)** (2026-09-24, Phase 7). Added the *Apply to Existing Posts* page: a bulk run is a full ordered pass over the chosen rule's reach, and a disabled rule can run once. Data Conversion and `includes/support/` were deleted. Spec: [design-history/apply-existing.md](design-history/apply-existing.md). Deferred parts are still open as FW-31 (in-row buttons), FW-32 (term dry run) and FW-33 (background runs); Copy / Map return as rule types through FW-4. |
 | FW-18 | Text-domain string sweep | **Shipped in 0.7.0** (Phase 2b rename sweep, [#48](https://github.com/davidofchatham/meta-conductor/pull/48)) — the row survived the 2026-09-11 migration describing work already done. Every `__()` / `_e()` / `_x()` / `_n()` call site now passes `'meta-conductor'`; `'bws-meta-manager'` survives only as the Composer package name in `vendor/`. The *conversion* subsystem's identifiers (JS object, cron / AJAX / transient names) were never part of this row — they were the 2b remainder, closed by deletion with the Data Conversion page in FW-16. |
 | FW-29 | `trigger_term_id`'s `int[]` invariant is declared but not enforced | **Settled by FW-39's storage PR** (`rule-type-descriptor/01`, branch `claude/storage-projection-39`): yes, `normalize_rule_shape()` is the guaranteed boundary. Checkbox gates arrive as slug lists, `target_term_id` as `int`, `trigger_term_id` / `filter_terms` as `int[]`; every consumer re-decode and re-cast is deleted, checkbox decoding moved out of `ConfigHelpers` into storage, and H10 asserts the shape for every rule type. |
 | FW-39 | Rule-type descriptor + canonical storage projection | **Merged in [#76](https://github.com/davidofchatham/meta-conductor/pull/76) and [#77](https://github.com/davidofchatham/meta-conductor/pull/77)** (2026-09-26, 2026-09-28). #76 made storage's read projection the guaranteed canonical rule shape and deleted the pre-0.8.0 migrations behind an admin notice; #77 gave each rule type one descriptor in `RuleTypes\Registry`, the only place rule types are listed. Spec: [design-history/rule-type-descriptor.md](design-history/rule-type-descriptor.md). The review candidates it left out are FW-40, FW-41, FW-42, FW-43 and FW-5's graph split. |
 | FW-40 | Extract the token engine from TitleSlugHandler | **Merged in [#78](https://github.com/davidofchatham/meta-conductor/pull/78)** (2026-09-28). The pattern engine moved into `Tokens\` ([architecture.md → Token engine](architecture.md#token-engine)); title and slug output is pinned byte-for-byte by a golden table under H17. Date tokens now parse in site time (CHANGELOG *Fixed*). Left for FW-4: the ACF-row source (the `text()` / `html()` output policies are built). Spec: [design-history/token-engine.md](design-history/token-engine.md). |
+| FW-44 | Orphaned separators around empty tokens | **Merged in [#80](https://github.com/davidofchatham/meta-conductor/pull/80)** (2026-10-22), with FW-4. `Tokens\TokenEngine` drops the punctuation around a middle or bracketed empty token, porting the rules (not the code) of the `{{join}}` tag's template mode; edge gaps keep the old reading. No gate: existing titles correct on their next format pass (CHANGELOG *Changed*). The golden table was regenerated deliberately. Spec: [design-history/field-transformation.md](design-history/field-transformation.md) → *Separator cleanup*. |
 
 ---
 
