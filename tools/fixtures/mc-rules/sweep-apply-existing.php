@@ -957,7 +957,7 @@ switch ( $step ) {
 		mcae_author( array(), array( mcae_field_row(), mcae_field_row( array( 'target_field' => 'field_mc_cf_display_html' ) ) ) );
 		$t( '§ae17 different target fields do not collide', $scan(), array() );
 
-		mcae_author( array(), array( mcae_field_row(), mcae_field_row( array( 'post_type' => 'mc_section' ) ) ) );
+		mcae_author( array(), array( mcae_field_row(), mcae_field_row( array( 'post_types' => array( 'mc_section' ) ) ) ) );
 		$t( '§ae17 disjoint post types do not collide', $scan(), array() );
 		break;
 
