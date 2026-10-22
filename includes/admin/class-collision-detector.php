@@ -19,7 +19,11 @@
  *
  *   - a whole taxonomy, for the four types that declare one;
  *   - one term, for the two term-pairing types;
- *   - the post's own title/slug fields, for the format kind.
+ *   - the post's own title/slug fields, for the title/slug rule;
+ *   - one ACF field, by its field KEY, for the Computed field rule — or one
+ *     subfield of one repeater (`row|…`), for its row-target form. Two rules
+ *     on one field are order-decided (the later write wins), so they take the
+ *     generic "lower rule acts last" message, not first-match-wins.
  *
  * Each descriptor states its own (`RuleType::target_key()` and
  * `written_post_types()`); this class only compares them.
@@ -58,6 +62,7 @@
 
 namespace BWS\MetaConductor\Admin;
 
+use BWS\MetaConductor\Admin\Config\ConfigHelpers;
 use BWS\MetaConductor\Handlers\HierarchicalHandler;
 use BWS\MetaConductor\RuleTypes\HierarchicalLevelRestrictionRules;
 use BWS\MetaConductor\RuleTypes\HierarchicalRules;
@@ -491,6 +496,26 @@ class CollisionDetector {
             $prefix   = ($taxonomy && $taxonomy->label) ? $taxonomy->label . ': ' : '';
 
             return $prefix . $term->name;
+        }
+
+        if ($scheme === 'field') {
+            $label = ConfigHelpers::acf_field_label($value);
+
+            /* translators: %s: the ACF field's label, or its key when ACF cannot resolve it. */
+            return sprintf(__('the “%s” field', 'meta-conductor'), $label !== '' ? $label : $value);
+        }
+
+        if ($scheme === 'row') {
+            [$repeater, $sub] = array_pad(explode('|', $value, 2), 2, '');
+            $repeater_label   = ConfigHelpers::acf_field_label($repeater);
+            $sub_label        = ConfigHelpers::acf_field_label($sub);
+
+            /* translators: 1: the subfield's label, 2: the repeater's label (each its key when ACF cannot resolve it). */
+            return sprintf(
+                __('the “%1$s” field in every “%2$s” row', 'meta-conductor'),
+                $sub_label !== '' ? $sub_label : $sub,
+                $repeater_label !== '' ? $repeater_label : $repeater
+            );
         }
 
         return __('the title and slug', 'meta-conductor');

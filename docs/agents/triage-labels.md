@@ -12,7 +12,7 @@ The skills speak in terms of five canonical triage roles. **One vocabulary, two 
 
 When a skill names a role ("apply the AFK-ready triage label"), pick the carrier from the surface you are on, not from the phrasing: a `#n` gets `gh issue edit <n> --add-label ready-for-agent`, a `<slug>/03` gets the `Status:` line rewritten in place. Routing between the surfaces is [issue-tracker.md](issue-tracker.md); this file only says what the role is called once you are there.
 
-**A built local ticket leaves the five roles.** Once its commit lands, a `.scratch/<slug>/issues/` ticket's line becomes `Status: built — <sha>[, <sha>…] on <branch>, unmerged`, replacing `ready-for-agent`; drop `, unmerged` when the PR merges. It is a sixth word on the local carrier only — a GitHub issue says the same thing with its own `Closes #N` and a Built comment.
+**A built local ticket leaves the five roles.** Once its commit lands, a `.scratch/<slug>/issues/` ticket's line becomes `Status: built — <sha>[, <sha>…] on <branch>, unmerged`, replacing `ready-for-agent`; drop `, unmerged` when the PR merges. **In the same edit, tick every acceptance-criteria checkbox (`- [ ]` → `- [x]`) you verified, and leave any you did not as `- [ ]` with a one-line reason under the Built note** — a built ticket with unticked boxes reads as unfinished, and a ticked box nobody checked reads as done. It is a sixth word on the local carrier only — a GitHub issue says the same thing with its own `Closes #N` and a Built comment.
 
 **`FW-N` rows carry no role.** [docs/future-work.md](../future-work.md) has its own `Progress:` / `Open:` / typed `Blocked by:` shape, which says more than a triage role could. Do not add a `Status:` line to a tracker row.
 

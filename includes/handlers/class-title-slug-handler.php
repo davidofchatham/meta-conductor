@@ -31,9 +31,10 @@ if (!defined('ABSPATH')) exit;
  *
  * THE PRE-WRITE PHASE COULD NOT SURVIVE. It ran before terms landed, so a
  * `{term:TAX}` pattern resolved against the PREVIOUS save's terms — and the
- * result is a plausible title, which is why nobody would have found it. The
- * two-phase split returns when `field_transformation` lands (ADR 0003), by
- * which point the pre-write half feeds this same data-in/data-out seam.
+ * result is a plausible title, which is why nobody would have found it. It did
+ * not return with `field_transformation`: field effects ride this same
+ * data-in/data-out seam and the pass stays post-write (docs/architecture.md →
+ * Field effects ride the $data seam).
  */
 class TitleSlugHandler extends UnifiedHandlerBase {
 

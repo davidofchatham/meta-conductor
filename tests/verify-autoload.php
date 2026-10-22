@@ -75,6 +75,7 @@ $classes = [
     'BWS\\MetaConductor\\Handlers\\RelatedPostTermsHandler',
     'BWS\\MetaConductor\\Handlers\\HierarchicalLevelRestrictionHandler',
     'BWS\\MetaConductor\\Handlers\\TitleSlugHandler',
+    'BWS\\MetaConductor\\Handlers\\FieldTransformationHandler',
     // RuleTypes\ (FW-39) — the descriptors and the registry that lists them.
     // Also proves the kebab DIRECTORY mapping (RuleTypes -> rule-types/).
     'BWS\\MetaConductor\\RuleTypes\\RuleType',
@@ -87,9 +88,11 @@ $classes = [
     'BWS\\MetaConductor\\RuleTypes\\HierarchicalRules',
     'BWS\\MetaConductor\\RuleTypes\\HierarchicalLevelRestrictionRules',
     'BWS\\MetaConductor\\RuleTypes\\TitleSlugRules',
+    'BWS\\MetaConductor\\RuleTypes\\FieldTransformationRules',
     // Tokens\ (FW-40) — the pattern engine title/slug renders through.
     'BWS\\MetaConductor\\Tokens\\TokenEngine',
     'BWS\\MetaConductor\\Tokens\\PostTokenSource',
+    'BWS\\MetaConductor\\Tokens\\RowTokenSource',
     'BWS\\MetaConductor\\Tokens\\OutputPolicy',
     // Admin\
     'BWS\\MetaConductor\\Admin\\Diagnostics',

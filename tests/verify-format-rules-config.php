@@ -104,6 +104,44 @@ if (!function_exists('get_post_type_object')) {
     }
 }
 
+// A stand-in ACF, because the Computed field rule is offered only where ACF is
+// active and its target select reads field groups. One group on mc_item: two
+// writable targets, a relationship and a repeater, which must NOT be offered.
+$GLOBALS['h12_acf_fields'] = [
+    'field_a' => ['key' => 'field_a', 'name' => 'display_name', 'label' => 'Display name', 'type' => 'text'],
+    'field_b' => ['key' => 'field_b', 'name' => 'bio_html', 'label' => 'Bio', 'type' => 'wysiwyg'],
+    'field_c' => ['key' => 'field_c', 'name' => 'friends', 'label' => 'Friends', 'type' => 'relationship'],
+    'field_d' => ['key' => 'field_d', 'name' => 'roster', 'label' => 'Roster', 'type' => 'repeater'],
+];
+// The repeater's own subfields: two writable, one nested group (not offered).
+$GLOBALS['h12_acf_subfields'] = [
+    'field_d' => [
+        ['key' => 'field_d_line', 'name' => 'line', 'label' => 'Line', 'type' => 'text'],
+        ['key' => 'field_d_pos', 'name' => 'pos', 'label' => 'Position', 'type' => 'text'],
+        ['key' => 'field_d_grp', 'name' => 'grp', 'label' => 'Group', 'type' => 'group'],
+    ],
+];
+if (!function_exists('acf_get_field_groups')) {
+    function acf_get_field_groups($args = []) {
+        return ($args['post_type'] ?? '') === 'mc_item' ? [['key' => 'group_a', 'title' => 'Group A']] : [];
+    }
+}
+if (!function_exists('acf_get_fields')) {
+    function acf_get_fields($parent) {
+        $parent = is_array($parent) ? $parent['key'] : $parent; // ACF takes the field ARRAY for a repeater's subfields.
+        return $parent === 'group_a' ? array_values($GLOBALS['h12_acf_fields']) : ($GLOBALS['h12_acf_subfields'][$parent] ?? []);
+    }
+}
+if (!function_exists('acf_get_field')) {
+    function acf_get_field($key) {
+        foreach ($GLOBALS['h12_acf_subfields'] as $subs) {
+            foreach ($subs as $sub) { if ($sub['key'] === $key) { return $sub; } }
+        }
+        return $GLOBALS['h12_acf_fields'][$key] ?? false;
+    }
+}
+if (!function_exists('update_field')) { function update_field() { return true; } }
+
 require dirname(__DIR__) . '/vendor/autoload.php';
 require dirname(__DIR__) . '/autoload.php';
 
@@ -124,12 +162,12 @@ $check = function (string $name, bool $cond) use (&$fail, &$total) {
 $KIND      = OptionRuleStorage::KIND_FORMAT;
 $TYPES     = OptionRuleStorage::migrated_types_for_kind($KIND);
 $section   = FormatRulesConfig::section();
-$field     = $section['fields'][0];
+$field     = current(array_filter($section['fields'], fn($f) => ($f['id'] ?? '') === $KIND));
 $subfields = $field['args']['subfields'];
 
 // --- The repeater is bound to the persisted kind list. ----------------------
 
-$check('the format kind has a migrated type at all (#59)', $TYPES === ['title_slug_rules']);
+$check('the format kind has its migrated types (#59)', $TYPES === ['title_slug_rules', 'field_transformation_rules']);
 $check('repeater binds the format kind list', $field['id'] === $KIND);
 $check('repeater is sortable (order is authored)', !empty($field['args']['sortable']));
 $check('row title template resolves the snapshot', $field['args']['title_template'] === '{row_title}');
@@ -173,18 +211,25 @@ $check('type select warns that changing it clears the old type\'s settings',
 $by_id = [];
 foreach ($subfields as $s) { $by_id[$s['id']] = $s; }
 
-foreach (['type', 'enabled', 'name', 'post_type', 'row_title'] as $shared) {
+foreach (['type', 'enabled', 'name', 'row_title'] as $shared) {
     $check("shared subfield '$shared' exists",     isset($by_id[$shared]));
     $check("shared subfield '$shared' is ungated", !isset($by_id[$shared]['conditions']));
 }
 
-// `post_type` is SCALAR here, not the term list's `post_types` checkboxes —
-// TitleSlugHandler::rule_matches() reads one slug, first match wins.
-// Swapping in the shared checkbox builder would silently stop every rule
-// matching, since the handler compares the value to $post->post_type.
-$check('post_type is a single-value select, not the shared checkboxes gate',
+// The post-type scope is NOT shared: title & slug owns a scalar `post_type`
+// (a lookup key, first match wins) and Computed field a `post_types` checkboxes
+// list (rules compose, so a rule may cover several types). Each is gated to its
+// own type — an ungated copy would persist junk on the other type's rows.
+$check('post_type is a single-value select, gated to title & slug',
     ($by_id['post_type']['type'] ?? '') === 'select'
-    && !isset($by_id['post_types']));
+    && ($by_id['post_type']['conditions']['value'] ?? null) === ['title_slug_rules']);
+$check('post_types is a checkboxes list, gated to computed field',
+    ($by_id['post_types']['type'] ?? '') === 'checkboxes'
+    && ($by_id['post_types']['conditions']['value'] ?? null) === ['field_transformation_rules']);
+$check('the computed field scope drops attachment and has no placeholder row',
+    array_keys($by_id['post_types']['args']['options']) === ['post', 'page', 'mc_item']);
+$check('the computed field scope says none checked does nothing',
+    str_contains(strtolower($by_id['post_types']['description'] ?? ''), 'does nothing'));
 $check('post_type is required', !empty($by_id['post_type']['required']));
 $check('the post-type select drops attachment',
     !array_key_exists('attachment', $by_id['post_type']['args']['options']));
@@ -200,7 +245,7 @@ $check('the post-type description states first-match-wins',
 
 // --- Gated subfields name only real types, via `in`. ------------------------
 
-$ungated  = ['type', 'enabled', 'name', 'post_type', 'row_title'];
+$ungated  = ['type', 'enabled', 'name', 'row_title'];
 $gated_ok = true;
 $gate_covers = [];
 foreach ($subfields as $s) {
@@ -233,8 +278,12 @@ $check('no subfield uses not_in',
 $expected_visible = [
     'title_slug_rules' => [
         'type', 'enabled', 'name', 'post_type',
-        'title_pattern', 'token_reference', 'slug_pattern', 'slug_mode',
+        'title_pattern', 'slug_pattern', 'slug_mode',
         'date_escalation', 'date_field', 'row_title',
+    ],
+    'field_transformation_rules' => [
+        'type', 'enabled', 'name', 'post_types',
+        'target_field', 'pattern', 'output', 'row_title',
     ],
 ];
 
@@ -267,6 +316,38 @@ foreach ($subfields as $s) {
 $check('every key the title/slug handler reads survives a save',
     empty(array_diff($handler_reads, $visible_title_slug)));
 
+// The Computed field handler's read contract, stated apart from the set above
+// for the same reason. `target_field` is stored by ACF FIELD KEY.
+$visible_field = [];
+foreach ($subfields as $s) {
+    if (Conditions::evaluate($s['conditions'] ?? null, ['type' => 'field_transformation_rules'])) {
+        $visible_field[] = $s['id'];
+    }
+}
+$check('every key the computed field handler reads survives a save',
+    empty(array_diff(['enabled', 'post_types', 'target_field', 'pattern', 'output'], $visible_field)));
+$check('title/slug mechanics are not offered on a computed field row',
+    !array_intersect(['title_pattern', 'slug_pattern', 'slug_mode', 'date_escalation', 'date_field'], $visible_field));
+$check('computed field mechanics are not offered on a title/slug row',
+    !array_intersect(['target_field', 'pattern', 'output'], $visible_title_slug));
+
+// The target select: ACF field KEYS, only the types a composed string fits.
+$check('a target option names its field, group and post type',
+    $by_id['target_field']['args']['options']['field_a'] === 'Display name (display_name) — Group A [MC Items]');
+// Row targets ride the same select: one entry per direct writable subfield of a
+// repeater, keyed `row|<repeater key>|<subfield key>` — not the nested group.
+$check('the target select offers post-level fields, then row subfields',
+    array_keys($by_id['target_field']['args']['options']) === ['', 'field_a', 'field_b', 'row|field_d|field_d_line', 'row|field_d|field_d_pos']);
+$check('a subfield option is led by its repeater',
+    str_starts_with($by_id['target_field']['args']['options']['row|field_d|field_d_line'], 'Roster › Line'));
+$check('the repeater and subfield selects are gone',
+    !isset($by_id['target_repeater']) && !isset($by_id['target_subfield']));
+$check('the target is not required (an empty one is an unfinished rule, not an error)',
+    empty($by_id['target_field']['required']));
+$check('the output select offers text (the default) and html',
+    array_keys($by_id['output']['args']['options']) === ['text', 'html']
+    && ($by_id['output']['default'] ?? '') === 'text');
+
 // An untyped row (freshly added) shows the shared frame only.
 $untyped = [];
 foreach ($subfields as $s) {
@@ -275,7 +356,7 @@ foreach ($subfields as $s) {
     }
 }
 $check('an untyped row shows only the shared frame',
-    $untyped === ['type', 'enabled', 'name', 'post_type', 'row_title']);
+    $untyped === ['type', 'enabled', 'name', 'row_title']);
 
 // --- Row titles. -------------------------------------------------------------
 
@@ -299,6 +380,21 @@ $check('a row naming no post type carries no scope suffix',
 $check('an unresolvable post type falls back to its slug',
     $title(['type' => 'title_slug_rules', 'name' => 'X', 'post_type' => 'gone'])
         === 'X (gone)');
+// The Computed field row names the field it writes and the post type.
+$check('a computed field row title names its target field and post type',
+    $title(['type' => 'field_transformation_rules', 'name' => 'Display line', 'post_types' => ['mc_item'], 'target_field' => 'field_a'])
+        === 'Display line — Display name (MC Items)');
+$check('a computed field row whose key no longer resolves shows no field',
+    $title(['type' => 'field_transformation_rules', 'name' => 'Display line', 'post_types' => ['mc_item'], 'target_field' => 'field_gone'])
+        === 'Display line (MC Items)');
+$check('a computed field row targeting a repeater subfield names repeater and subfield',
+    $title(['type' => 'field_transformation_rules', 'name' => 'Line', 'post_types' => ['mc_item'], 'target_field' => 'row|field_d|field_d_line'])
+        === 'Line — Roster › Line (MC Items)');
+$check('an unnamed computed field row is named rather than left blank',
+    str_starts_with($title(['type' => 'field_transformation_rules', 'post_types' => ['mc_item']]), 'Untitled computed field rule'));
+$check('a computed field row naming several post types lists them all',
+    $title(['type' => 'field_transformation_rules', 'name' => 'Display line', 'post_types' => ['mc_item', 'page'], 'target_field' => 'field_a'])
+        === 'Display line — Display name (MC Items, Pages)');
 // The uniform marker the term list gained in #57 — the whole reason the live
 // {name} template was replaced by a snapshot.
 $check('a disabled row carries the uniform prefix',
@@ -390,11 +486,13 @@ $fmt_tab = $tabs[1];
 $check('the format tab holds the advisory and the list', count($fmt_tab['sections']) === 2);
 $check('the collision advisory leads the tab (#65)',
     $fmt_tab['sections'][0]['id'] === $KIND . '_collisions');
-$check('and the ordered format list follows it',
-    $fmt_tab['sections'][1]['fields'][0]['id'] === $KIND);
+// The token reference leads the section, so it is in view above the list.
+$check('and the ordered format list follows it, behind the token reference',
+    ($fmt_tab['sections'][1]['fields'][0]['id'] ?? '') === 'token_reference'
+    && ($fmt_tab['sections'][1]['fields'][1]['id'] ?? '') === $KIND);
 // The note under the list is the tab's only pointer to the Apply page.
 $check('the Apply page note is still on the tab',
-    ($section['fields'][1]['id'] ?? '') === 'title_slug_actions_note');
+    ($section['fields'][2]['id'] ?? '') === 'title_slug_actions_note');
 
 // --- No bare {token} in any description, on EITHER ordered list. ------------
 //

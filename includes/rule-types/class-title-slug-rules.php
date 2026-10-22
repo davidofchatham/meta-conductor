@@ -7,6 +7,7 @@
 
 namespace BWS\MetaConductor\RuleTypes;
 
+use BWS\MetaConductor\Admin\Config\ConfigHelpers;
 use BWS\MetaConductor\Handlers\TitleSlugHandler;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 
@@ -49,6 +50,11 @@ final class TitleSlugRules extends RuleType {
      */
     public function target_key(array $rule): ?string {
         return trim((string) ($rule['post_type'] ?? '')) === '' ? null : 'fields|title_slug';
+    }
+
+    /** A lookup table keyed by post type: the first matching rule is the only one that runs. */
+    public function first_match_wins(): bool {
+        return true;
     }
 
     /**
@@ -94,6 +100,25 @@ final class TitleSlugRules extends RuleType {
     public function subfields(): array {
         return [
             [
+                // Scalar, not a `post_types` checkboxes scope.
+                // `TitleSlugHandler::rule_matches()` reads this key by name
+                // and the format pass stops at the FIRST title & slug rule
+                // matching the post's type, so the value is a lookup key
+                // rather than a scope, and two rules on one post type means
+                // the lower one never runs.
+                'id'          => 'post_type',
+                'type'        => 'select',
+                'label'       => __('Post type', 'meta-conductor'),
+                // Order decides the winner, so the description says so.
+                'description' => __('The post type this rule acts on. If two title & slug rules name the same post type, the higher one wins and the lower one never runs.', 'meta-conductor'),
+                'default'     => '',
+                'required'    => true,
+                'columns'     => 12,
+                'args'        => [
+                    'options' => ConfigHelpers::format_post_type_options(__('— Select post type —', 'meta-conductor')),
+                ],
+            ],
+            [
                 'id'          => 'title_pattern',
                 'type'        => 'text',
                 'label'       => __('Title pattern', 'meta-conductor'),
@@ -101,15 +126,6 @@ final class TitleSlugRules extends RuleType {
                 'columns'     => 12,
                 'args'        => [
                     'placeholder' => __('e.g. {meta:first_name} {meta:last_name}', 'meta-conductor'),
-                ],
-            ],
-            [
-                'id'         => 'token_reference',
-                'type'       => 'html',
-                'columns'    => 12,
-                'args'       => [
-                    'variant' => 'info',
-                    'content' => self::token_reference_html(),
                 ],
             ],
             [
@@ -165,36 +181,5 @@ final class TitleSlugRules extends RuleType {
                 ],
             ],
         ];
-    }
-
-    /**
-     * Token reference HTML — multi-row reference table.
-     */
-    private static function token_reference_html(): string {
-        $rows = [
-            ['<code>{meta:field_name}</code>', __('Raw field value', 'meta-conductor'), __('Sanitized value', 'meta-conductor')],
-            ['<code>{default_title}</code>',   __('Title before this rule runs', 'meta-conductor'), '—'],
-            ['<code>{default_slug}</code>',    '—', __('Slug derived from computed title', 'meta-conductor')],
-            ['<code>{date_year:field}</code>', '2024', '2024'],
-            ['<code>{date_month:field}</code>', __('March', 'meta-conductor'), '03'],
-            ['<code>{date_day:field}</code>', '15', '15'],
-            ['<code>{date_hour:field}</code>', '14', '14'],
-            ['<code>{date_minute:field}</code>', '30', '30'],
-            ['<code>{pub_year}</code>', __('2024 (publication date, local time)', 'meta-conductor'), '2024'],
-            ['<code>{pub_month}</code>', __('March', 'meta-conductor'), '03'],
-            ['<code>{pub_day} / {pub_hour} / {pub_minute}</code>', __('Same numeric pattern as above', 'meta-conductor'), ''],
-            ['<code>{term:taxonomy}</code>', __('First term name (alpha)', 'meta-conductor'), __('First term slug', 'meta-conductor')],
-            ['<code>{terms:taxonomy}</code>', __('All term names, comma-joined', 'meta-conductor'), __('All slugs, hyphen-joined', 'meta-conductor')],
-        ];
-
-        $html  = '<details><summary style="cursor:pointer;"><strong>' . esc_html__('Available tokens', 'meta-conductor') . '</strong></summary>';
-        $html .= '<table class="widefat" style="margin-top:8px;font-size:12px;"><thead><tr><th>' . esc_html__('Token', 'meta-conductor') . '</th><th>' . esc_html__('Title output', 'meta-conductor') . '</th><th>' . esc_html__('Slug output', 'meta-conductor') . '</th></tr></thead><tbody>';
-
-        foreach ($rows as $row) {
-            $html .= '<tr><td>' . $row[0] . '</td><td>' . esc_html($row[1]) . '</td><td>' . esc_html($row[2]) . '</td></tr>';
-        }
-
-        $html .= '</tbody></table></details>';
-        return $html;
     }
 }

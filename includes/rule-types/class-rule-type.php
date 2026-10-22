@@ -85,6 +85,19 @@ abstract class RuleType {
     }
 
     /**
+     * Whether the type can run on this site at all. False ⇒ the `type` select
+     * does not offer it and its handler skips any row already stored (a type
+     * that writes through a plugin that is not active). Distinct from
+     * `has_subfields()`: the subfields stay declared either way, so a stored
+     * row is not gutted by the next save.
+     *
+     * @return bool
+     */
+    public function available(): bool {
+        return true;
+    }
+
+    /**
      * Which of its kind's SHARED subfields a row of this type shows.
      *
      * The kind config builds every gated shared subfield's `conditions` from
@@ -170,6 +183,21 @@ abstract class RuleType {
         }
 
         return $slugs;
+    }
+
+    /**
+     * Whether the FIRST rule of this type that applies to an entity ends the
+     * type's turn in a format pass — the rest are skipped.
+     *
+     * True only for a rule set that is a lookup table keyed by post type
+     * (`title_slug_rules`, #59). False ⇒ every applicable rule runs in authored
+     * order and a later write supersedes an earlier one. Meaningful for the
+     * format kind only; the term dispatcher never asks.
+     *
+     * @return bool
+     */
+    public function first_match_wins(): bool {
+        return false;
     }
 
     /**

@@ -84,6 +84,21 @@ if (!function_exists('get_post_type_object')) {
     }
 }
 
+// A stand-in for ACF's field lookup: the field's label and name by KEY. Absent
+// from the shim above on purpose — only the Computed field cases read it.
+if (!function_exists('acf_get_field')) {
+    function acf_get_field($key) {
+        $fields = [
+            'field_mc_a' => ['key' => 'field_mc_a', 'label' => 'Display name', 'name' => 'display_name'],
+            'field_mc_b' => ['key' => 'field_mc_b', 'label' => 'Sort name',    'name' => 'sort_name'],
+            'field_mc_r' => ['key' => 'field_mc_r', 'label' => 'Roster',       'name' => 'roster', 'type' => 'repeater'],
+            'field_mc_rl' => ['key' => 'field_mc_rl', 'label' => 'Line',       'name' => 'line', 'parent' => 'field_mc_r'],
+            'field_mc_rp' => ['key' => 'field_mc_rp', 'label' => 'Position',   'name' => 'pos',  'parent' => 'field_mc_r'],
+        ];
+        return $fields[$key] ?? false;
+    }
+}
+
 require dirname(__DIR__) . '/vendor/autoload.php';
 require dirname(__DIR__) . '/autoload.php';
 
@@ -117,12 +132,12 @@ $pairs = fn(array $found) => array_map(fn($f) => [$f['a']['index'], $f['b']['ind
 // row with every target-naming field filled, must name exactly one scheme.
 
 $desc = fn(string $type) => Registry::get($type);
-$full = ['taxonomy' => 'mc_topic', 'target_term_id' => 21, 'post_type' => 'mc_item'];
+$full = ['taxonomy' => 'mc_topic', 'target_term_id' => 21, 'post_type' => 'mc_item', 'post_types' => ['mc_item'], 'target_field' => 'field_mc_x'];
 
 foreach (Registry::all() as $type => $descriptor) {
     $key = $descriptor->target_key(['type' => $type] + $full);
     $check("$type resolves to a target scheme",
-        is_string($key) && in_array(explode('|', $key)[0], ['taxonomy', 'term', 'fields'], true));
+        is_string($key) && in_array(explode('|', $key)[0], ['taxonomy', 'term', 'fields', 'field'], true));
 }
 
 // --- 2. Target keys. --------------------------------------------------------
@@ -521,6 +536,86 @@ $s_format_blank = $s_format;
 $s_format_blank[1]['post_type'] = '';
 $check('a blank format row collides with nothing',
     $scan($KIND_FORMAT, $s_format_blank) === []);
+
+// --- 10b. The Computed field rule: one ACF field is the target (FW-4). -------
+
+$cf = fn(array $over = []) => $over + [
+    'type' => 'field_transformation_rules', 'enabled' => true, 'post_types' => ['mc_item'],
+    'target_field' => 'field_mc_a', 'pattern' => '{meta:first}', 'row_title' => 'Display',
+];
+
+$cf_pair = $scan($KIND_FORMAT, [$cf(), $cf(['row_title' => 'Display (second)'])]);
+$check('two Computed field rules on one field and post type collide', count($cf_pair) === 1);
+$check('and take the order message, not first-match-wins (the later write wins)',
+    $codes($cf_pair) === ['shared_target']);
+$check('the finding names the field by its label',
+    str_contains(CollisionDetector::message($cf_pair[0]), 'the “Display name” field'));
+$check('and says the lower rule decides',
+    str_contains(CollisionDetector::message($cf_pair[0]), 'lower in the list'));
+$check('a different target field is independent',
+    $scan($KIND_FORMAT, [$cf(), $cf(['target_field' => 'field_mc_b'])]) === []);
+$check('disjoint post types are independent',
+    $scan($KIND_FORMAT, [$cf(), $cf(['post_types' => ['mc_section']])]) === []);
+$check('two rows on one field with NO post type checked are half-authored, not colliding',
+    $scan($KIND_FORMAT, [$cf(['post_types' => []]), $cf(['post_types' => []])]) === []);
+$check('overlapping post type lists collide',
+    count($scan($KIND_FORMAT, [$cf(['post_types' => ['mc_item', 'page']]), $cf(['post_types' => ['page', 'mc_section']])])) === 1);
+$check('a blank target field collides with nothing',
+    $scan($KIND_FORMAT, [$cf(['target_field' => '']), $cf(['target_field' => ''])]) === []);
+$check('a disabled rule does not collide',
+    $scan($KIND_FORMAT, [$cf(), $cf(['enabled' => false])]) === []);
+$check('claim is not consulted — the pair collides whatever either row claims',
+    count($scan($KIND_FORMAT, [$cf(['claim' => 'merge']), $cf(['claim' => 'replace'])])) === 1);
+$check('a Computed field rule and a title/slug rule on one post type are independent',
+    $scan($KIND_FORMAT, [$cf(), $s_format[0]]) === []);
+$check('an unresolvable field key is named by the key, not dropped',
+    str_contains(CollisionDetector::message(
+        $scan($KIND_FORMAT, [$cf(['target_field' => 'field_gone']), $cf(['target_field' => 'field_gone'])])[0]
+    ), 'field_gone'));
+
+// The self-reference advisory rides the row title (the collapsed row is what the
+// author scans): it appears when the pattern reads the rule's own target and goes
+// when the pattern is fixed.
+$self  = Registry::get('field_transformation_rules');
+$bad   = $cf(['pattern' => '{meta:display_name} {meta:last}']);
+$bad_d = $cf(['pattern' => '{date_year:display_name}']);
+$ok    = $cf(['pattern' => '{meta:first} {meta:last}']);
+$check('a pattern naming its own target field is a self-reference',
+    $self->self_references($bad) && $self->self_references($bad_d));
+$check('a pattern naming other fields is not', !$self->self_references($ok));
+$check('an unresolvable target is not flagged', !$self->self_references($cf(['target_field' => 'field_gone', 'pattern' => '{meta:display_name}'])));
+$check('the row title carries the advisory', str_contains($self->row_title($bad), '⚠'));
+$check('and drops it once the pattern is fixed', !str_contains($self->row_title($ok), '⚠'));
+
+// --- 10c. Repeater-row targets: one subfield across every row (FW-4 06). ----
+
+$rr = fn(array $over = []) => $over + [
+    'type' => 'field_transformation_rules', 'enabled' => true, 'post_types' => ['mc_item'],
+    'target_field' => 'row|field_mc_r|field_mc_rl', 'pattern' => '{meta:pos}', 'row_title' => 'Roster line',
+];
+
+$rr_pair = $scan($KIND_FORMAT, [$rr(), $rr(['row_title' => 'Roster line (second)'])]);
+$check('two row rules on one repeater and subfield collide', count($rr_pair) === 1 && $codes($rr_pair) === ['shared_target']);
+$check('the finding names the subfield and its repeater',
+    str_contains(CollisionDetector::message($rr_pair[0]), 'the “Line” field in every “Roster” row'));
+$check('a different subfield of the same repeater is independent',
+    $scan($KIND_FORMAT, [$rr(), $rr(['target_field' => 'row|field_mc_r|field_mc_rp'])]) === []);
+$check('the same subfield on disjoint post types is independent',
+    $scan($KIND_FORMAT, [$rr(), $rr(['post_types' => ['mc_section']])]) === []);
+$check('a row rule and a post-level rule on the repeater itself are independent',
+    $scan($KIND_FORMAT, [$rr(), $cf(['target_field' => 'field_mc_r'])]) === []);
+$check('a row value with no subfield resolves no target',
+    $scan($KIND_FORMAT, [$rr(['target_field' => 'row|field_mc_r|']), $rr(['target_field' => 'row|field_mc_r|'])]) === []);
+foreach (['row|field_mc_r', 'row|field_mc_r|field_mc_rl|extra', 'row||field_mc_rl', 'row|'] as $bad_row) {
+    $check("a malformed row value `$bad_row` resolves no target",
+        $scan($KIND_FORMAT, [$rr(['target_field' => $bad_row]), $rr(['target_field' => $bad_row])]) === []);
+}
+$check('a row value is not read as a post-level field',
+    $scan($KIND_FORMAT, [$rr(['target_field' => 'row|field_mc_r|']), $cf(['target_field' => 'row|field_mc_r|'])]) === []);
+$check('a row rule naming its own subfield is a self-reference',
+    $self->self_references($rr(['pattern' => '{meta:pos} {meta:line}'])) && !$self->self_references($rr()));
+$check('the row title names the subfield and repeater',
+    str_contains($self->row_title($rr(['name' => 'Roster line'])), 'Line') && str_contains($self->row_title($rr(['name' => 'Roster line'])), 'Roster'));
 
 // --- 11. The section both tabs render. --------------------------------------
 

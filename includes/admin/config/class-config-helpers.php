@@ -11,6 +11,7 @@
 
 namespace BWS\MetaConductor\Admin\Config;
 
+use BWS\MetaConductor\RuleTypes\FieldTransformationRules;
 use BWS\MetaConductor\RuleTypes\Registry;
 
 if (!defined('ABSPATH')) {
@@ -43,6 +44,56 @@ class ConfigHelpers {
                 'variant' => 'info',
                 'content' => '<p>' . esc_html__('Rules run automatically when a post is saved. To run them over posts that already exist, use', 'meta-conductor')
                            . ' <a href="' . esc_url('admin.php?page=' . self::APPLY_PAGE_SLUG) . '">' . esc_html__('Apply to Existing Posts', 'meta-conductor') . '</a>.</p>',
+            ],
+        ];
+    }
+
+    /**
+     * The token reference, a section-level `html` field above the format
+     * repeater so it stays in view while any rule is edited (it used to sit
+     * inside the title & slug row, which the Computed field rule never saw).
+     *
+     * Every `<code>` is click-to-copy: `WireframeBootstrap::enqueue_token_copy()`
+     * delegates on `.mc-token`. The text copied is the token verbatim, so
+     * `{meta:field_name}` still needs its placeholder replaced.
+     */
+    public static function token_reference_field(): array {
+        $tok = static fn(string ...$tokens): string => implode(' / ', array_map(
+            static fn(string $t): string => '<code class="mc-token" style="cursor:pointer;" title="' . esc_attr__('Click to copy', 'meta-conductor') . '">' . esc_html($t) . '</code>',
+            $tokens
+        ));
+
+        $rows = [
+            [$tok('{meta:field_name}'), __('Raw field value', 'meta-conductor'), __('Sanitized value', 'meta-conductor')],
+            [$tok('{default_title}'), __('Title before this rule runs', 'meta-conductor'), '—'],
+            [$tok('{default_slug}'), '—', __('Slug derived from computed title', 'meta-conductor')],
+            [$tok('{date_year:field}'), '2024', '2024'],
+            [$tok('{date_month:field}'), __('March', 'meta-conductor'), '03'],
+            [$tok('{date_day:field}'), '15', '15'],
+            [$tok('{date_hour:field}'), '14', '14'],
+            [$tok('{date_minute:field}'), '30', '30'],
+            [$tok('{pub_year}'), __('2024 (publication date, local time)', 'meta-conductor'), '2024'],
+            [$tok('{pub_month}'), __('March', 'meta-conductor'), '03'],
+            [$tok('{pub_day}', '{pub_hour}', '{pub_minute}'), __('Same numeric pattern as above', 'meta-conductor'), ''],
+            [$tok('{term:taxonomy}'), __('First term name (alpha)', 'meta-conductor'), __('First term slug', 'meta-conductor')],
+            [$tok('{terms:taxonomy}'), __('All term names, comma-joined', 'meta-conductor'), __('All slugs, hyphen-joined', 'meta-conductor')],
+        ];
+
+        $html  = '<details><summary style="cursor:pointer;"><strong>' . esc_html__('Available tokens', 'meta-conductor') . '</strong></summary>';
+        $html .= '<p style="margin:8px 0 0;">' . esc_html__('Click a token to copy it. Computed field rules use the Title output column; the Slug output column and {default_slug} are for title & slug rules only.', 'meta-conductor') . '</p>';
+        $html .= '<table class="widefat" style="margin-top:8px;font-size:12px;"><thead><tr><th>' . esc_html__('Token', 'meta-conductor') . '</th><th>' . esc_html__('Title output', 'meta-conductor') . '</th><th>' . esc_html__('Slug output', 'meta-conductor') . '</th></tr></thead><tbody>';
+
+        foreach ($rows as $row) {
+            $html .= '<tr><td>' . $row[0] . '</td><td>' . esc_html($row[1]) . '</td><td>' . esc_html($row[2]) . '</td></tr>';
+        }
+
+        return [
+            'id'      => 'token_reference',
+            'type'    => 'html',
+            'columns' => 12,
+            'args'    => [
+                'variant' => 'info',
+                'content' => $html . '</tbody></table></details>',
             ],
         ];
     }
@@ -142,6 +193,21 @@ class ConfigHelpers {
      */
     public static function post_types_checkbox_options(): array {
         return self::label_options(get_post_types(['public' => true], 'objects'));
+    }
+
+    /**
+     * Public post types minus attachment — format rules rewrite a post's own
+     * fields, which don't apply to media. Both format descriptors offer this
+     * list: title & slug as a select (pass a placeholder), Computed field as
+     * checkboxes (pass none).
+     *
+     * @return array<string,string>
+     */
+    public static function format_post_type_options(?string $placeholder = null): array {
+        $post_types = get_post_types(['public' => true], 'objects');
+        unset($post_types['attachment']);
+
+        return self::label_options($post_types, $placeholder);
     }
 
     /**
@@ -448,5 +514,115 @@ class ConfigHelpers {
         }
 
         return $placeholder_row + $fields_cache;
+    }
+
+    /**
+     * ACF field types a Computed field rule may write: those that hold one
+     * composed string. Relationship, gallery, group and the like are not
+     * offered, so a pattern cannot be pointed at a field that would reject it.
+     */
+    public const COMPUTED_TARGET_TYPES = ['text', 'textarea', 'wysiwyg', 'number', 'email', 'url'];
+
+    /**
+     * The Computed field rule's target select: top-level ACF fields a pattern
+     * can be stored in, keyed by ACF FIELD KEY (the identity that survives a
+     * rename), labelled with the post types and group they belong to.
+     *
+     * One entry per field, not per post type — the key is the option, and a
+     * group located on several post types would otherwise repeat it. The post
+     * types ride in the label instead. A static list cannot follow the row's
+     * own `post_type` select, so the author picks both.
+     *
+     * Writable DIRECT subfields of top-level repeaters follow the post-level
+     * fields, one entry each, keyed `row|<repeater key>|<subfield key>` so the
+     * single select carries the pair (see `FieldTransformationRules::ROW_PREFIX`).
+     *
+     * Empty (placeholder only) when ACF is unavailable. Like the relationship
+     * list, nothing is cached before ACF is confirmed loaded.
+     *
+     * @return array<string,string> field key => label.
+     */
+    public static function acf_computed_target_options(): array {
+        static $fields_cache = null;
+        static $rows_cache   = [];
+
+        $placeholder_row = ['' => __('— Select ACF field —', 'meta-conductor')];
+
+        if ($fields_cache !== null) {
+            return $placeholder_row + $fields_cache + $rows_cache;
+        }
+        if (!function_exists('acf_get_field_groups') || !function_exists('acf_get_fields')) {
+            return $placeholder_row;
+        }
+
+        $fields_cache = [];
+        $post_types   = get_post_types(['public' => true], 'objects');
+        unset($post_types['attachment']);
+
+        foreach ($post_types as $post_type) {
+            foreach ((array) acf_get_field_groups(['post_type' => $post_type->name]) as $group) {
+                foreach ((array) acf_get_fields($group['key']) as $field) {
+                    $key = (string) ($field['key'] ?? '');
+                    if ($key !== '' && ($field['type'] ?? '') === 'repeater') {
+                        // One entry per writable DIRECT subfield; the pair is the option key.
+                        foreach ((array) acf_get_fields($field) as $sub) {
+                            $sub_key = (string) ($sub['key'] ?? '');
+                            if ($sub_key !== '' && in_array($sub['type'] ?? '', self::COMPUTED_TARGET_TYPES, true)) {
+                                $rows_cache[FieldTransformationRules::ROW_PREFIX . $key . '|' . $sub_key]
+                                    = sprintf('%1$s › %2$s (%3$s)', $field['label'] ?? $field['name'], $sub['label'] ?? $sub['name'], $sub['name'] ?? '');
+                            }
+                        }
+                        continue;
+                    }
+                    if ($key === '' || !in_array($field['type'] ?? '', self::COMPUTED_TARGET_TYPES, true)) {
+                        continue;
+                    }
+                    $fields_cache[$key]['label'] = sprintf('%s (%s)', $field['label'] ?? $field['name'], $field['name'] ?? '')
+                        . ((string) ($group['title'] ?? '') !== '' ? ' — ' . $group['title'] : '');
+                    $fields_cache[$key]['types'][] = $post_type->label;
+                }
+            }
+        }
+
+        foreach ($fields_cache as $key => $entry) {
+            $fields_cache[$key] = $entry['label'] . ' [' . implode(', ', $entry['types']) . ']';
+        }
+
+        return $placeholder_row + $fields_cache + $rows_cache;
+    }
+
+    /**
+     * A field's human label from its ACF field key, or '' when the key is
+     * empty or no longer resolves. Row titles use it; a stale key shows
+     * nothing rather than a raw `field_…` string.
+     *
+     * @param string $key ACF field key.
+     * @return string Unescaped.
+     */
+    public static function acf_field_label(string $key): string {
+        if ($key === '' || !function_exists('acf_get_field')) {
+            return '';
+        }
+
+        $field = \acf_get_field($key);
+
+        return is_array($field) ? (string) ($field['label'] ?? '') : '';
+    }
+
+    /**
+     * A field's name (its meta key) from its ACF field key, or '' when the key
+     * is empty or no longer resolves.
+     *
+     * @param string $key ACF field key.
+     * @return string
+     */
+    public static function acf_field_name(string $key): string {
+        if ($key === '' || !function_exists('acf_get_field')) {
+            return '';
+        }
+
+        $field = \acf_get_field($key);
+
+        return is_array($field) ? (string) ($field['name'] ?? '') : '';
     }
 }

@@ -91,10 +91,10 @@ Evolve the binary Date Window rule (in-window → apply, out → remove, fixed d
 Combine multiple source fields into one formatted output field — merge first/middle/last into a display name, combine date + time into a sortable datetime, format a phone number, derive a bio string from stats. The rule declares an output meta key plus a template.
 
 - **Axes:** basis **intrinsic** (reads the post's own fields), effect target **field** (scalar), claim *owning*.
-- **Detail home:** `.scratch/plans/field-transformation-token-gap.md` — token-gap analysis of two real template helpers against the existing resolver, plus the repeater-scope blockers. Reachability ≈ 50% / 70% with the resolver alone (post-level); the shortfall is conditional/transform logic, markup emission, and row-scoped read/write.
-- **Progress:** Not started. Can be declared as a registry descriptor with `has_subfields() === false` ahead of its subfields — that separation is what lets it be read before its config exists (CLAUDE.md don't 6). The pattern engine exists: it consumes `Tokens\` (FW-40) — `TokenEngine::render()` over a `TokenSourceInterface` and an `OutputPolicy`. Net-new: a **target-field write path** (arbitrary meta/ACF key, not just `post_title`/`post_slug`), `OutputPolicy::raw()` so literal HTML survives, an ACF-row token source, and new token kinds (value-filter `{term:TAX|exclude:…}`, conditional `{if_term:…}`, optional format-transform). The repeater *write* is cheap and verified (2026-06-26): `update_sub_field(['rep', $row, 'sub'], $val, $post_id)` on `acf/save_post` pri 20 maintains ACF's field-key reference meta and needs **no re-entrancy guard** — it does not re-fire `acf/save_post`/`save_post`; only `wp_update_post` would.
-- **Open:** must work **inside ACF repeater rows, not just post-level** — each row composes from its own sibling subfields into a per-row output subfield. The cost is **row-scoped token reads** (a row source whose `field()` answers with `get_sub_field()` in row context, where `PostTokenSource` reads post meta) plus a `have_rows()` loop. Storage TBD — run [storage-model.md](storage-model.md) when designed; likely Options + indirection unless a per-recipe draft/test lifecycle is wanted. ⚠️ **Scalar effect target**: per [ADR 0002](adr/0002-cross-rule-composition.md) two rules writing one field can only be last-writer-wins, so they **always** collide — there is no contributing mode for a scalar. Lands in the Format & Transform list where **ordering is real**: title/slug reads `{meta:field}`, so a field rule writing a key a title rule then reads is a producer→consumer pair *within* one list, and the reverse is equally possible, so the order is genuinely ambiguous and the author sequences it ([ADR 0003](adr/0003-ordered-rule-list-and-dispatcher.md)). This is also what returns the format dispatcher to **two-phase**: #64 made the format pass post-write only, and a pre-write half, when it returns, feeds the same `apply_to_data()` seam rather than a second one.
-- **Blocked by:** `decision:storage for field_transformation, via storage-model.md` • **Interacts with:** FW-5, FW-13, FW-16
+- **Detail home:** `.scratch/field-transformation/spec.md` (spec + build tickets `field-transformation/01`–`07`, shared with FW-44). Earlier token-gap analysis of the two real use cases: `.scratch/plans/field-transformation-token-gap.md`. The no-pre-write-phase decision: [architecture.md → Field effects ride the `$data` seam](architecture.md#field-effects-ride-the-data-seam).
+- **Progress:** Built on `feature/field-transformation`. A Computed field rule is a row type in `format_rules` (Options storage), writes an ACF field by key — post-level, or one subfield across every row of a repeater from that row's own siblings — through the format dispatcher's field write on the `$data` seam, with text/html output policies over `Tokens\` (FW-40). It composes by list order with title/slug rules, and joins the collision check, the preview and *Apply to Existing Posts*.
+- **Open:** what v1 deliberately left out is tracked elsewhere: plain (non-ACF) meta targets are FW-46, a consumer-before-producer order lint is FW-47, value-filter and conditional tokens are FW-49. Format transforms (height from feet + inches, boolean → label) stay in site PHP as a documented boundary, and there is no `{post:x}` escape token or nested-repeater read in a row rule.
+- **Blocked by:** — • **Interacts with:** FW-5, FW-13, FW-16, FW-44, FW-46, FW-47, FW-49
 - **Phase:** 6a
 
 #### FW-5 — `relationship_field_rules`: Set a field across a relationship
@@ -103,9 +103,9 @@ Combine multiple source fields into one formatted output field — merge first/m
 
 - **Axes:** basis **relation** (authored — an ACF relationship / post-object field), effect target **field** (scalar), claim TBD.
 - **Detail home:** none. Raised 2026-08-12 in the cross-rule composition session.
-- **Progress:** Not started. Most of the traversal, direction and reverse-lookup machinery already exists in `related_post_terms_rules`; the net-new work is the field write path — shared with FW-4 — and deciding the claim.
+- **Progress:** Not started. Most of the traversal, direction and reverse-lookup machinery already exists in `related_post_terms_rules`; the field write path now exists (built for FW-4: `FormatDispatcher::write_fields()`), so the net-new work is the relationship traversal into it and deciding the claim.
 - **Open:** ⚠️ **Scalar effect target** — a scalar's **jurisdiction** is its single slot, so any two rules writing it share the whole of it and **always** collide. Unlike terms there is no contributing option: the claim is *owning* or nothing. Storage TBD — likely a `type` within `format_rules` alongside FW-4, since both write fields. **Split the relationship graph out first:** holder/direction/dependents/sources/reverse-lookup tiers and their memos move out of `RelatedPostTermsHandler` into a per-rule graph module that both the terms effect and this field effect read, and that `CollisionDetector` and `RuleChoice` stop re-deriving direction from. FW-11's reverse index would live behind it. The sever capture bookkeeping stays with each effect but needs the graph to diff old and new links. Premature while terms are the only effect (candidate 5 of the 2026-09-24 architecture review; see [design-history/rule-type-descriptor.md](design-history/rule-type-descriptor.md) → *Out of Scope*).
-- **Blocked by:** `code:no field write path exists` — cleared by FW-4 • **Interacts with:** FW-4, FW-7, FW-11
+- **Blocked by:** — (`code:no field write path exists` cleared 2026-10-16: `FormatDispatcher::write_fields()` writes ACF fields and repeater subfields by key, built for FW-4) • **Interacts with:** FW-4, FW-7, FW-11, FW-46
 
 #### FW-6 — `body_class_rules`: Document classes from terms/fields
 
@@ -218,6 +218,25 @@ A format rule that changes a published post's `post_name` moves its URL. Since #
   - **Audit trail.** A rule-driven rename leaves only the old-slug meta; nothing records which rule did it, or what provoked the pass.
 - **Blocked by:** — • **Interacts with:** FW-13, FW-16
 
+#### FW-46 — Plain meta target for Computed field rules
+
+Let a Computed field rule write a plain post meta key, not only an ACF field picked by key. FW-4's v1 is ACF-only, so its type appears only while ACF is active.
+
+- **Axes:** as FW-4 — basis **intrinsic**, effect target **field** (scalar), claim *owning*.
+- **Detail home:** `.scratch/field-transformation/spec.md` → *Out of Scope*.
+- **Progress:** Not started. Left out of FW-4's v1 on purpose.
+- **Open:** the acceptance bar: a name that matches an ACF field still routes through ACF's write (so its field-key reference stays intact), and a `_`-prefixed key is refused, because those are core's and other plugins' private meta. Also whether the type stays hidden without ACF once it can work without it.
+- **Blocked by:** — • **Interacts with:** FW-4, FW-5
+
+#### FW-49 — Value-filter and conditional tokens
+
+New token kinds for the pattern engine: a value filter (`{term:TAX|exclude:…}`) and a conditional (`{if_term:…}`). They are the part of FW-4's two real use cases that plain substitution cannot reach.
+
+- **Detail home:** `.scratch/field-transformation/spec.md` → *Out of Scope* and *Further Notes*; the earlier gap analysis is `.scratch/plans/field-transformation-token-gap.md`.
+- **Progress:** Not started. Deferred from FW-4's v1, which was judged on the plain-substitution part landing cleanly.
+- **Open:** whether the real use cases still need them once v1 runs on them, or whether the remainder stays in site PHP alongside format transforms. Any new token kind lands in `Tokens\` so title/slug and Computed field rules both get it, and adds rows to the H17 golden table deliberately.
+- **Blocked by:** `decision:the real use cases still need them after v1` • **Interacts with:** FW-4, FW-44
+
 ---
 
 ## Correctness, Consistency, Architecture
@@ -288,10 +307,18 @@ Make term appliers return the terms they want and let `TermDispatcher` apply the
 
 The token engine drops an empty token but not always the literal text around it. A separator in front of an empty token in the middle of a pattern is held and then emitted in full once a later token resolves (`{a} - {blank} - {b}` → `a - - b`), and a closing bracket after an empty token survives (`{a} ({blank})` → `a)`, `({blank}) {a}` → `) a`). Only trailing separators and a dangling opening bracket are cleaned today. The fix is a smarter empty-token removal pass in `Tokens\TokenEngine`, so every output policy gets it.
 
-- **Detail home:** none yet. Reference implementation: the `{{join}}` tag's template mode in the bws-gb-dynamic-tags-extensions repo, which already solves this problem. Its ordered removal steps are in `includes/helpers/join-helpers.php` (file docblock): whole-group excision, attached vs connective punctuation, bracket pairs around an empty token, floating separators, whitespace and orphan-connective repair. Harness: `tools/test/join-template-test.php` + `tools/test/join-test-matrix.md`; the rules are spelled out in `docs/tag-reference.md` → `{{join}}`. Reuse the rules and the test matrix, not the code (different plugin, different grammar).
-- **Progress:** Not started. The current behavior is pinned as-is by the FW-40 golden table (`tests/fixtures/token-engine-golden.json`) and H17's contract cases, found while building `token-engine-40/02`.
-- **Open:** This changes output, so it changes titles and slugs on live title/slug rules. Needs a decision on whether existing posts re-render on their next pass (the format pass runs whenever an entity is reached, so they will unless gated) and how that interacts with slug-change safety. The golden rows it changes get regenerated deliberately, not to make H17 pass.
-- **Blocked by:** — • **Interacts with:** FW-4, FW-36, FW-40
+- **Detail home:** `.scratch/field-transformation/spec.md` → *Separator cleanup*. Reference implementation: the `{{join}}` tag's template mode in the bws-gb-dynamic-tags-extensions repo, which already solves this problem. Its ordered removal steps are in `includes/helpers/join-helpers.php` (file docblock): whole-group excision, attached vs connective punctuation, bracket pairs around an empty token, floating separators, whitespace and orphan-connective repair. Harness: `tools/test/join-template-test.php` + `tools/test/join-test-matrix.md`; the rules are spelled out in `docs/tag-reference.md` → `{{join}}`. Reuse the rules and the test matrix, not the code (different plugin, different grammar).
+- **Progress:** Built on `feature/field-transformation` (`field-transformation/01`). Middle and bracketed empty tokens no longer leave punctuation behind; edge gaps keep the old reading. There is no gate: existing posts correct on their next format pass. The golden table was regenerated deliberately, and its slug rows differ only in punctuation core strips anyway.
+- **Blocked by:** — • **Interacts with:** FW-4, FW-36, FW-40, FW-49
+
+#### FW-48 — Retire this repo's ADRs into the architecture anchors
+
+Move each ADR's decision into the [architecture.md](architecture.md) anchor (or class PHPDoc) it justifies, keeping its rejected alternatives beside it, and delete the ADR. A decision then lives next to the code fact it explains instead of in a parallel record that drifts — FW-4 already recorded its no-pre-write-phase decision this way rather than amending ADR 0003.
+
+- **Detail home:** none yet.
+- **Progress:** Not started. FW-4 added a dated status line to ADR 0003 pointing at its anchor and wrote no new ADR.
+- **Open:** a strict bar for any future ADR, written down where `docs/adr/` is described: only a decision that has no single anchor to live on. Every citation of `adr/000N` (this tracker, CONTEXT.md, PHPDoc) is repointed in the same change.
+- **Blocked by:** — • **Interacts with:** —
 
 ---
 
@@ -354,8 +381,8 @@ Replace the minimal pairwise collision warning (#65) with an analysis over **rea
 
 - **Detail home:** [ADR 0003](adr/0003-ordered-rule-list-and-dispatcher.md) → Consequences, where it was deferred; the component model is in [ADR 0002](adr/0002-cross-rule-composition.md) → Consequences (its tie to the ordering UI is superseded). The *What it deliberately does NOT do* PHPDoc on `Admin\CollisionDetector` says where the current detector stops. Vocabulary: [CONTEXT.md](../CONTEXT.md) → *Reach*, *Collision*.
 - **Progress:** Not started. The pairwise advisory shipped in 0.8.0: equal effect targets plus overlapping written post types, claim not consulted. `RuleType::written_post_types()` (each descriptor states its own) already gives post-type-level reach, and FW-16 reuses it.
-- **Open:** defining reach once for **every** effect kind, not just terms — which is why it waits for a real field or rendered kind. Also whether to consult the claim, since two purely contributing rules cannot actually fight. With the repeater as the ordering UI, the result is advisory only: components no longer decide which rules get ordering control.
-- **Blocked by:** `code:the only effect kinds are term and title/slug` — cleared by FW-4 landing • **Interacts with:** FW-4, FW-6, FW-12, FW-25, FW-39
+- **Open:** defining reach once for **every** effect kind, not just terms. FW-4 supplies the first non-term effect with a field target (one slot per field or repeater subfield), so reach can now be defined over terms, title/slug and fields. Also whether to consult the claim, since two purely contributing rules cannot actually fight. With the repeater as the ordering UI, the result is advisory only: components no longer decide which rules get ordering control.
+- **Blocked by:** — (`code:the only effect kinds are term and title/slug` cleared 2026-10-16: the `field_transformation_rules` descriptor adds a field effect, built for FW-4) • **Interacts with:** FW-4, FW-6, FW-12, FW-25, FW-39, FW-47
 
 #### FW-35 — Diagnostics page rework, and whether to log
 
@@ -379,6 +406,15 @@ The title/slug design planned three per-rule admin surfaces that never got built
   - **Scope.** A title/slug-only surface, or the per-rule "last pass result" FW-35 weighs for every type. Deciding FW-35's logging level first avoids building a title/slug store that the general answer would replace.
   - **Identity.** Any stored per-rule record needs a key that survives reordering and deletion. The rule `id` does not.
 - **Blocked by:** `decision:whether the feedback is still wanted` • **Interacts with:** FW-35, FW-36
+
+#### FW-47 — Consumer-before-producer order lint
+
+Warn when a format rule reading `{meta:x}` is ordered before the Computed field rule that writes `x` for an overlapping post type. The order is legal — the reader then sees the stored value, not this pass's — but it is usually a mistake, and nothing tells the author.
+
+- **Detail home:** `.scratch/field-transformation/spec.md` → *Out of Scope*.
+- **Progress:** Not started. The composition it lints shipped with FW-4: a later rule reads an earlier rule's computed value in the same pass.
+- **Open:** whether it is its own advisory or a case of FW-34's reach analysis, since both walk the same reach and order. Row targets read their own row's siblings, so a row-rule pair is the same check one level down.
+- **Blocked by:** — • **Interacts with:** FW-4, FW-34
 
 ---
 
@@ -434,6 +470,18 @@ The trigger-term and target-term dropdowns list all terms across all taxonomies.
   - **The wording, per type.** The two hardcoded **owning** types are the ones that most need it, because owning is the claim that *removes* — e.g. on a time-based rule: "This rule **owns** the target term: it adds the term inside the window and removes it outside, whether this rule placed it or someone added it by hand. Terms other than the target are never touched." `hierarchical` deserves a second sentence, because its jurisdiction is **provenance-derived** (`_bws_auto_terms`) and it is the only type where that is true — it means hand-added terms are safe there in a way they are not under `time_based`.
   - **One naming overlap to settle with it:** `related_post_terms` already exposes this axis under a different name (`keep_in_sync`), so stating the claim there without reconciling the two names adds a second vocabulary rather than removing one.
 - **Blocked by:** — • **Interacts with:** FW-24, FW-25
+
+#### FW-50 — Generate tokens for the fields a rule can actually use
+
+The *Available tokens* reference lists token shapes with placeholders (`{meta:field}`, `{term:taxonomy}`, `{date_year:field}`), so an author has to know their own field names and taxonomy slugs and type them in. Offer the concrete tokens for the post types the rule is scoped to, ready to click and copy.
+
+- **Detail home:** none yet.
+- **Progress:** Not started. Raised while moving the reference's intro text out of the accordion title (unreleased, FW-4 branch).
+- **Open:**
+  - **Where it lives.** The reference is one shared block above both rule types' list, but the useful set depends on a rule's own *Post types*, so a per-rule generated list (or a picker that inserts into the pattern field) is a different surface from the shared table. Click-to-copy is already in place; whether to add click-to-insert depends on what Wireframe offers (see FW-23).
+  - **What counts as available.** Registered taxonomies for the rule's post types, ACF fields on their field groups (including repeater subfields, which a Computed field rule can already target), and plain meta keys seen in use. Which of those are worth enumerating on a site with many fields is the real question.
+  - **Date fields.** One date field yields several tokens (`{date_year:}`, `{date_month:}`, …), so the list needs grouping, not one row per token.
+- **Blocked by:** — • **Interacts with:** FW-4, FW-23, FW-49
 
 ---
 
@@ -497,7 +545,7 @@ Shipped or cut items retire here, densely — a closed item is read in bulk and 
 | FW-18 | Text-domain string sweep | **Shipped in 0.7.0** (Phase 2b rename sweep, [#48](https://github.com/davidofchatham/meta-conductor/pull/48)) — the row survived the 2026-09-11 migration describing work already done. Every `__()` / `_e()` / `_x()` / `_n()` call site now passes `'meta-conductor'`; `'bws-meta-manager'` survives only as the Composer package name in `vendor/`. The *conversion* subsystem's identifiers (JS object, cron / AJAX / transient names) were never part of this row — they were the 2b remainder, closed by deletion with the Data Conversion page in FW-16. |
 | FW-29 | `trigger_term_id`'s `int[]` invariant is declared but not enforced | **Settled by FW-39's storage PR** (`rule-type-descriptor/01`, branch `claude/storage-projection-39`): yes, `normalize_rule_shape()` is the guaranteed boundary. Checkbox gates arrive as slug lists, `target_term_id` as `int`, `trigger_term_id` / `filter_terms` as `int[]`; every consumer re-decode and re-cast is deleted, checkbox decoding moved out of `ConfigHelpers` into storage, and H10 asserts the shape for every rule type. |
 | FW-39 | Rule-type descriptor + canonical storage projection | **Merged in [#76](https://github.com/davidofchatham/meta-conductor/pull/76) and [#77](https://github.com/davidofchatham/meta-conductor/pull/77)** (2026-09-26, 2026-09-28). #76 made storage's read projection the guaranteed canonical rule shape and deleted the pre-0.8.0 migrations behind an admin notice; #77 gave each rule type one descriptor in `RuleTypes\Registry`, the only place rule types are listed. Spec: [design-history/rule-type-descriptor.md](design-history/rule-type-descriptor.md). The review candidates it left out are FW-40, FW-41, FW-42, FW-43 and FW-5's graph split. |
-| FW-40 | Extract the token engine from TitleSlugHandler | **Merged in [#78](https://github.com/davidofchatham/meta-conductor/pull/78)** (2026-09-28). The pattern engine moved into `Tokens\` ([architecture.md → Token engine](architecture.md#token-engine)); title and slug output is pinned byte-for-byte by a golden table under H17. Date tokens now parse in site time (CHANGELOG *Fixed*). Left for FW-4: `OutputPolicy::raw()` and the ACF-row source. Spec: [design-history/token-engine.md](design-history/token-engine.md). |
+| FW-40 | Extract the token engine from TitleSlugHandler | **Merged in [#78](https://github.com/davidofchatham/meta-conductor/pull/78)** (2026-09-28). The pattern engine moved into `Tokens\` ([architecture.md → Token engine](architecture.md#token-engine)); title and slug output is pinned byte-for-byte by a golden table under H17. Date tokens now parse in site time (CHANGELOG *Fixed*). Left for FW-4: the ACF-row source (the `text()` / `html()` output policies are built). Spec: [design-history/token-engine.md](design-history/token-engine.md). |
 
 ---
 

@@ -36,6 +36,9 @@
  *   wp eval-file .../sweep-apply-existing.php pterm     # term preview: count + posts; stale refused
  *   wp eval-file .../sweep-apply-existing.php pall      # All enabled: count, format sample
  *   wp eval-file .../sweep-apply-existing.php page      # Apply page buttons + Save, via REST
+ *   wp eval-file .../sweep-apply-existing.php fields    # Computed field rule: preview diff, run fills its post type only
+ *   wp eval-file .../sweep-apply-existing.php fcollide  # two Computed field rules on one field collide
+ *   wp eval-file .../sweep-apply-existing.php fselfref  # self-reference advisory on the row; gone when fixed
  *   wp eval-file .../sweep-apply-existing.php restore
  *
  * @package Meta_Conductor
@@ -210,6 +213,25 @@ function mcae_title_row( $suffix, $enabled = true ) {
 		'post_type'     => 'mc_item',
 		'title_pattern' => '{default_title} ' . $suffix,
 	);
+}
+
+/** A Computed field row over mc_item writing the fixture's text target. */
+function mcae_field_row( array $over = array() ) {
+	return array_merge( array(
+		'type'         => 'field_transformation_rules',
+		'enabled'      => true,
+		'name'         => 'Sweep apply-existing display',
+		'post_types'   => array( 'mc_item' ),
+		'target_field' => 'field_mc_cf_display',
+		'pattern'      => '{meta:mc_cf_first} {meta:mc_cf_last}',
+		'output'       => 'text',
+	), $over );
+}
+
+/** A stored meta value read past the object cache; null when the key is absent. */
+function mcae_meta( $post_id, $name ) {
+	wp_cache_delete( $post_id, 'post_meta' );
+	return metadata_exists( 'post', $post_id, $name ) ? (string) get_post_meta( $post_id, $name, true ) : null;
 }
 
 /** Every fixture-type post row and all their meta, hashed — "byte-identical". */
@@ -867,6 +889,89 @@ switch ( $step ) {
 		mcae_put_back( $snap );
 		break;
 
+	// -------------------------------------------------------------- fields
+	// A Computed field rule through Apply to Existing (FW-4): the preview shows
+	// the field diff and writes nothing; a run fills the existing posts of the
+	// rule's post type, touches no other type, and a second run changes nothing.
+	case 'fields':
+		$snap    = mcae_snapshot();
+		$subject = mc_pid( 'item-computed' );
+		$control = mc_pid( 'section-holder' );
+		mcae_author( array(), array( mcae_field_row() ) );
+		mcae_quiet( function () use ( $subject, $control ) {
+			foreach ( array( 'mc_cf_display', '_mc_cf_display' ) as $key ) {
+				delete_post_meta( $subject, $key );
+				delete_post_meta( $control, $key );
+			}
+			update_post_meta( $control, 'mc_cf_first', 'Grace' );
+		} );
+
+		$choice = mcae_choice( OptionRuleStorage::KIND_FORMAT, 0 );
+		$digest = mcae_digest();
+		$pv     = ExistingPostsApplier::preview( $choice );
+		$shown  = mcae_shown( $pv['sample'] );
+		$entry  = current( array_filter( $pv['sample'], fn( $r ) => (int) $r['post_id'] === (int) $subject ) );
+
+		$t( '§ae16 preview succeeds', $pv['status'], 'success' );
+		$t( '§ae16 precondition: the subject is in the sample', in_array( $subject, $shown, true ), true );
+		$t( '§ae16 the sample shows the field diff', $entry['fields'] ?? null, array( 'mc_cf_display' => array( '', 'Ada Lovelace' ) ) );
+		$t( '§ae16 a post whose value would not change shows no field diff', array_filter( $pv['sample'], fn( $r ) => (int) $r['post_id'] !== (int) $subject && array() !== $r['fields'] ), array() );
+		$t( '§ae16 the sample stays within the rule\'s post type', array_filter( $shown, fn( $id ) => 'mc_item' !== get_post_type( $id ) ), array() );
+		$t( '§ae16 preview writes nothing', mcae_digest(), $digest );
+
+		$page = ApplyPage::act( 'preview', array( 'choice' => $choice ) );
+		$t( '§ae16 the Apply page preview renders the field diff', array( false !== strpos( $page['html'], 'mc_cf_display' ), false !== strpos( $page['html'], 'Ada Lovelace' ) ), array( true, true ) );
+
+		$run = ExistingPostsApplier::run_batch( $choice );
+		WP_CLI::log( '[fields] ' . $run['message'] );
+		$row = current( array_filter( $run['rows'], fn( $r ) => (int) $r['post_id'] === (int) $subject ) );
+
+		$t( '§ae16 the run fills the existing post', mcae_meta( $subject, 'mc_cf_display' ), 'Ada Lovelace' );
+		$t( '§ae16 …by field key (reference row intact)', mcae_meta( $subject, '_mc_cf_display' ), 'field_mc_cf_display' );
+		$t( '§ae16 the report lists the field change', $row['fields'] ?? null, array( 'mc_cf_display' => array( '', 'Ada Lovelace' ) ) );
+		$t( '§ae16 the report counts only posts that changed', $run['changed'], 1 );
+		$t( '§ae16 a post of another type is untouched', mcae_meta( $control, 'mc_cf_display' ), null );
+
+		$page = ApplyPage::act( 'apply', array( 'choice' => $choice ) );
+		$t( '§ae16 a second run changes nothing', $page['message'], sprintf( '%1$d / %1$d posts processed, 0 changed.', $run['total'] ) );
+
+		mcae_quiet( function () use ( $subject, $control ) {
+			foreach ( array( 'mc_cf_display', '_mc_cf_display' ) as $key ) {
+				delete_post_meta( $subject, $key );
+			}
+			delete_post_meta( $control, 'mc_cf_first' );
+		} );
+		mcae_put_back( $snap );
+		break;
+
+	// ------------------------------------------------------------ fcollide
+	case 'fcollide':
+		$kind = OptionRuleStorage::KIND_FORMAT;
+		$scan = fn() => \BWS\MetaConductor\Admin\CollisionDetector::detect( $kind, StorageFactory::get_instance()->get_kind_rules( $kind ) );
+
+		mcae_author( array(), array( mcae_field_row(), mcae_field_row( array( 'name' => 'Sweep apply-existing display (second)' ) ) ) );
+		$found = $scan();
+		$t( '§ae17 two Computed field rules on one field collide', array_column( $found, 'code' ), array( 'shared_target' ) );
+		$t( '§ae17 the finding names the field by its ACF label', false !== strpos( \BWS\MetaConductor\Admin\CollisionDetector::message( $found[0] ), '“' . \BWS\MetaConductor\Admin\Config\ConfigHelpers::acf_field_label( 'field_mc_cf_display' ) . '”' ), true );
+
+		mcae_author( array(), array( mcae_field_row(), mcae_field_row( array( 'target_field' => 'field_mc_cf_display_html' ) ) ) );
+		$t( '§ae17 different target fields do not collide', $scan(), array() );
+
+		mcae_author( array(), array( mcae_field_row(), mcae_field_row( array( 'post_type' => 'mc_section' ) ) ) );
+		$t( '§ae17 disjoint post types do not collide', $scan(), array() );
+		break;
+
+	// ------------------------------------------------------------ fselfref
+	// The advisory rides the row title the save path snapshots: present for a
+	// pattern naming the rule's own target, gone once the pattern is fixed.
+	case 'fselfref':
+		$key = OptionRuleStorage::KIND_FORMAT;
+		$bad = WireframeBootstrap::snapshot_format_rule_labels( array( $key => array( mcae_field_row( array( 'pattern' => '{meta:mc_cf_display} {meta:mc_cf_last}' ) ) ) ) );
+		$ok  = WireframeBootstrap::snapshot_format_rule_labels( array( $key => array( mcae_field_row() ) ) );
+		$t( '§ae18 a pattern naming its own target shows the advisory on the row', false !== strpos( $bad[ $key ][0]['row_title'], '⚠' ), true );
+		$t( '§ae18 a fixed pattern shows none', false !== strpos( $ok[ $key ][0]['row_title'], '⚠' ), false );
+		break;
+
 	// ------------------------------------------------------------- restore
 	case 'restore':
 		mcae_quiet( function () {
@@ -881,7 +986,7 @@ switch ( $step ) {
 		break;
 
 	default:
-		WP_CLI::error( "Unknown step '$step' — enabled|disabled|stale|off|fanout|rpt|revisions|limit|continue|restart|preview|first|pterm|pall|page|restore." );
+		WP_CLI::error( "Unknown step '$step' — enabled|disabled|stale|off|fanout|rpt|revisions|limit|continue|restart|preview|first|pterm|pall|page|fields|fcollide|fselfref|restore." );
 }
 
 // Hold passes down for the rest of this request: the ACF write queue flushes at

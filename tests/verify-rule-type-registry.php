@@ -59,6 +59,7 @@ $expected = [
     ],
     OptionRuleStorage::KIND_FORMAT => [
         'title_slug_rules',
+        'field_transformation_rules',
     ],
 ];
 $expected_flat = array_merge(...array_values($expected));
@@ -95,6 +96,7 @@ foreach ($all as $key => $d) {
     $check("$key: type() equals its registry key", $d->type() === $key);
     $check("$key: label is a non-empty string", is_string($d->label()) && trim($d->label()) !== '');
     $check("$key: has_subfields() is a bool", is_bool($d->has_subfields()));
+    $check("$key: available() is a bool", is_bool($d->available()));
 
     $class = $d->handler_class();
     $check("$key: handler class $class exists", class_exists($class));
@@ -110,6 +112,20 @@ foreach ($all as $key => $d) {
         $check("$key: the registry maps the handler class back to this descriptor", Registry::for_handler($class) === $d);
         $check("$key: handler does not spell its own type", $reads->getDeclaringClass()->getName() === UnifiedHandlerBase::class);
     }
+}
+
+// Only the Computed field rule writes through a plugin that may be inactive;
+// without ACF (this harness) it is unavailable, every other type is not.
+foreach ($all as $key => $d) {
+    $check("$key: availability follows ACF only for the Computed field rule",
+        $d->available() === ($key === 'field_transformation_rules' ? function_exists('acf_get_field') : true));
+}
+
+// The format pass's first-match gate is a descriptor fact (FW-4 ticket 04):
+// true only for the title/slug lookup table, so a Computed field rule composes.
+foreach ($all as $key => $d) {
+    $check("$key: first_match_wins() is true only for title_slug_rules",
+        $d->first_match_wins() === ($key === 'title_slug_rules'));
 }
 
 // The runtime question the dispatchers ask before running a row (ticket 10).

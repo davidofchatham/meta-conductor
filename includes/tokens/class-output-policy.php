@@ -18,6 +18,9 @@ final class OutputPolicy {
      * @param \Closure $sanitizer    string -> string, applied to every token value.
      * @param \Closure $guard        (base, value) -> bool: value already in base.
      * @param bool     $collapse_dashes Final trim also collapses and trims dashes.
+     * @param bool     $sanitize_bound  Bound variables (`{default_title}`) pass through the
+     *                                  sanitizer too. Off for title and slug, whose bound
+     *                                  values are returned as-is (pinned by the golden table).
      */
     private function __construct(
         public readonly string $month_format,
@@ -26,6 +29,7 @@ final class OutputPolicy {
         private readonly \Closure $sanitizer,
         private readonly \Closure $guard,
         public readonly bool $collapse_dashes,
+        private readonly bool $sanitize_bound = false,
     ) {}
 
     /**
@@ -56,8 +60,47 @@ final class OutputPolicy {
             true);
     }
 
+    /**
+     * Plain text for a stored field: month names, term names, comma-joined —
+     * the title choices, because a stored value is read by people, not routed
+     * through a URL. Values are kept exactly as resolved: no sanitizing, no dash
+     * collapsing, so `Smith & Jones` stays `Smith & Jones`. No duplicate guard:
+     * a field pattern composes from scratch, with no surviving base to match.
+     */
+    public static function text(): self {
+        return new self('F', 'name', ', ',
+            static fn(string $value): string => $value,
+            static fn(): bool => false,
+            false);
+    }
+
+    /**
+     * HTML for a stored field: the same choices as `text()` (month names, term
+     * names, comma-joined, no duplicate guard), but every token value — a field
+     * value, a term name, a bound variable — is HTML-escaped, quotes included and
+     * already-escaped input escaped again. Pattern literals are never touched,
+     * so authored markup survives and the token VALUE is the only trust boundary.
+     *
+     * The cleanup around an empty token is text-based, not markup-aware: an
+     * empty token inside an element at the end of the pattern takes the literal
+     * run in front of it, opening tag included. Keep optional tokens outside the
+     * wrappers they would leave dangling.
+     */
+    public static function html(): self {
+        return new self('F', 'name', ', ',
+            static fn(string $value): string => htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+            static fn(): bool => false,
+            collapse_dashes: false,
+            sanitize_bound: true);
+    }
+
     public function sanitize(string $value): string {
         return ($this->sanitizer)($value);
+    }
+
+    /** A bound variable's value as the output wants it. */
+    public function bound(string $value): string {
+        return $this->sanitize_bound ? $this->sanitize($value) : $value;
     }
 
     public function in_base(string $base, string $value): bool {
