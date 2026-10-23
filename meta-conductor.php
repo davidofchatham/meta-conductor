@@ -72,7 +72,7 @@ if (!function_exists('bws_meta_manager_init')) {
             // Use GitHub Releases (not branch tips) and the attached ZIP asset.
             // Asset filename is versioned (meta-conductor-X.Y.Z.zip), so match by
             // regex rather than relying on PUC's exact-name auto-picker.
-            $bws_mc_update_checker->getVcsApi()->enableReleaseAssets('/meta-conductor-[\d.]+\.zip/');
+            $bws_mc_update_checker->getVcsApi()->enableReleaseAssets('/meta-conductor-[\d.]+\.zip/', \YahnisElsts\PluginUpdateChecker\v5p7\Vcs\Api::REQUIRE_RELEASE_ASSETS);
         }
 
         // Wireframe bootstrap (Phase 2c pilot — runs alongside legacy UI until verified).
