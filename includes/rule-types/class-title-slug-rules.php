@@ -214,7 +214,7 @@ final class TitleSlugRules extends RuleType {
                 'type'        => 'toggle',
                 'label'       => __('Flat URLs', 'meta-conductor'),
                 // No bare word-in-braces here: H12 fails the description lint.
-                'description' => __('Hierarchical custom post types only; ignored for any other type, and for Pages. Serve child posts at /base/child/ instead of /base/parent/child/, while the parent stays at /base/parent/. The old nested URL redirects (301) to the flat one. Turning this off reverts every URL to the nested form. Children should have names that are unique across the type; two posts sharing one name resolve to the published one, then the lowest ID.', 'meta-conductor'),
+                'description' => __('Hierarchical custom post types only; ignored for any other type, and for Pages. Serve child posts at /base/child/ instead of /base/parent/child/, while the parent stays at /base/parent/. The old nested URL redirects (301) to the flat one. Turning this off reverts every URL to the nested form. Names are made unique across the whole type, not per parent: a taken name tries the collision tokens, then is numbered. This applies to posts this rule gives a title or slug pattern. A child named page, feed, embed, attachment or a bare number is numbered. Posts that already share a name resolve to the published one, then the lowest ID.', 'meta-conductor'),
                 'default'     => false,
                 'columns'     => 12,
             ],

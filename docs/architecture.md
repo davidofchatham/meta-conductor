@@ -569,7 +569,15 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
     only when its ancestor chain equals the post's real one; a stale chain, a
     feed, or a draft's nested URL falls through to core untouched. Turning
     `flat_urls` off needs no cleanup: the permalink is derived, so URLs revert
-    to nested. `sweep-flat-urls.php` covers it.
+    to nested. `sweep-flat-urls.php` covers it. The write half is per-type
+    uniqueness: a flat type's slug is a segment straight under the base, so
+    `TitleSlugHandler::make_unique_slug()` runs the ladder and then
+    `Tokens\FlatSlug::number()` (lookup per TYPE, no `post_parent`) instead of
+    `wp_unique_post_slug()`; a non-flat type still takes core's. `FlatSlug`
+    refuses core's own bad hierarchical slugs (the rewrite's feed names, `embed`,
+    `^(page)?\d+$`) plus `page` and `attachment`, and a reserved BASE skips the
+    ladder (it is not a collision a parent or a date explains). Pinned by
+    `tests/verify-flat-slug.php`, swept by `sweep-flat-slugs.php`.
 
 ## Settings UI — WP Wireframe
 

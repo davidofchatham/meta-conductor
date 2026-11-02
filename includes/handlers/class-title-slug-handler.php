@@ -2,6 +2,7 @@
 
 namespace BWS\MetaConductor\Handlers;
 
+use BWS\MetaConductor\Tokens\FlatSlug;
 use BWS\MetaConductor\Tokens\OutputPolicy;
 use BWS\MetaConductor\Tokens\PostTokenSource;
 use BWS\MetaConductor\Tokens\SlugLadder;
@@ -273,14 +274,22 @@ class TitleSlugHandler extends UnifiedHandlerBase {
             }
             $seen[$post_type] = true;
 
-            // `page` is out: core hands a page's path over as `pagename`, not
-            // `post_type` + `name`, so its links would flatten and never resolve.
-            if (!empty($rule['flat_urls']) && $post_type !== 'page' && is_post_type_hierarchical($post_type)) {
+            if ($this->is_flat_rule($rule, $post_type)) {
                 $flat[] = $post_type;
             }
         }
 
         return $flat;
+    }
+
+    /**
+     * Whether this row serves `$post_type` flat: `flat_urls` on, and a
+     * hierarchical type other than `page` — core hands a page's path over as
+     * `pagename`, not `post_type` + `name`, so its links would flatten and never
+     * resolve.
+     */
+    private function is_flat_rule(array $rule, string $post_type): bool {
+        return !empty($rule['flat_urls']) && $post_type !== 'page' && is_post_type_hierarchical($post_type);
     }
 
     /**
@@ -552,24 +561,37 @@ class TitleSlugHandler extends UnifiedHandlerBase {
 
     /**
      * A free slug for the post. A taken one is walked up the rule's
-     * disambiguation ladder (`SlugLadder`), then numbered by core for whatever
-     * is still taken — this method supplies the uniqueness lookup and the rung
-     * values, and nothing of the walk itself.
+     * disambiguation ladder (`SlugLadder`), then numbered for whatever is still
+     * taken — this method supplies the uniqueness lookup and the rung values,
+     * and nothing of the walk itself.
+     *
+     * Numbering is core's (`wp_unique_post_slug()`, per parent) except in a flat
+     * type, where a slug is a path segment straight under the base: there it is
+     * `FlatSlug::number()`, per TYPE, and a reserved name (`page`, `feed`, a bare
+     * number …) is not free. A reserved base skips the ladder — it is not a
+     * collision a parent or a date would explain — and goes straight to numbering.
      */
     protected function make_unique_slug(string $slug, int $post_id, object $post, array $rule): string {
-        if ($this->slug_is_unique($slug, $post_id, $post->post_type)) {
+        $flat = $this->is_flat_rule($rule, $post->post_type);
+        $free = fn(string $candidate): bool => !($flat && $this->reserved_slug($candidate))
+            && $this->slug_is_unique($candidate, $post_id, $post->post_type);
+
+        if ($free($slug)) {
             return $slug;
         }
         $rungs = $this->ladder_rungs($rule, $post_id, $post);
-        if ($rungs) {
-            $slug = SlugLadder::walk(
-                $slug,
-                $rungs,
-                (string) ($rule['escalation_placement'] ?? ''),
-                fn(string $candidate): bool => $this->slug_is_unique($candidate, $post_id, $post->post_type)
-            );
+        if ($rungs && !($flat && $this->reserved_slug($slug))) {
+            $slug = SlugLadder::walk($slug, $rungs, (string) ($rule['escalation_placement'] ?? ''), $free);
         }
-        return wp_unique_post_slug($slug, $post_id, $post->post_status, $post->post_type, $post->post_parent);
+        return $flat
+            ? FlatSlug::number($slug, $free)
+            : wp_unique_post_slug($slug, $post_id, $post->post_status, $post->post_type, $post->post_parent);
+    }
+
+    /** Whether the slug would shadow the base's own feed / paging / embed URLs. */
+    private function reserved_slug(string $slug): bool {
+        global $wp_rewrite;
+        return FlatSlug::reserved($slug, (array) $wp_rewrite->feeds, (string) $wp_rewrite->pagination_base);
     }
 
     private function slug_is_unique(string $slug, int $post_id, string $post_type): bool {
