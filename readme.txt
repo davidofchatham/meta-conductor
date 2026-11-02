@@ -4,7 +4,7 @@ Tags: taxonomy, meta, acf, automation, hierarchical
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 0.9.0
+Stable tag: 0.10.0
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -36,7 +36,7 @@ Rules are authored as two ordered lists — one for rules that write terms, one 
 
 == Upgrade Notes ==
 
-= Unreleased =
+= 0.10.0 =
 
 **Title & slug collision avoidance is now an ordered ladder, and your existing rules are converted on update.** The old *Date-based collision* toggle and its date field are replaced by one *Collision avoidance — tokens to add* field. The first admin page load after updating rewrites each stored rule once: toggle on with no date field becomes `{pub_year}`, on with a date field becomes `{date_year:field}`, off becomes blank. **A rule that had the toggle on but no date token in its slug pattern used to fall back to `-2` numbering on a collision; it now appends the publication year first.** Check those rules and the slugs they produce on your next collision. Rules with a date field behave as before.
 
@@ -74,8 +74,8 @@ See CHANGELOG.md in the plugin directory for the full release log.
 
 == Upgrade Notice ==
 
-= Unreleased =
-Coming from before 0.8.0? Update to 0.9.x and open the settings page first — this version no longer migrates pre-0.8.0 rules.
+= 0.10.0 =
+Old collision settings convert automatically; a rule with the toggle on and no date field now adds the year before -2 numbering. Sites older than 0.8.0 must install 0.9.x first.
 
 = 0.9.0 =
 Data Conversion and `wp bws-conversion` are removed. The new Apply to Existing Posts page replaces them; Copy / Map return later as rule types.
