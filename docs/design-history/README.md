@@ -28,3 +28,4 @@ A file here is **not** an ADR. An ADR states a decision and its consequences in 
 | [rule-type-descriptor.md](rule-type-descriptor.md) | Rule-type descriptors + registry, canonical storage projection (FW-39) | 2026-09-28 |
 | [token-engine.md](token-engine.md) | `Tokens\` module extracted from `TitleSlugHandler`, site-time date tokens (FW-40) | 2026-09-28 |
 | [field-transformation.md](field-transformation.md) | Computed field rules (`field_transformation_rules`, FW-4) + separator cleanup around empty tokens (FW-44) | 2026-10-22 |
+| [flat-urls-slug-ladder.md](flat-urls-slug-ladder.md) | Disambiguation ladder, `{mod_*}`/`{parent:slug}` tokens, flat URLs for hierarchical types (FW-51) | 2026-11-02 |
