@@ -119,14 +119,33 @@ A CPT whose posts each need a matching term so *other* content can be tagged aga
 
 #### FW-8 — `user_based_rules`: User-Based Term Setting / Restriction
 
-Pre-set terms in a taxonomy based on the current user (role or ID), lock a taxonomy so only specific roles can edit it, or limit a user to editing posts that hold their assigned terms. Absorbs the standalone plugin `bws-user-based-terms`: each rule maps user role or ID → taxonomy → term(s).
+Preset terms in a taxonomy when a targeted user (role or ID) starts a new post. Absorbs the preset half of the standalone plugin `bws-user-based-terms`; its lock and edit-restriction halves are [FW-54](#fw-54--user_based_rules-lock-and-editor-surface) and [FW-53](#fw-53--user_based_rules-edit-scope).
 
-- **Axes:** basis **ambient** (the acting user, not the post). Auto-set and lock: effect target **terms**, claim *owning* / *restricting* ([CONTEXT.md](../CONTEXT.md) → *restricting-the-editor is still a restricting claim*). Edit-scope: an **access gate** — runtime-only, nothing stored, so no claim.
-- **Detail home:** `.scratch/plans/ubt-merger.md` (port, migration, edit-scope design and decisions). Storage rationale: [storage-model.md](storage-model.md).
-- **Progress:** Not started. Storage settled: Options, a `type` within `term_rules`. UBT's `priority` maps onto list position. The handler registers no hooks of its own; the dispatcher's save trigger suffices (ambient, but no sweep — contrast FW-3). Edit-scope reassessed 2026-11-02: a toggle on the same row, served from `runtime_hooks()`; build after auto-set and lock.
-- **Open:** ⚠️ type-key name unsettled — `user_based_terms_rules` vs `user_based_rules` (the latter fits better now that the type is not only about terms). Edit-scope decisions are in the plan.
-- **Blocked by:** — • **Interacts with:** FW-6, FW-25
+- **Axes:** basis **ambient** (the acting user, not the post), effect target **terms**, claim *deferring*. The rule's status gate is fixed to `auto-draft`, so it fires once, on the new-post screen, and never re-seeds.
+- **Detail home:** `.scratch/plans/ubt-merger.md` (reassessment, port scope, migration). Storage rationale: [storage-model.md](storage-model.md).
+- **Progress:** Not started. Storage settled: Options, type `user_based_rules` within `term_rules`. Reassessed 2026-11-02 against UBT 1.0.3: the preset needs no editor JS, REST route or ACF load filter, because the dispatcher writes it at the auto-draft insert and every editor reads stored state. UBT's merge layer and `priority` are not ported; user-specific rows sit above role rows, so "override" is deferring plus list order. A pass with no matching user stands down and never removes. UBT retires when this ships, for sites with only unlocked rules; migration is manual re-entry, with a field-mapping table in the readme upgrade note.
+- **Open:** a testbed sweep must confirm, before build, that the dispatcher fires on an auto-draft and that categories are vacant at that stage. A direct REST or programmatic create has no auto-draft stage and gets no preset; a `wp_insert_post` capture is the upgrade path if that matters. The Apply page does nothing for this type.
+- **Blocked by:** — • **Interacts with:** FW-25, FW-53, FW-54
 - **Phase:** 6b
+
+#### FW-53 — `user_based_rules` edit-scope: edit only posts holding your terms
+
+A user matched by a rule may edit or delete only posts holding at least one of their assigned terms (an assigned parent covers its descendants). A request-time capability check plus a server-side retention guard, so a scoped user cannot drop the term that grants access. UBT has no such feature.
+
+- **Axes:** basis **ambient**. The gate is an **access** check on `edit_post` / `delete_post` through `map_meta_cap` — evaluated per request, nothing stored, so no claim and no place in the pass order. The retention guard is a term constraint (closest to *restricting*; settle its claim name at build).
+- **Detail home:** `.scratch/plans/ubt-merger.md` → *Edit-scope*. Vocabulary: [CONTEXT.md](../CONTEXT.md) → *restricting-the-editor is not a separate claim*.
+- **Progress:** Not started. Settled 2026-11-02: the gate is served from `runtime_hooks()` (read-only); the guard captures `$old_tt_ids` from `set_object_terms` and a pass silently re-adds a dropped assigned term. Never blocked: posts holding none of the taxonomy's terms, users matching no rule, `manage_options`, no-user contexts, auto-drafts and new posts. Matching is any-of. Hiding posts in the list table is a later step. Ships without the editor surface.
+- **Blocked by:** `row:FW-8` • **Interacts with:** FW-6, FW-8, FW-54
+
+#### FW-54 — `user_based_rules` lock and editor surface
+
+Lock a targeted user's taxonomy to the rule's exact terms, with the editor UI that makes the lock honest: locked controls in the Classic, Block, ACF and ACFE editors, validation, and a display-time preset. Absorbs UBT's lock variant and its open tickets 10 (a locked field is not locked on screen) and 11 (a rule edit does not reach existing posts).
+
+- **Axes:** basis **ambient**, effect target **terms**, claim *owning* — the rule's terms are the value, forced on every write ([CONTEXT.md](../CONTEXT.md) → *restricting-the-editor is not a separate claim*).
+- **Detail home:** `.scratch/plans/ubt-merger.md` → *Lock and editor surface*.
+- **Progress:** Not started. Lock is not live, so its schema is free. Server enforcement is an owning applier, replacing UBT's `force_locked_value` and `reassert_locked_terms`. The UI is lock-only work in UBT (about 225 JS lines, 55 CSS lines, the Gutenberg route class, ACF `prepare_field` and `validate_value`). Design it against ticket 10's renderer matrix rather than porting verbatim. The display-time preset is editor-only, and the Apply page works for it because it has no status gate.
+- **Open:** lock mechanism per renderer; the native tag box's delete buttons reappearing; a single-choice field showing one term of a two-term rule.
+- **Blocked by:** `row:FW-8` • **Interacts with:** FW-25, FW-53
 
 #### FW-9 — Status mirroring for ACF-reference rules
 
