@@ -226,6 +226,34 @@ New token kinds for the pattern engine: a value filter (`{term:TAX|exclude:…}`
 - **Open:** whether the real use cases still need them once v1 runs on them, or whether the remainder stays in site PHP alongside format transforms. Any new token kind lands in `Tokens\` so title/slug and Computed field rules both get it, and adds rows to the H17 golden table deliberately.
 - **Blocked by:** `decision:the real use cases still need them after v1` • **Interacts with:** FW-4, FW-44
 
+#### FW-51 — Flat URLs for hierarchical post types, and a general slug disambiguation ladder
+
+Two linked changes to the title/slug rule. First, collision avoidance stops being date-only: a `slug_escalation` field holds an ordered ladder of rung tokens (`{pub_year}`, `{mod_year}`, `{date_year:KEY}`, `{parent:slug}`, `{term:TAX}`, `{meta:KEY}`), tried cumulatively on a collision with WP numbering last, and a date rung works without a date token in the slug pattern. It replaces `date_escalation` and `date_field`. Second, a `flat_urls` option serves a hierarchical post type's posts at a flat URL: the type's base stays, the ancestor segments go (`/benefit/child/`, not `/benefit/parent/child/`). The post keeps its `post_parent`, so only the permalink changes. Flat URLs need `post_name` unique per type rather than per parent, which is the title/slug rule's existing job, so the option lives on the rule.
+
+- **Axes:** basis **intrinsic** (the post's own ancestors and dates), effect target **URL — rendered, not stored** for the routing half and **slug** for the uniqueness and ladder half, claim *as the title/slug rule* (`fields|title_slug`).
+- **Detail home:** `.scratch/flat-hierarchical-urls/spec.md`, tickets 01-03 beside it; the decision record is `.scratch/plans/flat-hierarchical-urls.md`.
+- **Progress:** Design settled in two grilling sessions (2026-10-31, 2026-11-02); spec and six tickets written; nothing built. Tickets: 01 `{mod_*}` and `{parent:slug}` tokens, 02 the ladder (pure function with its own gate, field swap), 03 one-shot migration of stored rows, 04 flat URL serving (`request` resolver, nested-to-flat 301, a `runtime_hooks()` descriptor seam with an H13 branch), 05 per-type slug uniqueness, 06 duplicate-name notice. 01 and 04 can start immediately; 02 must not release without 03. One minor version bump across them. The title/slug split is FW-52 and is deliberately not a prerequisite.
+- **Open:**
+  - **Reserved child names.** `page`, `feed`, `embed`, `attachment` and all-digit slugs collide with the base's paging, feed and attachment rules; the exact list is confirmed against core's bad-slug check during ticket 03.
+  - **Slot token and a "don't splice dates" toggle.** Deferred, additive: a slot token in the slug pattern would allow mid-slug placement of ladder parts.
+  - **Whole-chain parent token.** `{ancestors:slug}` for types more than one level deep; the first cut is the immediate parent only.
+  - **Redirect sharing with FW-36.** The nested-to-flat 301 is built once here and derived from `post_parent`, so it needs no stored map. Core records no old slug for hierarchical types, which is FW-36's open item.
+  - **Out of scope, by decision.** Hiding the parent's own URL from users who may not see it is access control, not routing.
+- **Blocked by:** — • **Interacts with:** FW-6, FW-13, FW-36, FW-52
+
+#### FW-52 — Split the title/slug rule into a title rule and a slug rule
+
+Separate `title_slug_rules` into a title type and a slug type in `format_rules`, the slug rule reading the title rule's output through the `$data` seam in list order. Today one row couples them: `{default_slug}` is `sanitize_title()` of the computed title, a title-only row renames the slug implicitly, and a row is a lookup keyed by `post_type` where the first match wins, so a second row on one type never runs. Splitting lets a slug-only rule (flat URL, disambiguation) and a title rule scope independently.
+
+- **Axes:** as the title/slug rule — basis **intrinsic**, effect target **field**, claim `fields|title_slug` split into a title claim and a slug claim.
+- **Detail home:** `.scratch/plans/flat-hierarchical-urls.md` → *Split*.
+- **Progress:** Deferred (2026-11-02), not started. Raised during FW-51's design as a cleaner shape, not a requirement of it. FW-51 builds on the combined row and its new fields all partition to the slug row, so the split later costs only carrying fields across. A live site already runs a slug-only row and a title-plus-slug row, so the split is a migration on a **live rule type**: it needs a migration step or an explicit manual re-save, never a silent break.
+- **Open:**
+  - **The implicit slug.** Whether a title row alone still renames the slug. The cleaner answer is no, with the migration emitting a `{default_slug}` slug row for any title-only row to preserve behavior.
+  - **Migration shape.** The fields partition cleanly: `title_pattern` to the title row; `slug_pattern`, `slug_mode`, `slug_escalation`, `escalation_placement`, `flat_urls` to the slug row; `post_type`, `enabled` and the row title shared.
+  - **Order.** The slug row must follow its title row, which is a consumer-before-producer case for FW-47.
+- **Blocked by:** — • **Interacts with:** FW-13, FW-36, FW-47, FW-51
+
 ---
 
 ## Correctness, Consistency, Architecture
