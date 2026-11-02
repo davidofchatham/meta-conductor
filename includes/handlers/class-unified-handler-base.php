@@ -282,7 +282,7 @@ abstract class UnifiedHandlerBase {
      *
      * @param array $data    Post data as the previous rule left it. Keys: ID,
      *                       post_title, post_name, post_type, post_status,
-     *                       post_date, post_parent, fields, field_keys. Only
+     *                       post_date, post_modified, post_parent, fields, field_keys. Only
      *                       post_title, post_name and fields are written back.
      * @param int   $post_id Entity being passed over.
      * @param array $rule    One enabled rule (canonical shape).

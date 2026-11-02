@@ -41,4 +41,13 @@ final class RowTokenSource implements TokenSourceInterface {
     public function published(): ?\DateTimeInterface {
         return $this->post->published();
     }
+
+    /** A row has no modified date or parent of its own: both answer empty. */
+    public function modified(): ?\DateTimeInterface {
+        return null;
+    }
+
+    public function parent_slug(): string {
+        return '';
+    }
 }

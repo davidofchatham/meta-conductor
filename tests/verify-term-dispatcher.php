@@ -65,6 +65,10 @@
  *  14. Each dispatcher's `apply()` has ONE caller, its own pass: `run_pass()`
  *      for terms, `compute()` for formats. Nothing outside a dispatcher names
  *      either (FW-16 07, which retired the per-handler bulk path).
+ *  16. READ-TIME hooks are a descriptor fact (FW-51): `runtime_hooks()` names
+ *      the callbacks, `TaxonomyManager` registers them (the handler registers
+ *      nothing), and a callback only reads or redirects — a write primitive in
+ *      one is a rule executing on a page view, outside any pass.
  *
  * Run:  php tests/verify-term-dispatcher.php
  *
@@ -1028,6 +1032,58 @@ foreach (['TermDispatcher::run_pass' => $term_pass, 'FormatDispatcher::compute' 
     }
 }
 
+// --- 16. Read-time hooks are a descriptor fact, and they only READ (FW-51) --
+// `runtime_hooks()` lists the filters a handler serves to visitors (a permalink,
+// a request). The handler registers none of them — group 6 already fails any
+// registration not in `capture_hooks()` — so `TaxonomyManager` must, from the
+// descriptors, or the feature is silently dead. A callback may read and may
+// redirect; a write there is a rule type executing outside any pass, on a hook
+// that fires on every page view.
+$dispatcher_owned = ['set_object_terms', 'deleted_term_relationships', 'save_post', 'acf/save_post', 'shutdown', 'wp_after_insert_post'];
+$read_writes      = array_merge($write_primitives, [
+    'wp_update_post', 'wp_insert_post', 'wp_delete_post', 'wp_trash_post', 'update_post_meta', 'add_post_meta',
+    'delete_post_meta', 'update_option', 'add_option', 'delete_option', 'update_field', 'wp_set_post_terms',
+    '$wpdb->update', '$wpdb->insert', '$wpdb->delete', '$wpdb->query',
+]);
+$runtime_count = 0;
+
+foreach ($descriptors as $type => $descriptor) {
+    $hbody = $strip_comments((string) file_get_contents($root . '/includes/handlers/' . $handler_files[$type]));
+
+    foreach ($descriptor->runtime_hooks() as $hook => $spec) {
+        $runtime_count++;
+        $method = (string) ($spec[0] ?? '');
+
+        if (in_array($hook, $dispatcher_owned, true) || in_array($hook, $capture[$type] ?? [], true)) {
+            $errors[] = sprintf('%s lists runtime hook %s, which is a dispatcher trigger or one of its own capture hooks — a read-time callback on it would run the rule outside a pass.', $type, $hook);
+        }
+        $cb = $method === '' ? null : $method_body($hbody, $method);
+        if ($cb === null) {
+            $errors[] = sprintf('%s lists runtime hook %s => %s(), which %s does not declare.', $type, $hook, $method, $handler_files[$type]);
+            continue;
+        }
+        foreach ($read_writes as $effect) {
+            if (preg_match('/(?<![\w>])' . preg_quote($effect, '/') . '\s*\(/', $cb) || (str_starts_with($effect, '$') && str_contains($cb, $effect . '('))) {
+                $errors[] = sprintf(
+                    '%s::%s() is a runtime-hook callback but calls %s() — it fires on page views and may read or redirect, never write (FW-51).',
+                    $handler_files[$type],
+                    $method,
+                    $effect
+                );
+            }
+        }
+    }
+}
+
+$manager_src = $strip_comments((string) file_get_contents($root . '/includes/class-taxonomy-manager.php'));
+if ($runtime_count > 0) {
+    $init = $method_body($manager_src, 'init_handlers');
+    if ($init === null || !preg_match('/->runtime_hooks\(\)/', $init) || !preg_match('/add_(?:filter|action)\(/', $init)
+        || strpos($init, 'runtime_hooks') < strpos($init, 'new TermDispatcher')) {
+        $errors[] = 'TaxonomyManager::init_handlers() does not register the descriptors\' runtime_hooks() after the dispatchers — a handler registers nothing itself, so a declared read-time hook would never be attached (FW-51).';
+    }
+}
+
 if ($errors) {
     fwrite(STDERR, "DISPATCHER FAIL — term dispatcher invariants broken (#60):\n");
     foreach ($errors as $e) {
@@ -1037,9 +1093,10 @@ if ($errors) {
 }
 
 printf(
-    "DISPATCHER OK — trigger union mark-only, drain after AcfWriteQueue, pass lock (entity, kind), single apply_to_post + apply_to_data call sites, fan-out + capture queue declared+enqueued, format pass driven from the shared drain AFTER the term pass; %d term / %d format type(s), %d capture type(s) (#60, #62, #63, #64).\n",
+    "DISPATCHER OK — trigger union mark-only, drain after AcfWriteQueue, pass lock (entity, kind), single apply_to_post + apply_to_data call sites, fan-out + capture queue declared+enqueued, format pass driven from the shared drain AFTER the term pass; %d term / %d format type(s), %d capture type(s), %d runtime hook(s) (#60, #62, #63, #64, FW-51).\n",
     count($kind_types('term_rules')),
     count($kind_types('format_rules')),
-    count($capture)
+    count($capture),
+    $runtime_count
 );
 exit(0);

@@ -21,6 +21,7 @@ if ( ! defined( 'ABSPATH' ) && ! defined( 'WP_CLI' ) ) {
  * mc_item    — flat scenario subject (hierarchical/level-restriction/related/
  *              time-based/title-slug rules).
  * mc_section — hierarchical (propagation post_parent chains; relationship holder).
+ * mc_flat    — hierarchical, URL-only subject for the flat-URL sweep (FW-51).
  * mc_topic   — hierarchical taxonomy, 4-level tree (see manifest).
  * mc_flag    — flat taxonomy (related_rules taxonomy-trigger fixture).
  */
@@ -43,6 +44,22 @@ function bws_fixture_mc_rules_register_types() {
 			'show_in_rest' => true,
 			'hierarchical' => true, // propagation requires hierarchical post type
 			'supports'     => array( 'title', 'editor', 'custom-fields', 'page-attributes' ),
+		)
+	);
+
+	// FW-51 flat URLs. Its own hierarchical type with NO taxonomies, ACF groups
+	// or seeded rules: the flat serving is a read-time rewrite of one type's
+	// URLs, so nothing else in the fixture surface may share it (a term pass or
+	// a title rule here would rename the posts the sweep addresses by name).
+	register_post_type(
+		'mc_flat',
+		array(
+			'label'        => 'MC Flat',
+			'public'       => true,
+			'show_in_rest' => true,
+			'hierarchical' => true,
+			'rewrite'      => array( 'slug' => 'mc-flat' ),
+			'supports'     => array( 'title', 'editor', 'page-attributes' ),
 		)
 	);
 
@@ -77,7 +94,7 @@ function bws_fixture_mc_rules_register_types() {
  *                   (level-restriction + related ACF branches discover by
  *                   type==taxonomy && taxonomy==mc_topic).
  *   mc_event_date — date_picker Ymd (title_slug {meta:}/{date_*:} tokens +
- *                   escalation date_field).
+ *                   the escalation ladder).
  *
  * group_mc_computed_fields (mc_item) — the Computed field rule's surface:
  *   mc_cf_first / mc_cf_last — text SOURCE fields.

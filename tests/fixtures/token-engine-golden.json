@@ -6915,8 +6915,8 @@
                 "name": "live event",
                 "slug_pattern": "{date_year:start_date}",
                 "slug_mode": "suffix",
-                "date_escalation": true,
-                "date_field": "start_date",
+                "slug_escalation": "{date_year:start_date}",
+                "escalation_placement": "suffix",
                 "type": "title_slug_rules",
                 "enabled": true,
                 "post_type": "mc_item",
@@ -6939,8 +6939,8 @@
                 "name": "live event",
                 "slug_pattern": "{date_year:start_date}",
                 "slug_mode": "suffix",
-                "date_escalation": true,
-                "date_field": "start_date",
+                "slug_escalation": "{date_year:start_date}",
+                "escalation_placement": "suffix",
                 "type": "title_slug_rules",
                 "enabled": true,
                 "post_type": "mc_item",
@@ -6962,11 +6962,11 @@
                 "title_pattern": "{meta:name_pre} {meta:name_first} {meta:name_last} {meta:name_post}",
                 "slug_pattern": "{meta:name_first}-{meta:name_last}-{meta:name_post}",
                 "slug_mode": "replace",
-                "date_escalation": true,
+                "slug_escalation": "{pub_year}",
                 "type": "title_slug_rules",
                 "enabled": true,
                 "post_type": "mc_item",
-                "date_field": ""
+                "escalation_placement": "suffix"
             },
             "meta": {
                 "name_pre": "Dr.",
@@ -6987,11 +6987,11 @@
                 "title_pattern": "{meta:name_pre} {meta:name_first} {meta:name_last} {meta:name_post}",
                 "slug_pattern": "{meta:name_first}-{meta:name_last}-{meta:name_post}",
                 "slug_mode": "replace",
-                "date_escalation": true,
+                "slug_escalation": "{pub_year}",
                 "type": "title_slug_rules",
                 "enabled": true,
                 "post_type": "mc_item",
-                "date_field": ""
+                "escalation_placement": "suffix"
             },
             "meta": {
                 "name_first": "Ada",
@@ -7010,11 +7010,11 @@
                 "title_pattern": "{meta:name_pre} {meta:name_first} {meta:name_last} {meta:name_post}",
                 "slug_pattern": "{meta:name_first}-{meta:name_last}-{meta:name_post}",
                 "slug_mode": "replace",
-                "date_escalation": true,
+                "slug_escalation": "{pub_year}",
                 "type": "title_slug_rules",
                 "enabled": true,
                 "post_type": "mc_item",
-                "date_field": ""
+                "escalation_placement": "suffix"
             },
             "meta": [],
             "current_title": "Kept Title",
@@ -7029,8 +7029,8 @@
                 "name": "fixture mc_item",
                 "slug_pattern": "{default_slug}-{date_year:mc_event_date}",
                 "slug_mode": "replace",
-                "date_escalation": true,
-                "date_field": "mc_event_date",
+                "slug_escalation": "{date_year:mc_event_date}",
+                "escalation_placement": "suffix",
                 "type": "title_slug_rules",
                 "enabled": true,
                 "post_type": "mc_item",
@@ -7053,8 +7053,8 @@
                 "name": "fixture mc_item",
                 "slug_pattern": "{default_slug}-{date_year:mc_event_date}",
                 "slug_mode": "replace",
-                "date_escalation": true,
-                "date_field": "mc_event_date",
+                "slug_escalation": "{date_year:mc_event_date}",
+                "escalation_placement": "suffix",
                 "type": "title_slug_rules",
                 "enabled": true,
                 "post_type": "mc_item",
@@ -7079,8 +7079,8 @@
                 "enabled": true,
                 "post_type": "mc_item",
                 "title_pattern": "",
-                "date_escalation": false,
-                "date_field": ""
+                "slug_escalation": "",
+                "escalation_placement": "suffix"
             },
             "meta": [],
             "current_title": "Harbor Report",
@@ -7099,8 +7099,8 @@
                 "enabled": true,
                 "post_type": "mc_item",
                 "title_pattern": "",
-                "date_escalation": false,
-                "date_field": ""
+                "slug_escalation": "",
+                "escalation_placement": "suffix"
             },
             "meta": [],
             "current_title": "Harbor Report 2026",
@@ -7119,8 +7119,8 @@
                 "enabled": true,
                 "post_type": "mc_item",
                 "title_pattern": "",
-                "date_escalation": false,
-                "date_field": ""
+                "slug_escalation": "",
+                "escalation_placement": "suffix"
             },
             "meta": {
                 "start_date": "20260403",
@@ -7143,8 +7143,8 @@
                 "type": "title_slug_rules",
                 "enabled": true,
                 "post_type": "mc_item",
-                "date_escalation": false,
-                "date_field": ""
+                "slug_escalation": "",
+                "escalation_placement": "suffix"
             },
             "meta": {
                 "start_date": "20260403",
@@ -7167,8 +7167,8 @@
                 "post_type": "mc_item",
                 "slug_pattern": "",
                 "slug_mode": "prefix",
-                "date_escalation": false,
-                "date_field": ""
+                "slug_escalation": "",
+                "escalation_placement": "suffix"
             },
             "meta": {
                 "start_date": "20260403",
@@ -7191,8 +7191,8 @@
                 "post_type": "mc_item",
                 "slug_pattern": "",
                 "slug_mode": "prefix",
-                "date_escalation": false,
-                "date_field": ""
+                "slug_escalation": "",
+                "escalation_placement": "suffix"
             },
             "meta": {
                 "start_date": "20260403",
@@ -7217,8 +7217,8 @@
                 "post_type": "mc_item",
                 "slug_pattern": "",
                 "slug_mode": "prefix",
-                "date_escalation": false,
-                "date_field": ""
+                "slug_escalation": "",
+                "escalation_placement": "suffix"
             },
             "meta": {
                 "start_date": "20260403",
@@ -7243,8 +7243,8 @@
                 "post_type": "mc_item",
                 "slug_pattern": "",
                 "slug_mode": "prefix",
-                "date_escalation": false,
-                "date_field": ""
+                "slug_escalation": "",
+                "escalation_placement": "suffix"
             },
             "meta": {
                 "start_date": "20260403",
@@ -7269,8 +7269,8 @@
                 "post_type": "mc_item",
                 "slug_pattern": "",
                 "slug_mode": "prefix",
-                "date_escalation": false,
-                "date_field": ""
+                "slug_escalation": "",
+                "escalation_placement": "suffix"
             },
             "meta": {
                 "start_date": "20260403",

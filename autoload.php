@@ -1,54 +1,39 @@
 <?php
 /**
- * PSR-4 Autoloader for Meta Conductor
+ * Class autoloader: Prefix\Sub\ClassName -> includes/sub/class-class-name.php
  *
- * Maps the BWS\MetaConductor namespace to includes/ using WordPress file
- * naming conventions (class-{kebab}.php).
+ * Copy-in template: bws-reference templates/autoload.php @ 908efba.
+ * When copying, set $prefix and $base below, @package and <commit> here.
+ * Rules and reasons: the bws-reference practice "PHP class autoloading".
  *
- * Kebab conversion only inserts a hyphen at a lower->upper boundary, so class
- * names MUST NOT contain consecutive capitals: use CptRuleStorage, not
- * CPTRuleStorage (the latter resolves to cptrule-storage.php and won't load).
- * Interfaces follow the same scheme — file is class-{kebab}.php, never
- * interface-{kebab}.php.
+ * - Acronyms and digits are spelled as words: CptRuleStorage, V2source.
+ *   CPTRuleStorage maps to cptrule-storage.php and never loads.
+ * - Every kind uses class-: interfaces, traits, abstracts and enums too.
  *
  * @package Meta_Conductor
- * @since 0.4.0
  */
 
-if (!defined('ABSPATH')) {
+if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-spl_autoload_register(function ($class) {
-	// Only load BWS\MetaConductor classes.
-	$prefix     = 'BWS\\MetaConductor\\';
-	$prefix_len = strlen($prefix);
+spl_autoload_register(
+	static function ( string $class_name ): void {
+		$prefix = 'BWS\\MetaConductor\\';
+		$base   = __DIR__ . '/includes/';
 
-	if (strncmp($prefix, $class, $prefix_len) !== 0) {
-		return;
+		if ( ! str_starts_with( $class_name, $prefix ) ) {
+			return;
+		}
+
+		// PascalCase -> kebab-case, for directories and the file alike.
+		$kebab = static fn( string $segment ): string => strtolower( preg_replace( '/([a-z])([A-Z])/', '$1-$2', $segment ) );
+		$parts = array_map( $kebab, explode( '\\', substr( $class_name, strlen( $prefix ) ) ) );
+		$name  = array_pop( $parts );
+		$file  = $base . ( $parts ? implode( '/', $parts ) . '/' : '' ) . 'class-' . $name . '.php';
+
+		if ( is_file( $file ) ) {
+			require $file;
+		}
 	}
-
-	// Relative class name, e.g. "Core\TermDispatcher" or "TaxonomyManager".
-	$relative_class = substr($class, $prefix_len);
-
-	// Namespace separators -> directory separators.
-	$path_parts = explode('\\', $relative_class);
-
-	// Last part is the class/interface name -> WordPress file naming.
-	// Examples: TermDispatcher -> class-term-dispatcher.php, WireframeBootstrap -> class-wireframe-bootstrap.php
-	$kebab      = static fn(string $s): string => strtolower(preg_replace('/([a-z])([A-Z])/', '$1-$2', $s));
-	$class_name = array_pop($path_parts);
-	$filename   = 'class-' . $kebab($class_name) . '.php';
-
-	// Directories are kebab too: RuleTypes -> rule-types/.
-	$directory = BWS_META_CONDUCTOR_PATH . 'includes/';
-	if (!empty($path_parts)) {
-		$directory .= implode('/', array_map($kebab, $path_parts)) . '/';
-	}
-
-	$file = $directory . $filename;
-
-	if (file_exists($file)) {
-		require $file;
-	}
-});
+);

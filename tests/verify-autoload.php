@@ -94,12 +94,17 @@ $classes = [
     'BWS\\MetaConductor\\Tokens\\PostTokenSource',
     'BWS\\MetaConductor\\Tokens\\RowTokenSource',
     'BWS\\MetaConductor\\Tokens\\OutputPolicy',
+    'BWS\\MetaConductor\\Tokens\\SlugLadder',
+    'BWS\\MetaConductor\\Tokens\\FlatSlug',
+    // Storage\ upgrade routine (FW-51 03) — delete with the class.
+    'BWS\\MetaConductor\\Storage\\SlugEscalationMigration',
     // Admin\
     'BWS\\MetaConductor\\Admin\\Diagnostics',
     'BWS\\MetaConductor\\Admin\\WireframeBootstrap',
     // The collision advisory (#65). Admin\, not Core\ — it is computed at
     // authoring time and read by nothing at runtime.
     'BWS\\MetaConductor\\Admin\\CollisionDetector',
+    'BWS\\MetaConductor\\Admin\\DuplicateNameNotice',
     'BWS\\MetaConductor\\Admin\\ApplyPage',
     // Admin\Config\
     'BWS\\MetaConductor\\Admin\\Config\\ConfigHelpers',

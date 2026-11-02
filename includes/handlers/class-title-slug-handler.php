@@ -2,8 +2,10 @@
 
 namespace BWS\MetaConductor\Handlers;
 
+use BWS\MetaConductor\Tokens\FlatSlug;
 use BWS\MetaConductor\Tokens\OutputPolicy;
 use BWS\MetaConductor\Tokens\PostTokenSource;
+use BWS\MetaConductor\Tokens\SlugLadder;
 use BWS\MetaConductor\Tokens\TokenEngine;
 
 if (!defined('ABSPATH')) exit;
@@ -246,6 +248,268 @@ class TitleSlugHandler extends UnifiedHandlerBase {
     }
 
     // -------------------------------------------------------------------------
+    // Flat URLs (FW-51) — READ-TIME callbacks
+    // -------------------------------------------------------------------------
+    //
+    // Served from the descriptor's `runtime_hooks()`, registered by
+    // `TaxonomyManager`; this class registers nothing. They run on page views,
+    // outside any pass, so they may read and redirect and must never write (H13).
+
+    /**
+     * Post types served flat: hierarchical, with an enabled row whose
+     * `flat_urls` is on. First enabled row per type decides, like the format
+     * pass's lookup (`rule_matches()`), so a lower row on the same type cannot
+     * flatten what the winning row did not.
+     *
+     * @return string[]
+     */
+    public function flat_post_types(): array {
+        $flat = [];
+        $seen = [];
+
+        foreach ($this->get_enabled_rules() as $rule) {
+            $post_type = (string) ($rule['post_type'] ?? '');
+            if ($post_type === '' || isset($seen[$post_type])) {
+                continue;
+            }
+            $seen[$post_type] = true;
+
+            if ($this->is_flat_rule($rule, $post_type)) {
+                $flat[] = $post_type;
+            }
+        }
+
+        return $flat;
+    }
+
+    /**
+     * Whether this row serves `$post_type` flat: `flat_urls` on, and a
+     * hierarchical type other than `page` — core hands a page's path over as
+     * `pagename`, not `post_type` + `name`, so its links would flatten and never
+     * resolve.
+     */
+    private function is_flat_rule(array $rule, string $post_type): bool {
+        return !empty($rule['flat_urls']) && $post_type !== 'page' && is_post_type_hierarchical($post_type);
+    }
+
+    /**
+     * `post_type_link` — `/base/parent/child/` becomes `/base/child/`.
+     *
+     * Core builds the link from the full ancestor URI, so the flat form is that
+     * URI's last occurrence swapped for the post's own name; everything the link
+     * carries around it (base, trailing slash, any other plugin's edit) is kept.
+     * Sitemaps, REST `link`, feeds and attachment links all read this filter.
+     * Untouched: a non-flat type, a top-level post, a link still holding the
+     * edit screen's `%placeholder%` (`$leavename`), and a post with no name yet.
+     *
+     * @param string   $post_link Link as core built it.
+     * @param \WP_Post $post      The post.
+     * @param bool     $leavename Whether the name segment is left as a placeholder.
+     * @return string
+     */
+    public function flat_permalink($post_link, $post, $leavename = false) {
+        // The hierarchy test is a registry lookup; it spares every link of every
+        // other post type (menus, sitemaps, REST listings) the rule scan.
+        if ($leavename || !$post instanceof \WP_Post || $post->post_name === ''
+            || !is_post_type_hierarchical($post->post_type)
+            || !in_array($post->post_type, $this->flat_post_types(), true)) {
+            return $post_link;
+        }
+
+        $uri = get_page_uri($post);
+        $pos = $uri === false || $uri === $post->post_name ? false : strrpos($post_link, $uri);
+
+        return $pos === false ? $post_link : substr_replace($post_link, $post->post_name, $pos, strlen($uri));
+    }
+
+    /**
+     * `request` — resolve `/base/child/` for a flat type, and 301 the nested form.
+     *
+     * Core resolves a hierarchical single through `get_page_by_path()`, which
+     * wants the whole ancestor chain, so a flat path 404s. The path's LAST
+     * segment names the post inside the type, and the query is rewritten to
+     * `p=ID`. A nested path (`/base/parent/child/`) is 301'd to the flat link
+     * ONLY when its chain is exactly the post's real one: a stale or junk chain
+     * is left to core, which 404s it. Anything else the path carried (a feed,
+     * an embed) is not guessed at and falls through too.
+     *
+     * @param array $vars Query vars as `WP::parse_request()` built them.
+     * @return array
+     */
+    public function resolve_flat_request($vars) {
+        $post_type = is_array($vars) ? ($vars['post_type'] ?? '') : '';
+        $name      = is_array($vars) ? ($vars['name'] ?? '') : '';
+
+        if (!is_string($post_type) || !is_string($name) || $name === ''
+            || !in_array($post_type, $this->flat_post_types(), true)) {
+            return $vars;
+        }
+
+        $chain = array_map('sanitize_title_for_query', explode('/', trim($name, '/')));
+        $leaf  = array_pop($chain);
+        $post  = $this->find_flat_post($post_type, $leaf, $chain);
+        if ($post === null) {
+            return $vars;
+        }
+
+        // The rewrite hands the path over as `post_type` + `name` AND under the
+        // type's own query var; both go, or the old lookup runs beside ours.
+        $query_var = get_post_type_object($post_type)->query_var;
+        $own       = array_merge(['post_type', 'name', 'page'], $query_var ? [$query_var] : []);
+
+        if ($chain === []) {
+            unset($vars['name']);
+            if ($query_var) {
+                unset($vars[$query_var]);
+            }
+            $vars['p'] = $post;
+
+            return $vars;
+        }
+
+        // Only a post the visitor may read gets a redirect: a 301 for a draft or
+        // a private post would confirm it exists and hand over its URL.
+        $status = get_post_status($post);
+        if (array_filter(array_diff_key($vars, array_flip($own))) !== []
+            || !($status === 'publish' || ($status === 'private' && current_user_can('read_post', $post)))) {
+            return $vars;
+        }
+
+        $url  = get_permalink($post);
+        $page = (int) ($vars['page'] ?? 0);
+        if ($page > 1) {
+            $url = trailingslashit($url) . user_trailingslashit((string) $page);
+        }
+        $query = (string) ($_SERVER['QUERY_STRING'] ?? '');
+        wp_redirect($query === '' ? $url : $url . '?' . $query, 301, 'Meta Conductor');
+        exit;
+    }
+
+    /**
+     * `wp_redirect` — refuse a redirect that sends a flat URL back to its own
+     * nested form.
+     *
+     * A redirect plugin's rule (or any other) can predate `flat_urls`: the post
+     * once lived at `/base/child/`, was given a parent, and a rule recorded
+     * `/base/child/` → `/base/parent/child/`. Flat URLs make the old URL live
+     * again, and the rule then fires before `request` can resolve it — and
+     * loops with the nested → flat 301 above. Returning false makes core's
+     * `wp_redirect()` send nothing and return false. A caller that checks the
+     * result (Redirection does) carries on to `resolve_flat_request()`; one that
+     * calls `exit` regardless ends the request with an empty response, so this
+     * cures redirects through callers that honor the return, not every redirect.
+     * Plugin-agnostic: it looks only at the requested path and the target.
+     * Only a same-host redirect whose target is the nested form of a PUBLISHED
+     * flat post's own URL is refused; every other redirect passes untouched.
+     * Not covered: a paged or feed flat URL (its last segment is not the name),
+     * and a base segment is not compared with the type's rewrite base.
+     *
+     * @param string $location Redirect target.
+     * @param int    $status   HTTP status.
+     * @return string|false
+     */
+    public function veto_nested_redirect($location, $status = 302) {
+        $flat = $this->flat_post_types();
+        if ($flat === [] || !is_string($location) || $location === '') {
+            return $location;
+        }
+
+        $home   = (array) wp_parse_url(home_url());
+        $target = wp_parse_url($location);
+        if (!is_array($target) || (isset($target['host']) && strcasecmp($target['host'], $home['host'] ?? '') !== 0)) {
+            return $location;
+        }
+
+        $base    = trim($home['path'] ?? '', '/');
+        $request = $this->path_segments((string) wp_parse_url((string) ($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH), $base);
+        $nested  = $this->path_segments($target['path'] ?? '', $base);
+        if ($request === null || $nested === null || $request === [] || count($nested) <= count($request)
+            || end($nested) !== end($request)) {
+            return $location;
+        }
+
+        global $wpdb;
+        $ids = $wpdb->get_col($wpdb->prepare(
+            "SELECT ID FROM {$wpdb->posts}
+             WHERE post_name = %s AND post_status = 'publish'
+               AND post_type IN (" . implode(',', array_fill(0, count($flat), '%s')) . ')',
+            end($request), ...$flat
+        ));
+
+        foreach ($ids as $id) {
+            if (FlatSlug::is_own_nested_form($request, $nested, $this->real_ancestor_names((int) $id))) {
+                $this->debug_log('Refused a redirect from a flat URL to its nested form', ['post' => (int) $id, 'target' => $location]);
+                return false;
+            }
+        }
+
+        return $location;
+    }
+
+    /**
+     * A URL path as sanitized segments, relative to the site's own path.
+     * Null when the path lies outside it.
+     *
+     * @return string[]|null
+     */
+    private function path_segments(string $path, string $base): ?array {
+        $parts = array_values(array_filter(explode('/', trim($path, '/')), 'strlen'));
+        $skip  = $base === '' ? [] : explode('/', $base);
+        if (array_slice($parts, 0, count($skip)) !== $skip) {
+            return null;
+        }
+
+        return array_map('sanitize_title_for_query', array_slice($parts, count($skip)));
+    }
+
+    /**
+     * A post's real ancestor names, outermost first.
+     *
+     * @return string[]
+     */
+    private function real_ancestor_names(int $id): array {
+        return array_map(
+            static fn($ancestor) => (string) get_post_field('post_name', $ancestor),
+            array_reverse(get_post_ancestors($id))
+        );
+    }
+
+    /**
+     * The post a flat path names: published first, then the lowest ID, then any
+     * status — core's own `name` lookup orders by date with no tiebreak and 404s
+     * a logged-out visitor whenever the newest of two same-named posts is a
+     * draft. With a chain, the first candidate whose REAL ancestor names equal
+     * it; without one, the first candidate.
+     *
+     * @param string   $post_type Flat post type.
+     * @param string   $leaf      Last path segment.
+     * @param string[] $chain     Ancestor names the path carried, outermost first.
+     * @return int|null Post ID.
+     */
+    private function find_flat_post(string $post_type, string $leaf, array $chain): ?int {
+        global $wpdb;
+
+        $ids = $wpdb->get_col($wpdb->prepare(
+            "SELECT ID FROM {$wpdb->posts}
+             WHERE post_type = %s AND post_name = %s AND post_status NOT IN ('trash','auto-draft')
+             ORDER BY (post_status = 'publish') DESC, ID ASC",
+            $post_type, $leaf
+        ));
+
+        foreach ($ids as $id) {
+            $id = (int) $id;
+            if ($chain === []) {
+                return $id;
+            }
+            if ($this->real_ancestor_names($id) === $chain) {
+                return $id;
+            }
+        }
+
+        return null;
+    }
+
+    // -------------------------------------------------------------------------
     // Token rendering
     // -------------------------------------------------------------------------
 
@@ -380,14 +644,39 @@ class TitleSlugHandler extends UnifiedHandlerBase {
         };
     }
 
+    /**
+     * A free slug for the post. A taken one is walked up the rule's
+     * disambiguation ladder (`SlugLadder`), then numbered for whatever is still
+     * taken — this method supplies the uniqueness lookup and the rung values,
+     * and nothing of the walk itself.
+     *
+     * Numbering is core's (`wp_unique_post_slug()`, per parent) except in a flat
+     * type, where a slug is a path segment straight under the base: there it is
+     * `FlatSlug::number()`, per TYPE, and a reserved name (`page`, `feed`, a bare
+     * number …) is not free. A reserved base skips the ladder — it is not a
+     * collision a parent or a date would explain — and goes straight to numbering.
+     */
     protected function make_unique_slug(string $slug, int $post_id, object $post, array $rule): string {
-        if ($this->slug_is_unique($slug, $post_id, $post->post_type)) {
+        $flat = $this->is_flat_rule($rule, $post->post_type);
+        $free = fn(string $candidate): bool => !($flat && $this->reserved_slug($candidate))
+            && $this->slug_is_unique($candidate, $post_id, $post->post_type);
+
+        if ($free($slug)) {
             return $slug;
         }
-        if (!empty($rule['date_escalation'])) {
-            return $this->escalate_date_slug($slug, $post_id, $post, $rule);
+        $rungs = $this->ladder_rungs($rule, $post_id, $post);
+        if ($rungs && !($flat && $this->reserved_slug($slug))) {
+            $slug = SlugLadder::walk($slug, $rungs, (string) ($rule['escalation_placement'] ?? ''), $free);
         }
-        return wp_unique_post_slug($slug, $post_id, $post->post_status, $post->post_type, $post->post_parent);
+        return $flat
+            ? FlatSlug::number($slug, $free)
+            : wp_unique_post_slug($slug, $post_id, $post->post_status, $post->post_type, $post->post_parent);
+    }
+
+    /** Whether the slug would shadow the base's own feed / paging / embed URLs. */
+    private function reserved_slug(string $slug): bool {
+        global $wp_rewrite;
+        return FlatSlug::reserved($slug, (array) $wp_rewrite->feeds, (string) $wp_rewrite->pagination_base);
     }
 
     private function slug_is_unique(string $slug, int $post_id, string $post_type): bool {
@@ -401,78 +690,32 @@ class TitleSlugHandler extends UnifiedHandlerBase {
         return $count === 0;
     }
 
-    private const PRECISION_ORDER = ['year', 'month', 'day', 'hour', 'minute'];
+    /**
+     * The rule's `slug_escalation` tokens resolved for this post, as the walk
+     * takes them. Every value is shaped by the slug policy, so a parent slug or
+     * a term arrives already a slug. A date token also resolves each finer part
+     * of ITS date, because the walk only knows part names.
+     *
+     * @return array[]
+     */
+    private function ladder_rungs(array $rule, int $post_id, object $post): array {
+        $source = new PostTokenSource($post_id, (array) $post);
+        $policy = OutputPolicy::slug();
+        $rungs  = [];
 
-    /** Index into PRECISION_ORDER of the finest date token in the pattern, or false. */
-    private function date_precision(string $pattern): int|false {
-        $found = array_intersect(self::PRECISION_ORDER, array_map(TokenEngine::date_part_of(...), TokenEngine::tokens($pattern)));
-        return $found ? max(array_keys($found)) : false;
-    }
-
-    private function get_date_parts_for_escalation(array $rule, int $post_id, object $post): array {
-        if (!empty($rule['date_field'])) {
-            $raw = get_post_meta($post_id, $rule['date_field'], true);
-            $dt  = $raw ? TokenEngine::parse_date((string)$raw) : null;
-        } else {
-            $dt = TokenEngine::parse_date((string)$post->post_date); // fallback: publication date
-        }
-        if (!$dt) return [];
-
-        return [
-            'year'   => $dt->format('Y'),
-            'month'  => $dt->format('m'),
-            'day'    => $dt->format('d'),
-            'hour'   => $dt->format('H'),
-            'minute' => $dt->format('i'),
-        ];
-    }
-
-    private function escalate_date_slug(string $slug, int $post_id, object $post, array $rule): string {
-        $precision_index = $this->date_precision($rule['slug_pattern'] ?? '');
-        if ($precision_index === false && !empty($rule['title_pattern'])) {
-            $precision_index = $this->date_precision($rule['title_pattern']);
-        }
-        $parts = $this->get_date_parts_for_escalation($rule, $post_id, $post);
-        if (empty($parts)) {
-            return wp_unique_post_slug($slug, $post_id, $post->post_status, $post->post_type, $post->post_parent);
-        }
-
-        // Escalation ladder: add progressively more date precision until unique.
-        // Parts insert adjacent to existing date portion, not appended to end.
-        if ($precision_index === false) {
-            return wp_unique_post_slug($slug, $post_id, $post->post_status, $post->post_type, $post->post_parent);
-        }
-
-        // Build the anchor: the date string already present in the slug.
-        $anchor = '';
-        for ($i = 0; $i <= $precision_index; $i++) {
-            $key = self::PRECISION_ORDER[$i];
-            if (!empty($parts[$key])) {
-                $anchor .= ($anchor !== '' ? '-' : '') . $parts[$key];
+        foreach (TokenEngine::tokens((string) ($rule['slug_escalation'] ?? '')) as $token) {
+            $part = TokenEngine::date_part_of($token);
+            if ($part === null) {
+                $rungs[] = ['value' => TokenEngine::render('{' . $token . '}', $source, $policy)];
+                continue;
             }
-        }
-
-        // Find anchor position in slug to splice after it.
-        $anchor_pos = strpos($slug, $anchor);
-        if ($anchor_pos === false) {
-            return wp_unique_post_slug($slug, $post_id, $post->post_status, $post->post_type, $post->post_parent);
-        }
-        $before = substr($slug, 0, $anchor_pos + strlen($anchor));
-        $after  = substr($slug, $anchor_pos + strlen($anchor));
-
-        // Escalate: insert next date parts between anchor and remainder.
-        $extra = '';
-        $candidate = $slug;
-        for ($i = $precision_index + 1; $i < count(self::PRECISION_ORDER); $i++) {
-            $key = self::PRECISION_ORDER[$i];
-            if (empty($parts[$key])) continue;
-            $extra .= '-' . $parts[$key];
-            $candidate = $before . $extra . $after;
-            if ($this->slug_is_unique($candidate, $post_id, $post->post_type)) {
-                return $candidate;
+            $parts = [];
+            foreach (SlugLadder::PARTS as $name) {
+                $parts[$name] = TokenEngine::render('{' . TokenEngine::with_date_part($token, $name) . '}', $source, $policy);
             }
+            $rungs[] = ['part' => $part, 'parts' => $parts];
         }
 
-        return wp_unique_post_slug($candidate, $post_id, $post->post_status, $post->post_type, $post->post_parent);
+        return $rungs;
     }
 }

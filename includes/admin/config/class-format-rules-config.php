@@ -50,6 +50,7 @@
 namespace BWS\MetaConductor\Admin\Config;
 
 use BWS\MetaConductor\Admin\CollisionDetector;
+use BWS\MetaConductor\Admin\DuplicateNameNotice;
 use BWS\MetaConductor\RuleTypes\Registry;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 
@@ -119,8 +120,10 @@ class FormatRulesConfig {
             'id'          => 'format_rules',
             'title'       => __('Format rules, in order', 'meta-conductor'),
             'description' => __('Every rule that rewrites a post\'s own fields, in the order they run. Drag a rule up to let it act before the ones below it.', 'meta-conductor'),
-            'fields'      => [
+            'fields'      => array_values(array_filter([
                 ConfigHelpers::token_reference_field(),
+                // Null off the settings screen and when nothing is duplicated.
+                DuplicateNameNotice::field(),
                 [
                     'id'    => OptionRuleStorage::KIND_FORMAT,
                     'type'  => 'repeater',
@@ -137,7 +140,7 @@ class FormatRulesConfig {
                     ],
                 ],
                 ConfigHelpers::apply_page_note('title_slug_actions_note'),
-            ],
+            ])),
         ];
     }
 

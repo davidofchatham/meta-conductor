@@ -5,7 +5,7 @@ namespace BWS\MetaConductor\Tokens;
 if (!defined('ABSPATH')) exit;
 
 /**
- * Renders `{meta:x} {term:tax} {pub_year}`-style patterns: split into literal +
+ * Renders `{meta:x} {term:tax} {pub_year} {mod_year} {parent:slug}`-style patterns: split into literal +
  * token segments, resolve each token against a source, remove each empty token
  * together with the punctuation that only existed to join it, then trim what is
  * left. The removal rules are the ordered steps of bws-gb-dynamic-tags-extensions'
@@ -98,13 +98,27 @@ final class TokenEngine {
     }
 
     /**
-     * The date part a token renders — `date_<part>:field` or `pub_<part>` — or
-     * null for any other token.
+     * The date part a token renders — `date_<part>:field`, `pub_<part>` or
+     * `mod_<part>` — or null for any other token.
      */
     public static function date_part_of(string $token): ?string {
         [$kind, $arg] = self::split($token);
-        $prefix = $arg === null ? 'pub_' : 'date_';
-        return str_starts_with($kind, $prefix) ? substr($kind, strlen($prefix)) : null;
+        foreach ($arg === null ? ['pub_', 'mod_'] : ['date_'] as $prefix) {
+            if (str_starts_with($kind, $prefix)) return substr($kind, strlen($prefix));
+        }
+        return null;
+    }
+
+    /**
+     * The same date token reading another part — `pub_year` -> `pub_day`,
+     * `date_year:start` -> `date_day:start` — or null for a token that is not a
+     * date. How a date rung of the slug ladder reads the finer parts of ITS date.
+     */
+    public static function with_date_part(string $token, string $part): ?string {
+        $current = self::date_part_of($token);
+        if ($current === null) return null;
+        [$kind, $arg] = self::split($token);
+        return substr($kind, 0, -strlen($current)) . $part . ($arg === null ? '' : ':' . $arg);
     }
 
     /**
@@ -156,9 +170,11 @@ final class TokenEngine {
         $date_part    = self::date_part_of($token);
 
         $value = match (true) {
-            $date_part !== null && $arg === null              => self::date_part($source->published(), $date_part, $policy),
+            $date_part !== null && $arg === null              => self::date_part(
+                str_starts_with($kind, 'mod_') ? $source->modified() : $source->published(), $date_part, $policy),
             $date_part !== null                               => self::date_field($source->field($arg), $date_part, $policy),
             $arg === null                                     => '',
+            $kind === 'parent' && $arg === 'slug'             => $source->parent_slug(),
             $kind === 'meta'                                  => self::scalar($source->field($arg)),
             $kind === 'term'                                  => self::terms($source, $arg, $policy, true),
             $kind === 'terms'                                 => self::terms($source, $arg, $policy, false),

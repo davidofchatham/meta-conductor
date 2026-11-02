@@ -279,7 +279,7 @@ $expected_visible = [
     'title_slug_rules' => [
         'type', 'enabled', 'name', 'post_type',
         'title_pattern', 'slug_pattern', 'slug_mode',
-        'date_escalation', 'date_field', 'row_title',
+        'slug_escalation', 'slug_escalation_tokens', 'escalation_placement', 'flat_urls', 'row_title',
     ],
     'field_transformation_rules' => [
         'type', 'enabled', 'name', 'post_types',
@@ -306,7 +306,7 @@ foreach ($TYPES as $type) {
 // a regression while this list is the handler's actual read contract
 // (TitleSlugHandler::apply_to_data / rule_matches / escalation).
 $handler_reads = ['enabled', 'post_type', 'title_pattern', 'slug_pattern',
-                  'slug_mode', 'date_escalation', 'date_field'];
+                  'slug_mode', 'slug_escalation', 'escalation_placement', 'flat_urls'];
 $visible_title_slug = [];
 foreach ($subfields as $s) {
     if (Conditions::evaluate($s['conditions'] ?? null, ['type' => 'title_slug_rules'])) {
@@ -327,7 +327,35 @@ foreach ($subfields as $s) {
 $check('every key the computed field handler reads survives a save',
     empty(array_diff(['enabled', 'post_types', 'target_field', 'pattern', 'output'], $visible_field)));
 $check('title/slug mechanics are not offered on a computed field row',
-    !array_intersect(['title_pattern', 'slug_pattern', 'slug_mode', 'date_escalation', 'date_field'], $visible_field));
+    !array_intersect(['title_pattern', 'slug_pattern', 'slug_mode', 'slug_escalation', 'slug_escalation_tokens', 'escalation_placement', 'flat_urls'], $visible_field));
+// `flat_urls` is offered for EVERY post type (a Wireframe gate cannot see
+// hierarchy), so its description is the only thing that says it is ignored for a
+// flat one. It carries the descriptor's own `type` gate and nothing narrower.
+$check('flat_urls is a toggle, off by default, whose description says hierarchical custom types only',
+    ($by_id['flat_urls']['type'] ?? '') === 'toggle'
+    && ($by_id['flat_urls']['default'] ?? null) === false
+    && stripos((string) ($by_id['flat_urls']['description'] ?? ''), 'hierarchical custom post types only') !== false);
+$check('flat_urls carries the type gate and nothing else',
+    ($by_id['flat_urls']['conditions'] ?? null) === ['field' => 'type', 'operator' => 'in', 'value' => ['title_slug_rules']]);
+// The ladder fields (FW-51 02) ride the same gate as every title/slug field —
+// never one on the shared frame, which would delete them on a type that is not
+// title & slug, and (with one type) on the only type there is.
+$check('the ladder fields carry the type gate and nothing else',
+    ($by_id['slug_escalation']['conditions'] ?? null) === ['field' => 'type', 'operator' => 'in', 'value' => ['title_slug_rules']]
+    && ($by_id['escalation_placement']['conditions'] ?? null) === ['field' => 'type', 'operator' => 'in', 'value' => ['title_slug_rules']]);
+$check('slug_escalation is a text field with the year placeholder and an Available tokens table',
+    ($by_id['slug_escalation']['type'] ?? '') === 'text'
+    && ($by_id['slug_escalation']['args']['placeholder'] ?? '') === '{pub_year}'
+    && ($by_id['slug_escalation_tokens']['type'] ?? '') === 'html'
+    && str_contains($by_id['slug_escalation_tokens']['args']['content'] ?? '', 'Available tokens'));
+$check('slug_escalation warns that a modified date makes the slug depend on the last save',
+    str_contains(strtolower($by_id['slug_escalation']['description'] ?? ''), 'last save'));
+$check('escalation_placement is a prefix/suffix select that defaults to suffix',
+    ($by_id['escalation_placement']['type'] ?? '') === 'select'
+    && array_keys($by_id['escalation_placement']['args']['options'] ?? []) === ['suffix', 'prefix']
+    && ($by_id['escalation_placement']['default'] ?? '') === 'suffix');
+$check('the date-only escalation fields are gone',
+    !isset($by_id['date_escalation']) && !isset($by_id['date_field']));
 $check('computed field mechanics are not offered on a title/slug row',
     !array_intersect(['target_field', 'pattern', 'output'], $visible_title_slug));
 
@@ -462,8 +490,8 @@ $r = fn(array $rows) => $repair->invoke(null, $rows);
 $stored = [[
     'enabled' => true, 'name' => 'MC item slug', 'post_type' => 'mc_item',
     'slug_pattern' => '{default_slug}-{date_year:mc_event_date}',
-    'slug_mode' => 'replace', 'date_escalation' => true,
-    'date_field' => 'mc_event_date', 'type' => 'title_slug_rules',
+    'slug_mode' => 'replace', 'slug_escalation' => '{date_year:mc_event_date}',
+    'escalation_placement' => 'suffix', 'type' => 'title_slug_rules',
 ]];
 $repaired = $r($stored);
 $check('the repair backfills a missing row_title',

@@ -135,12 +135,28 @@ Status (L1)          — second root: related/time-based targets live here so
 |---|---|
 | Trigger | **None since #64** — the handler registers nothing. `FormatDispatcher` runs it from `TermDispatcher`'s drain, after the term pass for the same entity; the dispatcher owns the write, the revision suppression and `redirect_post_location`. (Was `wp_insert_post_data` p1 + `acf/save_post`/`save_post` p99.) |
 | Schema | Single `post_type` per rule, **one rule per post type** (first-match-wins). Own CPT so shared titles never mutate: `mc_item`. Token sources: post meta (ACF date field `mc_event_date`), terms (`{term:mc_topic}`). |
-| Data | Posts with meta + terms feeding tokens; two posts colliding on generated slug (date_escalation ladder year→minute → `wp_unique_post_slug`). |
-| Rule config | `name`, `post_type: mc_item`, `title_pattern` / `slug_pattern` (tokens: `{default_title}`, `{meta:x}`, `{date_year:x}`, `{pub_*}`, `{term:tax}`, `{terms:tax}`), `slug_mode` (prefix/suffix/replace), `date_escalation` + `date_field`. |
+| Data | Posts with meta + terms feeding tokens; two posts colliding on generated slug (`slug_escalation` ladder → `wp_unique_post_slug`). |
+| Rule config | `name`, `post_type: mc_item`, `title_pattern` / `slug_pattern` (tokens: `{default_title}`, `{meta:x}`, `{date_year:x}`, `{pub_*}`, `{term:tax}`, `{terms:tax}`), `slug_mode` (prefix/suffix/replace), `slug_escalation` + `escalation_placement`. |
 | Rules to seed | 1 (`mc_item`: slug_pattern with `{meta:...}` + `{term:mc_topic}`, escalation on). Pattern variants per-scenario (one-per-type limit blocks parallel rules). |
 | Mutates | `post_title`/`post_name` only; meta `_bws_raw_title`/`_bws_applied_title`. No taxonomy writes. |
 | Scenarios | Same-pass `{term:TAX}` read (a term rule's write, not the previous save's); provocation-independence (editor save / ACF save / term write / bulk); idempotent re-pass; slug collision escalation. The pre-write vs post-write split is GONE (#64) — every apply is post-write. |
 | Shared reuse | None — a rule on `page`/`post`/`staff` would rename GBDTE fixture slugs and break every matrix URL. Hard no. |
+
+---
+
+## 8. flat URLs — TitleSlugHandler read-time hooks (FW-51 04)
+
+| Aspect | Need |
+|---|---|
+| Trigger | `post_type_link` (p20) and `request` (p10), declared by `TitleSlugRules::runtime_hooks()` and registered by `TaxonomyManager`. No write; no pass. |
+| Schema | `mc_flat` — hierarchical, no taxonomies/ACF/seeded rules (manifest v9). The sweep authors its one row (`flat_urls` on). |
+| Data | Two parent/child pairs seeded (`flat-parent`/`flat-child`, `flat-parent-2`/`flat-child-2`, unique names). The same-name twin pair (draft with the LOWER ID under `flat-parent-2`, published under `flat-parent`) is created and deleted by the sweep — a seeded twin would collapse onto one post at the next seed (`mc_fixture_find_post` returns the oldest match). |
+| Scenarios | Permalink flat for children, unchanged for parents / other types / `flat_urls` on a non-hierarchical type; first row per type decides; off reverts to nested; REST `link`, sitemap, attachment link follow; request resolves `/child/` and `/child/N/`; exact nested chain 301s (paging kept); stale / foreign-parent / extra-segment chain, feed, and a draft's nested URL fall through; twin order published → lowest ID → any status. |
+| Restore gotcha | `restore` deletes the twins and checks every fixture `post_name` against the manifest (§7). |
+| Uniqueness (05) | `sweep-flat-slugs.php`: temp posts under both parents with one title — per-type numbering, `{parent:slug}` rung before numbering (suffix and prefix), exhausted ladder, an empty rung skipped, reserved names numbered without a rung, near-misses left alone, and `flat_urls` off = core's per-parent behavior. Host-PHP half: `tests/verify-flat-slug.php`. Real-data gate (run 2026-11-02 on the Site P clone, dev-swapped then `--live` rolled back): flat permalinks, `/base/child/` 200, nested 301 `x-redirect-by: Meta Conductor`, paging kept, a colliding child got the parent rung, `page` numbered. Logged-out visitors 404 there regardless (the site's access control), so curl with a logged-in cookie. |
+| Duplicate-name notice (06) | `sweep-flat-notice.php`: same-name pair under two parents on a flat type → notice lists both (edit link + parent); rename clears it; no notice off the settings screen, with no flat row, or with no duplicates. |
+| End-to-end | Core, not us: a junk chain 404s and `redirect_guess_404_permalink()` then 301s it to the flat link (`x-redirect-by: WordPress`). Check real HTTP from the container: `docker exec wp-litespeed-litespeed-1 curl -sk -D - -o /dev/null -H 'Host: testbed.test' https://localhost/mc-flat/mc-flat-parent/mc-flat-child/` → 301 `x-redirect-by: Meta Conductor`; `/mc-flat/mc-flat-child/` → 200. |
+| Redirect veto | Not sweepable: redirect plugins skip their loop under WP-CLI, so check real HTTP on a clone whose redirect plugin holds a rule from a flat URL to its own nested form (a post given a parent while `flat_urls` was off). Before: the flat URL 301s to nested, which 301s back. After: the flat URL is served (or the site's own access control answers), and redirects from other live URLs still fire. Run 2026-11-02 on the Site P clone, dev-swapped. Host-PHP half: `FlatSlug::is_own_nested_form()` in `tests/verify-flat-slug.php`. |
 
 ---
 
@@ -680,7 +696,7 @@ this is date-independent.)
 ### §7 title_slug — results
 
 Seeded rule: `mc_item`, `slug_pattern = {default_slug}-{date_year:mc_event_date}`,
-mode replace, `date_escalation=true`, `date_field=mc_event_date`. It's a META
+mode replace, `slug_escalation={date_year:mc_event_date}` (FW-51 02; was `date_escalation=true` + `date_field=mc_event_date`). It's a META
 pattern (`date_year:`). **As of #64 that distinction is gone** — the pre-write
 `wp_insert_post_data` path is deleted and every apply happens in the format pass,
 so §7a-§7c below hold for meta and non-meta patterns alike. Subjects: `item-alpha` (event 2030-03-15),
@@ -756,6 +772,17 @@ slug derives).
 is what `mc_pid()` looks a fixture post up by — so the subject's ID is cached in
 the `mc64_subject_id` option on first resolution and every later step reads that.
 `restore` renames the subject back from the manifest and drops the cache.
+
+#### §7 collision ladder (FW-51 02) — results
+
+`sweep-slug-ladder.php`, 26 assertions, all green. Two throw-away `mc_item` posts per case (same title; the first takes the base slug, the second collides), rule = `slug_pattern {default_slug}`, replace, with only the title/slug rule live (a hierarchy rule adds the term's ancestors and changes which term is first).
+
+- **published date, anchorless** ✅ `{pub_year}` → `ladder-pub-2026` (the Site E row 2 shape; was `-2`). **Prefix** → `2026-ladder-pub-pre`.
+- **meta date** ✅ anchored (`{default_slug}-{date_year:mc_event_date}`, rung `{date_year:…}`): `ladder-meta-2029` then `ladder-meta-2029-07`; rung `{date_day:…}` skips to `ladder-meta-day-2029-07-05`; anchorless `ladder-meta-free-2029`.
+- **modified date** ✅ `{mod_year}` → `ladder-mod-<this year>`.
+- **parent** ✅ `ladder-par-ladder-holder`; prefix `ladder-holder-ladder-par-pre`.
+- **term** ✅ `{term:mc_topic}` → `ladder-term-inland`. **Empty rung skipped** ✅ (`{parent:slug}{term:…}` with no parent). **Exhausted** ✅ falls through to core numbering (`ladder-gone-2`).
+- Post names checked after the restore: no temporary post survives, every fixture `mc_item` has its manifest name. `sweep-59-roundtrip`/`-behaviour` re-run green (their `fields[0]` lookup went stale when the token reference moved to lead the section; they now find the list by id), `sweep-64-format` re-run green.
 
 ### §8 ordered term repeater (#57, 0.8.0) — results
 

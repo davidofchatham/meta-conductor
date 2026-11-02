@@ -10,7 +10,7 @@
  * (sport / teams / school_year). Both fields are ALSO ACF-bidirectional, so ACF
  * keeps the two sides consistent by itself.
  *
- * Steps: state | a | a2 | b1 | b2 | c | d1 | d2 | e | e2 | z  (z = restore)
+ * Steps: state | a | a2 | b1 | b2 | c | c2 | d1 | d2 | e | e2 | z  (z = restore)
  * Split across processes on purpose — the #42 flush runs on `shutdown`, so a
  * bare update_field() can only be asserted in a LATER request.
  *
@@ -167,8 +167,12 @@ switch ( $step ) {
 		$assert( class_exists( '\AC\Column\CustomFieldContext' ), 'AC\Column\CustomFieldContext exists' );
 
 		// Clear terms, then drive the AC path: update_field (as AC's storage
-		// does) followed by AC's own saved signal, which must flush IMMEDIATELY
-		// — before shutdown — so the inline-edit response is accurate.
+		// does) followed by AC's own saved signal, which must pass the edited
+		// schedule IMMEDIATELY — before shutdown — so the inline-edit response
+		// (the schedule's row) is accurate. Since the 0.8.0 dispatcher the game
+		// is not written in that pass: the schedule's fan-out only MARKS it, and
+		// the shutdown drain applies it. So in-request the game is queued but
+		// still bare; c2 asserts its terms in a later request.
 		$hard_clear();
 
 		$games = $ids( get_field( 'schedule_games', MC_CONFIRM_SCHEDULE ) );
@@ -179,9 +183,19 @@ switch ( $step ) {
 		};
 		do_action( 'ac/editing/saved', $column, MC_CONFIRM_SCHEDULE, $games, null );
 
+		$dispatcher = \BWS\MetaConductor\TaxonomyManager::get_instance()->get_term_dispatcher();
+		$dirty      = ( new ReflectionProperty( $dispatcher, 'dirty' ) )->getValue( $dispatcher );
+		$assert( isset( $dirty[ MC_CONFIRM_GAME ] ), 'AC signal passed the schedule immediately — its fan-out queued the game (#37 timing)' );
+		WP_CLI::log( '    game terms in-request (expected still empty — applied on shutdown): ' . wp_json_encode( $terms( MC_CONFIRM_GAME ) ) );
+		break;
+
+	case 'c2':
+		WP_CLI::log( 'C2 — assert the AC-queued game was applied after the request ended' );
 		$after = $terms( MC_CONFIRM_GAME );
-		WP_CLI::log( '    terms right after the AC signal (NOT at shutdown): ' . wp_json_encode( $after ) );
-		$assert( ! empty( $after['sport'] ), 'AC signal flushed immediately, same request (#37 timing preserved)' );
+		WP_CLI::log( '    ' . wp_json_encode( $after ) );
+		$assert( ! empty( $after['sport'] ), 'sport applied by the shutdown drain after the AC signal' );
+		$assert( ! empty( $after['teams'] ), 'teams applied by the shutdown drain after the AC signal' );
+		$assert( ! empty( $after['school_year'] ), 'school_year applied by the shutdown drain after the AC signal' );
 		break;
 
 	// ---- D. REST write ---------------------------------------------
