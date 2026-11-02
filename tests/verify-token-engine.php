@@ -51,6 +51,8 @@ final class FakeTokenSource implements TokenSourceInterface {
         private array $meta,
         private array $terms = [],
         private ?\DateTimeInterface $published = null,
+        private ?\DateTimeInterface $modified = null,
+        private string $parent_slug = '',
     ) {}
 
     public function field(string $key): mixed {
@@ -63,6 +65,14 @@ final class FakeTokenSource implements TokenSourceInterface {
 
     public function published(): ?\DateTimeInterface {
         return $this->published;
+    }
+
+    public function modified(): ?\DateTimeInterface {
+        return $this->modified;
+    }
+
+    public function parent_slug(): string {
+        return $this->parent_slug;
     }
 }
 
@@ -377,6 +387,66 @@ $check('unparseable date resolves empty', $parts('bad') === '');
 $check('parse_date: blank is null, not now', TokenEngine::parse_date('') === null && TokenEngine::parse_date(' ') === null);
 $check('parse_date returns site time',
     TokenEngine::parse_date('20260403')?->getTimezone()->getName() === 'America/New_York');
+
+// --- {mod_*} and {parent:slug} (FW-51 01). ----------------------------------
+// Deliberate additions beside the captured golden: the golden source has no
+// modified date or parent, and a regenerated capture would drop hand-added rows.
+
+$ny    = new \DateTimeZone('America/New_York');
+$msrc  = new FakeTokenSource(['a' => 'Alpha'], [], new \DateTimeImmutable('2020-01-02 03:04:00', $ny),
+    new \DateTimeImmutable('2027-11-09 13:05:00', $ny), 'harbor-light');
+$bare  = new FakeTokenSource(['a' => 'Alpha']); // no modified date, no parent
+$slugp = OutputPolicy::slug(static fn(string $v) => strtolower($v));
+$m     = static fn(string $p, ?TokenSourceInterface $s = null, ?OutputPolicy $pol = null)
+    => TokenEngine::render($p, $s ?? $msrc, $pol ?? $title);
+
+foreach (['year' => '2027', 'month' => 'November', 'day' => '09', 'hour' => '13', 'minute' => '05'] as $part => $want) {
+    $check("mod_$part renders the modified date, not the published one", $m("{mod_$part}") === $want);
+    $check("date_part_of mod_$part", TokenEngine::date_part_of("mod_$part") === $part);
+}
+$check('mod_month follows the slug policy exactly as pub_month does',
+    $m('{mod_month}', null, $slugp) === TokenEngine::render('{pub_month}', new FakeTokenSource([], [], new \DateTimeImmutable('2027-11-09', $ny)), $slugp));
+$check('pub_ parts still read the published date', $m('{pub_year}') === '2020');
+$check('date_part_of: mod_ takes no field', TokenEngine::date_part_of('mod_year:x') === null);
+$check('mod_year:x resolves empty', $m('{mod_year:x}') === '' && $m('{meta:a} {mod_year:x}') === 'Alpha');
+$check('empty modified resolves empty and its separator is cleaned',
+    $m('{mod_year}', $bare) === '' && $m('{meta:a} - {mod_year}', $bare) === 'Alpha' && $m('{mod_year} - {meta:a}', $bare) === 'Alpha');
+$check('modified present beside other tokens', $m('{meta:a} - {mod_year}') === 'Alpha - 2027');
+
+$check('parent:slug renders the parent slug', $m('{parent:slug}') === 'harbor-light');
+$check('parent:slug is empty without a parent', $m('{parent:slug}', $bare) === '');
+$check('empty parent:slug cleans its separator',
+    $m('{meta:a} / {parent:slug}', $bare) === 'Alpha' && $m('{parent:slug} / {meta:a}', $bare) === 'Alpha'
+    && $m('{meta:a} / {parent:slug}') === 'Alpha / harbor-light');
+$check('parent with any other argument, or none, resolves empty',
+    $m('{parent:x}') === '' && $m('{parent}') === '' && $m('{meta:a} {parent:title}') === 'Alpha');
+$check('parent:slug under the slug policy', $m('{meta:a}-{parent:slug}', null, $slugp) === 'alpha-harbor-light');
+$check('parent:slug takes the duplicate guard like any token',
+    TokenEngine::render('{meta:a} {parent:slug}', $msrc, $title, [], 'in the harbor-light') === 'Alpha');
+$check('tokens() sees mod_ and parent:slug', TokenEngine::tokens('{mod_year} {parent:slug}') === ['mod_year', 'parent:slug']);
+$check('field_names() ignores them', TokenEngine::field_names('{mod_year} {parent:slug}') === []);
+
+$rowm = new \BWS\MetaConductor\Tokens\RowTokenSource($msrc, ['first' => 'Ada']);
+$check('row: modified and parent answer empty even over a post that has both',
+    TokenEngine::render('{meta:first} {mod_year} {parent:slug}', $rowm, $title) === 'Ada'
+    && $rowm->modified() === null && $rowm->parent_slug() === '');
+
+// PostTokenSource reads them from the seam's data array, in site time.
+$GLOBALS['site_tz']   = 'America/New_York';
+$GLOBALS['mc_slugs']  = [7 => 'harbor-light'];
+function get_post_field(string $field, int $id): string {
+    return $GLOBALS['mc_slugs'][$id] ?? '';
+}
+$pt = static fn(array $d) => new \BWS\MetaConductor\Tokens\PostTokenSource(1, $d);
+$check('post source: modified reads post_modified in site time',
+    $pt(['post_modified' => '2027-11-09 13:05:00'])->modified()?->format('Y-m-d H:i e') === '2027-11-09 13:05 America/New_York');
+$check('post source: absent, empty and zero modified are null',
+    $pt([])->modified() === null && $pt(['post_modified' => ''])->modified() === null
+    && $pt(['post_modified' => '0000-00-00 00:00:00'])->modified() === null);
+$check('post source: parent slug from post_parent',
+    $pt(['post_parent' => 7])->parent_slug() === 'harbor-light');
+$check('post source: no parent, or a parent that is gone, is empty',
+    $pt([])->parent_slug() === '' && $pt(['post_parent' => 0])->parent_slug() === '' && $pt(['post_parent' => 99])->parent_slug() === '');
 
 // --- Report. ----------------------------------------------------------------
 

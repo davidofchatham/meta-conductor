@@ -75,6 +75,8 @@ class ConfigHelpers {
             [$tok('{pub_year}'), __('2024 (publication date, local time)', 'meta-conductor'), '2024'],
             [$tok('{pub_month}'), __('March', 'meta-conductor'), '03'],
             [$tok('{pub_day}', '{pub_hour}', '{pub_minute}'), __('Same numeric pattern as above', 'meta-conductor'), ''],
+            [$tok('{mod_year}', '{mod_month}', '{mod_day}', '{mod_hour}', '{mod_minute}'), __('Same as the {pub_*} tokens, from the modified date', 'meta-conductor'), ''],
+            [$tok('{parent:slug}'), __('Immediate parent\'s slug; empty with no parent', 'meta-conductor'), __('Same', 'meta-conductor')],
             [$tok('{term:taxonomy}'), __('First term name (alpha)', 'meta-conductor'), __('First term slug', 'meta-conductor')],
             [$tok('{terms:taxonomy}'), __('All term names, comma-joined', 'meta-conductor'), __('All slugs, hyphen-joined', 'meta-conductor')],
         ];

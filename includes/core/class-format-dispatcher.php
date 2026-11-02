@@ -447,20 +447,21 @@ class FormatDispatcher {
      */
     private function post_data(\WP_Post $post): array {
         return [
-            'ID'          => (int) $post->ID,
-            'post_title'  => (string) $post->post_title,
-            'post_name'   => (string) $post->post_name,
-            'post_type'   => (string) $post->post_type,
-            'post_status' => (string) $post->post_status,
-            'post_date'   => (string) $post->post_date,
-            'post_parent' => (int) $post->post_parent,
+            'ID'            => (int) $post->ID,
+            'post_title'    => (string) $post->post_title,
+            'post_name'     => (string) $post->post_name,
+            'post_type'     => (string) $post->post_type,
+            'post_status'   => (string) $post->post_status,
+            'post_date'     => (string) $post->post_date,
+            'post_modified' => (string) $post->post_modified,
+            'post_parent'   => (int) $post->post_parent,
             // Field effects: computed values by field NAME, and the ACF field
             // KEY each is written by. Empty until a Computed field rule sets one.
-            'fields'      => [],
-            'field_keys'  => [],
+            'fields'        => [],
+            'field_keys'    => [],
             // Repeater-row cells a row rule sets: repeater key => 1-based row =>
             // subfield key => {name, meta, label, value}.
-            'rows'        => [],
+            'rows'          => [],
         ];
     }
 

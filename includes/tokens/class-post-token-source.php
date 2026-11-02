@@ -50,4 +50,18 @@ final class PostTokenSource implements TokenSourceInterface {
     public function published(): ?\DateTimeInterface {
         return new \DateTimeImmutable((string) ($this->data['post_date'] ?? ''), wp_timezone());
     }
+
+    /**
+     * `post_modified` is site time too. Unlike the publish date, a draft that
+     * never saved carries the zero date, which is "none", not year -0001.
+     */
+    public function modified(): ?\DateTimeInterface {
+        $value = (string) ($this->data['post_modified'] ?? '');
+        return ($value === '' || str_starts_with($value, '0000')) ? null : new \DateTimeImmutable($value, wp_timezone());
+    }
+
+    public function parent_slug(): string {
+        $parent = (int) ($this->data['post_parent'] ?? 0);
+        return $parent > 0 ? (string) get_post_field('post_name', $parent) : '';
+    }
 }
