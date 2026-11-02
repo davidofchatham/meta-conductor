@@ -64,7 +64,7 @@ interface RuleStorage {
      * Get all rules in one effect-kind list, in AUTHORED order.
      *
      * The kind lists (`term_rules`, `format_rules`) are the ordered rule model
-     * of ADR 0003 and, since #66, the only stored shape: every row carries its
+     * of architecture.md → Effect-kind rule lists and, since #66, the only stored shape: every row carries its
      * own `type`, and order is array position. Order is the composition
      * semantics a dispatcher pass executes in, so this read never regroups or
      * re-sorts. Filtering on `['type' => X]` is what `get_rules(X, ...)` is.

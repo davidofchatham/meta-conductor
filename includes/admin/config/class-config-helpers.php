@@ -282,7 +282,7 @@ class ConfigHelpers {
      *
      * The stored values are unchanged legacy: `replace`/`merge`/`skip`
      * predate the vocabulary, and nothing migrates. See CONTEXT.md → Claim
-     * and ADR 0004 for why the axis has four values (the fourth,
+     * for why the axis has four values (the fourth,
      * `restricting`, is fixed by rule type and reaches no dropdown).
      */
     public const CLAIM_NAMES = [
@@ -314,10 +314,12 @@ class ConfigHelpers {
      *
      * Option labels lead with the domain word, then a colon, then a plain
      * gloss — so the author reads the same term the docs and row titles use
-     * (ADR 0004). Owning's gloss must keep the "anything else is removed"
+     * (CONTEXT.md → Claim). Owning's gloss must keep the "anything else is removed"
      * clause: the "allowed" framing is correct about the outcome but would
      * otherwise read as an edit-time refusal, when enforcement is a later
-     * removal.
+     * removal. The label it replaced, "Replace existing terms", hid the
+     * widening to the whole taxonomy, the most consequential thing the author
+     * could not see.
      *
      * @param string $subject 'child' (a propagation target) or 'post'.
      * @param array  $overrides Field-definition overrides; MUST carry `id`.

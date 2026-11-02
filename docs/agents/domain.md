@@ -4,39 +4,12 @@ How the engineering skills should consume this repo's domain documentation when 
 
 ## Before exploring, read these
 
-- **`CONTEXT.md`** at the repo root, or
-- **`CONTEXT-MAP.md`** at the repo root if it exists: it points at one `CONTEXT.md` per context. Read each one relevant to the topic.
-- **`docs/adr/`**: read ADRs that touch the area you're about to work in. In multi-context repos, also check `src/<context>/docs/adr/` for context-scoped decisions.
+- **`CONTEXT.md`** at the repo root: the glossary. Its entries carry `Rejected` lines for the names and alternatives that lost.
+- **`docs/architecture.md`**: the numbered invariants and the sections that own each decision, with their **Rejected** lists. This is where a design decision lives, next to the code fact it explains.
 
-If any of these files don't exist, **proceed silently**. Don't flag their absence; don't suggest creating them upfront. The `/domain-modeling` skill (reached via `/grill-with-docs` and `/improve-codebase-architecture`) creates them lazily when terms or decisions actually get resolved.
+There is **no `docs/adr/` to read**: the four ADRs were retired into those two files (FW-48), and `docs/adr/README.md` is only a redirect map from the old numbers plus the bar for a future one. **Do not mint an ADR as part of ordinary work**, and do not offer one when a decision is resolved: write it onto the glossary entry or the architecture anchor it justifies. `docs/adr/README.md` owns the table of where each kind of decision goes.
 
-## File structure
-
-Single-context repo (most repos):
-
-```
-/
-├── CONTEXT.md
-├── docs/adr/
-│   ├── 0001-event-sourced-orders.md
-│   └── 0002-postgres-for-write-model.md
-└── src/
-```
-
-Multi-context repo (presence of `CONTEXT-MAP.md` at the root):
-
-```
-/
-├── CONTEXT-MAP.md
-├── docs/adr/                          ← system-wide decisions
-└── src/
-    ├── ordering/
-    │   ├── CONTEXT.md
-    │   └── docs/adr/                  ← context-specific decisions
-    └── billing/
-        ├── CONTEXT.md
-        └── docs/adr/
-```
+If a file above doesn't exist, **proceed silently**. The `/domain-modeling` skill creates glossary entries lazily when terms get resolved.
 
 ## Use the glossary's vocabulary
 
@@ -44,8 +17,8 @@ When your output names a domain concept (in an issue title, a refactor proposal,
 
 If the concept you need isn't in the glossary yet, that's a signal: either you're inventing language the project doesn't use (reconsider) or there's a real gap (note it for `/domain-modeling`).
 
-## Flag ADR conflicts
+## Flag conflicts with a recorded decision
 
-If your output contradicts an existing ADR, surface it explicitly rather than silently overriding:
+If your output contradicts a **Rejected** entry or an invariant in `docs/architecture.md`, surface it explicitly rather than silently overriding:
 
-> _Contradicts ADR-0007 (event-sourced orders), but worth reopening because…_
+> _Contradicts architecture.md invariant 19 (provenance is rejected), but worth reopening because…_

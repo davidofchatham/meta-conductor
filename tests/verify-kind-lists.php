@@ -316,7 +316,7 @@ $check('a row carrying its own id keeps it',
     ])[0]['id'] === 7);
 
 // Rows are read in AUTHORED order. Nothing may regroup them by type: order is
-// the composition semantics a dispatcher pass executes in (ADR 0003 dec. 3).
+// the composition semantics a dispatcher pass executes in (architecture.md invariant 17).
 $interleaved = $storage_over([
     OptionRuleStorage::KIND_TERM => [
         ['type' => 'hierarchical_rules', 'name' => 'a'],

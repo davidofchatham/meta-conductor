@@ -47,7 +47,6 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
    render empty and a resave wipes every rule. It also needs a **read-time
    adapter**, not only the rewrite — `WireframeBootstrap::boot` runs on admin and
    REST requests only, while handlers read storage on front-end and cron saves.
-   (ADR 0003)
 
 2. **Never gate a destructive write on post-type match alone.** A rule whose
    target type is `''`=any matches every post; combined with a replace/remove
@@ -291,7 +290,7 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
     by a flush that now runs AFTER the restore. The plugin's own bulk apply is
     exempt: it does not write through ACF.
 
-17. **A converted handler owns no hooks, and the dispatcher is the only caller of `apply_to_post`.** This INVERTS the rule every hook-driven handler was written to (#60, [ADR 0003](adr/0003-ordered-rule-list-and-dispatcher.md) decisions 3 and 4). `Core\TermDispatcher` owns the trigger union for the `term_rules` kind; handlers of the types it has taken over are pure appliers on the `apply_to_post(int, array): bool` seam. The conversion finished with #64, so every rule type is a pure applier: a pass runs each row its descriptor's `kind()` says it owns, and the only hooks a handler may register are its descriptor's `capture_hooks()` — `tests/verify-term-dispatcher.php` (H13) fails on any other registration (FW-39). A future hook-driven type would restore a descriptor field, not a dispatcher list. Four things make it correct:
+17. **A converted handler owns no hooks, and the dispatcher is the only caller of `apply_to_post`.** This INVERTS the rule every hook-driven handler was written to (#60). `Core\TermDispatcher` owns the trigger union for the `term_rules` kind; handlers of the types it has taken over are pure appliers on the `apply_to_post(int, array): bool` seam. The conversion finished with #64, so every rule type is a pure applier: a pass runs each row its descriptor's `kind()` says it owns, and the only hooks a handler may register are its descriptor's `capture_hooks()` — `tests/verify-term-dispatcher.php` (H13) fails on any other registration (FW-39). A future hook-driven type would restore a descriptor field, not a dispatcher list. Four things make it correct:
 
     - *Triggers mark, they never execute.* One editor save fires `save_post`,
       `acf/save_post` and one `set_object_terms` per taxonomy touched. Executing
@@ -398,7 +397,7 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
     conversion and the one where this bites: it ran *every* rule it owned from
     each of its own hooks, so however many rows it held it occupied ONE slot in
     the order and two of its rows straddling another type's rule was
-    inexpressible — the failure mode ADR 0003 rejected type-level ordering for.
+    inexpressible — the failure mode of type-level ordering (see *Rejected* under this invariant).
     Splitting it per row is what makes the position of each row mean something,
     and it necessarily changes what two rows in one taxonomy do: they used to
     union into a single write and they now compose by order, so a keep-in-sync
@@ -431,9 +430,15 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
     ACF-mirror-lag bounce *and* distinguishes a remove-then-re-add in the same
     request, which the pre-#62 blanket exclude list could not.
 
+    **Rejected** (the lock, trigger and queue bullets above carry their own reasons: a request-scoped lock, a per-taxonomy lock, trigger-filtered passes, and per-handler guards kept as defence in depth):
+
+    - *Cascade between peers.* A rule-initiated write is invisible to peer rules on the SAME effect target and visible to rules on OTHER targets (a term write can still drive a format or field rule, but cannot re-trigger term rules). Letting peers react to each other makes the result depend on hook priority and class-instantiation order, neither of which an author can see.
+    - *Per-handler hooks with priority derived from list position.* A handler has one priority but may own several rules at different positions, so any list where two rules of one type straddle a rule of another is inexpressible — the same failure as ordering by type.
+    - *A fixed order of rule types.* Child-to-parent hierarchy *adds* ancestors and level restriction with `include_ancestors=false` *strips* them; expand→restrict and restrict→expand are both legitimate author intents and one order serves only one. Within a type, term-pairing rules A→B and B→C give different results by order.
+    - *The lock keyed per taxonomy.* `related` rules are cross-taxonomy by construction, so a write to taxonomy B from a pass locked on A would start a nested pass. Termination would then depend on the taxonomy graph being acyclic, and a consumer-before-producer ordering mistake would be silently repaired instead of surfaced. The cross-taxonomy effect still happens, by sequence within the pass rather than by re-entry.
+
 18. **Cross-KIND order is derived, and it holds because one drain runs both
-    passes in sequence — not because of hook priorities (#64,
-    [ADR 0003](adr/0003-ordered-rule-list-and-dispatcher.md) decision 2).**
+    passes in sequence — not because of hook priorities (#64).**
     Within a kind the author orders the rules; between kinds the engine does,
     because the edges are producer→consumer rather than collisions. `title_slug`
     reads terms (`{term:TAX}`, `{terms:TAX}`) and writes none, so it is a sink:
@@ -478,10 +483,10 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
       `post_title`. The idempotency meta is now written from the *resolved base*
       rather than the submitted title, which is what makes a re-pass over an
       unchanged post record the same pair back instead of compounding.
+    - **Rejected: partitioning by page or kind so that order never matters.** The claim that effect kind partitions cleanly ("nothing in the term group reads a title, so title/slug is a terminal sink") is false in both directions. `title_slug` reads terms and meta; the Computed field rule reads terms through the same token engine; `user_based` WRITES terms (an *owning* claim); a planned `acf_relationship_rules` would write `post_parent`, which propagation reads, and planned status mirroring `post_status`, which several rules use as a filter gate. These are **producer→consumer** edges — asymmetric, derivable — as against invariant 19's **collision** edges, which are symmetric and need an author. Collisions need the same effect target, hence the same kind; producer→consumer edges cross kinds. That is why order is authored within a kind and derived between kinds, and why a page boundary carries no semantics.
+    - **The kind graph must stay acyclic.** It is today. A rule that set terms *from* a title would close a cycle no ordering resolves; that must be a hard warning, not a silent pick.
 
-19. **A collision is DETECTED and named, never resolved (#65,
-    [ADR 0002](adr/0002-cross-rule-composition.md) decision 2,
-    [ADR 0004](adr/0004-claim-axis-and-jurisdiction.md)).** Two rules contend
+19. **A collision is DETECTED and named, never resolved (#65).** Two rules contend
     when they write the same **effect target** on posts that can be the same
     posts. [`Admin\CollisionDetector`](../includes/admin/class-collision-detector.php)
     says so and does nothing else: advisory at authoring time, never consulted
@@ -514,16 +519,17 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
     - **Targets must be EQUAL, not nested.** A taxonomy-wide rule is not paired
       with a term rule whose term lives in that taxonomy, and the claim axis is
       not consulted at all. Both pairings are real, and both belong to the
-      deferred reach/component detector, which takes ADR 0004's second conjunct
-      — reaches intersect **and** jurisdictions overlap. Nothing here should be
+      deferred reach/component detector, which adds the jurisdiction conjunct
+      (CONTEXT.md → **Jurisdiction**): reaches intersect **and** jurisdictions
+      overlap. Nothing here should be
       read as "shared reach alone implies contention". H14 asserts the
       non-pairing so the boundary is a decision on the record.
     - **Where a pair is precisely diagnosable, the warning names the
       contradiction.** A hierarchy rule that adds a lineage beside a level
       restriction that does not undertake to keep it (#51) reads *"adds ancestor
       terms … does not keep them"*, not "these two collide". Two rules over one
-      term that each remove it (#69, the mutual annihilation ADR 0001 names as
-      the cost of retroactive ownership) say so. Two format rules on one post
+      term that each remove it (#69, the mutual annihilation that is the cost of
+      retroactive ownership — see *Rejected: provenance* below) say so. Two format rules on one post
       type say the lower one never runs.
     - **Two surfaces, one detector.** `settings_saved` — and `settings_reset`,
       which wipes the very rules a stored finding names — recompute from storage
@@ -548,6 +554,33 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
       pair, which is the re-derived-switch drift invariant 17's cousins warn
       about.
 
+    **The claim vocabulary and its law live in the glossary** (CONTEXT.md →
+    **Claim**, **Jurisdiction**, **Reach**): four claims, and *owning requires a
+    statically enumerable jurisdiction*. That law is why `merge` and `skip` never
+    reconcile, why `replace` is blunt, and why a scalar target is always a
+    collision. The detector does not consult the claim axis yet (see *Targets must
+    be EQUAL* above).
+
+    **Rejected:**
+
+    - *Resolving at runtime* (a winner by priority, recency or specificity). Every
+      rule in a collision is individually correct, so any winner is arbitrary, and
+      a silent resolution hides a configuration error the author can fix.
+    - *Provenance.* Record which rule wrote which term, and let peers read only
+      author-set values. It is the one genuinely order-independent answer, and it
+      was turned down: it makes per-rule-per-post tracking meta a plugin-wide
+      primitive, with a write cost on every application, cleanup on rule deletion,
+      and no retroactive correction of posts tagged before the rule existed. A
+      rule instead owns exactly the terms its configuration names and recomputes
+      from boundaries plus config on every pass. The accepted cost is that
+      ownership is retroactive, so a manual tag matching a configured term is
+      swept. The single exception, `HierarchicalHandler`'s `_bws_auto_terms`, is
+      described under CONTEXT.md → **Jurisdiction**.
+    - *Partitioning rules so ordering never matters*, inside the term group.
+      Taxonomy fails as a key because term-pairing is cross-taxonomy by
+      construction (`trigger_taxonomy` and `target_term_id` are independent). Post
+      type fails because relation-basis rules write OTHER entities.
+
     H14 (`tests/verify-collision-detector.php`) pins the predicate in both
     directions, opening with a partition check that every rule type storage
     knows resolves to a target scheme — a type added to storage and nowhere else
@@ -570,9 +603,17 @@ Boot path: [class-wireframe-bootstrap.php](../includes/admin/class-wireframe-boo
 
 ### The ordered rule repeaters
 
-**One repeater per effect kind**, each bound to that kind's persisted list — `term_rules` (#57, #58) and `format_rules` (#59) ([ADR 0003](adr/0003-ordered-rule-list-and-dispatcher.md)). No tab holds a per-type section any more. Each row carries a `type` select — storing the **legacy type key verbatim** (`hierarchical_rules`, not `hierarchical`), so `get_enabled_rules()` filters on `get_rule_type()` with no mapping table — and every type-specific subfield is `conditions`-gated on it. Restrict stopped being a tab because a level-restriction rule writes terms like every other rule in the list; Personalize went because it described rule types that do not exist yet.
+**One repeater per effect kind**, each bound to that kind's persisted list — `term_rules` (#57, #58) and `format_rules` (#59). No tab holds a per-type section any more. Each row carries a `type` select — storing the **legacy type key verbatim** (`hierarchical_rules`, not `hierarchical`), so `get_enabled_rules()` filters on `get_rule_type()` with no mapping table — and every type-specific subfield is `conditions`-gated on it. Restrict stopped being a tab because a level-restriction rule writes terms like every other rule in the list; Personalize went because it described rule types that do not exist yet.
 
-Two Wireframe constraints drive the shape, both still true of the vendored 1.1.0: there is **no cross-repeater ordering primitive** (so an ordered list spanning rule types must be one repeater), and there is **no flexible content** (so that repeater has one fixed subfield superset, gated per type).
+Two Wireframe constraints drive the shape, both still true of the vendored 1.1.0: there is **no cross-repeater ordering primitive** (so an ordered list spanning rule types must be one repeater), and there is **no flexible content** (so that repeater has one fixed subfield superset, gated per type). Sanitization and value resolution are per top-level field, conditions resolve against a flat scope that inside a repeater is the row alone, and each page has its own `option_key`.
+
+**Rejected:**
+
+- *Typed repeaters plus a separate ordering list* of stable rule IDs. Wireframe offers no reference field and no referential-integrity primitive, so the order list goes stale silently as rules are added: a new silent-corruption surface, not a safer one. It needs `_id` as a declared subfield anyway, because `RepeaterField::sanitize` discards any key it did not declare.
+- *One repeater for every rule type.* A subfield superset of roughly fifty fields across unrelated types, every one gated by a condition, and a wrong condition is silent data loss (the hazard below). One repeater per kind keeps the superset small and the gates few.
+- *The type-keyed arrays plus a parallel order index.* Needs a stable identity storage lacks — `id` is the per-type array index, re-derived on read, never persisted — for strictly more machinery and a weaker model.
+- *A stable `_id` per row.* Declined: with one ordered list, order IS array position, and provenance is rejected (invariant 19), so nothing needs stable identity.
+- *Splitting the settings page to shrink the save blast radius* — see [storage-model.md](storage-model.md). The boundary is the effect kind, not the page.
 
 **The hazard, and why it earns a harness.** `RepeaterField::sanitize` rebuilds each row from *declared subfields only*, skipping any whose `conditions` evaluate false, and runs **before** the `wp-wireframe/save/payload` filter. So an undeclared key cannot be injected post-hoc, and a condition-hidden subfield is **dropped from storage entirely**. Three consequences:
 
@@ -631,7 +672,7 @@ Three lookups consume it — the bidirectional partner resolution, the target-po
 
 ## Effect-kind rule lists
 
-Rules are stored as **two ordered lists keyed by effect kind** — `term_rules` (six types) and `format_rules` (`title_slug`) — each row carrying its own `type`, with order being array position. This is the model [ADR 0003](adr/0003-ordered-rule-list-and-dispatcher.md) settles on, the shape the Phase 4 dispatcher iterates, and since **#66** the only shape storage holds.
+Rules are stored as **two ordered lists keyed by effect kind** — `term_rules` (six types) and `format_rules` (`title_slug`) — each row carrying its own `type`, with order being array position. It is the shape the dispatcher iterates and, since **#66**, the only shape storage holds.
 
 It arrived expand-first (#56): from #56 to #64 the two lists lived alongside the seven type-keyed arrays that predate them, so each rule type could move to the dispatcher one at a time. The contract ticket (#66) deleted the old shape once the last conversion landed. What that leaves:
 
@@ -641,7 +682,7 @@ It arrived expand-first (#56): from #56 to #64 the two lists lived alongside the
 | Read by | `get_kind_rules()` — the dispatcher's pass, `get_enabled_rules()`, `get_rules()`, and the settings page |
 | Authority | **rules and order both** |
 
-`get_kind_rules()` serves the persisted list **verbatim**. Nothing regroups or re-sorts it, because order is the composition semantics a pass executes in (ADR 0003 decision 3) — a hierarchical rule sequenced after a level-restriction rule has to run after it. `get_rules($type)` is that read with a `['type' => $type]` filter; it is a VIEW, not a second path.
+`get_kind_rules()` serves the persisted list **verbatim**. Nothing regroups or re-sorts it, because order is the composition semantics a pass executes in (invariant 17) — a hierarchical rule sequenced after a level-restriction rule has to run after it. `get_rules($type)` is that read with a `['type' => $type]` filter; it is a VIEW, not a second path.
 
 ### The per-type `$rule_id`
 
@@ -671,7 +712,7 @@ Invariants asserted by H10 (`tests/verify-kind-lists.php`):
 - **The ACF write queue is stood down for the write** (`meta_conductor_acf_reapply_enabled` returns false inside `write_fields()`). Otherwise the pass's own `update_field()` would record the post and queue a second, idempotent pass at shutdown.
 - **`run_pass()` counts honestly:** a rule counts when it changed the title or slug, plus one per field written — not per rule that merely answered.
 
-*Rejected alternative — a pre-write phase.* ADR 0003 expected the format dispatcher to split in two when field rules landed, with a `wp_insert_post_data` half beside the post-write one. It did not need to. A field write is post meta, which `wp_insert_post_data` never carries, and the post-write pass already sees the current pass's terms; a pre-write phase would reintroduce the stale-term read that #64 removed and gain nothing a meta write needs. If a future effect genuinely has to land before the row is written, it feeds this same seam rather than a second one.
+*Rejected alternative — a pre-write phase.* The format dispatcher was expected to split in two when field rules landed, with a `wp_insert_post_data` half beside the post-write one. It did not need to. A field write is post meta, which `wp_insert_post_data` never carries, and the post-write pass already sees the current pass's terms; a pre-write phase would reintroduce the stale-term read that #64 removed and gain nothing a meta write needs. If a future effect genuinely has to land before the row is written, it feeds this same seam rather than a second one.
 
 ## Token engine
 

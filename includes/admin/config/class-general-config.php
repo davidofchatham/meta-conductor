@@ -27,7 +27,7 @@ class GeneralConfig {
     }
 
     /**
-     * Per-taxonomy default claim (CONTEXT.md → Claim, ADR 0004).
+     * Per-taxonomy default claim (CONTEXT.md → Claim).
      *
      * The stored key stays `conflict_handling` and its values stay
      * merge|replace|skip — the rename to the claim vocabulary is wording

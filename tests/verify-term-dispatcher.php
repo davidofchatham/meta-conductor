@@ -235,7 +235,7 @@ if (!preg_match('/function\s+pass_key\s*\(\s*string\s+\$(\w+)\s*,\s*int\s+\$(\w+
     [$whole, $kind_param, $entity_param, $key_body] = $km;
     if (!preg_match('/\$' . preg_quote($kind_param, '/') . '\b/', $key_body)
         || !preg_match('/\$' . preg_quote($entity_param, '/') . '\b/', $key_body)) {
-        $errors[] = 'pass_key() does not use both parameters — dropping the entity makes the lock request-scoped, dropping the kind makes it global (ADR 0003 decision 4).';
+        $errors[] = 'pass_key() does not use both parameters — dropping the entity makes the lock request-scoped, dropping the kind makes it global (architecture.md invariant 17).';
     }
 }
 
@@ -376,7 +376,7 @@ foreach ($handler_files as $type => $handler_file) {
     // `$is_updating_post` is the format handler's old name for the same guard.
     if (preg_match('/private\s+(?:bool\s+)?\$(?:processing|is_updating_post)\b/', $body)) {
         $errors[] = sprintf(
-            '%s still declares a re-entrancy boolean — the pass lock is the only guard, and a second one silences the author\'s own chain (ADR 0003, rejected option).',
+            '%s still declares a re-entrancy boolean — the pass lock is the only guard, and a second one silences the author\'s own chain (architecture.md invariant 17, rejected option).',
             $handler_file
         );
     }
@@ -696,7 +696,7 @@ foreach ($handler_files as $type => $handler_file) {
 }
 
 // --- 12. The FORMAT dispatcher and the derived cross-kind order (#64) ------
-// The order terms → title/slug is DERIVED, not authored (ADR 0003 decision 2):
+// The order terms → title/slug is DERIVED, not authored (architecture.md invariant 18):
 // `title_slug` reads terms and writes none. Until #64 that order rested on two
 // accidents — a priority-99 registration and a handler constructed last — and
 // BOTH would have inverted silently once the term pass moved onto a late drain.

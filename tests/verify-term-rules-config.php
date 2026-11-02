@@ -231,7 +231,7 @@ $check('every offered type owns at least one gated subfield',
     empty(array_diff($TYPES, array_unique($gate_covers))));
 
 // --- Claim comes from the shared builder, not re-authored inline. -----------
-// The 0.8.0 claim vocabulary (ADR 0004) must not regress in the collapse.
+// The 0.8.0 claim vocabulary (CONTEXT.md → Claim) must not regress in the collapse.
 
 $claim    = $by_id['conflict_handling'] ?? [];
 $expected = ConfigHelpers::claim_field('child', ['id' => 'conflict_handling']);
@@ -376,7 +376,7 @@ $check('an untyped row shows only the shared frame',
 // deleted the projection along with the arrays: what the repeater writes to
 // `term_rules` is what storage holds and what a pass reads, in that order. A
 // payload filter that re-introduced a type-keyed copy would recreate exactly
-// the two-shapes reconciliation ADR 0003 set out to remove.
+// the two-shapes reconciliation the kind lists exist to remove.
 
 $check('the type-keyed save projection is gone (#66)',
     !method_exists(WireframeBootstrap::class, 'fan_out_rule_lists'));

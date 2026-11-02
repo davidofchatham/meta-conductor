@@ -596,13 +596,13 @@ this is date-independent.)
   no record of what it applied — which is what makes ownership *retroactive*: a
   rule corrects posts tagged before it existed, with no migration. The accepted
   cost is that a manual tag colliding with a configured target is swept. See
-  [ADR 0001](../../docs/adr/0001-temporal-rule-general-model-constrained-ui.md)
-  → Consequences, and CONTEXT.md: *"A claim is settled by config and live
+  [architecture.md](../../docs/architecture.md) invariant 19 (*Rejected: provenance*)
+  and CONTEXT.md: *"A claim is settled by config and live
   recomputation, never by provenance."*
 
   **Sweep-verified only — nothing automated covers it,** and that is deliberate.
-  Provenance is rejected *at this point* rather than unconditionally (ADR 0002
-  records the third rejection), so pinning this in `verify.php` would be a small
+  Provenance is rejected *at this point* rather than unconditionally (invariant 19
+  records the rejection), so pinning this in `verify.php` would be a small
   standing bet against a decision that could be revisited, paid for by widening
   the one mutating probe that file tolerates. The sweep record is the right
   weight.
@@ -646,7 +646,7 @@ this is date-independent.)
   rule removes the target term whoever applied it — including a rule earlier in
   the same `process_post()` loop. From `{TODAY+10}` rule[2]'s term can therefore
   never land at all: it applies, and the permanently-expired rule[1] strips it
-  before the save returns. ADR 0001 contemplated two rules that *"may fight"*;
+  before the save returns. FW-3's model decision contemplated two rules that *"may fight"*;
   this is the degenerate case where neither ever wins.
 
   Found while making A7 handler-driven, because it blocks that route outright.
@@ -660,7 +660,7 @@ this is date-independent.)
 
   This is why A7 synthesizes a single-rule set instead of only sliding dates.
   Under #61's ordered passes the outcome is now deterministic by
-  author-controlled list order rather than array order (ADR 0002 — order is the
+  author-controlled list order rather than array order (invariant 17 — order is the
   resolution mechanism); #65 is what makes the pair visible at authoring time.
   The collision itself is unchanged — a pair on one target still cancels — but
   *which* of the two wins is now something the author drags rather than an

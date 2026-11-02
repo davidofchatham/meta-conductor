@@ -51,7 +51,7 @@ class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
      *
      * No re-entrancy boolean: the deleted `private $processing` guarded the
      * handler against its own `wp_set_object_terms`, which the pass lock now
-     * absorbs (#60, ADR 0003 decision 4).
+     * absorbs (#60, architecture.md invariant 17).
      *
      * @param int   $post_id Post to apply to.
      * @param array $rule    One enabled level-restriction rule.

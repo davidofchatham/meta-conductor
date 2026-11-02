@@ -60,7 +60,7 @@ class WireframeBootstrap {
 
         // Snapshot the General-tab claim-override row title. Without it the
         // repeater interpolates the raw stored value ("category: replace"),
-        // the one surface the claim vocabulary would miss (ADR 0004). This is
+        // the one surface the claim vocabulary would miss (CONTEXT.md → Claim). This is
         // the one snapshot that did NOT rescope onto a repeater — it belongs
         // to the per-taxonomy default, not to a rule (#53 §2).
         add_filter('wp-wireframe/save/payload', [self::class, 'snapshot_claim_override_labels'], 10, 1);
@@ -341,7 +341,7 @@ JS);
      *
      * Without this the repeater's `title_template` interpolates the raw
      * stored value (`category: replace`), which is the one place the claim
-     * vocabulary would not reach — see CONTEXT.md → Claim, ADR 0004.
+     * vocabulary would not reach — see CONTEXT.md → Claim.
      * An unresolvable taxonomy falls back to its slug rather than an empty
      * title, since the row is still selectable and must stay identifiable.
      *

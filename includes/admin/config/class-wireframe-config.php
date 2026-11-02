@@ -3,7 +3,7 @@
  * Top-level Wireframe config composer.
  *
  * Assembles the tabs + sections that make up the Meta Conductor settings
- * page. THREE tabs since 0.8.0 (#57, ADR 0003 / spec #53 §2):
+ * page. THREE tabs since 0.8.0 (#57, spec #53 §2):
  *
  *   - Auto-Set & Restrict — the ordered term-rule list: everything whose
  *                           effect is "terms on a post", including the
@@ -20,7 +20,7 @@
  *   - General             — default claim per taxonomy.
  *
  * Both rule tabs are now one ordered repeater bound to their effect kind's
- * persisted list, which is the whole of ADR 0003 decision 1 on the config
+ * persisted list, which is the whole of the one-repeater-per-kind rule on the config
  * side: no tab holds a per-type section any more.
  *
  * Gone with the same change: the empty Personalize placeholder (it described

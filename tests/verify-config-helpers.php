@@ -24,7 +24,7 @@
  * propagation's parent/child requirement is stated as a type-conditioned note
  * on the repeater (locked in H11) instead of by withholding options.
  *
- * Also locks the claim vocabulary (ADR 0004): CLAIM_NAMES is the one mapping
+ * Also locks the claim vocabulary (CONTEXT.md → Claim): CLAIM_NAMES is the one mapping
  * behind both config dropdowns and both row-title snapshots, so this harness
  * asserts the option strings, the `<claim>: ` lead-in, and claim_name()'s
  * fallback. Note claim_field() INVERTS the id-lock — its id must stay
@@ -150,7 +150,7 @@ $check('post_status field id forced',       $s_field['id'] === 'post_status');
 $check('post_status field honors override', $s_field['label'] === 'Only when');
 $check('post_status field is checkboxes',   $s_field['type'] === 'checkboxes');
 
-// --- Claim field (ADR 0004). ------------------------------------------------
+// --- Claim field (CONTEXT.md → Claim). ------------------------------------------------
 // Unlike post_types_field the id is deliberately NOT forced — the two surfaces
 // store under different keys — so the id-lock assertion is inverted here.
 
@@ -164,7 +164,7 @@ $check('claim options are the stored keys', array_keys($c_rule['args']['options'
 $check('child subject wording',            str_contains($c_rule['args']['options']['skip'], 'the child has no terms'));
 $check('post subject wording',             str_contains($c_glob['args']['options']['skip'], 'the post has no terms'));
 
-// Every option leads with its domain term, then a colon (ADR 0004) — this is
+// Every option leads with its domain term, then a colon (CONTEXT.md → Claim) — this is
 // what keeps the dropdown correlated with the docs and the row titles.
 foreach (ConfigHelpers::CLAIM_NAMES as $stored => $claim) {
     $check("option '$stored' leads with '$claim:'",

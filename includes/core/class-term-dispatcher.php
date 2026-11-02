@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
  * Owns the trigger union for the `term_rules` effect kind, coalesces triggers
  * into a dirty-entity queue, and drains that queue as full ordered passes.
  *
- * WHY THIS EXISTS (ADR 0003 decision 3, #60). Handlers used to own their own
+ * WHY THIS EXISTS (architecture.md invariant 17, #60). Handlers used to own their own
  * hooks, so execution order was whatever order `TaxonomyManager` happened to
  * construct them in, refracted through each handler's hook priorities. That is
  * not an order an author can express, and two of the four Phase-4 gates exist
@@ -100,7 +100,7 @@ if (!defined('ABSPATH')) {
  * registrations against its descriptor.
  *
  * THE QUEUE IS SHARED, THE PASSES ARE NOT (#64). Cross-KIND order is derived,
- * not authored (ADR 0003 decision 2): `title_slug` reads terms and writes none,
+ * not authored (architecture.md invariant 18): `title_slug` reads terms and writes none,
  * so terms must settle before a title is computed from them. This class owns
  * the triggers and the queue for BOTH kinds, and each drain step runs its own
  * ordered pass and then `FormatDispatcher::run_pass()` for the same entity.
@@ -728,7 +728,7 @@ class TermDispatcher {
      *
      * The lock table is static and shared BY DESIGN — it is a property of the
      * request, and `pass_key()` already carries the kind, so one table keyed
-     * (kind, entity) is the same mechanism ADR 0003 decision 4 settled, not a
+     * (kind, entity) is the same mechanism architecture.md invariant 17 settled, not a
      * second one. `FormatDispatcher` reaches it through these two methods
      * rather than owning a table of its own, so `mark_dirty()` keeps consulting
      * ONE set of locks and a format write's term marks stay audible.

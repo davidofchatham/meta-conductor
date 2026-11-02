@@ -76,7 +76,7 @@ abstract class UnifiedHandlerBase {
      *
      * Uses the storage abstraction layer to retrieve rules.
      *
-     * The handler's own rules, out of its EFFECT-KIND list (ADR 0003 —
+     * The handler's own rules, out of its EFFECT-KIND list (architecture.md → Effect-kind rule lists —
      * `term_rules` / `format_rules`). Since #66 that list is the only shape
      * there is, so "this handler's rules" means the list narrowed to one type,
      * which is exactly what `get_rules()` is: the narrowing lives in storage,
@@ -227,7 +227,7 @@ abstract class UnifiedHandlerBase {
      * used to do — and it must be idempotent, because a pass re-runs every rule
      * whether or not that rule's own trigger fired. It must NOT carry a
      * re-entrancy boolean: the pass lock is the only guard, and a second one
-     * silently suppresses the author's own chain (ADR 0003, rejected option).
+     * silently suppresses the author's own chain (architecture.md invariant 17, rejected option).
      *
      * ONLY `TermDispatcher::apply()` may call this. H13 asserts the single call
      * site; that is what makes "every execution went through a pass" checkable

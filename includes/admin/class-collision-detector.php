@@ -6,7 +6,7 @@
  * can be the same posts. The plugin says so and does nothing else: advisory at
  * authoring time, never resolved at runtime, never blocking a save. A collision
  * is not an error — it means the combined result depends on ORDER, which the
- * author now controls (ADR 0002 decision 2, ADR 0003 decision 3).
+ * author now controls (architecture.md invariants 17 and 19).
  *
  * ## What "the same thing" means here
  *
@@ -39,7 +39,7 @@
  * paired with a term rule whose term lives in that taxonomy. That pairing is
  * real (a restricting rule does prune a term another rule applied) but it is a
  * **reach** question, and reach is defined once, for every effect kind, when
- * the non-term kinds are real — with ADR 0004's second conjunct attached
+ * the non-term kinds are real — with the second conjunct (architecture.md invariant 19) attached
  * (reaches intersect AND jurisdictions overlap). Nothing here should be read as
  * "shared reach alone implies contention".
  *
@@ -295,7 +295,7 @@ class CollisionDetector {
             }
         }
 
-        // #69 / ADR 0001: two rules over one term, each of which removes that
+        // #69 / invariant 19: two rules over one term, each of which removes that
         // term when its own condition stops holding — including one the other
         // just applied. Mutual annihilation, not merely order-dependence.
         if (str_starts_with($a['key'], 'term|') && self::removes($a) && self::removes($b)) {
@@ -403,7 +403,7 @@ class CollisionDetector {
      * Can this rule REMOVE its target term?
      *
      * A date-window rule always can — its out-of-range branch strips the target
-     * whoever applied it, which is the retroactive ownership ADR 0001 buys
+     * whoever applied it, which is the retroactive ownership that architecture.md invariant 19 accepts
      * deliberately. A related-term rule only can when `bidirectional` is on;
      * add-only rules compose by union and cannot cancel anything.
      *

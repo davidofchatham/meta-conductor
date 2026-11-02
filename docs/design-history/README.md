@@ -4,7 +4,7 @@ Finished design documents, lifted out of the private working directory at merge 
 
 ## Why this directory exists
 
-Four records already carry a shipped feature forward: load-bearing invariants go into PHPDoc on the enforcing function (or [architecture.md](../architecture.md) when conceptual), the decision goes into [docs/adr/](../adr/), the behavior delta goes into [CHANGELOG.md](../../CHANGELOG.md), and the cause goes into the commit body. None of the four has room for an alternative that was considered and dropped, or for an argument that shaped the design without leaving a line of code behind. That is what lands here.
+Four records already carry a shipped feature forward: load-bearing invariants go into PHPDoc on the enforcing function (or [architecture.md](../architecture.md) when conceptual), the decision goes onto the architecture anchor or glossary entry it justifies ([docs/adr/README.md](../adr/README.md) says where), the behavior delta goes into [CHANGELOG.md](../../CHANGELOG.md), and the cause goes into the commit body. None of the four has room for an alternative that was considered and dropped, or for an argument that shaped the design without leaving a line of code behind. That is what lands here.
 
 A file here is **not** an ADR. An ADR states a decision and its consequences in a page; a design document is the working-out, at whatever length it took.
 

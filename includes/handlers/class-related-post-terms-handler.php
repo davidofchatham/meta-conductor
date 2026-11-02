@@ -30,13 +30,13 @@ if (!defined('ABSPATH')) {
  *
  *   - It occupied ONE slot in the authored order however many rules it held,
  *     so two of its rows straddling another type's rule was inexpressible —
- *     the failure mode ADR 0003 rejected type-level ordering for.
+ *     the failure mode architecture.md invariant 17 rejects type-level ordering for.
  *   - Its writes landed on OTHER posts from inside the writing post's own
  *     execution, so the written post never got an ordered pass: one rule
  *     reached it, and the rest of the list then ran against it from whatever
  *     hooks happened to fire (#35's shape).
  *   - Its taxonomy-scoped `in_sync` cascade guard was a second re-entrancy
- *     mechanism competing with the pass lock (ADR 0003, rejected option).
+ *     mechanism competing with the pass lock (architecture.md invariant 17, rejected option).
  *
  * So it splits three ways, along the seams #62 already cut:
  *
@@ -55,7 +55,7 @@ if (!defined('ABSPATH')) {
  *   1. TWO ROWS IN ONE TAXONOMY NO LONGER UNION; THEY COMPOSE BY ORDER. The old
  *      `recompute_dependent()` unioned every rule's sources for a taxonomy and
  *      wrote once. A per-rule applier cannot see its siblings, and must not:
- *      order is the composition mechanism (ADR 0002 decision 2). So a
+ *      order is the composition mechanism (architecture.md invariants 17 and 19). So a
  *      keep-in-sync row is `owning` over the taxonomy — it replaces — and the
  *      LAST such row in the list wins on any dependent both rows manage. An
  *      author who wants the union puts the second row on add-only, or orders
@@ -109,7 +109,7 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
      * taxonomy, destroying what C had just legitimately put there. The key is
      * derived from the fields that decide which end feeds which, so two rows
      * that resolve identically share it harmlessly and two rows that do not are
-     * kept apart. (A row has no stable id — ADR 0003 rejected `_id` — and the
+     * kept apart. (A row has no stable id — architecture.md → The ordered rule repeaters rejects `_id` — and the
      * per-type index is assigned independently on the two read paths, so
      * content is the only thing both sides can agree on.)
      *
@@ -617,7 +617,7 @@ class RelatedPostTermsHandler extends UnifiedHandlerBase {
     /**
      * Write one rule's computed set, through the shared claim semantics.
      *
-     * `keep_in_sync` IS a claim in the ADR 0004 sense — owning over the whole
+     * `keep_in_sync` IS a claim in the CONTEXT.md → Claim sense — owning over the whole
      * taxonomy when on, contributing when off — so it maps onto
      * `compute_end_state()` rather than re-deriving the merge/replace switch
      * here. That mapping is the reason an empty authoritative set can still

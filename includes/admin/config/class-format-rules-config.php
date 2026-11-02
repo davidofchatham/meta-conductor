@@ -1,7 +1,7 @@
 <?php
 /**
  * The ordered format-rule list — one repeater for every rule whose effect is
- * "how a post's own fields read" (ADR 0003 decision 1, spec #53 §2,
+ * "how a post's own fields read" (architecture.md → The ordered rule repeaters, spec #53 §2,
  * ticket #59).
  *
  * The `term_rules` collapse's smaller twin: `title_slug` and, since FW-4, the
@@ -37,7 +37,7 @@
  *
  * The stored `type` value is the LEGACY TYPE KEY VERBATIM (`title_slug_rules`,
  * not `title_slug`), for the same reason it is in the term list: rule-type
- * renaming stays deferred (ADR 0002/0003), and reusing the key is what lets
+ * renaming stays deferred (FW-14), and reusing the key is what lets
  * `get_enabled_rules()` filter on `get_rule_type()` with no mapping table.
  *
  * Preview + Apply-to-Existing action buttons remain deferred until Wireframe
