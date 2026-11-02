@@ -226,6 +226,10 @@ if ( ! function_exists( 'mc_restore' ) ) {
 	 * Use this between scenarios and at sweep end for the common case. Fall back
 	 * to seed.php only when posts were deleted or renamed (see the header note).
 	 *
+	 * It rewrites the kind lists themselves, in KIND_TYPES order, so a
+	 * hand-authored order does not survive it. Call it, never `unset()` a kind
+	 * list: nothing rebuilds an unset list, and the site is left with no rules.
+	 *
 	 * @param int[] $reset_post_ids Posts whose mc_topic/mc_flag terms + the
 	 *                              _bws_auto_terms meta should be cleared.
 	 */
