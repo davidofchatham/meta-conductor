@@ -58,14 +58,15 @@ final class TitleSlugRules extends RuleType {
     }
 
     /**
-     * Flat URLs are served at read time: the permalink is rewritten and the
-     * request resolved by the handler's callbacks, registered by
-     * `TaxonomyManager` (FW-51).
+     * Flat URLs are served at read time: the permalink is rewritten, the
+     * request resolved, and a redirect back to the nested form refused, by the
+     * handler's callbacks, registered by `TaxonomyManager` (FW-51).
      */
     public function runtime_hooks(): array {
         return [
             'post_type_link' => ['flat_permalink', 20, 3],
             'request'        => ['resolve_flat_request', 10, 1],
+            'wp_redirect'    => ['veto_nested_redirect', 99, 2],
         ];
     }
 

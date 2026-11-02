@@ -386,6 +386,95 @@ class TitleSlugHandler extends UnifiedHandlerBase {
     }
 
     /**
+     * `wp_redirect` — refuse a redirect that sends a flat URL back to its own
+     * nested form.
+     *
+     * A redirect plugin's rule (or any other) can predate `flat_urls`: the post
+     * once lived at `/base/child/`, was given a parent, and a rule recorded
+     * `/base/child/` → `/base/parent/child/`. Flat URLs make the old URL live
+     * again, and the rule then fires before `request` can resolve it — and
+     * loops with the nested → flat 301 above. Returning false makes core's
+     * `wp_redirect()` send nothing and return false. A caller that checks the
+     * result (Redirection does) carries on to `resolve_flat_request()`; one that
+     * calls `exit` regardless ends the request with an empty response, so this
+     * cures redirects through callers that honor the return, not every redirect.
+     * Plugin-agnostic: it looks only at the requested path and the target.
+     * Only a same-host redirect whose target is the nested form of a PUBLISHED
+     * flat post's own URL is refused; every other redirect passes untouched.
+     * Not covered: a paged or feed flat URL (its last segment is not the name),
+     * and a base segment is not compared with the type's rewrite base.
+     *
+     * @param string $location Redirect target.
+     * @param int    $status   HTTP status.
+     * @return string|false
+     */
+    public function veto_nested_redirect($location, $status = 302) {
+        $flat = $this->flat_post_types();
+        if ($flat === [] || !is_string($location) || $location === '') {
+            return $location;
+        }
+
+        $home   = (array) wp_parse_url(home_url());
+        $target = wp_parse_url($location);
+        if (!is_array($target) || (isset($target['host']) && strcasecmp($target['host'], $home['host'] ?? '') !== 0)) {
+            return $location;
+        }
+
+        $base    = trim($home['path'] ?? '', '/');
+        $request = $this->path_segments((string) wp_parse_url((string) ($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH), $base);
+        $nested  = $this->path_segments($target['path'] ?? '', $base);
+        if ($request === null || $nested === null || $request === [] || count($nested) <= count($request)
+            || end($nested) !== end($request)) {
+            return $location;
+        }
+
+        global $wpdb;
+        $ids = $wpdb->get_col($wpdb->prepare(
+            "SELECT ID FROM {$wpdb->posts}
+             WHERE post_name = %s AND post_status = 'publish'
+               AND post_type IN (" . implode(',', array_fill(0, count($flat), '%s')) . ')',
+            end($request), ...$flat
+        ));
+
+        foreach ($ids as $id) {
+            if (FlatSlug::is_own_nested_form($request, $nested, $this->real_ancestor_names((int) $id))) {
+                $this->debug_log('Refused a redirect from a flat URL to its nested form', ['post' => (int) $id, 'target' => $location]);
+                return false;
+            }
+        }
+
+        return $location;
+    }
+
+    /**
+     * A URL path as sanitized segments, relative to the site's own path.
+     * Null when the path lies outside it.
+     *
+     * @return string[]|null
+     */
+    private function path_segments(string $path, string $base): ?array {
+        $parts = array_values(array_filter(explode('/', trim($path, '/')), 'strlen'));
+        $skip  = $base === '' ? [] : explode('/', $base);
+        if (array_slice($parts, 0, count($skip)) !== $skip) {
+            return null;
+        }
+
+        return array_map('sanitize_title_for_query', array_slice($parts, count($skip)));
+    }
+
+    /**
+     * A post's real ancestor names, outermost first.
+     *
+     * @return string[]
+     */
+    private function real_ancestor_names(int $id): array {
+        return array_map(
+            static fn($ancestor) => (string) get_post_field('post_name', $ancestor),
+            array_reverse(get_post_ancestors($id))
+        );
+    }
+
+    /**
      * The post a flat path names: published first, then the lowest ID, then any
      * status — core's own `name` lookup orders by date with no tiebreak and 404s
      * a logged-out visitor whenever the newest of two same-named posts is a
@@ -412,11 +501,7 @@ class TitleSlugHandler extends UnifiedHandlerBase {
             if ($chain === []) {
                 return $id;
             }
-            $real = array_map(
-                static fn($ancestor) => (string) get_post_field('post_name', $ancestor),
-                array_reverse(get_post_ancestors($id))
-            );
-            if ($real === $chain) {
+            if ($this->real_ancestor_names($id) === $chain) {
                 return $id;
             }
         }

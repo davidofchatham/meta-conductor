@@ -554,30 +554,7 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
     fails there rather than being silently skipped. `sweep-65-collisions.php`
     runs it over the real fixture and through both real hooks.
 
-20. **Read-time hooks are a descriptor fact, and they only read (FW-51).** A
-    rule type can serve visitors, not just write posts: `title_slug` with
-    `flat_urls` rewrites a hierarchical type's permalink (`post_type_link`) and
-    resolves its flat path (`request`). Those filters are declared by the
-    descriptor's `runtime_hooks()` (`hook => [method, priority, args]`),
-    registered by `TaxonomyManager::init_handlers()` next to the dispatchers,
-    and implemented on the handler — which still registers nothing itself. They
-    are deliberately not `capture_hooks()`, which is for pre-write snapshots a
-    pass consumes. H13 group 16 fails on a write primitive in any callback, on a
-    listed method the handler does not declare, and on a registry that is never
-    attached. The `request` callback picks the post for a path's last segment
-    (published first, then lowest ID, then any status) and 301s a nested path
-    only when its ancestor chain equals the post's real one; a stale chain, a
-    feed, or a draft's nested URL falls through to core untouched. Turning
-    `flat_urls` off needs no cleanup: the permalink is derived, so URLs revert
-    to nested. `sweep-flat-urls.php` covers it. The write half is per-type
-    uniqueness: a flat type's slug is a segment straight under the base, so
-    `TitleSlugHandler::make_unique_slug()` runs the ladder and then
-    `Tokens\FlatSlug::number()` (lookup per TYPE, no `post_parent`) instead of
-    `wp_unique_post_slug()`; a non-flat type still takes core's. `FlatSlug`
-    refuses core's own bad hierarchical slugs (the rewrite's feed names, `embed`,
-    `^(page)?\d+$`) plus `page` and `attachment`, and a reserved BASE skips the
-    ladder (it is not a collision a parent or a date explains). Pinned by
-    `tests/verify-flat-slug.php`, swept by `sweep-flat-slugs.php`.
+20. **Read-time hooks are a descriptor fact, and they only read (FW-51).** A rule type can serve visitors, not just write posts: `title_slug` with `flat_urls` rewrites a hierarchical type's permalink (`post_type_link`), resolves its flat path (`request`) and refuses a redirect back to the nested form (`wp_redirect`). Those filters are declared by the descriptor's `runtime_hooks()` (`hook => [method, priority, args]`), registered by `TaxonomyManager::init_handlers()` next to the dispatchers, and implemented on the handler — which still registers nothing itself. They are deliberately not `capture_hooks()`, which is for pre-write snapshots a pass consumes. H13 group 16 fails on a write primitive in any callback, on a listed method the handler does not declare, and on a registry that is never attached. The `request` callback picks the post for a path's last segment (published first, then lowest ID, then any status) and 301s a nested path only when its ancestor chain equals the post's real one; a stale chain, a feed, or a draft's nested URL falls through to core untouched. The third read-time hook is a `wp_redirect` veto (`veto_nested_redirect`, priority 99): a same-host redirect from a flat URL to the same published post's own nested URL (`FlatSlug::is_own_nested_form()`) returns false, which core's `wp_redirect()` and redirect plugins read as not redirected. It exists because a rule recorded before the toggle (`/base/child/` → `/base/parent/child/`) fires at `init`, before `request` can resolve the now-live flat URL, and loops with the nested → flat 301. It names no plugin, so it needs none; browsers that cached the old 301 can still bounce until cleared. Turning `flat_urls` off needs no cleanup: the permalink is derived, so URLs revert to nested. `sweep-flat-urls.php` covers it. The write half is per-type uniqueness: a flat type's slug is a segment straight under the base, so `TitleSlugHandler::make_unique_slug()` runs the ladder and then `Tokens\FlatSlug::number()` (lookup per TYPE, no `post_parent`) instead of `wp_unique_post_slug()`; a non-flat type still takes core's. `FlatSlug` refuses core's own bad hierarchical slugs (the rewrite's feed names, `embed`, `^(page)?\d+$`) plus `page` and `attachment`, and a reserved BASE skips the ladder (it is not a collision a parent or a date explains). Pinned by `tests/verify-flat-slug.php`, swept by `sweep-flat-slugs.php`.
 
 ## Settings UI — WP Wireframe
 

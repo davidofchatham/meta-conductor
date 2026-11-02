@@ -37,6 +37,25 @@ final class FlatSlug {
     }
 
     /**
+     * Whether a redirect from `$request` to `$target` sends a flat URL to the
+     * post's own nested form: same last segment, the target carrying exactly
+     * the post's real ancestor names between the request's base and that
+     * segment. All three are path segments (home path stripped).
+     *
+     * @param string[] $request   Segments of the requested path: `base`, `leaf`.
+     * @param string[] $target    Segments of the redirect target.
+     * @param string[] $ancestors Real ancestor names of the post named `leaf`, outermost first.
+     */
+    public static function is_own_nested_form(array $request, array $target, array $ancestors): bool {
+        $n = count($request);
+
+        return $n > 0 && $ancestors !== [] && count($target) === $n + count($ancestors)
+            && end($target) === end($request)
+            && array_slice($target, 0, $n - 1) === array_slice($request, 0, $n - 1)
+            && array_slice($target, $n - 1, count($ancestors)) === $ancestors;
+    }
+
+    /**
      * The slug itself when free, else `slug-2`, `slug-3`, … — the first free one.
      *
      * @param string   $slug    Candidate, free or not.

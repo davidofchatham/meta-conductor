@@ -81,6 +81,24 @@ $check('a flat type numbers through FlatSlug, a non-flat type still through core
 preg_match('/protected function make_unique_slug\b.*?\R    }\R/s', $src, $m);
 $check('the ladder runs before numbering', isset($m[0]) && strpos($m[0], 'SlugLadder::walk(') < strpos($m[0], 'FlatSlug::number('));
 
+// --- Redirect veto: flat -> its own nested form (is_own_nested_form()). -------------------
+
+$req = ['mc-flat', 'mc-flat-child'];
+$check('flat -> own nested is refused', FlatSlug::is_own_nested_form($req, ['mc-flat', 'mc-flat-parent', 'mc-flat-child'], ['mc-flat-parent']));
+$check('a two-deep chain is refused', FlatSlug::is_own_nested_form($req, ['mc-flat', 'a', 'b', 'mc-flat-child'], ['a', 'b']));
+$check('the chain must be the real ancestor chain', !FlatSlug::is_own_nested_form($req, ['mc-flat', 'other', 'mc-flat-child'], ['mc-flat-parent']));
+$check('a chain in the wrong order is not it', !FlatSlug::is_own_nested_form($req, ['mc-flat', 'b', 'a', 'mc-flat-child'], ['a', 'b']));
+$check('a top-level post has nothing to nest under', !FlatSlug::is_own_nested_form($req, ['mc-flat', 'x', 'mc-flat-child'], []));
+$check('a different base is not the same flat URL', !FlatSlug::is_own_nested_form($req, ['other', 'mc-flat-parent', 'mc-flat-child'], ['mc-flat-parent']));
+$check('a different leaf is a different post', !FlatSlug::is_own_nested_form($req, ['mc-flat', 'mc-flat-parent', 'mc-flat-other'], ['mc-flat-parent']));
+$check('the nested -> flat direction is not refused', !FlatSlug::is_own_nested_form(['mc-flat', 'mc-flat-parent', 'mc-flat-child'], $req, ['mc-flat-parent']));
+$check('a paged flat URL is not refused (its last segment is the page number)', !FlatSlug::is_own_nested_form(['mc-flat', 'mc-flat-child', '2'], ['mc-flat', 'mc-flat-parent', 'mc-flat-child', '2'], ['mc-flat-parent']));
+$check('a target no deeper than the request is not refused', !FlatSlug::is_own_nested_form($req, $req, ['mc-flat-parent']));
+$check('an empty request is not refused', !FlatSlug::is_own_nested_form([], ['x'], ['x']));
+$check('a deeper base still matches', FlatSlug::is_own_nested_form(['en', 'mc-flat', 'mc-flat-child'], ['en', 'mc-flat', 'mc-flat-parent', 'mc-flat-child'], ['mc-flat-parent']));
+$check('the veto is declared and registered', str_contains(file_get_contents(dirname(__DIR__) . '/includes/rule-types/class-title-slug-rules.php'), "'wp_redirect'")
+    && str_contains($src, 'public function veto_nested_redirect'));
+
 // --- Report. ----------------------------------------------------------------
 
 if ($fail) {
@@ -88,5 +106,5 @@ if ($fail) {
     foreach ($fail as $f) { fwrite(STDERR, "  \xE2\x9C\x97 $f\n"); }
     exit(1);
 }
-fwrite(STDOUT, "FLAT-SLUG OK — all $total assertions passed (reserved names, numbering order, truncation, per-type scope; FW-51 05).\n");
+fwrite(STDOUT, "FLAT-SLUG OK — all $total assertions passed (reserved names, numbering order, truncation, per-type scope, redirect veto; FW-51).\n");
 exit(0);
