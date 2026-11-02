@@ -168,6 +168,17 @@ class TaxonomyManager {
         $this->term_dispatcher = new TermDispatcher($this->handlers, $this->format_dispatcher);
         $this->term_dispatcher->register();
 
+        // READ-TIME hooks, from the descriptors (FW-51): the filters a handler
+        // serves to visitors — a permalink, a request. A handler registers
+        // nothing itself, so what is declared here is the whole list, and H13
+        // checks the callbacks only read. Next to the dispatchers because it is
+        // the same question — which hooks does a rule type own — answered once.
+        foreach (Registry::all() as $type => $descriptor) {
+            foreach ($descriptor->runtime_hooks() as $hook => $spec) {
+                add_filter($hook, [$this->handlers[$type], $spec[0]], $spec[1] ?? 10, $spec[2] ?? 1);
+            }
+        }
+
         // Time-based's daily sweep (#61). It lives HERE rather than in
         // TimeBasedHandler::init_hooks() because a converted handler must
         // register nothing at all — that is the bright line H13 holds, and

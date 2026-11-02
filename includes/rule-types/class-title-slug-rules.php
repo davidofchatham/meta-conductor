@@ -58,6 +58,18 @@ final class TitleSlugRules extends RuleType {
     }
 
     /**
+     * Flat URLs are served at read time: the permalink is rewritten and the
+     * request resolved by the handler's callbacks, registered by
+     * `TaxonomyManager` (FW-51).
+     */
+    public function runtime_hooks(): array {
+        return [
+            'post_type_link' => ['flat_permalink', 20, 3],
+            'request'        => ['resolve_flat_request', 10, 1],
+        ];
+    }
+
+    /**
      * The scalar `post_type`. Never []: a row without one resolves no target
      * (see `target_key()`), and if one ever reached here `['']` intersects
      * nothing — the safe failure — where [] would claim every post type.
@@ -179,6 +191,15 @@ final class TitleSlugRules extends RuleType {
                 'args'        => [
                     'placeholder' => __('e.g. event_date', 'meta-conductor'),
                 ],
+            ],
+            [
+                'id'          => 'flat_urls',
+                'type'        => 'toggle',
+                'label'       => __('Flat URLs', 'meta-conductor'),
+                // No bare word-in-braces here: H12 fails the description lint.
+                'description' => __('Hierarchical custom post types only; ignored for any other type, and for Pages. Serve child posts at /base/child/ instead of /base/parent/child/, while the parent stays at /base/parent/. The old nested URL redirects (301) to the flat one. Turning this off reverts every URL to the nested form. Children should have names that are unique across the type; two posts sharing one name resolve to the published one, then the lowest ID.', 'meta-conductor'),
+                'default'     => false,
+                'columns'     => 12,
             ],
         ];
     }

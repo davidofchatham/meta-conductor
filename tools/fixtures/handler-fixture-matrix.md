@@ -144,6 +144,19 @@ Status (L1)          — second root: related/time-based targets live here so
 
 ---
 
+## 8. flat URLs — TitleSlugHandler read-time hooks (FW-51 04)
+
+| Aspect | Need |
+|---|---|
+| Trigger | `post_type_link` (p20) and `request` (p10), declared by `TitleSlugRules::runtime_hooks()` and registered by `TaxonomyManager`. No write; no pass. |
+| Schema | `mc_flat` — hierarchical, no taxonomies/ACF/seeded rules (manifest v9). The sweep authors its one row (`flat_urls` on). |
+| Data | Two parent/child pairs seeded (`flat-parent`/`flat-child`, `flat-parent-2`/`flat-child-2`, unique names). The same-name twin pair (draft with the LOWER ID under `flat-parent-2`, published under `flat-parent`) is created and deleted by the sweep — a seeded twin would collapse onto one post at the next seed (`mc_fixture_find_post` returns the oldest match). |
+| Scenarios | Permalink flat for children, unchanged for parents / other types / `flat_urls` on a non-hierarchical type; first row per type decides; off reverts to nested; REST `link`, sitemap, attachment link follow; request resolves `/child/` and `/child/N/`; exact nested chain 301s (paging kept); stale / foreign-parent / extra-segment chain, feed, and a draft's nested URL fall through; twin order published → lowest ID → any status. |
+| Restore gotcha | `restore` deletes the twins and checks every fixture `post_name` against the manifest (§7). |
+| End-to-end | Core, not us: a junk chain 404s and `redirect_guess_404_permalink()` then 301s it to the flat link (`x-redirect-by: WordPress`). Check real HTTP from the container: `docker exec wp-litespeed-litespeed-1 curl -sk -D - -o /dev/null -H 'Host: testbed.test' https://localhost/mc-flat/mc-flat-parent/mc-flat-child/` → 301 `x-redirect-by: Meta Conductor`; `/mc-flat/mc-flat-child/` → 200. |
+
+---
+
 ## Trigger/priority quick matrix (from handler sources)
 
 | Handler | set_object_terms | save_post | acf/save_post | other |

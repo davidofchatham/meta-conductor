@@ -246,6 +246,175 @@ class TitleSlugHandler extends UnifiedHandlerBase {
     }
 
     // -------------------------------------------------------------------------
+    // Flat URLs (FW-51) — READ-TIME callbacks
+    // -------------------------------------------------------------------------
+    //
+    // Served from the descriptor's `runtime_hooks()`, registered by
+    // `TaxonomyManager`; this class registers nothing. They run on page views,
+    // outside any pass, so they may read and redirect and must never write (H13).
+
+    /**
+     * Post types served flat: hierarchical, with an enabled row whose
+     * `flat_urls` is on. First enabled row per type decides, like the format
+     * pass's lookup (`rule_matches()`), so a lower row on the same type cannot
+     * flatten what the winning row did not.
+     *
+     * @return string[]
+     */
+    public function flat_post_types(): array {
+        $flat = [];
+        $seen = [];
+
+        foreach ($this->get_enabled_rules() as $rule) {
+            $post_type = (string) ($rule['post_type'] ?? '');
+            if ($post_type === '' || isset($seen[$post_type])) {
+                continue;
+            }
+            $seen[$post_type] = true;
+
+            // `page` is out: core hands a page's path over as `pagename`, not
+            // `post_type` + `name`, so its links would flatten and never resolve.
+            if (!empty($rule['flat_urls']) && $post_type !== 'page' && is_post_type_hierarchical($post_type)) {
+                $flat[] = $post_type;
+            }
+        }
+
+        return $flat;
+    }
+
+    /**
+     * `post_type_link` — `/base/parent/child/` becomes `/base/child/`.
+     *
+     * Core builds the link from the full ancestor URI, so the flat form is that
+     * URI's last occurrence swapped for the post's own name; everything the link
+     * carries around it (base, trailing slash, any other plugin's edit) is kept.
+     * Sitemaps, REST `link`, feeds and attachment links all read this filter.
+     * Untouched: a non-flat type, a top-level post, a link still holding the
+     * edit screen's `%placeholder%` (`$leavename`), and a post with no name yet.
+     *
+     * @param string   $post_link Link as core built it.
+     * @param \WP_Post $post      The post.
+     * @param bool     $leavename Whether the name segment is left as a placeholder.
+     * @return string
+     */
+    public function flat_permalink($post_link, $post, $leavename = false) {
+        // The hierarchy test is a registry lookup; it spares every link of every
+        // other post type (menus, sitemaps, REST listings) the rule scan.
+        if ($leavename || !$post instanceof \WP_Post || $post->post_name === ''
+            || !is_post_type_hierarchical($post->post_type)
+            || !in_array($post->post_type, $this->flat_post_types(), true)) {
+            return $post_link;
+        }
+
+        $uri = get_page_uri($post);
+        $pos = $uri === false || $uri === $post->post_name ? false : strrpos($post_link, $uri);
+
+        return $pos === false ? $post_link : substr_replace($post_link, $post->post_name, $pos, strlen($uri));
+    }
+
+    /**
+     * `request` — resolve `/base/child/` for a flat type, and 301 the nested form.
+     *
+     * Core resolves a hierarchical single through `get_page_by_path()`, which
+     * wants the whole ancestor chain, so a flat path 404s. The path's LAST
+     * segment names the post inside the type, and the query is rewritten to
+     * `p=ID`. A nested path (`/base/parent/child/`) is 301'd to the flat link
+     * ONLY when its chain is exactly the post's real one: a stale or junk chain
+     * is left to core, which 404s it. Anything else the path carried (a feed,
+     * an embed) is not guessed at and falls through too.
+     *
+     * @param array $vars Query vars as `WP::parse_request()` built them.
+     * @return array
+     */
+    public function resolve_flat_request($vars) {
+        $post_type = is_array($vars) ? ($vars['post_type'] ?? '') : '';
+        $name      = is_array($vars) ? ($vars['name'] ?? '') : '';
+
+        if (!is_string($post_type) || !is_string($name) || $name === ''
+            || !in_array($post_type, $this->flat_post_types(), true)) {
+            return $vars;
+        }
+
+        $chain = array_map('sanitize_title_for_query', explode('/', trim($name, '/')));
+        $leaf  = array_pop($chain);
+        $post  = $this->find_flat_post($post_type, $leaf, $chain);
+        if ($post === null) {
+            return $vars;
+        }
+
+        // The rewrite hands the path over as `post_type` + `name` AND under the
+        // type's own query var; both go, or the old lookup runs beside ours.
+        $query_var = get_post_type_object($post_type)->query_var;
+        $own       = array_merge(['post_type', 'name', 'page'], $query_var ? [$query_var] : []);
+
+        if ($chain === []) {
+            unset($vars['name']);
+            if ($query_var) {
+                unset($vars[$query_var]);
+            }
+            $vars['p'] = $post;
+
+            return $vars;
+        }
+
+        // Only a post the visitor may read gets a redirect: a 301 for a draft or
+        // a private post would confirm it exists and hand over its URL.
+        $status = get_post_status($post);
+        if (array_filter(array_diff_key($vars, array_flip($own))) !== []
+            || !($status === 'publish' || ($status === 'private' && current_user_can('read_post', $post)))) {
+            return $vars;
+        }
+
+        $url  = get_permalink($post);
+        $page = (int) ($vars['page'] ?? 0);
+        if ($page > 1) {
+            $url = trailingslashit($url) . user_trailingslashit((string) $page);
+        }
+        $query = (string) ($_SERVER['QUERY_STRING'] ?? '');
+        wp_redirect($query === '' ? $url : $url . '?' . $query, 301, 'Meta Conductor');
+        exit;
+    }
+
+    /**
+     * The post a flat path names: published first, then the lowest ID, then any
+     * status — core's own `name` lookup orders by date with no tiebreak and 404s
+     * a logged-out visitor whenever the newest of two same-named posts is a
+     * draft. With a chain, the first candidate whose REAL ancestor names equal
+     * it; without one, the first candidate.
+     *
+     * @param string   $post_type Flat post type.
+     * @param string   $leaf      Last path segment.
+     * @param string[] $chain     Ancestor names the path carried, outermost first.
+     * @return int|null Post ID.
+     */
+    private function find_flat_post(string $post_type, string $leaf, array $chain): ?int {
+        global $wpdb;
+
+        $ids = $wpdb->get_col($wpdb->prepare(
+            "SELECT ID FROM {$wpdb->posts}
+             WHERE post_type = %s AND post_name = %s AND post_status NOT IN ('trash','auto-draft')
+             ORDER BY (post_status = 'publish') DESC, ID ASC",
+            $post_type, $leaf
+        ));
+
+        foreach ($ids as $id) {
+            $id = (int) $id;
+            if ($chain === []) {
+                return $id;
+            }
+            $real = array_map(
+                static fn($ancestor) => (string) get_post_field('post_name', $ancestor),
+                array_reverse(get_post_ancestors($id))
+            );
+            if ($real === $chain) {
+                return $id;
+            }
+        }
+
+        return null;
+    }
+
+    // -------------------------------------------------------------------------
     // Token rendering
     // -------------------------------------------------------------------------
 

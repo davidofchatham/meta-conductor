@@ -69,6 +69,7 @@ WP_CLI::log( '── A. Seeded surface ─────────────�
 $check( 'CPT mc_item registered', post_type_exists( 'mc_item' ) );
 $check( 'CPT mc_section registered', post_type_exists( 'mc_section' ) );
 $check( 'mc_section is hierarchical', is_post_type_hierarchical( 'mc_section' ) );
+$check( 'CPT mc_flat registered and hierarchical', post_type_exists( 'mc_flat' ) && is_post_type_hierarchical( 'mc_flat' ) );
 $check( 'taxonomy mc_topic registered', taxonomy_exists( 'mc_topic' ) );
 $check( 'mc_topic is hierarchical', is_taxonomy_hierarchical( 'mc_topic' ) );
 $check( 'taxonomy mc_flag registered', taxonomy_exists( 'mc_flag' ) );

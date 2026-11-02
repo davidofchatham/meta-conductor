@@ -229,6 +229,25 @@ abstract class RuleType {
     }
 
     /**
+     * The READ-TIME hooks this type's handler serves — filters that shape what
+     * a visitor sees (a permalink, a request), as opposed to the writes the
+     * dispatchers own.
+     *
+     * Shape: `hook => [handler method, priority = 10, accepted args = 1]`.
+     * `TaxonomyManager::init_handlers()` registers them next to the
+     * dispatchers; the handler registers nothing itself, so "handlers register
+     * nothing" stays a property H13 can read off the source. A callback may
+     * read and may redirect; it must not write (H13). Not `capture_hooks()`:
+     * that list is for pre-write snapshots a pass consumes, and folding these
+     * into it would blur "a capture applies nothing".
+     *
+     * @return array<string, array{0: string, 1?: int, 2?: int}>
+     */
+    public function runtime_hooks(): array {
+        return [];
+    }
+
+    /**
      * Whether this type's captures name entities the queue must be TOLD about.
      *
      * True ⇒ the handler overrides `drain_captures()` and

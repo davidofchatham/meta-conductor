@@ -279,7 +279,7 @@ $expected_visible = [
     'title_slug_rules' => [
         'type', 'enabled', 'name', 'post_type',
         'title_pattern', 'slug_pattern', 'slug_mode',
-        'date_escalation', 'date_field', 'row_title',
+        'date_escalation', 'date_field', 'flat_urls', 'row_title',
     ],
     'field_transformation_rules' => [
         'type', 'enabled', 'name', 'post_types',
@@ -306,7 +306,7 @@ foreach ($TYPES as $type) {
 // a regression while this list is the handler's actual read contract
 // (TitleSlugHandler::apply_to_data / rule_matches / escalation).
 $handler_reads = ['enabled', 'post_type', 'title_pattern', 'slug_pattern',
-                  'slug_mode', 'date_escalation', 'date_field'];
+                  'slug_mode', 'date_escalation', 'date_field', 'flat_urls'];
 $visible_title_slug = [];
 foreach ($subfields as $s) {
     if (Conditions::evaluate($s['conditions'] ?? null, ['type' => 'title_slug_rules'])) {
@@ -327,7 +327,16 @@ foreach ($subfields as $s) {
 $check('every key the computed field handler reads survives a save',
     empty(array_diff(['enabled', 'post_types', 'target_field', 'pattern', 'output'], $visible_field)));
 $check('title/slug mechanics are not offered on a computed field row',
-    !array_intersect(['title_pattern', 'slug_pattern', 'slug_mode', 'date_escalation', 'date_field'], $visible_field));
+    !array_intersect(['title_pattern', 'slug_pattern', 'slug_mode', 'date_escalation', 'date_field', 'flat_urls'], $visible_field));
+// `flat_urls` is offered for EVERY post type (a Wireframe gate cannot see
+// hierarchy), so its description is the only thing that says it is ignored for a
+// flat one. It carries the descriptor's own `type` gate and nothing narrower.
+$check('flat_urls is a toggle, off by default, whose description says hierarchical custom types only',
+    ($by_id['flat_urls']['type'] ?? '') === 'toggle'
+    && ($by_id['flat_urls']['default'] ?? null) === false
+    && stripos((string) ($by_id['flat_urls']['description'] ?? ''), 'hierarchical custom post types only') !== false);
+$check('flat_urls carries the type gate and nothing else',
+    ($by_id['flat_urls']['conditions'] ?? null) === ['field' => 'type', 'operator' => 'in', 'value' => ['title_slug_rules']]);
 $check('computed field mechanics are not offered on a title/slug row',
     !array_intersect(['target_field', 'pattern', 'output'], $visible_title_slug));
 

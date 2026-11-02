@@ -554,6 +554,23 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
     fails there rather than being silently skipped. `sweep-65-collisions.php`
     runs it over the real fixture and through both real hooks.
 
+20. **Read-time hooks are a descriptor fact, and they only read (FW-51).** A
+    rule type can serve visitors, not just write posts: `title_slug` with
+    `flat_urls` rewrites a hierarchical type's permalink (`post_type_link`) and
+    resolves its flat path (`request`). Those filters are declared by the
+    descriptor's `runtime_hooks()` (`hook => [method, priority, args]`),
+    registered by `TaxonomyManager::init_handlers()` next to the dispatchers,
+    and implemented on the handler — which still registers nothing itself. They
+    are deliberately not `capture_hooks()`, which is for pre-write snapshots a
+    pass consumes. H13 group 16 fails on a write primitive in any callback, on a
+    listed method the handler does not declare, and on a registry that is never
+    attached. The `request` callback picks the post for a path's last segment
+    (published first, then lowest ID, then any status) and 301s a nested path
+    only when its ancestor chain equals the post's real one; a stale chain, a
+    feed, or a draft's nested URL falls through to core untouched. Turning
+    `flat_urls` off needs no cleanup: the permalink is derived, so URLs revert
+    to nested. `sweep-flat-urls.php` covers it.
+
 ## Settings UI — WP Wireframe
 
 The settings UI is a React app provided by `tdrayson/wp-wireframe`. Config classes live under [includes/admin/config/](../includes/admin/config/), each exposing a `section()` method; the top-level composer assembles **three tabs** from them:
