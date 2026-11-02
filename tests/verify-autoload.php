@@ -95,6 +95,8 @@ $classes = [
     'BWS\\MetaConductor\\Tokens\\RowTokenSource',
     'BWS\\MetaConductor\\Tokens\\OutputPolicy',
     'BWS\\MetaConductor\\Tokens\\SlugLadder',
+    // Storage\ upgrade routine (FW-51 03) — delete with the class.
+    'BWS\\MetaConductor\\Storage\\SlugEscalationMigration',
     // Admin\
     'BWS\\MetaConductor\\Admin\\Diagnostics',
     'BWS\\MetaConductor\\Admin\\WireframeBootstrap',

@@ -176,6 +176,7 @@ if (!function_exists('bws_meta_manager_init')) {
 		// Remove all options
 		delete_option('bws_meta_conductor_settings');
 		delete_option('bws_meta_conductor_version');
+		delete_option('bws_mc_slug_escalation_schema');
 		delete_option('bws_title_slug_rule_status');
 		delete_option('bws_taxonomy_manager_settings'); // legacy
 		delete_option('bws_taxonomy_manager_version');  // legacy
@@ -212,6 +213,15 @@ if (!function_exists('bws_meta_manager_init')) {
 	 */
 	function bws_taxonomy_manager_check_version() {
 		$current_version = get_option('bws_meta_conductor_version');
+
+		// FW-51 03: title/slug `date_escalation` + `date_field` become `slug_escalation`.
+		// Gated by its own schema flag rather than the version compare below so a
+		// dev build that has not bumped the version still migrates. Remove one minor
+		// release after it ships (with the class, its harness and its flag option).
+		// The PHP floor guard: below 8.1 the plugin autoloader is never required.
+		if (version_compare(PHP_VERSION, '8.1', '>=') && \BWS\MetaConductor\Storage\SlugEscalationMigration::run()) {
+			\BWS\MetaConductor\Storage\StorageFactory::get_instance()->clear_cache();
+		}
 
 		if ($current_version !== META_CONDUCTOR_VERSION) {
 			// The Data Conversion page was deleted with the Apply page's arrival.
