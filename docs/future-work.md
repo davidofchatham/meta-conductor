@@ -119,19 +119,14 @@ A CPT whose posts each need a matching term so *other* content can be tagged aga
 
 #### FW-8 — `user_based_rules`: User-Based Term Setting / Restriction
 
-Pre-set terms in a taxonomy based on the current user (role or ID), or lock a taxonomy so only specific roles can edit it. Absorbs the existing standalone plugin `bws-user-based-terms` from its own repo: each rule maps user role or ID → taxonomy → term(s), auto-set applying on save, restrict filtering term lists in admin.
+Pre-set terms in a taxonomy based on the current user (role or ID), lock a taxonomy so only specific roles can edit it, or limit a user to editing posts that hold their assigned terms. Absorbs the standalone plugin `bws-user-based-terms`: each rule maps user role or ID → taxonomy → term(s).
 
-- **Axes:** basis **ambient** (the acting user and their role — attached to the request, not to the post), effect target **terms** for *both* variants, claim *owning* for auto-set and *restricting* for the lock variant.
-- **Detail home:** `.scratch/plans/ubt-merger.md`. Storage rationale: [storage-model.md](storage-model.md). Source: the external `../bws-user-based-terms/` repo.
-- **Progress:** Not started. Storage settled: Options, a `type` within `term_rules` — changed from CPT (2026-06-23), then from a dedicated `bws_mc_personalize` page option (2026-08-13, [storage-model.md](storage-model.md)). Role/user is the *target*, not the owner, so there is a single author and no concurrent writes; per-user explosion is solved by indirection (a profile field plus one rule), not N per-user rules. UBT's own `priority` field maps onto **list position**. The handler registers **no hooks of its own** — the dispatcher owns them; it exposes `apply_to_post()` like every other handler. **Ambient basis, but no sweep**: the acting user only matters at the instant of a write, so the dispatcher's save trigger suffices — contrast FW-3, whose ambient "now" moves on its own and therefore needs cron.
-- **Open:**
-  - ⚠️ type-key name unsettled — `user_based_terms_rules` (ubt-merger plan) vs `user_based_rules` (here and [storage-model.md](storage-model.md)). Under the unified list this is a `type` value, not an option key, so it is cheap to settle at build time — but settle it deliberately.
-  - **Port:** UBT's rule engine, applicator, cache and ACF integration become one MC handler extending `UnifiedHandlerBase`. The UBT CPT editor is dropped in favor of a row in the Wireframe term repeater.
-  - **Migration:** UBT CPT posts (`bws_user_term_rule`) become rows appended to `term_rules` with the right `type`, with a dry run first. UBT's `priority` field decides where each row goes in the list.
-- **Blocked by:** — • **Interacts with:** FW-25
+- **Axes:** basis **ambient** (the acting user, not the post). Auto-set and lock: effect target **terms**, claim *owning* / *restricting* ([CONTEXT.md](../CONTEXT.md) → *restricting-the-editor is still a restricting claim*). Edit-scope: an **access gate** — runtime-only, nothing stored, so no claim.
+- **Detail home:** `.scratch/plans/ubt-merger.md` (port, migration, edit-scope design and decisions). Storage rationale: [storage-model.md](storage-model.md).
+- **Progress:** Not started. Storage settled: Options, a `type` within `term_rules`. UBT's `priority` maps onto list position. The handler registers no hooks of its own; the dispatcher's save trigger suffices (ambient, but no sweep — contrast FW-3). Edit-scope reassessed 2026-11-02: a toggle on the same row, served from `runtime_hooks()`; build after auto-set and lock.
+- **Open:** ⚠️ type-key name unsettled — `user_based_terms_rules` vs `user_based_rules` (the latter fits better now that the type is not only about terms). Edit-scope decisions are in the plan.
+- **Blocked by:** — • **Interacts with:** FW-6, FW-25
 - **Phase:** 6b
-
-**Disambiguation resolved 2026-08-13.** The restrict variant was previously described as a *rendered* effect on "field editability". It is not. Its effect target is **terms** and its claim is **restricting** — it applies nothing and requires the target to satisfy a constraint, exactly like level-restriction. Filtering what the admin UI offers is the *surface*, not the effect, so "restricting the editor" and the *restricting* claim are the same sense after all ([architecture.md](architecture.md) invariant 18, [CONTEXT.md](../CONTEXT.md) → *restricting-the-editor is still a restricting claim*). Consequence: both variants order among the other term rules in the same **pass** and participate in the collision warning.
 
 #### FW-9 — Status mirroring for ACF-reference rules
 
