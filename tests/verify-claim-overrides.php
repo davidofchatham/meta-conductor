@@ -6,7 +6,7 @@
  * coercion from the General tab's per-taxonomy claim-override repeater ROWS
  * `[{taxonomy, mode}, ...]` to the canonical `{taxonomy_slug: mode}` dict
  * (ADR 0004). The rows exist only because Wireframe's Sanitizer skips
- * dot-notation field ids (CLAUDE.md don't #4), so this is the one way back.
+ * dot-notation field ids, so this is the one way back.
  *
  * Why a harness for eight lines: the method has **no runtime consumer**.
  * Nothing reads the per-taxonomy default when a rule omits its own claim —

@@ -167,7 +167,7 @@ A rule whose **claim** is *restricting* (today only level-restriction) declares 
 
 #64 put `format_rules` on the term dispatcher's queue, so the format pass now runs for **every entity the drain reaches** — a propagation fan-out's children, a captured sever's dependent, anything the ACF write queue flushed — not only for posts that were saved. That is the correct reading of a rule that consumes terms, and it fixed real staleness: before #64 a post whose terms were rewritten by *another* post's rule kept its old `{term:...}` title until somebody re-saved it. It also carries a cost the ticket accepted deliberately rather than solved.
 
-- **Detail home:** none yet. Context: CLAUDE.md don't 6f(e), [architecture.md](architecture.md) invariant 18, fixture matrix §7 restore gotcha.
+- **Detail home:** none yet. Context: [architecture.md](architecture.md) invariant 18, fixture matrix §7 restore gotcha.
 - **Progress:** Not started. Documented as accepted behavior in [CHANGELOG.md](../CHANGELOG.md) under the live-rule-type policy.
 - **Open:** a format rule has no way to say *which* provocations it answers — everything or nothing. The honest shape is **not** a per-rule "only on save" toggle: that recreates exactly the provocation-dependent behavior the dispatcher exists to remove ([CONTEXT.md](../CONTEXT.md) → **Pass**). More promising is making the **effect** conditional rather than the pass. A rule already recomputes from live state on every pass; what it could gain is a declared *stability* — "compute the slug once, then leave it" (`slug_locked_after_publish`) — which is a property of the rule's meaning rather than of how it was provoked, and composes with any provocation set. Title and slug want different answers: a title is cheap to change, a published slug is not. What a slug change costs once it happens is FW-36.
 - **Blocked by:** — • **Interacts with:** FW-4, FW-6, FW-36
@@ -444,7 +444,7 @@ Wireframe 1.0.6 (#13) added the conditions DSL to repeater subfields client-side
 - **Open:** remaining description-text workarounds to convert — `related_rules.trigger_term_id` / `.trigger_taxonomy` (operator on the `trigger` select), and `title_slug`'s "Only used when…" subfields. The hierarchical `expansion_behavior` + help-text pair is gone; #16 collapsed it into one outcome selector.
 - **Blocked by:** — • **Interacts with:** —
 
-⚠️ **A condition-hidden subfield DROPS from the save payload.** Verify each show/hide on the test site and check that the storage adapter tolerates the absent key — subfield conditions evaluate against sibling subfields in the same row. This is the silent-data-loss trap in CLAUDE.md don't 3, which H11 exists to catch.
+⚠️ **A condition-hidden subfield DROPS from the save payload.** Verify each show/hide on the test site and check that the storage adapter tolerates the absent key — subfield conditions evaluate against sibling subfields in the same row. This is the silent-data-loss trap in [architecture.md → The ordered rule repeaters](architecture.md#the-ordered-rule-repeaters), which H11 exists to catch.
 
 #### FW-26 — Taxonomy-first cascading term picker
 

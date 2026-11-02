@@ -102,7 +102,7 @@ final class HierarchicalRules extends RuleType {
      * still carries the pair.
      *
      * Taken now because the schema window is free — hierarchical rules are
-     * test-site only (CLAUDE.md live-rule-type rule) — and it closes once
+     * test-site only (a rule type not in real use needs no migration) — and it closes once
      * they are not.
      *
      * `inheritance_depth` is untouched: one level vs all levels is already an

@@ -41,7 +41,7 @@
  * `get_enabled_rules()` filter on `get_rule_type()` with no mapping table.
  *
  * Preview + Apply-to-Existing action buttons remain deferred until Wireframe
- * exposes a client-side field-type extension API (CLAUDE.md don't #5).
+ * exposes a client-side field-type extension API (FW-23).
  *
  * @package BWS_Meta_Manager
  * @since 0.8.0

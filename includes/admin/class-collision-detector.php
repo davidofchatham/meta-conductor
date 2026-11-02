@@ -337,7 +337,7 @@ class CollisionDetector {
      * `HierarchicalHandler::behavior_key()` is the single answer to "what does
      * this row actually do", legacy `hierarchy_direction`/`expansion_behavior`
      * pair included, and it is already what the row-title snapshot reads. A
-     * second switch here is the drift CLAUDE.md don't 6d(c) warns about, and it
+     * second switch here is the drift architecture.md invariant 17 warns about, and it
      * would be wrong in two places at once: on a legacy `both` row (which adds
      * descendants as well) and on the degenerate `parent_to_child` + `never`
      * pair, which applies nothing at all and must therefore contradict nothing.

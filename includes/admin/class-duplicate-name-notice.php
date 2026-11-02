@@ -126,7 +126,7 @@ class DuplicateNameNotice {
         }
 
         // A post title is author text, and the client may interpolate a `{word}`
-        // in `html` content as it does in descriptions (CLAUDE.md don't 4b);
+        // in `html` content as it does in descriptions (H12 keeps bare tokens out);
         // the entity renders as the brace and is not matched.
         $safe = static fn(string $text): string => str_replace(['{', '}'], ['&#123;', '&#125;'], esc_html($text));
 

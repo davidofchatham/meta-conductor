@@ -97,8 +97,8 @@ class TermRulesConfig {
      * `reads_shared_fields()`, in registry order.
      *
      * A type missing from a declaration has that value hidden and DROPPED on
-     * save (CLAUDE.md don't 3); H11's hand-written `$expected_visible` is the
-     * independent check.
+     * save (architecture.md → The ordered rule repeaters); H11's hand-written
+     * `$expected_visible` is the independent check.
      *
      * @param string $field Shared subfield id.
      */

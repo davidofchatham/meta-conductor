@@ -344,7 +344,7 @@ load-bearing; it is left in place because it is also what a real form save
 does.
 
 **Reading terms back in the same eval now needs a drain.** The pass is no
-longer synchronous with the write (CLAUDE.md don't 6b, trap a), which is what
+longer synchronous with the write (architecture.md invariant 17), which is what
 made `sweep-related-post-terms-sever.php` step `s9` fail on conversion — it
 asserted immediately after `wp_delete_post()`. It calls `drain()` now.
 
