@@ -94,6 +94,7 @@ $classes = [
     'BWS\\MetaConductor\\Tokens\\PostTokenSource',
     'BWS\\MetaConductor\\Tokens\\RowTokenSource',
     'BWS\\MetaConductor\\Tokens\\OutputPolicy',
+    'BWS\\MetaConductor\\Tokens\\SlugLadder',
     // Admin\
     'BWS\\MetaConductor\\Admin\\Diagnostics',
     'BWS\\MetaConductor\\Admin\\WireframeBootstrap',

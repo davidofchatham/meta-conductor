@@ -211,17 +211,17 @@ foreach ($patterns as $pattern) {
 $rule = static fn(array $r) => $r + [
     'type' => 'title_slug_rules', 'enabled' => true, 'post_type' => 'mc_item',
     'title_pattern' => '', 'slug_pattern' => '', 'slug_mode' => 'prefix',
-    'date_escalation' => false, 'date_field' => '',
+    'slug_escalation' => '', 'escalation_placement' => 'suffix',
 ];
 
 $live_event = $rule(['name' => 'live event', 'slug_pattern' => '{date_year:start_date}', 'slug_mode' => 'suffix',
-    'date_escalation' => true, 'date_field' => 'start_date']);
+    'slug_escalation' => '{date_year:start_date}']);
 $live_person = $rule(['name' => 'live personnel',
     'title_pattern' => '{meta:name_pre} {meta:name_first} {meta:name_last} {meta:name_post}',
     'slug_pattern' => '{meta:name_first}-{meta:name_last}-{meta:name_post}', 'slug_mode' => 'replace',
-    'date_escalation' => true]);
+    'slug_escalation' => '{pub_year}']);
 $fixture = $rule(['name' => 'fixture mc_item', 'slug_pattern' => '{default_slug}-{date_year:mc_event_date}',
-    'slug_mode' => 'replace', 'date_escalation' => true, 'date_field' => 'mc_event_date']);
+    'slug_mode' => 'replace', 'slug_escalation' => '{date_year:mc_event_date}']);
 $dt_suffix = $rule(['name' => 'default_title suffix', 'title_pattern' => '{default_title} - {meta:other}']);
 $dt_prefix = $rule(['name' => 'default_title prefix', 'title_pattern' => '{meta:other}: {default_title}',
     'slug_pattern' => '{pub_year}', 'slug_mode' => 'suffix']);

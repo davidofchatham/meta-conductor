@@ -4,6 +4,7 @@ namespace BWS\MetaConductor\Handlers;
 
 use BWS\MetaConductor\Tokens\OutputPolicy;
 use BWS\MetaConductor\Tokens\PostTokenSource;
+use BWS\MetaConductor\Tokens\SlugLadder;
 use BWS\MetaConductor\Tokens\TokenEngine;
 
 if (!defined('ABSPATH')) exit;
@@ -549,12 +550,24 @@ class TitleSlugHandler extends UnifiedHandlerBase {
         };
     }
 
+    /**
+     * A free slug for the post. A taken one is walked up the rule's
+     * disambiguation ladder (`SlugLadder`), then numbered by core for whatever
+     * is still taken — this method supplies the uniqueness lookup and the rung
+     * values, and nothing of the walk itself.
+     */
     protected function make_unique_slug(string $slug, int $post_id, object $post, array $rule): string {
         if ($this->slug_is_unique($slug, $post_id, $post->post_type)) {
             return $slug;
         }
-        if (!empty($rule['date_escalation'])) {
-            return $this->escalate_date_slug($slug, $post_id, $post, $rule);
+        $rungs = $this->ladder_rungs($rule, $post_id, $post);
+        if ($rungs) {
+            $slug = SlugLadder::walk(
+                $slug,
+                $rungs,
+                (string) ($rule['escalation_placement'] ?? ''),
+                fn(string $candidate): bool => $this->slug_is_unique($candidate, $post_id, $post->post_type)
+            );
         }
         return wp_unique_post_slug($slug, $post_id, $post->post_status, $post->post_type, $post->post_parent);
     }
@@ -570,78 +583,32 @@ class TitleSlugHandler extends UnifiedHandlerBase {
         return $count === 0;
     }
 
-    private const PRECISION_ORDER = ['year', 'month', 'day', 'hour', 'minute'];
+    /**
+     * The rule's `slug_escalation` tokens resolved for this post, as the walk
+     * takes them. Every value is shaped by the slug policy, so a parent slug or
+     * a term arrives already a slug. A date token also resolves each finer part
+     * of ITS date, because the walk only knows part names.
+     *
+     * @return array[]
+     */
+    private function ladder_rungs(array $rule, int $post_id, object $post): array {
+        $source = new PostTokenSource($post_id, (array) $post);
+        $policy = OutputPolicy::slug();
+        $rungs  = [];
 
-    /** Index into PRECISION_ORDER of the finest date token in the pattern, or false. */
-    private function date_precision(string $pattern): int|false {
-        $found = array_intersect(self::PRECISION_ORDER, array_map(TokenEngine::date_part_of(...), TokenEngine::tokens($pattern)));
-        return $found ? max(array_keys($found)) : false;
-    }
-
-    private function get_date_parts_for_escalation(array $rule, int $post_id, object $post): array {
-        if (!empty($rule['date_field'])) {
-            $raw = get_post_meta($post_id, $rule['date_field'], true);
-            $dt  = $raw ? TokenEngine::parse_date((string)$raw) : null;
-        } else {
-            $dt = TokenEngine::parse_date((string)$post->post_date); // fallback: publication date
-        }
-        if (!$dt) return [];
-
-        return [
-            'year'   => $dt->format('Y'),
-            'month'  => $dt->format('m'),
-            'day'    => $dt->format('d'),
-            'hour'   => $dt->format('H'),
-            'minute' => $dt->format('i'),
-        ];
-    }
-
-    private function escalate_date_slug(string $slug, int $post_id, object $post, array $rule): string {
-        $precision_index = $this->date_precision($rule['slug_pattern'] ?? '');
-        if ($precision_index === false && !empty($rule['title_pattern'])) {
-            $precision_index = $this->date_precision($rule['title_pattern']);
-        }
-        $parts = $this->get_date_parts_for_escalation($rule, $post_id, $post);
-        if (empty($parts)) {
-            return wp_unique_post_slug($slug, $post_id, $post->post_status, $post->post_type, $post->post_parent);
-        }
-
-        // Escalation ladder: add progressively more date precision until unique.
-        // Parts insert adjacent to existing date portion, not appended to end.
-        if ($precision_index === false) {
-            return wp_unique_post_slug($slug, $post_id, $post->post_status, $post->post_type, $post->post_parent);
-        }
-
-        // Build the anchor: the date string already present in the slug.
-        $anchor = '';
-        for ($i = 0; $i <= $precision_index; $i++) {
-            $key = self::PRECISION_ORDER[$i];
-            if (!empty($parts[$key])) {
-                $anchor .= ($anchor !== '' ? '-' : '') . $parts[$key];
+        foreach (TokenEngine::tokens((string) ($rule['slug_escalation'] ?? '')) as $token) {
+            $part = TokenEngine::date_part_of($token);
+            if ($part === null) {
+                $rungs[] = ['value' => TokenEngine::render('{' . $token . '}', $source, $policy)];
+                continue;
             }
-        }
-
-        // Find anchor position in slug to splice after it.
-        $anchor_pos = strpos($slug, $anchor);
-        if ($anchor_pos === false) {
-            return wp_unique_post_slug($slug, $post_id, $post->post_status, $post->post_type, $post->post_parent);
-        }
-        $before = substr($slug, 0, $anchor_pos + strlen($anchor));
-        $after  = substr($slug, $anchor_pos + strlen($anchor));
-
-        // Escalate: insert next date parts between anchor and remainder.
-        $extra = '';
-        $candidate = $slug;
-        for ($i = $precision_index + 1; $i < count(self::PRECISION_ORDER); $i++) {
-            $key = self::PRECISION_ORDER[$i];
-            if (empty($parts[$key])) continue;
-            $extra .= '-' . $parts[$key];
-            $candidate = $before . $extra . $after;
-            if ($this->slug_is_unique($candidate, $post_id, $post->post_type)) {
-                return $candidate;
+            $parts = [];
+            foreach (SlugLadder::PARTS as $name) {
+                $parts[$name] = TokenEngine::render('{' . TokenEngine::with_date_part($token, $name) . '}', $source, $policy);
             }
+            $rungs[] = ['part' => $part, 'parts' => $parts];
         }
 
-        return wp_unique_post_slug($candidate, $post_id, $post->post_status, $post->post_type, $post->post_parent);
+        return $rungs;
     }
 }

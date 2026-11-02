@@ -81,7 +81,7 @@ $note('what the handler reads is unchanged apart from row_title',
 
 // ── 2. RepeaterField::sanitize round-trip — the real save path. ─────────────
 
-$field     = FormatRulesConfig::section()['fields'][0];
+$field     = current( array_filter( FormatRulesConfig::section()['fields'], static fn( $f ) => ( $f['id'] ?? '' ) === 'format_rules' ) ); // the token reference leads the section
 $sanitized = RepeaterField::sanitize($rows, $field['args']);
 
 $note('sanitize keeps every row', count($sanitized) === count($rows));
@@ -89,7 +89,7 @@ $note('sanitize keeps every row', count($sanitized) === count($rows));
 // Keys the format handlers READ — these must survive a save unchanged. The
 // last three are the Computed field rule's, stored by ACF field KEY.
 $must_survive = ['type', 'enabled', 'post_type', 'post_types', 'title_pattern', 'slug_pattern',
-                 'slug_mode', 'date_escalation', 'date_field', 'name',
+                 'slug_mode', 'slug_escalation', 'escalation_placement', 'name',
                  'target_field', 'pattern', 'output'];
 
 foreach ($rows as $i => $row) {

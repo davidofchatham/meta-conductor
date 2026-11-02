@@ -319,6 +319,12 @@ $check('date_part_of: pub_ takes no field', TokenEngine::date_part_of('pub_year:
 $check('date_part_of: non-date tokens', TokenEngine::date_part_of('meta:date_year') === null
     && TokenEngine::date_part_of('term:genre') === null && TokenEngine::date_part_of('default_slug') === null);
 
+$check('with_date_part swaps the part of a pub_ token', TokenEngine::with_date_part('pub_year', 'day') === 'pub_day');
+$check('with_date_part swaps the part of a mod_ token', TokenEngine::with_date_part('mod_month', 'minute') === 'mod_minute');
+$check('with_date_part keeps a date_ token\'s field', TokenEngine::with_date_part('date_year:start_date', 'hour') === 'date_hour:start_date');
+$check('with_date_part is null for a token that is not a date',
+    TokenEngine::with_date_part('meta:date_year', 'day') === null && TokenEngine::with_date_part('parent:slug', 'day') === null);
+
 // --- field_names(): the fields a pattern reads (self-reference advisory). ----
 
 $check('field_names() lists meta and date field arguments, in order',

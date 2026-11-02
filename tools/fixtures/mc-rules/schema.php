@@ -94,7 +94,7 @@ function bws_fixture_mc_rules_register_types() {
  *                   (level-restriction + related ACF branches discover by
  *                   type==taxonomy && taxonomy==mc_topic).
  *   mc_event_date — date_picker Ymd (title_slug {meta:}/{date_*:} tokens +
- *                   escalation date_field).
+ *                   the escalation ladder).
  *
  * group_mc_computed_fields (mc_item) — the Computed field rule's surface:
  *   mc_cf_first / mc_cf_last — text SOURCE fields.

@@ -72,7 +72,7 @@ $snapshot = get_option(OptionRuleStorage::OPTION_NAME, []);
  * list the repeater writes is the shape storage reads.
  */
 $save_rows = static function (array $rows) use ($KIND, $storage, $snapshot): array {
-    $field   = FormatRulesConfig::section()['fields'][0];
+    $field   = current( array_filter( FormatRulesConfig::section()['fields'], static fn( $f ) => ( $f['id'] ?? '' ) === 'format_rules' ) ); // the token reference leads the section
     $payload = [$KIND => RepeaterField::sanitize($rows, $field['args'])];
     $payload = WireframeBootstrap::snapshot_format_rule_labels($payload);
 
@@ -100,13 +100,13 @@ try {
     $first = [
         'type' => 'title_slug_rules', 'enabled' => true, 'name' => 'Sweep 59 first',
         'post_type' => 'mc_item', 'slug_pattern' => 'first-{default_slug}',
-        'slug_mode' => 'replace', 'date_escalation' => false, 'date_field' => '',
+        'slug_mode' => 'replace', 'slug_escalation' => '', 'escalation_placement' => 'suffix',
         'title_pattern' => '',
     ];
     $second = [
         'type' => 'title_slug_rules', 'enabled' => true, 'name' => 'Sweep 59 second',
         'post_type' => 'mc_item', 'slug_pattern' => 'second-{default_slug}',
-        'slug_mode' => 'replace', 'date_escalation' => false, 'date_field' => '',
+        'slug_mode' => 'replace', 'slug_escalation' => '', 'escalation_placement' => 'suffix',
         'title_pattern' => '',
     ];
 

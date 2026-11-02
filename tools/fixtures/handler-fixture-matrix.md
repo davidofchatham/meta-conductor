@@ -135,8 +135,8 @@ Status (L1)          — second root: related/time-based targets live here so
 |---|---|
 | Trigger | **None since #64** — the handler registers nothing. `FormatDispatcher` runs it from `TermDispatcher`'s drain, after the term pass for the same entity; the dispatcher owns the write, the revision suppression and `redirect_post_location`. (Was `wp_insert_post_data` p1 + `acf/save_post`/`save_post` p99.) |
 | Schema | Single `post_type` per rule, **one rule per post type** (first-match-wins). Own CPT so shared titles never mutate: `mc_item`. Token sources: post meta (ACF date field `mc_event_date`), terms (`{term:mc_topic}`). |
-| Data | Posts with meta + terms feeding tokens; two posts colliding on generated slug (date_escalation ladder year→minute → `wp_unique_post_slug`). |
-| Rule config | `name`, `post_type: mc_item`, `title_pattern` / `slug_pattern` (tokens: `{default_title}`, `{meta:x}`, `{date_year:x}`, `{pub_*}`, `{term:tax}`, `{terms:tax}`), `slug_mode` (prefix/suffix/replace), `date_escalation` + `date_field`. |
+| Data | Posts with meta + terms feeding tokens; two posts colliding on generated slug (`slug_escalation` ladder → `wp_unique_post_slug`). |
+| Rule config | `name`, `post_type: mc_item`, `title_pattern` / `slug_pattern` (tokens: `{default_title}`, `{meta:x}`, `{date_year:x}`, `{pub_*}`, `{term:tax}`, `{terms:tax}`), `slug_mode` (prefix/suffix/replace), `slug_escalation` + `escalation_placement`. |
 | Rules to seed | 1 (`mc_item`: slug_pattern with `{meta:...}` + `{term:mc_topic}`, escalation on). Pattern variants per-scenario (one-per-type limit blocks parallel rules). |
 | Mutates | `post_title`/`post_name` only; meta `_bws_raw_title`/`_bws_applied_title`. No taxonomy writes. |
 | Scenarios | Same-pass `{term:TAX}` read (a term rule's write, not the previous save's); provocation-independence (editor save / ACF save / term write / bulk); idempotent re-pass; slug collision escalation. The pre-write vs post-write split is GONE (#64) — every apply is post-write. |
@@ -693,7 +693,7 @@ this is date-independent.)
 ### §7 title_slug — results
 
 Seeded rule: `mc_item`, `slug_pattern = {default_slug}-{date_year:mc_event_date}`,
-mode replace, `date_escalation=true`, `date_field=mc_event_date`. It's a META
+mode replace, `slug_escalation={date_year:mc_event_date}` (FW-51 02; was `date_escalation=true` + `date_field=mc_event_date`). It's a META
 pattern (`date_year:`). **As of #64 that distinction is gone** — the pre-write
 `wp_insert_post_data` path is deleted and every apply happens in the format pass,
 so §7a-§7c below hold for meta and non-meta patterns alike. Subjects: `item-alpha` (event 2030-03-15),
@@ -769,6 +769,17 @@ slug derives).
 is what `mc_pid()` looks a fixture post up by — so the subject's ID is cached in
 the `mc64_subject_id` option on first resolution and every later step reads that.
 `restore` renames the subject back from the manifest and drops the cache.
+
+#### §7 collision ladder (FW-51 02) — results
+
+`sweep-slug-ladder.php`, 26 assertions, all green. Two throw-away `mc_item` posts per case (same title; the first takes the base slug, the second collides), rule = `slug_pattern {default_slug}`, replace, with only the title/slug rule live (a hierarchy rule adds the term's ancestors and changes which term is first).
+
+- **published date, anchorless** ✅ `{pub_year}` → `ladder-pub-2026` (the Site E row 2 shape; was `-2`). **Prefix** → `2026-ladder-pub-pre`.
+- **meta date** ✅ anchored (`{default_slug}-{date_year:mc_event_date}`, rung `{date_year:…}`): `ladder-meta-2029` then `ladder-meta-2029-07`; rung `{date_day:…}` skips to `ladder-meta-day-2029-07-05`; anchorless `ladder-meta-free-2029`.
+- **modified date** ✅ `{mod_year}` → `ladder-mod-<this year>`.
+- **parent** ✅ `ladder-par-ladder-holder`; prefix `ladder-holder-ladder-par-pre`.
+- **term** ✅ `{term:mc_topic}` → `ladder-term-inland`. **Empty rung skipped** ✅ (`{parent:slug}{term:…}` with no parent). **Exhausted** ✅ falls through to core numbering (`ladder-gone-2`).
+- Post names checked after the restore: no temporary post survives, every fixture `mc_item` has its manifest name. `sweep-59-roundtrip`/`-behaviour` re-run green (their `fields[0]` lookup went stale when the token reference moved to lead the section; they now find the list by id), `sweep-64-format` re-run green.
 
 ### §8 ordered term repeater (#57, 0.8.0) — results
 

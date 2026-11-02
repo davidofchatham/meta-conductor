@@ -175,21 +175,38 @@ final class TitleSlugRules extends RuleType {
                 ],
             ],
             [
-                'id'          => 'date_escalation',
-                'type'        => 'toggle',
-                'label'       => __('Collision avoidance via date escalation', 'meta-conductor'),
-                'description' => __('When a generated slug collides with an existing post, append progressively more date precision (year → month → day → hour → minute) before falling back to WordPress unique-slug suffixes.', 'meta-conductor'),
-                'default'     => false,
-                'columns'     => 12,
-            ],
-            [
-                'id'          => 'date_field',
+                'id'          => 'slug_escalation',
                 'type'        => 'text',
-                'label'       => __('Date field for collision avoidance', 'meta-conductor'),
-                'description' => __('Optional. Meta field key to read dates from. Leave blank to use publication date. Only used when collision avoidance is on.', 'meta-conductor'),
+                'label'       => __('Collision avoidance — tokens to add', 'meta-conductor'),
+                // No bare word-in-braces in a description (H12 fails it): the
+                // tokens are listed in the html table below, which is not interpolated.
+                'description' => __('Optional. When a generated slug collides with an existing post, add these one at a time, in order, until the slug is free; WordPress numbering is the last resort. Leave blank to use WordPress numbering only. A date adds its next finer part each time (year, month, day, hour, minute) beside the date already in the slug, or at the start when the slug shows none. Warning: a modified-date token makes the slug depend on the last save, so order it last.', 'meta-conductor'),
                 'columns'     => 12,
                 'args'        => [
-                    'placeholder' => __('e.g. event_date', 'meta-conductor'),
+                    'placeholder' => '{pub_year}',
+                ],
+            ],
+            [
+                'id'      => 'slug_escalation_tokens',
+                'type'    => 'html',
+                'columns' => 12,
+                'args'    => [
+                    'variant' => 'info',
+                    'content' => self::escalation_tokens_html(),
+                ],
+            ],
+            [
+                'id'          => 'escalation_placement',
+                'type'        => 'select',
+                'label'       => __('Collision avoidance — where to add them', 'meta-conductor'),
+                'description' => __('Where parts other than dates go. A date always goes beside the date already in the slug; with none there, it follows this setting too.', 'meta-conductor'),
+                'default'     => 'suffix',
+                'columns'     => 12,
+                'args'        => [
+                    'options' => [
+                        'suffix' => __('Suffix — slug-added', 'meta-conductor'),
+                        'prefix' => __('Prefix — added-slug', 'meta-conductor'),
+                    ],
                 ],
             ],
             [
@@ -202,5 +219,32 @@ final class TitleSlugRules extends RuleType {
                 'columns'     => 12,
             ],
         ];
+    }
+
+    /**
+     * The *Available tokens* table for the collision-avoidance field. A section
+     * `html` field would not do: the token reference above the list is shared
+     * by every format rule, and these tokens only mean something here.
+     */
+    private static function escalation_tokens_html(): string {
+        $tok  = static fn(string ...$tokens): string => implode(' / ', array_map(
+            static fn(string $t): string => '<code>' . esc_html($t) . '</code>', $tokens
+        ));
+        $rows = [
+            [$tok('{pub_year}'), __('Published date, finer parts follow: {pub_month} … {pub_minute}', 'meta-conductor')],
+            [$tok('{mod_year}'), __('Modified date. The slug then depends on the last save', 'meta-conductor')],
+            [$tok('{date_year:field}'), __('A date meta field. {date_day:field} skips ahead to the day', 'meta-conductor')],
+            [$tok('{parent:slug}'), __('The immediate parent\'s slug', 'meta-conductor')],
+            [$tok('{term:taxonomy}'), __('First term\'s slug', 'meta-conductor')],
+            [$tok('{meta:field_name}'), __('A meta field value', 'meta-conductor')],
+        ];
+
+        $html = '<details><summary style="cursor:pointer;"><strong>' . esc_html__('Available tokens', 'meta-conductor') . '</strong></summary>'
+              . '<table class="widefat" style="margin-top:8px;font-size:12px;"><thead><tr><th>' . esc_html__('Token', 'meta-conductor') . '</th><th>' . esc_html__('Adds', 'meta-conductor') . '</th></tr></thead><tbody>';
+        foreach ($rows as $row) {
+            $html .= '<tr><td>' . $row[0] . '</td><td>' . esc_html($row[1]) . '</td></tr>';
+        }
+
+        return $html . '</tbody></table></details>';
     }
 }

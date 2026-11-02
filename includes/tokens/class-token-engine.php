@@ -110,6 +110,18 @@ final class TokenEngine {
     }
 
     /**
+     * The same date token reading another part — `pub_year` -> `pub_day`,
+     * `date_year:start` -> `date_day:start` — or null for a token that is not a
+     * date. How a date rung of the slug ladder reads the finer parts of ITS date.
+     */
+    public static function with_date_part(string $token, string $part): ?string {
+        $current = self::date_part_of($token);
+        if ($current === null) return null;
+        [$kind, $arg] = self::split($token);
+        return substr($kind, 0, -strlen($current)) . $part . ($arg === null ? '' : ':' . $arg);
+    }
+
+    /**
      * Parse a date value in SITE time (CONTEXT.md → Site time), never the
      * server zone. Tries the stored formats first, then a unix timestamp, then
      * anything `strtotime()` accepts. A wall-clock value reads as site time; a
