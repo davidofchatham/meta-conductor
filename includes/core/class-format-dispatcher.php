@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
  * Runs the `format_rules` kind list, in authored order, from the term
  * dispatcher's drain — immediately after the term pass for the same entity.
  *
- * WHY THIS EXISTS (ADR 0003 decision 2, #64). The cross-kind order terms →
+ * WHY THIS EXISTS (architecture.md invariant 18, #64). The cross-kind order terms →
  * title/field is DERIVED, not authored: `title_slug` reads terms
  * (`{term:TAX}`, `{terms:TAX}`) and writes none, so it is a sink with inbound
  * edges. Until this ticket that derived order was held together by two
@@ -81,7 +81,7 @@ if (!defined('ABSPATH')) {
  * meta) and `acf/save_post` p99 (post-write, for rules reading meta). The
  * pre-write half cannot survive #64: it runs BEFORE the term pass, so a
  * `{term:TAX}` pattern would read the previous save's terms — the exact defect
- * that ticket exists to remove. ADR 0003 anticipated that the pass would split
+ * that ticket exists to remove. The format pass was once expected to split
  * in two again when `field_transformation` landed; it did not need to. A field
  * write is post meta, which `wp_insert_post_data` never carries, and the
  * post-write pass already sees the current pass's terms. REJECTED ALTERNATIVE:

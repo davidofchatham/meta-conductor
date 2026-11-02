@@ -287,7 +287,7 @@ switch ( $step ) {
 		// runs on before_delete_post and records the dependent; the ordered
 		// pass that withdraws the gone source's terms happens at the DRAIN,
 		// which in a real request is `shutdown`. A sweep reading terms back in
-		// the same eval must provoke it — CLAUDE.md don't 6b, trap (a).
+		// the same eval must provoke it (architecture.md invariant 17).
 		$dispatcher = \BWS\MetaConductor\Core\TermDispatcher::instance();
 		if ( ! $dispatcher ) {
 			WP_CLI::error( 'No registered TermDispatcher — the plugin did not boot one.' );

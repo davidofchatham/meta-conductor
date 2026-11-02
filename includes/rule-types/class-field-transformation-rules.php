@@ -184,7 +184,7 @@ final class FieldTransformationRules extends RuleType {
      * whose ACF group lacks the field would store orphan meta. The attachment
      * type is not offered (see `ConfigHelpers::format_post_type_options()`).
      *
-     * No bare `{word}` in a description (CLAUDE.md don't 4b); the colon tokens
+     * No bare `{word}` in a description (H12 enforces); the colon tokens
      * are safe.
      *
      * @return array[]

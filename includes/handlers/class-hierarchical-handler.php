@@ -43,7 +43,7 @@ class HierarchicalHandler extends UnifiedHandlerBase {
      *
      * No re-entrancy boolean: the `private $processing` flag that used to wrap
      * the write is deleted, because the pass lock already suppresses the
-     * `set_object_terms` this fires (#60, ADR 0003 decision 4).
+     * `set_object_terms` this fires (#60, architecture.md invariant 17).
      *
      * @param int   $post_id Post to apply to.
      * @param array $rule    One enabled hierarchical rule.

@@ -29,7 +29,7 @@ if (!defined('ABSPATH')) {
  * lived — the two handlers ran in whatever sequence `TaxonomyManager` happened
  * to construct them in, which is not an order an author can express.
  *
- * So the rule splits in two, along the seam ADR 0003 draws:
+ * So the rule splits in two, along the seam architecture.md invariant 17 draws:
  *
  *   - `apply_to_post(P, rule)` reconciles P AND ONLY P, by READING P's parent.
  *     Pull, not push. Every post that needs reconciling gets there as the
@@ -46,7 +46,7 @@ if (!defined('ABSPATH')) {
  * answers "what should this child hold, given its parent" for every claim
  * except on removal. A term the parent HELD and then lost is, on the child,
  * indistinguishable from a term the child holds independently: no provenance is
- * recorded anywhere (ADR 0002 rejected per-rule provenance), and under `merge`
+ * recorded anywhere (provenance is rejected: architecture.md invariant 19), and under `merge`
  * the two must be treated differently — the first is removed from the child,
  * the second is not. The old delta model got this from `set_object_terms`'s
  * `$old_tt_ids`. A pass hands over rules, not deltas, and deliberately so.

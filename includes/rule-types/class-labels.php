@@ -49,7 +49,7 @@ final class Labels {
      * line and cannot leave a surface stale (replace = owning-claim,
      * merge = contributing-claim, skip = deferring-claim; the `-claim`
      * qualifier disambiguates `deferring` from defer-as-postpone).
-     * See CONTEXT.md → Claim and ADR 0004.
+     * See CONTEXT.md → Claim.
      *
      * @param string $value merge|replace|skip.
      * @return string Unescaped label.

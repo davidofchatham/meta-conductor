@@ -96,8 +96,8 @@ final class HierarchicalLevelRestrictionRules extends RuleType {
      * `conditions` gate — it now does something in every mode, so hiding it
      * in one would just be a way to lose its value on save.
      *
-     * Free to change because level restriction is test-site only (CLAUDE.md
-     * live-rule-type rule); the window closes the moment it is not.
+     * Free to change because level restriction is test-site only (a rule type
+     * not in real use needs no migration); the window closes the moment it is not.
      *
      * @return array[]
      */

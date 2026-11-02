@@ -13,7 +13,7 @@
  *   - {slug:bool} checkbox map AND plain-list handling
  *   - claim suffix + disabled_prefix baking into row_title
  *     (stored merge|replace|skip render as contributing|owning|deferring —
- *      CONTEXT.md → Claim, ADR 0004)
+ *      CONTEXT.md → Claim)
  *   - the disabled prefix reaching EVERY type in the list, which is #30's
  *     interim follow-up and was previously true of two types only
  *

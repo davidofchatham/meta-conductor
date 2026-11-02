@@ -227,7 +227,7 @@ function mc63_stage( array $rows ) {
 	// mc_topic into an ACF taxonomy field with save_terms on. A mirror left
 	// over from a previous step rewrites the native store on the next ACF
 	// write, so a step can inherit the terms the step before it produced and
-	// read as a pass. (CLAUDE.md don't 6d, sweep gotcha)
+	// read as a pass. (matrix §63h, sweep trap #3)
 	update_field( 'mc_topics', array(), $subject );
 	update_field( 'mc_topics', array(), $holder );
 	update_field( 'mc_topics', array(), $bidi );

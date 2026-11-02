@@ -40,11 +40,11 @@ class TimeBasedHandler extends UnifiedHandlerBase {
      * or not anything time-based provoked the pass: both branches are guarded
      * on has-term and on the date range, so in-range+already-tagged and
      * out-of-range+absent are alike no-ops. No re-entrancy boolean is needed or
-     * permitted — the pass lock is the only guard (ADR 0003 decision 4).
+     * permitted — the pass lock is the only guard (architecture.md invariant 17).
      *
      * The trailing removal branch is deliberate and load-bearing: it strips the
      * target term from an out-of-range post regardless of who applied it, which
-     * is the retroactive ownership ADR 0001 grants this rule type (provenance
+     * is the retroactive ownership architecture.md invariant 19 accepts for this rule type (provenance
      * is rejected). Do not "fix" it into a provenance check.
      *
      * Returns whether the target-term taxonomy changed, so the bulk count is
@@ -182,7 +182,7 @@ class TimeBasedHandler extends UnifiedHandlerBase {
      *
      * The removal RULE is unchanged: for each swept post the pass runs this
      * handler's expired rule, whose out-of-range branch removes the target term
-     * whoever applied it (ADR 0001 retroactive ownership).
+     * whoever applied it (retroactive ownership, architecture.md invariant 19).
      *
      * ONE THING DID CHANGE, and it is a correction. The old sweep removed from
      * every post its query returned, consulting no gate at all — so a rule

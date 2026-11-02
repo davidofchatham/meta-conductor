@@ -5,8 +5,8 @@
  * Locks `OptionRuleStorage::flatten_conflict_overrides()`, the storage-adapter
  * coercion from the General tab's per-taxonomy claim-override repeater ROWS
  * `[{taxonomy, mode}, ...]` to the canonical `{taxonomy_slug: mode}` dict
- * (ADR 0004). The rows exist only because Wireframe's Sanitizer skips
- * dot-notation field ids (CLAUDE.md don't #4), so this is the one way back.
+ * (CONTEXT.md → Claim). The rows exist only because Wireframe's Sanitizer skips
+ * dot-notation field ids, so this is the one way back.
  *
  * Why a harness for eight lines: the method has **no runtime consumer**.
  * Nothing reads the per-taxonomy default when a rule omits its own claim —
@@ -84,7 +84,7 @@ $dupe = OptionRuleStorage::flatten_conflict_overrides([
 $check('last duplicate row wins', $dupe === ['category' => 'replace']);
 
 // Stored values stay the legacy merge|replace|skip triple — the claim rename
-// (ADR 0004) was wording only. A dict emitting domain words here would mean a
+// (CONTEXT.md → Claim) was wording only. A dict emitting domain words here would mean a
 // migration nobody wrote.
 $vals = OptionRuleStorage::flatten_conflict_overrides([
     ['taxonomy' => 'a', 'mode' => 'merge'],

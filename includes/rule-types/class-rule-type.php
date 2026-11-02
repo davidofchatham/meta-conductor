@@ -76,7 +76,7 @@ abstract class RuleType {
      * A type may be declared (and therefore read) a change before its config
      * exists, but must not be offered or persisted until it does:
      * `RepeaterField::sanitize` drops undeclared subfields, so a row rendered
-     * without them is gutted on the next save (CLAUDE.md don't 6).
+     * without them is gutted on the next save (architecture.md → Effect-kind rule lists).
      *
      * @return bool
      */
@@ -103,7 +103,7 @@ abstract class RuleType {
      * The kind config builds every gated shared subfield's `conditions` from
      * these declarations. List every shared field the handler reads: a reader
      * missing here has that value hidden and DROPPED on the next save
-     * (CLAUDE.md don't 3). A shared `html` note is listed by the types it
+     * (architecture.md → The ordered rule repeaters). A shared `html` note is listed by the types it
      * annotates. Subfields every type reads (`type`, `enabled`, `post_status`,
      * `row_title`, the format frame) are ungated and never listed.
      *

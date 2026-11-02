@@ -105,7 +105,7 @@ trait TermOperations {
                 return array_values($merged);
 
             case 'skip':
-                // Deferring, not contributing (ADR 0004): writes only into an
+                // Deferring, not contributing (CONTEXT.md → Claim): writes only into an
                 // empty taxonomy.
                 return empty($current) ? $incoming : $current;
 

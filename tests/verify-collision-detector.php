@@ -429,9 +429,9 @@ $check('a date rule and a bidirectional related rule over one term cancel',
 //
 // A taxonomy-wide rule is NOT paired with a term rule whose term lives in that
 // taxonomy. That pairing is real, and it is the reach/component detector's —
-// it needs ADR 0004's jurisdiction conjunct to avoid warning on every pair.
+// it needs the jurisdiction conjunct (architecture.md invariant 19) to avoid warning on every pair.
 // Asserted so the boundary is a decision on the record rather than an
-// oversight someone "fixes" without reading the ADR.
+// oversight someone "fixes" without reading architecture.md invariant 19.
 
 $s_nested = [
     ['type' => 'hierarchical_level_restriction_rules', 'enabled' => true, 'taxonomy' => 'mc_topic',

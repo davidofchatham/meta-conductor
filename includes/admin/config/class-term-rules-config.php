@@ -1,7 +1,7 @@
 <?php
 /**
  * The ordered term-rule list — one repeater for every rule whose effect is
- * "terms on a post" (ADR 0003 decision 1, spec #53 §2, ticket #57).
+ * "terms on a post" (architecture.md → The ordered rule repeaters, spec #53 §2, ticket #57).
  *
  * Replaces the per-type sections that used to be spread across the Auto-Set
  * and Restrict tabs. One list, authored order, each row carrying its own
@@ -42,7 +42,7 @@
  *
  * The stored `type` value is the LEGACY TYPE KEY VERBATIM
  * (`hierarchical_rules`, not `hierarchical`) — rule-type renaming stays
- * deferred (ADR 0002/0003), and reusing the key is what lets every handler's
+ * deferred (FW-14), and reusing the key is what lets every handler's
  * `get_enabled_rules()` filter on `get_rule_type()` with no mapping table.
  * The author-facing labels are each descriptor's `label()`; the stored values
  * never change with them.
@@ -97,8 +97,8 @@ class TermRulesConfig {
      * `reads_shared_fields()`, in registry order.
      *
      * A type missing from a declaration has that value hidden and DROPPED on
-     * save (CLAUDE.md don't 3); H11's hand-written `$expected_visible` is the
-     * independent check.
+     * save (architecture.md → The ordered rule repeaters); H11's hand-written
+     * `$expected_visible` is the independent check.
      *
      * @param string $field Shared subfield id.
      */
@@ -348,7 +348,7 @@ class TermRulesConfig {
                 ],
             ],
             // Claim is SUPPLIED BY THE SHARED BUILDER, never re-authored here
-            // — the 0.8.0 claim vocabulary (ADR 0004) has to stay one map
+            // — the 0.8.0 claim vocabulary (CONTEXT.md → Claim) has to stay one map
             // behind the dropdowns and the row titles alike (#53 §6). The
             // builder deliberately does not force its `id`, because the two
             // existing surfaces store under different keys, so the id is

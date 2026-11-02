@@ -42,7 +42,7 @@ class OptionRuleStorage implements RuleStorage {
     private $cached_settings = null;
 
     /**
-     * Effect-kind list keys (ADR 0003 decision 1).
+     * Effect-kind list keys (architecture.md → Effect-kind rule lists).
      *
      * @since 0.8.0
      */
@@ -144,13 +144,13 @@ class OptionRuleStorage implements RuleStorage {
 
     /**
      * Coerce the General tab's claim-override rows `[{taxonomy, mode}, ...]`
-     * into the canonical `{taxonomy_slug: mode}` dict (ADR 0004).
+     * into the canonical `{taxonomy_slug: mode}` dict (CONTEXT.md → Claim).
      *
      * Same adapter boundary as normalize_rule_shape() below, for the same
      * reason: the rows are an artifact of the writer, not the meaning. They
-     * exist only because Wireframe's Sanitizer skips dot-notation field ids
-     * (CLAUDE.md don't #4), so the dict cannot be a field — this is the way
-     * back. Public because the shape is a pure function of its input, so
+     * exist only because Wireframe's Sanitizer skips dot-notation field ids,
+     * so the dict cannot be a field — this is the way back.
+     * Public because the shape is a pure function of its input, so
      * callers needn't hold an instance; static for the same reason.
      *
      * Incomplete rows are dropped rather than landing an empty key — an
@@ -202,7 +202,7 @@ class OptionRuleStorage implements RuleStorage {
      * nothing left for a derivation to reconcile against.
      *
      * The row order is the AUTHORED order, and authored order is the
-     * composition semantics a pass executes in (ADR 0003 decision 3) — a
+     * composition semantics a pass executes in (architecture.md invariant 17) — a
      * hierarchical rule sequenced after a level-restriction rule runs after it.
      * Never re-derive or re-sort this list: sorting it by type is precisely the
      * clobber the old derived path could not avoid.

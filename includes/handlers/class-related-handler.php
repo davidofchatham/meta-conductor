@@ -33,7 +33,7 @@ class RelatedHandler extends UnifiedHandlerBase {
      * fired only when `set_object_terms` reported a trigger term leaving in
      * *that* change and no trigger remained. A pass hands over rules, not
      * deltas — and deliberately so, because a rule that consumes an earlier
-     * rule's write has no delta of its own for it (ADR 0003 decision 3,
+     * rule's write has no delta of its own for it (architecture.md invariant 17,
      * CONTEXT.md → Pass). So the condition becomes a question about live state:
      *
      *   trigger present                  → apply the target (merge)
@@ -43,7 +43,7 @@ class RelatedHandler extends UnifiedHandlerBase {
      * site. Under the delta model a post that held the target term but never
      * held a trigger kept it, because no removal delta ever arrived. It now
      * loses it on the next pass: bidirectional means the target MIRRORS the
-     * trigger, which is retroactive ownership of exactly the shape ADR 0001
+     * trigger, which is retroactive ownership of exactly the shape architecture.md invariant 19
      * blesses for the temporal rule's trailing removal branch. Rules with
      * `bidirectional` off are unaffected — it is off by default.
      *
@@ -59,7 +59,7 @@ class RelatedHandler extends UnifiedHandlerBase {
      * because the pass lock already suppresses the `set_object_terms` this
      * fires — and with it goes PR #19 review #1, the window `on_terms_set`
      * opened by resetting that flag per rule inside its loop. That window does
-     * not exist to reset any more (#61, ADR 0003 decision 4).
+     * not exist to reset any more (#61, architecture.md invariant 17).
      *
      * @param int   $post_id Post to apply to.
      * @param array $rule    One enabled related rule (canonical shape).
