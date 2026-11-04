@@ -119,23 +119,14 @@ A CPT whose posts each need a matching term so *other* content can be tagged aga
 
 #### FW-8 — `user_based_rules`: User-Based Term Setting / Restriction
 
-Preset terms in a taxonomy when a targeted user (role or ID) starts a new post. Absorbs the preset half of the standalone plugin `bws-user-based-terms`; its lock and edit-restriction halves are [FW-54](#fw-54--user_based_rules-lock-and-editor-surface) and [FW-53](#fw-53--user_based_rules-edit-scope).
+Preset terms in a taxonomy when a targeted user (role or ID) starts a new post. Absorbs the preset half of the standalone plugin `bws-user-based-terms`; its lock half is [FW-54](#fw-54--user_based_rules-lock-and-editor-surface) and its edit-access half is [FW-55](#fw-55--user_based_rules-term-granted-edit-access).
 
 - **Axes:** basis **ambient** (the acting user, not the post), effect target **terms**, claim *deferring*. The rule's status gate is fixed to `auto-draft`, so it fires once, on the new-post screen, and never re-seeds.
 - **Detail home:** `.scratch/plans/ubt-merger.md` (reassessment, port scope, migration). Storage rationale: [storage-model.md](storage-model.md).
 - **Progress:** Not started. Storage settled: Options, type `user_based_rules` within `term_rules`. Reassessed 2026-11-02 against UBT 1.0.3: the preset needs no editor JS, REST route or ACF load filter, because the dispatcher writes it at the auto-draft insert and every editor reads stored state. UBT's merge layer and `priority` are not ported; user-specific rows sit above role rows, so "override" is deferring plus list order. A pass with no matching user stands down and never removes. UBT retires when this ships, for sites with only unlocked rules; migration is manual re-entry, with a field-mapping table in the readme upgrade note.
 - **Open:** a testbed sweep must confirm, before build, that the dispatcher fires on an auto-draft and that categories are vacant at that stage. A direct REST or programmatic create has no auto-draft stage and gets no preset; a `wp_insert_post` capture is the upgrade path if that matters. The Apply page does nothing for this type.
-- **Blocked by:** — • **Interacts with:** FW-25, FW-53, FW-54
+- **Blocked by:** — • **Interacts with:** FW-25, FW-54, FW-55
 - **Phase:** 6b
-
-#### FW-53 — `user_based_rules` edit-scope: edit only posts holding your terms
-
-A user matched by a rule may edit or delete only posts holding at least one of their assigned terms (an assigned parent covers its descendants). A request-time capability check plus a server-side retention guard, so a scoped user cannot drop the term that grants access. UBT has no such feature.
-
-- **Axes:** basis **ambient**. The gate is an **access** check on `edit_post` / `delete_post` through `map_meta_cap` — evaluated per request, nothing stored, so no claim and no place in the pass order. The retention guard is a term constraint (closest to *restricting*; settle its claim name at build).
-- **Detail home:** `.scratch/plans/ubt-merger.md` → *Edit-scope*. Vocabulary: [CONTEXT.md](../CONTEXT.md) → *restricting-the-editor is not a separate claim*.
-- **Progress:** Not started. Settled 2026-11-02: the gate is served from `runtime_hooks()` (read-only); the guard captures `$old_tt_ids` from `set_object_terms` and a pass silently re-adds a dropped assigned term. Never blocked: posts holding none of the taxonomy's terms, users matching no rule, `manage_options`, no-user contexts, auto-drafts and new posts. Matching is any-of. Hiding posts in the list table is a later step. Ships without the editor surface.
-- **Blocked by:** `row:FW-8` • **Interacts with:** FW-6, FW-8, FW-54
 
 #### FW-54 — `user_based_rules` lock and editor surface
 
@@ -145,7 +136,18 @@ Lock a targeted user's taxonomy to the rule's exact terms, with the editor UI th
 - **Detail home:** `.scratch/plans/ubt-merger.md` → *Lock and editor surface*.
 - **Progress:** Not started. Lock is not live, so its schema is free. Server enforcement is an owning applier, replacing UBT's `force_locked_value` and `reassert_locked_terms`. The UI is lock-only work in UBT (about 225 JS lines, 55 CSS lines, the Gutenberg route class, ACF `prepare_field` and `validate_value`). Design it against ticket 10's renderer matrix rather than porting verbatim. The display-time preset is editor-only, and the Apply page works for it because it has no status gate.
 - **Open:** lock mechanism per renderer; the native tag box's delete buttons reappearing; a single-choice field showing one term of a two-term rule.
-- **Blocked by:** `row:FW-8` • **Interacts with:** FW-25, FW-53
+- **Blocked by:** `row:FW-8` • **Interacts with:** FW-25, FW-55
+
+#### FW-55 — `user_based_rules` term-granted edit access
+
+Let a user matched by a rule edit and delete other people's posts that hold one of the rule's terms, without an Editor role. The post is treated as the user's own, so their role is the ceiling. Additive, so nothing is locked out. Replaces the retired deny-only FW-53.
+
+- **Axes:** basis **ambient**. An **access** grant through `map_meta_cap` on `edit_post` / `delete_post` — evaluated per request, nothing stored, so no claim and no place in the pass order.
+- **Detail home:** `.scratch/plans/ubt-merger.md` → *Edit access*.
+- **Progress:** Not started. Settled 2026-11-03: a default-off subfield on a `user_based_rules` row, reusing the row's user match and terms, independent of the preset. The grant maps to the post type's own-post caps, so the role is the ceiling (publish included when the role has it). Any term on the post counts, whoever set it; the readme warns that a rule which tags posts also grants access to them. The row must name at least one post type. Matching is any-of, descendants covered. Read-only from `runtime_hooks()`, so no retention guard: removing your term from a post ends your access to it.
+- **Open:** granted drafts and pending posts are probably absent from the list table for a user without `edit_others_posts` (inferred from `WP_Query`, not run); confirm on the testbed, then add a `pre_get_posts` widening in the first cut. Granted published posts already list. REST follows the `edit_post` meta cap (core checks the primitive only on author and sticky changes). Quick edit and bulk edit are unchecked.
+- **Blocked by:** `row:FW-8` • **Interacts with:** FW-6, FW-8, FW-54
+- **Phase:** 6b
 
 #### FW-9 — Status mirroring for ACF-reference rules
 
@@ -550,6 +552,7 @@ Shipped or cut items retire here, densely — a closed item is read in bulk and 
 | FW-44 | Orphaned separators around empty tokens | **Merged in [#80](https://github.com/davidofchatham/meta-conductor/pull/80)** (2026-10-22), with FW-4. `Tokens\TokenEngine` drops the punctuation around a middle or bracketed empty token, porting the rules (not the code) of the `{{join}}` tag's template mode; edge gaps keep the old reading. No gate: existing titles correct on their next format pass (CHANGELOG *Changed*). The golden table was regenerated deliberately. Spec: [design-history/field-transformation.md](design-history/field-transformation.md) → *Separator cleanup*. |
 | FW-48 | Retire this repo's ADRs into the architecture anchors | **Merged in [#82](https://github.com/davidofchatham/meta-conductor/pull/82)** (2026-11-02). Each ADR's decision and rejected alternatives moved to the anchor that owns the code fact: [architecture.md](architecture.md) invariants 17–19, *The ordered rule repeaters* and *Effect-kind rule lists*, the [CONTEXT.md](../CONTEXT.md) *Claim* and *Jurisdiction* entries, and the FW-3 row. `docs/adr/` is now a redirect map with the bar for any future ADR; live citations were repointed to the anchors. |
 | FW-51 | Flat URLs for hierarchical post types, and a general slug disambiguation ladder | **Merged in [#81](https://github.com/davidofchatham/meta-conductor/pull/81)** (2026-11-02). Collision avoidance on the title/slug rule is an ordered ladder of rung tokens (`slug_escalation` + `escalation_placement`, replacing `date_escalation` and `date_field`) walked by the pure `SlugLadder`, with `{mod_*}` and `{parent:slug}` tokens added to the engine; a one-shot upgrade rewrites stored rows. A `flat_urls` option serves a hierarchical type's posts at `/base/child/` through a `request` filter and `post_type_link`, makes `post_name` unique per type with reserved names numbered, 301s the nested form only when its ancestor chain matches, and raises an advisory notice for existing duplicate names. Read-time hooks are a descriptor fact (`runtime_hooks()`, [architecture.md invariant 20](architecture.md)). Spec and decision record: [design-history/flat-urls-slug-ladder.md](design-history/flat-urls-slug-ladder.md). Left out, additive if wanted: a slot token and a "don't splice dates" toggle for mid-slug placement; a whole-chain `{ancestors:slug}` token for types deeper than one level; slug-rename redirects on hierarchical types stay FW-36. The title/slug split is FW-52. |
+| FW-53 | `user_based_rules` edit-scope: edit only posts holding your terms | **Retired 2026-11-03, superseded by [FW-55](#fw-55--user_based_rules-term-granted-edit-access).** Deny-only scoping needed an Editor role to reach other people's posts, which left untagged posts, other post types and the rest of the role open; the strict variant locked users out of their legacy untagged posts. FW-55 grants access instead of restricting it. |
 
 ---
 
