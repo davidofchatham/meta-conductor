@@ -127,6 +127,9 @@ $settings = [
     'hierarchical_level_restriction_rules' => [
         ['name' => 'L1', 'taxonomy' => 'category', 'enabled' => true, 'restriction_mode' => 'deepest_only'],
     ],
+    'term_count_rules' => [
+        ['name' => 'C1', 'taxonomy' => 'category', 'enabled' => true, 'max_terms' => 2, 'per_level' => false],
+    ],
     'title_slug_rules' => [
         ['name' => 'S1', 'enabled' => true, 'post_type' => 'event', 'title_pattern' => '{term:sport}'],
     ],
@@ -145,6 +148,7 @@ $all_types = [
     'time_based_rules',
     'related_post_terms_rules',
     'hierarchical_level_restriction_rules',
+    'term_count_rules',
     'title_slug_rules',
     'field_transformation_rules',
 ];
@@ -202,12 +206,13 @@ $flat = OptionRuleStorage::all_types();
 sort($flat);
 $sorted_all = $all_types;
 sort($sorted_all);
-$check('all_types() is exactly the eight rule types', $flat === $sorted_all);
+$check('all_types() is exactly the nine rule types', $flat === $sorted_all);
 
 $check('every rule type maps to its kind', array_map(
     static fn(string $t): string => $storage->get_kind_for_type($t),
     $all_types
 ) === [
+    'term_rules',
     'term_rules',
     'term_rules',
     'term_rules',
@@ -230,7 +235,7 @@ $migrated = array_merge(
 );
 $check('every config-migrated type is a known type',
     array_diff($migrated, $all_types) === []);
-$check('the term kind reports its migrated types — all six as of #58',
+$check('the term kind reports its migrated types — all seven as of term_count_rules',
     OptionRuleStorage::migrated_types_for_kind(OptionRuleStorage::KIND_TERM) === [
         'propagation_rules',
         'related_post_terms_rules',
@@ -238,6 +243,7 @@ $check('the term kind reports its migrated types — all six as of #58',
         'related_rules',
         'hierarchical_rules',
         'hierarchical_level_restriction_rules',
+        'term_count_rules',
     ]);
 $check('the format kind reports its migrated type (#59)',
     OptionRuleStorage::migrated_types_for_kind(OptionRuleStorage::KIND_FORMAT)

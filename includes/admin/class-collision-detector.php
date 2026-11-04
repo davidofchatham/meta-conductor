@@ -68,6 +68,7 @@ use BWS\MetaConductor\RuleTypes\HierarchicalLevelRestrictionRules;
 use BWS\MetaConductor\RuleTypes\HierarchicalRules;
 use BWS\MetaConductor\RuleTypes\Registry;
 use BWS\MetaConductor\RuleTypes\RelatedRules;
+use BWS\MetaConductor\RuleTypes\TermCountRules;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 use BWS\MetaConductor\Storage\StorageFactory;
 
@@ -293,6 +294,15 @@ class CollisionDetector {
             if (self::adds_descendants($adds['row']) && !self::keeps_descendants($restricts['row'])) {
                 return ['descendants_stripped', $adds, $restricts];
             }
+        }
+
+        // A count limit trims what an inheritance rule that adds descendants puts
+        // back on every pass. A child-to-parent rule is not this: with per-level on
+        // the kept ancestors fill one term per depth, and with it off the cap keeps
+        // the deepest term, so that pair gets the generic order warning below.
+        $count_pair = self::as_pair($a, $b, HierarchicalRules::class, TermCountRules::class);
+        if ($count_pair !== null && self::adds_descendants($count_pair[0]['row'])) {
+            return ['count_vs_descendants', $count_pair[0], $count_pair[1]];
         }
 
         // #69 / invariant 19: two rules over one term, each of which removes that
@@ -591,6 +601,13 @@ class CollisionDetector {
                 return sprintf(
                     /* translators: 1: rule name, 2: rule name, 3: taxonomy, 4: post types, 5: order sentence. */
                     __('“%1$s” adds descendant terms in %3$s and “%2$s” does not keep them, on %4$s. The two want opposite results. %5$s', 'meta-conductor'),
+                    $a_title, $b_title, $target, $scope, $order
+                );
+
+            case 'count_vs_descendants':
+                return sprintf(
+                    /* translators: 1: rule name, 2: rule name, 3: taxonomy, 4: post types, 5: order sentence. */
+                    __('“%1$s” adds descendant terms in %3$s and “%2$s” caps how many terms a post may hold, on %4$s. The cap removes terms the other rule adds back on every pass. The two want opposite results. %5$s', 'meta-conductor'),
                     $a_title, $b_title, $target, $scope, $order
                 );
 

@@ -328,6 +328,11 @@ $expected_visible = [
         'post_types', 'post_status',
         'restriction_mode', 'include_ancestors', 'row_title',
     ],
+    // No hierarchical_taxonomy_note: a cap means the same on a flat taxonomy.
+    'term_count_rules' => [
+        'type', 'enabled', 'taxonomy', 'post_types', 'post_status',
+        'max_terms', 'per_level', 'row_title',
+    ],
     // The two LIVE types (#58). A subfield missing here is a live rule's
     // value silently dropped on the next settings save.
     'related_rules' => [

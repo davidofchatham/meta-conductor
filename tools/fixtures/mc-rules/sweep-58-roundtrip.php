@@ -48,7 +48,7 @@ foreach ($rows as $row) {
     $by_type[$row['type'] ?? ''][] = $row;
 }
 
-$note('term_rules carries all 10 fixture term-kind rows', count($rows) === 10);
+$note('term_rules carries all 11 fixture term-kind rows', count($rows) === 11);
 $note('2 related rows present',  count($by_type['related_rules'] ?? []) === 2);
 $note('2 acf-reference rows present', count($by_type['related_post_terms_rules'] ?? []) === 2);
 
@@ -82,6 +82,10 @@ $must_survive = [
                                    'post_types', 'post_status'],
     'related_post_terms_rules' => ['type', 'enabled', 'acf_field_name', 'holder_role',
                                    'reverse_acf_field_name', 'taxonomy', 'keep_in_sync', 'post_status'],
+    // Baseline is max 2 / per level OFF — both non-default, so a gate that
+    // dropped a field would show here instead of reading back as its default.
+    'term_count_rules'         => ['type', 'enabled', 'taxonomy', 'post_types', 'post_status',
+                                   'max_terms', 'per_level'],
 ];
 
 foreach ($rows as $i => $row) {

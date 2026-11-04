@@ -12,7 +12,7 @@
 
 return array(
 	'blueprint'   => 'mc-rules',
-	'version'     => 10, // 10: title_slug fixture rule uses the slug_escalation ladder (FW-51 02). 9: hierarchical mc_flat type + two parent/child pairs for the flat-URL sweep (FW-51). 8: roster-style repeater mc_cf_roster in group_mc_computed_fields (FW-4 06 row targets). 7: Computed field rule (FW-4) — group_mc_computed_fields (text sources, text + wysiwyg targets), the item-computed subject, and a field_transformation_rules baseline. 6: ACF field-identity decoy (#25) — group_mc_decoy_fields declares a SECOND `mc_related_items` relationship field on mc_section, pointing at a different target post type, so bare-name resolution is provably wrong and key resolution provably right. 5: related_post_terms reverse-field coverage — explicit reverse (mc_parent_section, tier 1) on the existing rule + a native-bidi pair (mc_bidi_items/mc_bidi_sections on section-bidi/item-bidi, mc_flag, tier 2) for the #43 dependent-end sever. 4: section-child independent term moved native→ACF field (both channels agree; propagation ACF-merge no longer clobbers it). 3: item-solo-a/b clobber-free subjects. 2: composes_on two-key shape. 1: initial.
+	'version'     => 11, // 11: Term count limit baseline (disabled, non-default max_terms/per_level so a round-trip drop shows). 10: title_slug fixture rule uses the slug_escalation ladder (FW-51 02). 9: hierarchical mc_flat type + two parent/child pairs for the flat-URL sweep (FW-51). 8: roster-style repeater mc_cf_roster in group_mc_computed_fields (FW-4 06 row targets). 7: Computed field rule (FW-4) — group_mc_computed_fields (text sources, text + wysiwyg targets), the item-computed subject, and a field_transformation_rules baseline. 6: ACF field-identity decoy (#25) — group_mc_decoy_fields declares a SECOND `mc_related_items` relationship field on mc_section, pointing at a different target post type, so bare-name resolution is provably wrong and key resolution provably right. 5: related_post_terms reverse-field coverage — explicit reverse (mc_parent_section, tier 1) on the existing rule + a native-bidi pair (mc_bidi_items/mc_bidi_sections on section-bidi/item-bidi, mc_flag, tier 2) for the #43 dependent-end sever. 4: section-child independent term moved native→ACF field (both channels agree; propagation ACF-merge no longer clobbers it). 3: item-solo-a/b clobber-free subjects. 2: composes_on two-key shape. 1: initial.
 	// Family-standard shape — matches layout-states and view-structures.
 	// bin/seed-all.sh --only builds its dependency graph from this.
 	'composes_on' => array(
@@ -190,6 +190,20 @@ return array(
 				'post_types'        => array( 'mc_item' ),
 				'restriction_mode'  => 'one_per_level',
 				'include_ancestors' => false,
+			),
+		),
+
+		// Term count limit. DISABLED on purpose: an enabled cap on mc_topic would
+		// trim every other sweep's mc_item subjects. The values are non-default
+		// (default is 1, per level on) so the settings round-trip sweep can tell a
+		// dropped field from a defaulted one; sweep-term-count.php enables its own.
+		'term_count_rules' => array(
+			array(
+				'enabled'    => false,
+				'taxonomy'   => 'mc_topic',
+				'post_types' => array( 'mc_item' ),
+				'max_terms'  => 2,
+				'per_level'  => false,
 			),
 		),
 
