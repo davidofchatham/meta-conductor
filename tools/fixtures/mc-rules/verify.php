@@ -381,6 +381,11 @@ if ( ! $mc_core_manifest ) {
 		$mc_want = array();
 		foreach ( $mc_want_slugs as $mc_ref ) {
 			$mc_def  = $mc_core_manifest['terms'][ $mc_ref ];
+			// The manifest also assigns terms of other taxonomies (kb_topic,
+			// access_tier); this check reads `department` only, so compare like with like.
+			if ( 'department' !== $mc_def['taxonomy'] ) {
+				continue;
+			}
 			$mc_term_obj = get_term_by( 'slug', $mc_def['slug'], $mc_def['taxonomy'] );
 			if ( $mc_term_obj ) {
 				$mc_want[] = (int) $mc_term_obj->term_id;
@@ -403,7 +408,12 @@ if ( ! $mc_core_manifest ) {
 		if ( ! $mc_pid ) {
 			continue;
 		}
-		$mc_want = $mc_core_manifest['post_terms'][ $mc_slug ] ?? array();
+		$mc_want = array_filter(
+			$mc_core_manifest['post_terms'][ $mc_slug ] ?? array(),
+			function ( $mc_ref ) use ( $mc_core_manifest ) {
+				return 'department' === ( $mc_core_manifest['terms'][ $mc_ref ]['taxonomy'] ?? '' );
+			}
+		);
 		$mc_got  = wp_get_object_terms( $mc_pid, 'department', array( 'fields' => 'ids' ) );
 		$check(
 			"NEG core {$mc_slug}: department term count unchanged",
