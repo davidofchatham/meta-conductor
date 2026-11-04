@@ -126,5 +126,23 @@ $note('the sanitized list still carries both live types row-for-row',
 $note('the sanitized list keeps every row, in order',
     array_column($sanitized, 'type') === array_column($rows, 'type'));
 
+// Level restriction: both modes and "keep ancestors" round-trip the real save
+// path. The persisted fixture row carries only one mode, so synthesize one row
+// per mode x flag and sanitize them.
+$lr_in = [];
+foreach (['deepest_only', 'shallowest_only'] as $mode) {
+    foreach ([true, false] as $anc) {
+        $lr_in[] = ['type' => 'hierarchical_level_restriction_rules', 'enabled' => true,
+                    'taxonomy' => 'mc_topic', 'post_types' => ['mc_item'],
+                    'restriction_mode' => $mode, 'include_ancestors' => $anc];
+    }
+}
+$lr_out = RepeaterField::sanitize($lr_in, $field['args']);
+foreach ($lr_in as $i => $in) {
+    $note("level restriction {$in['restriction_mode']}/ancestors=" . ($in['include_ancestors'] ? 'on' : 'off') . ' round-trips',
+        ($lr_out[$i]['restriction_mode'] ?? '(DROPPED)') === $in['restriction_mode']
+        && (bool) ($lr_out[$i]['include_ancestors'] ?? null) === $in['include_ancestors']);
+}
+
 echo $fail ? "\nSWEEP-58 FAIL: " . count($fail) . " failed\n" : "\nSWEEP-58 OK\n";
 exit($fail ? 1 : 0);

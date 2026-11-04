@@ -8,14 +8,16 @@
  *
  * SUBJECT AND WHY THIS TERM PAIR. `item-solo-a` seeded with {Harbor, Inland}.
  * Harbor is L3 under Coastal under East under Region; Inland is a second L2
- * under East. That is the smallest set on which the two converted rule types
+ * under East. Level restriction runs in its default `deepest_only` mode with
+ * ancestors off. That is the smallest set on which the two converted rule types
  * genuinely disagree:
  *
- *   hierarchical → level_restriction   ancestors are added first, so L2 ends up
- *                                      holding {Coastal, Inland} and one_per_level
- *                                      prunes one of them → FOUR terms.
- *   level_restriction → hierarchical   nothing to prune (one term per level), then
- *                                      ancestors are added on top → FIVE terms.
+ *   hierarchical → level_restriction   ancestors are added first, then the
+ *                                      deepest-level cut strips them again
+ *                                      → ONE term (Harbor).
+ *   level_restriction → hierarchical   the cut leaves Harbor alone, then
+ *                                      ancestors are added on top
+ *                                      → FOUR terms (Harbor + its lineage).
  *
  * The pair is also the standing contradiction #51 describes — a restricting
  * rule and an expanding rule on one taxonomy. That it now resolves by authored
@@ -34,6 +36,7 @@
  *   wp eval-file .../sweep-60-dispatch.php provoke    # term write / post save / bulk
  *   wp eval-file .../sweep-60-dispatch.php s1         # write, let shutdown drain
  *   wp eval-file .../sweep-60-dispatch.php s2         # assert what s1's shutdown did
+ *   wp eval-file .../sweep-60-dispatch.php retired-mode  # level restriction: stored one_per_level / absent mode / shallowest
  *   wp eval-file .../sweep-60-dispatch.php restore
  *
  * @package Meta_Conductor
@@ -154,10 +157,10 @@ switch ( $step ) {
 		$b = mc60_slugs( $subject );
 		WP_CLI::log( '[B] level_restriction → hierarchical : ' . implode( ', ', $b ) );
 
-		// A prunes an L2 sibling that B never sees, because in B the ancestor
-		// that creates the collision is added after the pruning rule has run.
-		mc_assert( '§60a  order A = ancestors then prune', $a, array( 'east', 'harbor', 'inland', 'region' ) );
-		mc_assert( '§60b  order B = prune then ancestors', $b, array( 'coastal', 'east', 'harbor', 'inland', 'region' ) );
+		// A strips the lineage it just added, because the cut runs after the
+		// ancestors exist; B adds the lineage after the cut has run.
+		mc_assert( '§60a  order A = ancestors then cut', $a, array( 'harbor' ) );
+		mc_assert( '§60b  order B = cut then ancestors', $b, array( 'coastal', 'east', 'harbor', 'region' ) );
 		mc_assert( '§60c  swapping list position changes the result', $a === $b ? 'same' : 'different', 'different' );
 		break;
 
@@ -193,7 +196,7 @@ switch ( $step ) {
 		WP_CLI::log( '[post save ] ' . implode( ', ', $by_save ) );
 		WP_CLI::log( '[bulk apply] ' . implode( ', ', $by_bulk ) );
 
-		mc_assert( '§60d  term write', $by_terms, array( 'east', 'harbor', 'inland', 'region' ) );
+		mc_assert( '§60d  term write', $by_terms, array( 'harbor' ) );
 		mc_assert( '§60e  post save == term write', $by_save, $by_terms );
 		mc_assert( '§60f  bulk apply == term write', $by_bulk, $by_terms );
 		break;
@@ -216,8 +219,32 @@ switch ( $step ) {
 		mc_assert(
 			'§60g  the shutdown drain ran s1\'s pass',
 			mc60_slugs( $subject ),
-			array( 'east', 'harbor', 'inland', 'region' )
+			array( 'harbor' )
 		);
+		break;
+
+	// ------------------------------------------- level restriction: modes
+	case 'retired-mode':
+		mc_isolate( array( $LR ) );
+		$base = mc_resolved_rules( mc_sweep_manifest() )[ $LR ][0];
+
+		$run = function ( array $row ) use ( $subject, $LR ) {
+			mc_write_rule_types( array( $LR => array( $row ) ) );
+			mc60_arm( $subject );
+			mc60_dispatcher()->run_pass( $subject );
+			return mc60_slugs( $subject );
+		};
+
+		// {Harbor L3, Inland L2}: deepest keeps Harbor, shallowest keeps Inland.
+		mc_assert( '§60h  deepest_only keeps the deepest', $run( array_merge( $base, array( 'restriction_mode' => 'deepest_only' ) ) ), array( 'harbor' ) );
+		mc_assert( '§60i  shallowest_only keeps the shallowest', $run( array_merge( $base, array( 'restriction_mode' => 'shallowest_only' ) ) ), array( 'inland' ) );
+
+		$absent = $base;
+		unset( $absent['restriction_mode'] );
+		$from_absent = $run( $absent );
+		$from_retired = $run( array_merge( $base, array( 'restriction_mode' => 'one_per_level' ) ) );
+		mc_assert( '§60j  absent mode = deepest (defined, no data loss)', $from_absent, array( 'harbor' ) );
+		mc_assert( '§60k  stored one_per_level degrades like an absent mode', $from_retired, $from_absent );
 		break;
 
 	// -------------------------------------------------------------- restore
@@ -231,5 +258,5 @@ switch ( $step ) {
 		break;
 
 	default:
-		WP_CLI::error( "Unknown step '{$step}'. Use: order | provoke | s1 | s2 | restore" );
+		WP_CLI::error( "Unknown step '{$step}'. Use: order | provoke | s1 | s2 | retired-mode | restore" );
 }

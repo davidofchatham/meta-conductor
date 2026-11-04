@@ -343,7 +343,7 @@ class TaxonomyManager {
 		
 		$taxonomy = sanitize_text_field($_POST['taxonomy'] ?? '');
 		$term_ids = array_map('absint', $_POST['term_ids'] ?? array());
-		$restriction_mode = sanitize_text_field($_POST['restriction_mode'] ?? 'one_per_level');
+		$restriction_mode = sanitize_text_field($_POST['restriction_mode'] ?? 'deepest_only');
 		$include_ancestors = !empty($_POST['include_ancestors']);
 		
 		if (!taxonomy_exists($taxonomy)) {
@@ -424,12 +424,7 @@ class TaxonomyManager {
 		
 		$final_terms = array();
 		
-		if ($restriction_mode === 'one_per_level') {
-			// Keep only one term per level (prefer the last one)
-			foreach ($terms_by_level as $level => $level_terms) {
-				$final_terms[] = end($level_terms);
-			}
-		} elseif ($restriction_mode === 'deepest_only') {
+		if ($restriction_mode === 'deepest_only') {
 			// Keep only terms from the deepest level
 			$max_level = max(array_keys($terms_by_level));
 			$final_terms = $terms_by_level[$max_level];
@@ -489,9 +484,6 @@ class TaxonomyManager {
 		
 		$mode_description = '';
 		switch ($mode) {
-			case 'one_per_level':
-				$mode_description = __('Only one term per hierarchical level is allowed.', 'meta-conductor');
-				break;
 			case 'deepest_only':
 				$mode_description = __('Only the deepest level terms are kept.', 'meta-conductor');
 				break;

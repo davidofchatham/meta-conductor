@@ -171,11 +171,33 @@ $check('level restriction: ancestors clause in ANY mode',
         'post_types'        => ['page'],
     ]) === 'Pages: Restrict Breakers to the shallowest level, keeping ancestors');
 
-$check('level restriction: absent mode ⇒ one per level',
-    str_contains($title([
+$check('level restriction: shallowest, without the ancestors clause',
+    $title([
+        'type'             => 'hierarchical_level_restriction_rules',
+        'taxonomy'         => 'breaker',
+        'restriction_mode' => 'shallowest_only',
+    ]) === 'Restrict Breakers to the shallowest level');
+
+$check('level restriction: deepest keeping ancestors',
+    $title([
+        'type'              => 'hierarchical_level_restriction_rules',
+        'taxonomy'          => 'breaker',
+        'restriction_mode'  => 'deepest_only',
+        'include_ancestors' => true,
+    ]) === 'Restrict Breakers to the deepest level, keeping ancestors');
+
+$check('level restriction: absent mode ⇒ deepest',
+    $title([
         'type'     => 'hierarchical_level_restriction_rules',
         'taxonomy' => 'breaker',
-    ]), 'to one term per level'));
+    ]) === 'Restrict Breakers to the deepest level');
+
+$check('level restriction: retired one_per_level reads as absent',
+    $title([
+        'type'             => 'hierarchical_level_restriction_rules',
+        'taxonomy'         => 'breaker',
+        'restriction_mode' => 'one_per_level',
+    ]) === 'Restrict Breakers to the deepest level');
 
 // --- Term count limit: cap, plural, and the per-level clause. ---------------
 $check('count limit: plural cap, per level on',

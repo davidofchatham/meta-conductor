@@ -277,6 +277,9 @@ foreach ($mode_opts as $mode) {
 }
 $check('every restriction mode has its own row-title phrase',
     count(array_unique($mode_titles)) === count($mode_opts));
+$check('restriction mode offers exactly deepest and shallowest, default deepest',
+    $mode_opts === ['deepest_only', 'shallowest_only']
+    && $by_id['restriction_mode']['default'] === 'deepest_only');
 
 // And the type dispatch itself: every offered rule type must reach a real
 // title builder, not the untyped fallback.

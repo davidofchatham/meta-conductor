@@ -64,7 +64,7 @@ return array(
 		// they still fire on any mc_topic edit here. Verified: assigning Harbor to
 		// solo-a with all rules live yields [Region,Coastal,Harbor,Featured] — the
 		// hierarchical expansion, PLUS related adds Featured (Coastal⇒Featured),
-		// then one_per_level prunes East (East and Featured are both L2). All
+		// then deepest_only prunes everything but Harbor (the deepest term). All
 		// three handlers correctly composing.
 		//
 		// So: use solo-a/b to dodge the confusing holder push; still empty the
@@ -182,13 +182,13 @@ return array(
 			),
 		),
 
-		// matrix §2 — one_per_level, ancestors off.
+		// matrix §2 — deepest_only, ancestors off.
 		'hierarchical_level_restriction_rules' => array(
 			array(
 				'enabled'           => true,
 				'taxonomy'          => 'mc_topic',
 				'post_types'        => array( 'mc_item' ),
-				'restriction_mode'  => 'one_per_level',
+				'restriction_mode'  => 'deepest_only',
 				'include_ancestors' => false,
 			),
 		),

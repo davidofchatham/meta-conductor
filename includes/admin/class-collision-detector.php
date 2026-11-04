@@ -380,20 +380,16 @@ class CollisionDetector {
     /**
      * Does the level-restriction rule undertake to keep ancestor terms?
      *
-     * `include_ancestors` says so outright in every mode (#32). Failing that,
+     * `include_ancestors` says so outright in both modes (#32). Failing that,
      * only `shallowest_only` keeps them as a by-product — it prunes the deep
-     * end. `one_per_level` keeps an ancestor only while nothing else occupies
-     * its level, which is not an undertaking.
+     * end.
      *
      * @param array $row
      * @return bool
      */
     private static function keeps_ancestors(array $row): bool {
-        if (!empty($row['include_ancestors'])) {
-            return true;
-        }
-
-        return (string) ($row['restriction_mode'] ?? 'one_per_level') === 'shallowest_only';
+        return !empty($row['include_ancestors'])
+            || HierarchicalLevelRestrictionRules::mode($row) === HierarchicalLevelRestrictionRules::MODE_SHALLOWEST;
     }
 
     /**
@@ -406,7 +402,7 @@ class CollisionDetector {
      * @return bool
      */
     private static function keeps_descendants(array $row): bool {
-        return (string) ($row['restriction_mode'] ?? 'one_per_level') === 'deepest_only';
+        return HierarchicalLevelRestrictionRules::mode($row) === HierarchicalLevelRestrictionRules::MODE_DEEPEST;
     }
 
     /**

@@ -69,11 +69,11 @@ Status (L1)          — second root: related/time-based targets live here so
 |---|---|
 | Trigger | `set_object_terms` **p5** (pre-hierarchical) + `acf/save_post` p15. |
 | Schema | Hierarchical taxonomy + **ACF taxonomy-type field** on `mc_topic` (the ACF branch discovers fields by `type==taxonomy && taxonomy==mc_topic`). |
-| Data | Posts holding multiple same-level terms (one_per_level prune → keeps *last*), and mixed-depth sets (deepest_only / shallowest_only). Needs ≥2 depth levels on a post to observe pruning; tree gives 4. |
-| Rule config | `taxonomy: mc_topic`, `restriction_mode` (one_per_level / deepest_only / shallowest_only), `include_ancestors` (0.8.0/#32: one meaning — keep the lineage of whatever the mode kept — and it applies in ALL three modes), `post_types: ['mc_item']`. |
-| Rules to seed | 1 (one_per_level, include_ancestors off). Mode variants per-scenario; sweep include_ancestors=true in each mode, not just deepest_only. |
+| Data | Mixed-depth term sets (deepest_only / shallowest_only). Needs ≥2 depth levels on a post to observe pruning; tree gives 4. |
+| Rule config | `taxonomy: mc_topic`, `restriction_mode` (deepest_only / shallowest_only; a stored `one_per_level` reads as the default, deepest_only), `include_ancestors` (0.8.0/#32: one meaning — keep the lineage of whatever the mode kept — and it applies in both modes), `post_types: ['mc_item']`. |
+| Rules to seed | 1 (deepest_only, include_ancestors off). Mode variants per-scenario; sweep include_ancestors=true in each mode. |
 | Mutates | Post's `mc_topic` terms (native) AND the ACF field value (write by field key). |
-| Scenarios | Native path: assign East+West (both L2) → one survives. ACF path: set via `mc_topics` field → same prune lands in both channels. Interaction: p5 runs before hierarchical p10 — combined-rule scenario (restriction then expansion) is its own row. |
+| Scenarios | Native path: assign Region+East+Coastal+Harbor → the deepest level survives. ACF path: set via `mc_topics` field → same cut lands in both channels. Interaction: p5 runs before hierarchical p10 — combined-rule scenario (restriction then expansion) is its own row. |
 | Shared reuse | None. |
 
 ## 3. related_rules — RelatedHandler
@@ -192,8 +192,8 @@ Two constraints that shape EVERY per-handler sweep — not §1-specific:
      `level_restriction`, and `time_based` all also scope `mc_item` + `mc_topic`.
      On a solo subject with all rules live, assigning Harbor yields
      `[Region,Coastal,Harbor,Featured]` — hierarchical expands, related adds
-     Featured (Coastal⇒Featured), one_per_level then prunes East (East and
-     Featured are both L2). Correct composition, but NOT a pure single-handler
+     Featured (Coastal⇒Featured), deepest_only then keeps only Harbor (it was one_per_level here until the Term count limit work, which pruned East; East and
+     Featured were both L2). Correct composition, but NOT a pure single-handler
      read. For that, still empty the other `mc_item` rule arrays.
 
    Isolate + push-free subject for a pure single-handler read:
@@ -255,7 +255,7 @@ Inland is a child of East = L2, NOT an L1 sibling — a same-L1 pair is
 Run against `item-solo-a`, level_restriction isolated (other rule arrays
 emptied), one scenario per eval, rule mode edited between scenarios.
 
-- **§2a one_per_level** ✅ East(14)+West(18), both L1 → `[West]`. Keeps
+- **§2a one_per_level (REMOVED with Term count limit; kept as history)** ✅ East(14)+West(18), both L1 → `[West]`. Keeps
   `end()` of the level group = last-added. Confirmed same-level pruning.
 - **§2b deepest_only** ✅ Region+East+Coastal+Harbor (L0–L3) → `[Harbor]`.
   With `include_ancestors=true` → `[Region,East,Coastal,Harbor]` (full chain).
@@ -818,7 +818,7 @@ a hierarchical row needs no start/end date. An **untyped** row is *rejected*
 (`"The Type is required"`) rather than silently dropped at fan-out.
 
 **§8d defaults + vocabulary** ✅ Untouched subfields land their declared
-defaults (`one_per_level`, `false`, `enabled=true`). A row naming a
+defaults (`deepest_only`, `false`, `enabled=true`). A row naming a
 not-yet-migrated type (`related_rules`) is refused by the select's validator —
 the live types cannot be reached from this repeater.
 
@@ -843,7 +843,7 @@ migrated array when they save. `snapshot_claim_override_labels` unchanged.
 **§8h #32 / #16 behaviour** ✅ See the §1 and §2 rule-config rows above for the
 new schema. `include_ancestors` verified additive in all three modes (deepest:
 `Region,East,Coastal,Harbor`; shallowest with a deep-only input: same chain;
-one_per_level: kept term + lineage). All five `inheritance_behavior` outcomes
+the removed one_per_level mode: kept term + lineage). All five `inheritance_behavior` outcomes
 round-trip through `resolve_behavior()`/`behavior_key()`, every legacy pair
 still resolves to its old mechanism, and an unknown outcome is rejected by
 `validate_rule_internal()`.
