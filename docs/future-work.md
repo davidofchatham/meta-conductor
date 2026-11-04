@@ -396,6 +396,7 @@ The Diagnostics page (`Admin\Diagnostics`) is a 0.3.0 stub: hidden unless `WP_DE
   - **What the page is for.** Candidates: per-rule health (a rule whose target term or taxonomy no longer resolves — FW-30's runtime question), the ordered kind lists as the dispatcher reads them, recent pass activity, and the dev dumps kept behind `WP_DEBUG`. Drop the legacy-option dump either way.
   - **Whether to log, and what.** A per-rule "last pass result" for every type is cheap and answers most "did my rule run" questions; a per-write audit trail is what a rule-driven slug change with no redirect (FW-36) would want, and needs a table, retention and a cleanup job. Decide the level before building storage for it — the deleted log table is the precedent for storage built ahead of a reader.
   - **Visibility.** Whether the page stays gated behind `WP_DEBUG` / a filter or becomes a normal submenu once it has author-facing content.
+  - **Optional-plugin status.** The activation notice no longer warns that Admin Columns Pro is missing (quick-edit integration is simply absent without it); this page is the natural home for that status instead, as an environment section listing each optional integration (Admin Columns Pro, ACF Pro) as active or not and what it enables. The activation notice still carries the ACF Pro warning; decide whether it moves here too.
 - **Blocked by:** — • **Interacts with:** FW-13, FW-30, FW-38
 
 #### FW-38 — Whether to finish the title/slug rule's admin feedback

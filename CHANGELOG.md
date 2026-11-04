@@ -5,6 +5,12 @@ All notable changes to Meta Conductor are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Removed
+
+- The activation notice no longer warns that Admin Columns Pro is not active. Quick-edit integration is simply absent without it. The ACF Pro warning stays.
+
 ## [0.10.0] — 2026-11-02
 
 ### Highlights

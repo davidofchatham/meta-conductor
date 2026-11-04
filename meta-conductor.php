@@ -362,11 +362,7 @@ if (!function_exists('bws_meta_manager_init')) {
 		if (!function_exists('get_field')) {
 			$warnings[] = __('ACF Pro is not active. Related post terms functionality will be limited.', 'meta-conductor');
 		}
-		
-		if (!class_exists('ACP\\Plugin')) {
-			$warnings[] = __('Admin Columns Pro is not active. Quick edit integration will not be available.', 'meta-conductor');
-		}
-		
+
 		// Display errors and warnings
 		if (!empty($errors)) {
 			$error_message = '<h3>' . __('Meta Conductor Requirements Not Met', 'meta-conductor') . '</h3>';
