@@ -724,6 +724,20 @@ class TermDispatcher {
     }
 
     /**
+     * Whether ANY entity is under a pass, of either kind.
+     *
+     * For a capture that must tell the author's write from rule output: a rule
+     * writing a DIFFERENT entity (a child, a related post) holds no lock for
+     * that entity, so `pass_active($entity)` alone would call its output an
+     * outside write.
+     *
+     * @return bool
+     */
+    public static function any_pass_active(): bool {
+        return self::$passes !== [];
+    }
+
+    /**
      * Take the pass lock for another kind's dispatcher (#64).
      *
      * The lock table is static and shared BY DESIGN — it is a property of the

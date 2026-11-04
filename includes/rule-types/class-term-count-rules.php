@@ -81,6 +81,16 @@ final class TermCountRules extends RuleType {
         return !array_key_exists('per_level', $row) || !empty($row['per_level']);
     }
 
+    /**
+     * The terms an outside write just added are what survive an over-cap post,
+     * and `set_object_terms` is the last moment "added" can be told from "was
+     * already there". The capture records into a request-lifetime memo and
+     * applies nothing; the pass reads it.
+     */
+    public function capture_hooks(): array {
+        return ['set_object_terms'];
+    }
+
     public function reads_shared_fields(): array {
         return ['taxonomy', 'post_types'];
     }

@@ -8,6 +8,7 @@
 namespace BWS\MetaConductor\Handlers;
 
 use BWS\MetaConductor\Core\TermCountSurvivors;
+use BWS\MetaConductor\Core\TermDispatcher;
 use BWS\MetaConductor\RuleTypes\TermCountRules;
 
 // Prevent direct access
@@ -16,7 +17,8 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Pure applier: registers no hooks and keeps no re-entrancy flag
+ * Pure applier: its one hook is the delta CAPTURE on `set_object_terms`
+ * (descriptor `capture_hooks()`), and it keeps no re-entrancy flag
  * (architecture.md invariant 17). `TermDispatcher` calls `apply_to_post()` once
  * per rule per pass, whether or not a term write provoked the pass, so the
  * apply recomputes from live state and is idempotent.
@@ -35,7 +37,73 @@ class TermCountHandler extends UnifiedHandlerBase {
      */
     private array $depth_cache = [];
 
-    protected function init_hooks() {}
+    /**
+     * Term IDs an OUTSIDE write added this request, keyed "{object_id}:{taxonomy}".
+     *
+     * Written by `capture_added_terms()`, read by the applier and never consumed,
+     * so a second pass in the request picks the same survivors. Instance state
+     * of a handler built per request: nothing is persisted, so this is not
+     * provenance (architecture.md invariant 19).
+     *
+     * @var array<string,int[]>
+     */
+    private array $added = [];
+
+    /**
+     * Capture only (descriptor `capture_hooks()`); the dispatcher owns every trigger.
+     */
+    protected function init_hooks() {
+        add_action('set_object_terms', [$this, 'capture_added_terms'], 10, 6);
+    }
+
+    /**
+     * CAPTURE hook: record which terms a write added to an object.
+     *
+     * Added = the tt_ids now set minus the `$old_tt_ids` the object held. A write
+     * made while ANY pass runs is a rule's output, not the author's edit, so it is
+     * skipped: that is how the author's choice outranks rule output while the
+     * authored rule order still holds. Records nothing for a taxonomy no enabled
+     * count rule works in.
+     *
+     * @param int    $object_id  Object the terms were set on.
+     * @param mixed  $terms      Unused — raw input, may be names.
+     * @param array  $tt_ids     term_taxonomy IDs now set by this call.
+     * @param string $taxonomy   Taxonomy slug.
+     * @param mixed  $append     Unused.
+     * @param array  $old_tt_ids term_taxonomy IDs held before the write.
+     */
+    public function capture_added_terms($object_id, $terms = null, $tt_ids = [], $taxonomy = '', $append = false, $old_tt_ids = []): void {
+        if (!is_numeric($object_id) || TermDispatcher::any_pass_active()) {
+            return;
+        }
+        $new_tt = array_diff(array_map('intval', (array) $tt_ids), array_map('intval', (array) $old_tt_ids));
+        if ($new_tt === [] || !$this->taxonomy_in_use((string) $taxonomy)) {
+            return;
+        }
+
+        $term_ids = get_terms([
+            'taxonomy'         => $taxonomy,
+            'term_taxonomy_id' => array_values($new_tt),
+            'fields'           => 'ids',
+            'hide_empty'       => false,
+        ]);
+        if (is_wp_error($term_ids) || $term_ids === []) {
+            return;
+        }
+
+        $key = $object_id . ':' . $taxonomy;
+        $this->added[$key] =array_values(array_unique(array_merge($this->added[$key] ?? [], array_map('intval', $term_ids))));
+    }
+
+    private function taxonomy_in_use(string $taxonomy): bool {
+        foreach ($this->get_enabled_rules() as $rule) {
+            if (($rule['taxonomy'] ?? '') === $taxonomy) {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     /**
      * Apply ONE count rule to ONE post.
@@ -80,7 +148,7 @@ class TermCountHandler extends UnifiedHandlerBase {
                 continue;
             }
 
-            $kept = $this->survivors($current, $taxonomy, $rule);
+            $kept = $this->survivors($post_id, $current, $taxonomy, $rule);
             if (count($kept) === count(array_unique($current))) {
                 continue;
             }
@@ -103,7 +171,7 @@ class TermCountHandler extends UnifiedHandlerBase {
         }
 
         $current = array_map('intval', $current);
-        $kept    = $this->survivors($current, $taxonomy, $rule);
+        $kept    = $this->survivors($post_id, $current, $taxonomy, $rule);
 
         if (count($kept) < count($current)) {
             wp_set_object_terms($post_id, $kept, $taxonomy);
@@ -111,15 +179,18 @@ class TermCountHandler extends UnifiedHandlerBase {
     }
 
     /**
-     * The term IDs that stay.
+     * The term IDs that stay. The delta is what an outside write added to THIS
+     * post this request, for the native and the ACF half alike; empty (bulk
+     * apply, cron, no term write, a field-only ACF write) is the fallback.
      *
      * @param int[] $term_ids
      * @return int[]
      */
-    private function survivors(array $term_ids, string $taxonomy, array $rule): array {
+    private function survivors(int $post_id, array $term_ids, string $taxonomy, array $rule): array {
         $terms = array_map(fn(int $id): array => ['id' => $id, 'depth' => $this->depth($id, $taxonomy)], $term_ids);
+        $delta = $this->added[$post_id . ':' . $taxonomy] ?? [];
 
-        $kept = TermCountSurvivors::select($terms, [], (int) ($rule['max_terms'] ?? 1), TermCountRules::per_level($rule));
+        $kept = TermCountSurvivors::select($terms, $delta, (int) ($rule['max_terms'] ?? 1), TermCountRules::per_level($rule));
 
         return array_column($kept, 'id');
     }
