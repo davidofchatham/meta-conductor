@@ -40,15 +40,20 @@
  *   wp eval-file .../sweep-term-count.php fallback        # silent staging is no edit: deepest-then-lowest, stable rerun
  *   wp eval-file .../sweep-term-count.php acf-delta       # ACF half uses the same memo
  *   wp eval-file .../sweep-term-count.php acf-field-only  # raw field write, no native sync: fallback
- *   wp eval-file .../sweep-term-count.php restore     # deletes temp terms, restores rules, checks mc_item slugs
+ *   wp eval-file .../sweep-term-count.php bulk            # real ExistingPostsApplier run: fallback, stable rerun
+ *   wp eval-file .../sweep-term-count.php cron            # real daily sweep (time-based expiry + cap), stable rerun
+ *   wp eval-file .../sweep-term-count.php restore    # deletes temp terms, restores rules, checks mc_item slugs
  *
  * @package Meta_Conductor
  */
 
 require_once __DIR__ . '/sweep-lib.php';
 
+use BWS\MetaConductor\Core\ExistingPostsApplier;
+use BWS\MetaConductor\Core\RuleChoice;
 use BWS\MetaConductor\Core\TermDispatcher;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
+use BWS\MetaConductor\Storage\StorageFactory;
 
 $step = $args[0] ?? 'flat';
 
@@ -409,6 +414,76 @@ switch ( $step ) {
 			implode( ',', array_map( 'intval', (array) get_field( 'mc_topics', $solo, false ) ) ), (string) $low2 );
 		break;
 
+	case 'bulk':
+		// The real bulk path (ExistingPostsApplier), over EVERY mc_item: terms are
+		// staged with the rule silent, so there is no edit and the lowest ID wins.
+		// Other fixture posts may hold several mc_flag terms, so they are put back.
+		list( $a, $b, $c ) = mctc_flat_terms();
+		$flags = array();
+		foreach ( get_posts( array( 'post_type' => 'mc_item', 'post_status' => 'any', 'numberposts' => -1, 'fields' => 'ids' ) ) as $id ) {
+			$flags[ $id ] = mc_terms( $id, 'mc_flag' );
+		}
+		mctc_clean( $solo );
+		wp_set_object_terms( $solo, array( $a ), 'mc_flag' );
+		wp_set_object_terms( $solo, array( $a, $c ), 'mc_flag' );
+		mctc_dispatcher()->drain();
+		mc_write_ordered_rules( array(), OptionRuleStorage::KIND_FORMAT );
+		mctc_author( 'mc_flag', 1, true );
+		$rows   = StorageFactory::get_instance()->get_kind_rules( OptionRuleStorage::KIND_TERM );
+		$choice = RuleChoice::encode( OptionRuleStorage::KIND_TERM, 0, $rows[0] );
+
+		$first = ExistingPostsApplier::run_batch( $choice );
+		$chk( 'bulk run completed', $first['done'] ?? false, true );
+		$chk( 'bulk apply with no edit: the lowest ID survives', mc_terms( $solo, 'mc_flag' ), array( $a ) );
+
+		$second = ExistingPostsApplier::run_batch( $choice );
+		$chk( 'a second bulk run changes nothing', $second['changed'] ?? -1, 0 );
+		$chk( '... and the survivor is the same', mc_terms( $solo, 'mc_flag' ), array( $a ) );
+
+		mc_write_ordered_rules( array(), OptionRuleStorage::KIND_TERM );
+		foreach ( $flags as $id => $ids ) {
+			wp_set_object_terms( $id, $ids, 'mc_flag' );
+		}
+		mctc_dispatcher()->drain();
+		break;
+
+	case 'cron':
+		// The daily sweep: an expired time-based rule takes target term c off the
+		// post, and the same ordered pass then caps what is left. No edit, so the
+		// lowest ID survives; a second sweep finds nothing left to do.
+		list( $a, $b, $c ) = mctc_flat_terms();
+		mctc_clean( $solo );
+		wp_set_object_terms( $solo, array( $a, $b, $c ), 'mc_flag' );
+		mctc_dispatcher()->drain();
+		mc_write_ordered_rules( array(), OptionRuleStorage::KIND_FORMAT );
+		mc_write_ordered_rules(
+			array(
+				array(
+					'type'           => 'time_based_rules',
+					'enabled'        => true,
+					'post_types'     => array( 'mc_item' ),
+					'start_date'     => gmdate( 'Y-m-d', strtotime( '-30 days' ) ),
+					'end_date'       => gmdate( 'Y-m-d', strtotime( '-2 days' ) ),
+					'target_term_id' => array( $c ),
+				),
+				array(
+					'type'       => 'term_count_rules',
+					'enabled'    => true,
+					'taxonomy'   => 'mc_flag',
+					'post_types' => array( 'mc_item' ),
+					'max_terms'  => 1,
+					'per_level'  => true,
+				),
+			),
+			OptionRuleStorage::KIND_TERM
+		);
+		do_action( 'bws_taxonomy_manager_cleanup' );
+		$chk( 'cron sweep: the expired term is gone and the cap takes the lowest ID', mc_terms( $solo, 'mc_flag' ), array( $a ) );
+
+		do_action( 'bws_taxonomy_manager_cleanup' );
+		$chk( 'a second sweep changes nothing', mc_terms( $solo, 'mc_flag' ), array( $a ) );
+		break;
+
 	case 'restore':
 		mctc_clean( $solo );
 		foreach ( array( 'mctc-a', 'mctc-b', 'mctc-c' ) as $slug ) {
@@ -433,7 +508,7 @@ switch ( $step ) {
 		break;
 
 	default:
-		WP_CLI::error( "Unknown step '$step' — flat|tree-on|tree-off|stable|acf|scope|newest|newest-multi|rule-output|hier-after|fallback|acf-delta|acf-field-only|restore." );
+		WP_CLI::error( "Unknown step '$step' — flat|tree-on|tree-off|stable|acf|scope|newest|newest-multi|rule-output|hier-after|fallback|acf-delta|acf-field-only|bulk|cron|restore." );
 }
 
 WP_CLI::log( sprintf( '[sweep term-count/%s] %d passed, %d failed', $step, $pass, $fail ) );
