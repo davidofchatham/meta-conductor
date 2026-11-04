@@ -63,6 +63,7 @@ $classes = [
     'BWS\\MetaConductor\\Core\\FormatDispatcher',
     'BWS\\MetaConductor\\Core\\RuleChoice',
     'BWS\\MetaConductor\\Core\\ExistingPostsApplier',
+    'BWS\\MetaConductor\\Core\\TermCountSurvivors',
     // Storage\
     'BWS\\MetaConductor\\Storage\\OptionRuleStorage',
     'BWS\\MetaConductor\\Storage\\StorageFactory',
