@@ -215,7 +215,7 @@ $check('disjoint post types do not overlap',
 // --- 4. #51 — the contradictory pair, named. --------------------------------
 //
 // child_to_parent hierarchy (now `ancestors`) ADDS ancestor terms;
-// one_per_level level restriction with include_ancestors off does not keep
+// deepest_only level restriction with include_ancestors off does not keep
 // them. One taxonomy, overlapping post types.
 
 $s51 = [
@@ -223,8 +223,8 @@ $s51 = [
      'post_types' => ['mc_item'], 'inheritance_behavior' => 'ancestors',
      'row_title' => 'Inherit Topics'],
     ['type' => 'hierarchical_level_restriction_rules', 'enabled' => true, 'taxonomy' => 'mc_topic',
-     'post_types' => ['mc_item'], 'restriction_mode' => 'one_per_level',
-     'include_ancestors' => false, 'row_title' => 'One per level'],
+     'post_types' => ['mc_item'], 'restriction_mode' => 'deepest_only',
+     'include_ancestors' => false, 'row_title' => 'Deepest level'],
 ];
 $found = $scan($KIND_TERM, $s51);
 $check('#51: the contradictory pair is flagged', count($found) === 1);
@@ -232,7 +232,7 @@ $check('#51: and the contradiction is NAMED, not generic',
     $codes($found) === ['ancestors_stripped']);
 $check('#51: the warning names both rules',
     ($found[0]['a']['title'] ?? '') === 'Inherit Topics'
-    && ($found[0]['b']['title'] ?? '') === 'One per level');
+    && ($found[0]['b']['title'] ?? '') === 'Deepest level');
 $check('#51: and names the shared taxonomy by label', ($found[0]['target'] ?? '') === 'Topics');
 $check('#51: and the overlapping post types', ($found[0]['scope'] ?? '') === 'MC Items');
 
@@ -342,20 +342,66 @@ $s39 = [
     ['type' => 'propagation_rules', 'enabled' => true, 'taxonomy' => 'mc_topic',
      'post_types' => ['mc_section'], 'conflict_handling' => 'merge', 'row_title' => 'Cascade Topics'],
     ['type' => 'hierarchical_level_restriction_rules', 'enabled' => true, 'taxonomy' => 'mc_topic',
-     'post_types' => ['mc_section'], 'restriction_mode' => 'one_per_level', 'row_title' => 'One per level'],
+     'post_types' => ['mc_section'], 'restriction_mode' => 'deepest_only', 'row_title' => 'Deepest level'],
 ];
 $found39 = $scan($KIND_TERM, $s39);
 $check('#39: the propagation/restriction pair warns', count($found39) === 1);
 $check('#39: as a generic shared-target collision', $codes($found39) === ['shared_target']);
 $check('#39: naming both rules and the taxonomy',
     str_contains(CollisionDetector::message($found39[0]), 'Cascade Topics')
-    && str_contains(CollisionDetector::message($found39[0]), 'One per level')
+    && str_contains(CollisionDetector::message($found39[0]), 'Deepest level')
     && str_contains(CollisionDetector::message($found39[0]), 'Topics'));
 
 $s39_disjoint = $s39;
 $s39_disjoint[1]['post_types'] = ['mc_item'];
 $check('#39: moving one to a disjoint post type clears it',
     $scan($KIND_TERM, $s39_disjoint) === []);
+
+// --- 5b. Term count limit — a restricting claim over the whole taxonomy. ----
+
+$count_row = fn(array $over = []) => $over + [
+    'type' => 'term_count_rules', 'enabled' => true, 'taxonomy' => 'mc_topic',
+    'post_types' => ['mc_item'], 'max_terms' => 1, 'per_level' => true, 'row_title' => 'Cap Topics',
+];
+$hier_row = fn(string $behavior) => [
+    'type' => 'hierarchical_rules', 'enabled' => true, 'taxonomy' => 'mc_topic',
+    'post_types' => ['mc_item'], 'inheritance_behavior' => $behavior, 'row_title' => 'Inherit Topics',
+];
+
+$check('count limit keys on its whole taxonomy',
+    $desc('term_count_rules')->target_key(['taxonomy' => 'mc_topic']) === 'taxonomy|mc_topic');
+$check('count limit with no taxonomy picked resolves nothing',
+    $desc('term_count_rules')->target_key([]) === null);
+
+$check('two count rules on one taxonomy warn, generically',
+    $codes($scan($KIND_TERM, [$count_row(), $count_row(['max_terms' => 2])])) === ['shared_target']);
+$check('a count rule and a level rule warn, generically',
+    $codes($scan($KIND_TERM, [$count_row(), $s51[1]])) === ['shared_target']);
+$check('a count rule and a child-to-parent hierarchy rule warn, generically, in either order',
+    $codes($scan($KIND_TERM, [$count_row(), $hier_row('ancestors')])) === ['shared_target']
+    && $codes($scan($KIND_TERM, [$hier_row('ancestors'), $count_row()])) === ['shared_target']);
+
+foreach (['descendants_always', 'descendants_smart', 'both_always', 'both_smart'] as $behavior) {
+    $check("a count rule and a '$behavior' hierarchy rule are the NAMED contradiction",
+        $codes($scan($KIND_TERM, [$count_row(), $hier_row($behavior)])) === ['count_vs_descendants']);
+}
+
+$found_count = $scan($KIND_TERM, [$count_row(), $hier_row('descendants_always')]);
+$check('the contradiction leads with the rule that ADDS, whatever the list order',
+    ($found_count[0]['a']['type'] ?? '') === 'hierarchical_rules'
+    && ($found_count[0]['b']['type'] ?? '') === 'term_count_rules'
+    && [$found_count[0]['a']['index'], $found_count[0]['b']['index']] === [1, 0]);
+$check('and its message says the cap removes what the other rule adds back',
+    str_starts_with(CollisionDetector::message($found_count[0]), '“Inherit Topics” adds descendant terms')
+    && str_contains(CollisionDetector::message($found_count[0]), 'caps how many terms')
+    && str_contains(CollisionDetector::message($found_count[0]), 'lower in the list acts last'));
+
+$check('a count rule on a different taxonomy does not warn',
+    $scan($KIND_TERM, [$count_row(['taxonomy' => 'mc_flag']), $hier_row('descendants_always')]) === []);
+$check('a count rule on a disjoint post type does not warn',
+    $scan($KIND_TERM, [$count_row(['post_types' => ['mc_section']]), $count_row()]) === []);
+$check('a disabled count rule does not warn',
+    $scan($KIND_TERM, [$count_row(['enabled' => false]), $count_row()]) === []);
 
 // --- 6. #69 — two date windows on one term cancel. --------------------------
 //
@@ -435,7 +481,7 @@ $check('a date rule and a bidirectional related rule over one term cancel',
 
 $s_nested = [
     ['type' => 'hierarchical_level_restriction_rules', 'enabled' => true, 'taxonomy' => 'mc_topic',
-     'post_types' => ['mc_item'], 'restriction_mode' => 'one_per_level', 'row_title' => 'One per level'],
+     'post_types' => ['mc_item'], 'restriction_mode' => 'deepest_only', 'row_title' => 'Deepest level'],
     ['type' => 'time_based_rules', 'enabled' => true, 'post_types' => ['mc_item'],
      'target_term_id' => 21, 'row_title' => 'Archive window'],
 ];

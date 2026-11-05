@@ -174,9 +174,9 @@ The refinements deliberately left out of the `related_post_terms_rules` rework. 
 
 #### FW-12 — Sub-scope field for restricting rules
 
-A rule whose **claim** is *restricting* (today only level-restriction) declares no narrower **jurisdiction**, so it governs its entire taxonomy and necessarily collides with any rule touching that taxonomy on overlapping post types. The archetype: term-hierarchy `child_to_parent` *adds* ancestors while level-restriction `include_ancestors=false` *strips* them — an unresolvable contradiction that can only be warned about. A sub-scope field ("governs levels 3–4 only", or "only under branch X") would let such pairs be made genuinely **disjoint** instead of merely warned: the collision dissolves rather than being reported.
+A rule whose **claim** is *restricting* (level-restriction and Term count limit) declares no narrower **jurisdiction**, so it governs its entire taxonomy and necessarily collides with any rule touching that taxonomy on overlapping post types. The archetype: term-hierarchy `child_to_parent` *adds* ancestors while level-restriction `include_ancestors=false` *strips* them — an unresolvable contradiction that can only be warned about. A sub-scope field ("governs levels 3–4 only", or "only under branch X") would let such pairs be made genuinely **disjoint** instead of merely warned: the collision dissolves rather than being reported.
 
-- **Detail home:** none; this row carries it. Vocabulary: [CONTEXT.md](../CONTEXT.md) → *Claim*, *Jurisdiction*.
+- **Detail home:** none; this row carries it. Vocabulary: [CONTEXT.md](../CONTEXT.md) → *Claim*, *Jurisdiction*. Term count limit shares the gap: it also governs its whole taxonomy and has no sub-scope field, so "cap level 3 only" is inexpressible and a count rule still collides with every other rule on its taxonomy.
 - **Progress:** Not started.
 - **Blocked by:** `decision:is level_restriction live on a real site` — it needs config + storage + UI on a **shipped** rule type, so the live-rule-type schema rule applies before any schema change • **Interacts with:** FW-25
 

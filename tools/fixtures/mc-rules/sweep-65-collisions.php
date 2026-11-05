@@ -11,7 +11,7 @@
  *         numbers refer to. A harness that builds its own rows can agree with
  *         a detector that disagrees with storage.
  *   §65b  The fixture's two ready-made cases actually land: the #51 pair
- *         (hierarchy `ancestors` + level restriction `one_per_level`,
+ *         (hierarchy `ancestors` + level restriction `deepest_only`,
  *         ancestors off, one taxonomy, overlapping post types) is flagged with
  *         its contradiction NAMED, and the #69 pair (time_based[1] and [2],
  *         both on topic-archived) is flagged as mutual annihilation.
@@ -221,9 +221,9 @@ switch ( $step ) {
 			'enabled'           => true,
 			'taxonomy'          => 'mc_topic',
 			'post_types'        => array( 'mc_section' ),
-			'restriction_mode'  => 'one_per_level',
+			'restriction_mode'  => 'deepest_only',
 			'include_ancestors' => false,
-			'row_title'         => 'One per level',
+			'row_title'         => 'Deepest level',
 		);
 
 		// §65c — #39's configuration, on one taxonomy with overlapping types.
@@ -233,7 +233,7 @@ switch ( $step ) {
 		$a(
 			'§65c the warning names both rules',
 			array( $found[0]['a']['title'], $found[0]['b']['title'] ),
-			array( 'Cascade Topics', 'One per level' )
+			array( 'Cascade Topics', 'Deepest level' )
 		);
 		$a( '§65c and the post types they share', $found[0]['scope'], 'MC Sections' );
 

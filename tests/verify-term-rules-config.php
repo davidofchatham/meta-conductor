@@ -277,6 +277,9 @@ foreach ($mode_opts as $mode) {
 }
 $check('every restriction mode has its own row-title phrase',
     count(array_unique($mode_titles)) === count($mode_opts));
+$check('restriction mode offers exactly deepest and shallowest, default deepest',
+    $mode_opts === ['deepest_only', 'shallowest_only']
+    && $by_id['restriction_mode']['default'] === 'deepest_only');
 
 // And the type dispatch itself: every offered rule type must reach a real
 // title builder, not the untyped fallback.
@@ -327,6 +330,11 @@ $expected_visible = [
         'type', 'enabled', 'taxonomy', 'hierarchical_taxonomy_note',
         'post_types', 'post_status',
         'restriction_mode', 'include_ancestors', 'row_title',
+    ],
+    // No hierarchical_taxonomy_note: a cap means the same on a flat taxonomy.
+    'term_count_rules' => [
+        'type', 'enabled', 'taxonomy', 'post_types', 'post_status',
+        'max_terms', 'per_level', 'row_title',
     ],
     // The two LIVE types (#58). A subfield missing here is a live rule's
     // value silently dropped on the next settings save.

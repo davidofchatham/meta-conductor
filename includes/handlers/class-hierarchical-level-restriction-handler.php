@@ -1,12 +1,14 @@
 <?php
 /**
  * BWS Taxonomy Manager Hierarchical Level Restriction Handler
- * Restricts taxonomy terms to one per hierarchical level, removing siblings when new terms are applied
- * 
+ * Restricts a post's terms to the deepest or shallowest hierarchical level it uses
+ *
  * @since 0.1.0
  */
 
 namespace BWS\MetaConductor\Handlers;
+
+use BWS\MetaConductor\RuleTypes\HierarchicalLevelRestrictionRules;
 
 // Prevent direct access
 if (!defined('ABSPATH')) {
@@ -138,26 +140,10 @@ class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
      * `include_ancestors` — if set — adds back the parent chain of whatever
      * survived.
      *
-     * ### `include_ancestors` has ONE meaning as of 0.8.0 (#32)
-     *
-     * It used to branch on the mode and mean two different things:
-     * additive in `deepest_only`, and in `one_per_level` a suppression of the
-     * `remove_conflicting_ancestors()` pass. That second meaning was a no-op
-     * in every case — `one_per_level` has already reduced the set to at most
-     * one term per level by the time the pass runs, and the pass only dropped
-     * a term whose ancestor sat on a level holding MORE than one term, which
-     * by then can never be true. So the flag did nothing at all in that mode
-     * while the UI claimed otherwise.
-     *
-     * Redefined to the additive meaning uniformly, which is the one that was
-     * real, and applied in all three modes. `shallowest_only` therefore gains
-     * behaviour it did not have: asking to keep ancestors of terms selected
-     * for being shallowest does pull in still-shallower terms, and that is
-     * what the author asked for.
-     *
-     * The change was free rather than breaking: level restriction runs on the
-     * test site only (a rule type not in real use needs no migration), so no stored rule
-     * needed migrating. Config side: HierarchicalLevelRestrictionRules::subfields().
+     * `include_ancestors` has one meaning in both modes: keep the lineage of
+     * whatever the mode kept. A stored mode outside the two reads as the
+     * default through HierarchicalLevelRestrictionRules::mode(). Config side:
+     * HierarchicalLevelRestrictionRules::subfields().
      *
      * @param int[]  $term_ids Term IDs currently on the post.
      * @param string $taxonomy Taxonomy slug.
@@ -169,31 +155,18 @@ class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
             return $term_ids;
         }
 
-        $restriction_mode = $rule['restriction_mode'] ?? 'one_per_level';
         $include_ancestors = !empty($rule['include_ancestors']);
 
         // Group terms by their hierarchical level
         $terms_by_level = $this->group_terms_by_level($term_ids, $taxonomy);
 
-        $final_terms = array();
+        $levels = array_keys($terms_by_level);
+        $kept_level = HierarchicalLevelRestrictionRules::mode($rule) === HierarchicalLevelRestrictionRules::MODE_SHALLOWEST
+            ? min($levels)
+            : max($levels);
+        $final_terms = $terms_by_level[$kept_level];
 
-        if ($restriction_mode === 'one_per_level') {
-            // Keep only one term per level (prefer the last one added/most specific)
-            foreach ($terms_by_level as $level => $level_terms) {
-                // Sort by term order or keep the last one
-                $final_terms[] = end($level_terms);
-            }
-        } elseif ($restriction_mode === 'deepest_only') {
-            // Keep only terms from the deepest level
-            $max_level = max(array_keys($terms_by_level));
-            $final_terms = $terms_by_level[$max_level];
-        } elseif ($restriction_mode === 'shallowest_only') {
-            // Keep only terms from the shallowest level
-            $min_level = min(array_keys($terms_by_level));
-            $final_terms = $terms_by_level[$min_level];
-        }
-
-        // One meaning, every mode: keep the lineage of whatever survived.
+        // Keep the lineage of whatever survived.
         // Iterate a snapshot — the ancestors being added are not themselves
         // walked again (get_ancestors already returns the full chain).
         if ($include_ancestors) {
@@ -271,13 +244,6 @@ class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
         return $level;
     }
     
-    // remove_conflicting_ancestors() lived here until 0.8.0. It ran only on
-    // the `one_per_level` + !include_ancestors path and could not remove
-    // anything on it: the mode had already reduced the set to one term per
-    // level, and the method only dropped a term whose ancestor sat on a level
-    // holding more than one. Deleted with the flag's second meaning (#32) —
-    // see calculate_restricted_terms().
-
     // convert_tt_ids_to_term_ids() lived here until 0.8.0. Its only caller was
     // process_term_level_restrictions(), which existed to turn the
     // `set_object_terms` hook's term_taxonomy_ids into term IDs and diff them
@@ -326,7 +292,7 @@ class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
         
         foreach ($enabled_rules as $rule) {
             $summary['taxonomies'][] = $rule['taxonomy'];
-            $summary['restriction_modes'][] = $rule['restriction_mode'] ?? 'one_per_level';
+            $summary['restriction_modes'][] = HierarchicalLevelRestrictionRules::mode($rule);
         }
         
         $summary['taxonomies'] = array_unique($summary['taxonomies']);

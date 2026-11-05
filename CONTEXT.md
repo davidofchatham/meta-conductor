@@ -97,6 +97,10 @@ The sequence in which rules of one **effect kind** are evaluated in a **pass**. 
 **Collision**:
 Two rules whose **reach** intersects on one **effect target**. The test is mechanical, not by fiat: an edge exists only where post types *and* taxonomies both overlap — either one being disjoint makes the rules independent. Collisions are **detected and warned at settings save, never resolved at runtime**: the plugin tells the author their rules contend, rather than silently picking a winner. Two rules that collide are not necessarily wrong — a collision means their combined result depends on **order**, which the author controls.
 
+**Term count limit**:
+The **rule type** that caps how many terms a post holds in one taxonomy, on flat and hierarchical taxonomies alike. Its **claim** is *restricting*, so it governs its whole taxonomy and is warned about as a **collision** with any other rule there; it has a maximum and a *per level* switch that applies the cap to each tree depth instead of the whole taxonomy. When a post is over the cap, the terms the author *just added* survive where that can be detected; otherwise the deepest terms survive, then the lowest term IDs. The "just added" set is a request-lifetime capture of outside writes, not **provenance**. Distinct from level restriction, which decides *which depths* may hold terms and never counts them.
+_Avoid_: one term per level (the retired level-restriction mode this type replaced).
+
 ### Temporal Rule
 
 The rule type that applies terms based on where "now" sits relative to one or two dates. Evolves the older fixed-window "Date Window" rule.
@@ -214,8 +218,8 @@ The residual real collision is a post carrying *both* keys — or two typed-boun
 > **Author:** Only on the same effect target. A future body-class rule reading those terms *would* fire — different target. Suppression is per-target, not global.
 > **Dev:** Then how do two rules ever combine?
 > **Author:** By **order**, within one chain. Each runs in sequence and reads live state. That's the only composition mechanism left, which is why order is author-visible rather than falling out of hook priorities.
-> **Dev:** Now add a level-restriction rule, one-per-level, same taxonomy. It strips East from the child.
-> **Author:** Correct behaviour, not a bug. Its **claim** is *restricting*, and a restricting rule declares no narrower **jurisdiction**, so it prunes anything violating its constraint across the whole taxonomy — it doesn't care who wrote East. What's wrong is the *configuration*: one rule is told to place two same-level terms and another forbids it. That's a **collision**.
+> **Dev:** Now add a level-restriction rule, deepest-only, same taxonomy. It strips Region from the child.
+> **Author:** Correct behavior, not a bug. Its **claim** is *restricting*, and a restricting rule declares no narrower **jurisdiction**, so it prunes anything violating its constraint across the whole taxonomy — it doesn't care who wrote East. What's wrong is the *configuration*: one rule is told to place Region and another forbids anything above the deepest level. That's a **collision**.
 > **Dev:** So the plugin fixes it?
 > **Author:** It **warns** at save and never resolves at runtime. The two rules collide only because their reach overlaps — same post types *and* same taxonomy. Put them on different post types and there's no edge and no warning.
 > **Dev:** The post-hierarchy rule is in *merge*. The parent drops Coastal — does the child lose it?

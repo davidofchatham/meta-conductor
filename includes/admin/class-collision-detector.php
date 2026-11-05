@@ -68,6 +68,7 @@ use BWS\MetaConductor\RuleTypes\HierarchicalLevelRestrictionRules;
 use BWS\MetaConductor\RuleTypes\HierarchicalRules;
 use BWS\MetaConductor\RuleTypes\Registry;
 use BWS\MetaConductor\RuleTypes\RelatedRules;
+use BWS\MetaConductor\RuleTypes\TermCountRules;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 use BWS\MetaConductor\Storage\StorageFactory;
 
@@ -295,6 +296,15 @@ class CollisionDetector {
             }
         }
 
+        // A count limit trims what an inheritance rule that adds descendants puts
+        // back on every pass. A child-to-parent rule is not this: with per-level on
+        // the kept ancestors fill one term per depth, and with it off the cap keeps
+        // the deepest term, so that pair gets the generic order warning below.
+        $count_pair = self::as_pair($a, $b, HierarchicalRules::class, TermCountRules::class);
+        if ($count_pair !== null && self::adds_descendants($count_pair[0]['row'])) {
+            return ['count_vs_descendants', $count_pair[0], $count_pair[1]];
+        }
+
         // #69 / invariant 19: two rules over one term, each of which removes that
         // term when its own condition stops holding — including one the other
         // just applied. Mutual annihilation, not merely order-dependence.
@@ -370,20 +380,16 @@ class CollisionDetector {
     /**
      * Does the level-restriction rule undertake to keep ancestor terms?
      *
-     * `include_ancestors` says so outright in every mode (#32). Failing that,
+     * `include_ancestors` says so outright in both modes (#32). Failing that,
      * only `shallowest_only` keeps them as a by-product — it prunes the deep
-     * end. `one_per_level` keeps an ancestor only while nothing else occupies
-     * its level, which is not an undertaking.
+     * end.
      *
      * @param array $row
      * @return bool
      */
     private static function keeps_ancestors(array $row): bool {
-        if (!empty($row['include_ancestors'])) {
-            return true;
-        }
-
-        return (string) ($row['restriction_mode'] ?? 'one_per_level') === 'shallowest_only';
+        return !empty($row['include_ancestors'])
+            || HierarchicalLevelRestrictionRules::mode($row) === HierarchicalLevelRestrictionRules::MODE_SHALLOWEST;
     }
 
     /**
@@ -396,7 +402,7 @@ class CollisionDetector {
      * @return bool
      */
     private static function keeps_descendants(array $row): bool {
-        return (string) ($row['restriction_mode'] ?? 'one_per_level') === 'deepest_only';
+        return HierarchicalLevelRestrictionRules::mode($row) === HierarchicalLevelRestrictionRules::MODE_DEEPEST;
     }
 
     /**
@@ -591,6 +597,13 @@ class CollisionDetector {
                 return sprintf(
                     /* translators: 1: rule name, 2: rule name, 3: taxonomy, 4: post types, 5: order sentence. */
                     __('“%1$s” adds descendant terms in %3$s and “%2$s” does not keep them, on %4$s. The two want opposite results. %5$s', 'meta-conductor'),
+                    $a_title, $b_title, $target, $scope, $order
+                );
+
+            case 'count_vs_descendants':
+                return sprintf(
+                    /* translators: 1: rule name, 2: rule name, 3: taxonomy, 4: post types, 5: order sentence. */
+                    __('“%1$s” adds descendant terms in %3$s and “%2$s” caps how many terms a post may hold, on %4$s. The cap removes terms the other rule adds back on every pass. The two want opposite results. %5$s', 'meta-conductor'),
                     $a_title, $b_title, $target, $scope, $order
                 );
 

@@ -38,6 +38,7 @@ define('BWS_META_CONDUCTOR_PATH', dirname(__DIR__) . '/');
 // --- WP shim (only what the snapshot path touches at runtime). ---------------
 
 if (!function_exists('__'))       { function __($t, $d = 'default') { return $t; } }
+if (!function_exists('_n'))       { function _n($s, $p, $n, $d = 'default') { return $n === 1 ? $s : $p; } }
 if (!function_exists('esc_html')) { function esc_html($t) { return $t; } }
 if (!function_exists('esc_html__')) { function esc_html__($t, $d = 'default') { return $t; } }
 if (!function_exists('add_action')) { function add_action() {} }
@@ -170,11 +171,50 @@ $check('level restriction: ancestors clause in ANY mode',
         'post_types'        => ['page'],
     ]) === 'Pages: Restrict Breakers to the shallowest level, keeping ancestors');
 
-$check('level restriction: absent mode ⇒ one per level',
-    str_contains($title([
+$check('level restriction: shallowest, without the ancestors clause',
+    $title([
+        'type'             => 'hierarchical_level_restriction_rules',
+        'taxonomy'         => 'breaker',
+        'restriction_mode' => 'shallowest_only',
+    ]) === 'Restrict Breakers to the shallowest level');
+
+$check('level restriction: deepest keeping ancestors',
+    $title([
+        'type'              => 'hierarchical_level_restriction_rules',
+        'taxonomy'          => 'breaker',
+        'restriction_mode'  => 'deepest_only',
+        'include_ancestors' => true,
+    ]) === 'Restrict Breakers to the deepest level, keeping ancestors');
+
+$check('level restriction: absent mode ⇒ deepest',
+    $title([
         'type'     => 'hierarchical_level_restriction_rules',
         'taxonomy' => 'breaker',
-    ]), 'to one term per level'));
+    ]) === 'Restrict Breakers to the deepest level');
+
+$check('level restriction: retired one_per_level reads as absent',
+    $title([
+        'type'             => 'hierarchical_level_restriction_rules',
+        'taxonomy'         => 'breaker',
+        'restriction_mode' => 'one_per_level',
+    ]) === 'Restrict Breakers to the deepest level');
+
+// --- Term count limit: cap, plural, and the per-level clause. ---------------
+$check('count limit: plural cap, per level on',
+    $title([
+        'type' => 'term_count_rules', 'taxonomy' => 'breaker',
+        'max_terms' => 2, 'per_level' => true,
+    ]) === 'Limit Breakers to 2 terms per level');
+
+$check('count limit: per level off drops the clause, singular cap',
+    $title([
+        'type' => 'term_count_rules', 'taxonomy' => 'breaker',
+        'max_terms' => 1, 'per_level' => false, 'post_types' => ['page'],
+    ]) === 'Pages: Limit Breakers to 1 term');
+
+$check('count limit: absent fields read as the defaults (1, per level)',
+    $title(['type' => 'term_count_rules', 'taxonomy' => 'breaker'])
+        === 'Limit Breakers to 1 term per level');
 
 // --- An untyped row stays findable rather than going blank. -----------------
 $check('untyped row is named, not empty',

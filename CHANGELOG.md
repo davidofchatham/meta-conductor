@@ -7,6 +7,19 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Term count limit rule.** A new term rule type, *Term count limit — cap how many terms a post may hold*, for "at most N terms in this taxonomy". It works on flat and hierarchical taxonomies.
+  - Settings: a maximum (default 1) and *Apply the cap to each level* (default on), which counts each tree depth separately on a hierarchical taxonomy and makes no difference on a flat one. Post types and statuses scope it like every other rule. There is no *Keep ancestor terms* switch; a cap is a hard cap, so to keep ancestors place a hierarchy inheritance rule after it.
+  - **Which terms survive an over-cap post:** the terms the editor just added in that save, where the plugin can tell; otherwise the deepest terms, then the lowest term ID. A term another rule adds earlier in the same pass does not count as the editor's edit. Nothing is stored to remember it, so bulk apply, the daily cron, a save that touched no terms and a field-only ACF write use the deepest-then-lowest-ID order, and a re-run never reshuffles survivors.
+  - An ACF taxonomy field on the post is pruned first, then the native terms.
+  - **Collision warnings:** a count rule is warned about against another count rule, a level restriction rule or a hierarchy inheritance rule on the same taxonomy and post types, as order-sensitive. With a parent-to-child or both-direction inheritance rule the warning says the two want opposite results, because the cap removes terms the other rule adds back on every pass.
+
+### Changed
+
+- **Level restriction offers only *Deepest only* and *Shallowest only*.** *One term per level* moved to the new Term count limit rule, where it no longer sits under a depth rule or needs a hierarchical taxonomy. The *Keep ancestor terms* text and the row title drop their *one term per level* wording. The type is not in use on any live site, so there is no migration; a stored row still holding the old mode runs as *Deepest only*, the same as a row with no mode.
+- **Old *one term per level* kept the alphabetically last term; Term count limit does not.** Its tie-break is the deepest-then-lowest-ID order above.
+
 ### Removed
 
 - The activation notice no longer warns that Admin Columns Pro is not active. Quick-edit integration is simply absent without it. The ACF Pro warning stays.

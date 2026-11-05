@@ -41,7 +41,7 @@
  * reads BEFORE the native branch. A stale value left by an earlier scenario
  * (native reset alone does not touch it — same trap as propagation's
  * `mc_topics` mirror on `mc_section`, matrix §5/§62) silently swapped which
- * term survived a `one_per_level` prune, with no error — it just looked like
+ * term survived a `deepest_only` cut, with no error — it just looked like
  * the wrong term won. `mc67_clean()` clears BOTH stores for exactly this
  * reason; do not "simplify" it to `mc_reset_subject()` alone.
  *

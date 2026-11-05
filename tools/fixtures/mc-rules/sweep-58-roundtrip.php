@@ -48,7 +48,7 @@ foreach ($rows as $row) {
     $by_type[$row['type'] ?? ''][] = $row;
 }
 
-$note('term_rules carries all 10 fixture term-kind rows', count($rows) === 10);
+$note('term_rules carries all 11 fixture term-kind rows', count($rows) === 11);
 $note('2 related rows present',  count($by_type['related_rules'] ?? []) === 2);
 $note('2 acf-reference rows present', count($by_type['related_post_terms_rules'] ?? []) === 2);
 
@@ -82,6 +82,10 @@ $must_survive = [
                                    'post_types', 'post_status'],
     'related_post_terms_rules' => ['type', 'enabled', 'acf_field_name', 'holder_role',
                                    'reverse_acf_field_name', 'taxonomy', 'keep_in_sync', 'post_status'],
+    // Baseline is max 2 / per level OFF — both non-default, so a gate that
+    // dropped a field would show here instead of reading back as its default.
+    'term_count_rules'         => ['type', 'enabled', 'taxonomy', 'post_types', 'post_status',
+                                   'max_terms', 'per_level'],
 ];
 
 foreach ($rows as $i => $row) {
@@ -121,6 +125,24 @@ $note('the sanitized list still carries both live types row-for-row',
     && count($sanitized_types['related_post_terms_rules'] ?? []) === 2);
 $note('the sanitized list keeps every row, in order',
     array_column($sanitized, 'type') === array_column($rows, 'type'));
+
+// Level restriction: both modes and "keep ancestors" round-trip the real save
+// path. The persisted fixture row carries only one mode, so synthesize one row
+// per mode x flag and sanitize them.
+$lr_in = [];
+foreach (['deepest_only', 'shallowest_only'] as $mode) {
+    foreach ([true, false] as $anc) {
+        $lr_in[] = ['type' => 'hierarchical_level_restriction_rules', 'enabled' => true,
+                    'taxonomy' => 'mc_topic', 'post_types' => ['mc_item'],
+                    'restriction_mode' => $mode, 'include_ancestors' => $anc];
+    }
+}
+$lr_out = RepeaterField::sanitize($lr_in, $field['args']);
+foreach ($lr_in as $i => $in) {
+    $note("level restriction {$in['restriction_mode']}/ancestors=" . ($in['include_ancestors'] ? 'on' : 'off') . ' round-trips',
+        ($lr_out[$i]['restriction_mode'] ?? '(DROPPED)') === $in['restriction_mode']
+        && (bool) ($lr_out[$i]['include_ancestors'] ?? null) === $in['include_ancestors']);
+}
 
 echo $fail ? "\nSWEEP-58 FAIL: " . count($fail) . " failed\n" : "\nSWEEP-58 OK\n";
 exit($fail ? 1 : 0);

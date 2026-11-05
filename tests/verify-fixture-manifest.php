@@ -59,6 +59,7 @@ $valid_types = array(
 	'time_based_rules',
 	'related_post_terms_rules',
 	'hierarchical_level_restriction_rules',
+	'term_count_rules',
 	'title_slug_rules',
 	'field_transformation_rules',
 );

@@ -430,6 +430,21 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
     ACF-mirror-lag bounce *and* distinguishes a remove-then-re-add in the same
     request, which the pre-#62 blanket exclude list could not.
 
+    **A second question live state cannot answer: which terms did the author just
+    add?** *Term count limit* needs it to keep the editor's choice over an older
+    term when a post exceeds the cap. `TermCountHandler` captures it on
+    `set_object_terms` as `new − old` term IDs per object and taxonomy. It
+    records only writes made OUTSIDE a pass (`TermDispatcher::any_pass_active()`),
+    so a term another rule adds above the count rule is rule output, not the
+    author's edit, and the authored rule order still decides. The memo is
+    request-lifetime instance state, read by the applier and never consumed, so a
+    second pass in the same request picks the same survivors. It is NOT
+    provenance and does not reopen invariant 19: nothing is persisted. With no
+    delta (bulk apply, the daily cron, a save that touched no terms, a field-only
+    ACF write) selection falls back to the deepest terms, then the lowest term
+    ID. `Core\TermCountSurvivors::select()` is the pure function that owns that
+    ordering.
+
     **Rejected** (the lock, trigger and queue bullets above carry their own reasons: a request-scoped lock, a per-taxonomy lock, trigger-filtered passes, and per-handler guards kept as defence in depth):
 
     - *Cascade between peers.* A rule-initiated write is invisible to peer rules on the SAME effect target and visible to rules on OTHER targets (a term write can still drive a format or field rule, but cannot re-trigger term rules). Letting peers react to each other makes the result depend on hook priority and class-instantiation order, neither of which an author can see.
