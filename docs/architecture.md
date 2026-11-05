@@ -193,14 +193,10 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
       on. AC v7 writes ACF fields via `update_field()` → fires `acf/update_value`
       ONLY; native taxonomy columns via `wp_set_object_terms` → fires
       `set_object_terms` (handlers already catch that). So the ACF-column path
-      needs a bridge: AC v7's post-persist `ac/editing/saved` action → a shared
-      `UnifiedHandlerBase::reapply_for_post(int $post_id)` (no-op default; the
-      ACF-listening handlers that still own their hooks override it to delegate
-      to their own gated `on_acf_save_post`). A CONVERTED handler has no
-      override and no `on_acf_save_post` to delegate to — the ACF write queue
-      marks the post dirty instead and the dispatcher's pass does the work
-      (#60), so the seam shrinks with each conversion and goes at #66. The bridge does NOT dispatch by column type — it hands
-      the post ID to EVERY handler, each self-gating, mirroring how `save_post`
+      needs a bridge: AC v7's post-persist `ac/editing/saved` action → the ACF
+      write queue marks the post dirty and the dispatcher's pass does the work
+      (#60). The bridge does NOT dispatch by column type — it names the post
+      and every rule self-gates inside the pass, mirroring how `save_post`
       fires for every post. Hook post-persist, never the pre-write
       `acf/update_value` (the capture path reads OLD there — see the sever model).
     - *How to detect the plugin.* Gate on a surface you have VERIFIED exists in

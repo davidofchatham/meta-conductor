@@ -360,42 +360,4 @@ class HierarchicalHandler extends UnifiedHandlerBase {
 
         return true;
     }
-
-    public function preview_changes(int $post_id, string $rule_id): array {
-        $rule = $this->get_rule($rule_id);
-        if (!$rule) {
-            return ['error' => 'Rule not found'];
-        }
-
-        $taxonomy = $rule['taxonomy'] ?? '';
-        if (!$taxonomy) {
-            return ['error' => 'No taxonomy specified'];
-        }
-
-        $current_ids = wp_get_object_terms($post_id, $taxonomy, ['fields' => 'ids']);
-        if (is_wp_error($current_ids)) {
-            $current_ids = [];
-        }
-
-        $prev_auto  = $this->get_auto_terms($post_id, $taxonomy);
-        $user_terms = array_values(array_diff($current_ids, $prev_auto));
-        [$direction, $expansion] = self::resolve_behavior($rule);
-        $depth                   = $rule['inheritance_depth'] ?? 'all';
-
-        $auto = $this->compute_expansion($user_terms, $taxonomy, $direction, $depth, $expansion);
-
-        $kept_auto = array_intersect($prev_auto, $current_ids);
-        $promoted  = array_diff($kept_auto, $auto);
-        if (!empty($promoted)) {
-            $user_terms = array_values(array_unique(array_merge($user_terms, $promoted)));
-            $auto = $this->compute_expansion($user_terms, $taxonomy, $direction, $depth, $expansion);
-        }
-
-        return [
-            'user_term_ids' => $user_terms,
-            'terms_to_add'  => $auto,
-            'final_term_ids' => array_values(array_unique(array_merge($user_terms, $auto))),
-            'direction'     => $direction,
-        ];
-    }
 }
