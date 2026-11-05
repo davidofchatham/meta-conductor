@@ -7,7 +7,7 @@ How the engineering skills should consume this repo's domain documentation when 
 - **`CONTEXT.md`** at the repo root: the glossary. Its entries carry `Rejected` lines for the names and alternatives that lost.
 - **`docs/architecture.md`**: the numbered invariants and the sections that own each decision, with their **Rejected** lists. This is where a design decision lives, next to the code fact it explains.
 
-There is **no `docs/adr/` to read**: the four ADRs were retired into those two files (FW-48), and `docs/adr/README.md` is only a redirect map from the old numbers plus the bar for a future one. **Do not mint an ADR as part of ordinary work**, and do not offer one when a decision is resolved: write it onto the glossary entry or the architecture anchor it justifies. `docs/adr/README.md` owns the table of where each kind of decision goes.
+There is **no `docs/adr/` to read**: the four ADRs were retired into those two files (FW-48), and `docs/adr/README.md` is only a redirect map from the old numbers plus the reach test for where a decision lives. **Do not mint an ADR as part of ordinary work**, and do not offer one when a decision is resolved: write it onto the glossary entry or the architecture anchor it justifies. `docs/adr/README.md` owns the table of where each kind of decision goes, and the four checks and reach test that decide whether to record one.
 
 If a file above doesn't exist, **proceed silently**. The `/domain-modeling` skill creates glossary entries lazily when terms get resolved.
 
