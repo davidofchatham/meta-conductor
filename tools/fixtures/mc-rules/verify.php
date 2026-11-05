@@ -153,7 +153,9 @@ if ( class_exists( '\\BWS\\MetaConductor\\Storage\\StorageFactory' ) ) {
 		);
 
 		foreach ( $mc_read as $mc_i => $mc_rule ) {
-			$check( "{$mc_type}[{$mc_i}] enabled", ! empty( $mc_rule['enabled'] ) );
+			// A manifest row may be seeded disabled on purpose (term_count_rules);
+			// the check is that it reads back as authored.
+			$check( "{$mc_type}[{$mc_i}] enabled", ! empty( $mc_rule['enabled'] ) === ! empty( $mc_seeded[ $mc_i ]['enabled'] ) );
 
 			$mc_scope = array();
 			if ( ! empty( $mc_rule['post_types'] ) && is_array( $mc_rule['post_types'] ) ) {

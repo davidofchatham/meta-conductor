@@ -1,6 +1,6 @@
 <?php
 /**
- * mc-rules — Term count limit behaviour sweep (term-count-limit ticket 02).
+ * mc-rules — Term count limit behavior sweep (term-count-limit ticket 02).
  *
  * `term_count_rules` caps how many terms a post holds in one taxonomy. With no
  * edit to go on (no delta) the survivors are the deepest terms, then the lowest

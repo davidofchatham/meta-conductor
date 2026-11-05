@@ -19,6 +19,7 @@ Meta Conductor adds rule-driven automation to WordPress taxonomies and meta fiel
 * Generate titles and slugs from token patterns with collision avoidance
 * Store a composed value (a display name, a roster line) in an ACF field, or in one subfield of every row of a repeater, from the same token patterns
 * Restrict which depths of a hierarchical taxonomy a post may carry
+* Cap how many terms a post may hold in a taxonomy
 
 Rules are authored as two ordered lists — one for rules that write terms, one for rules that format titles and slugs or compute field values — and they run in the order you put them in. The *Apply to Existing Posts* page runs them over posts that already exist.
 
@@ -35,6 +36,12 @@ Rules are authored as two ordered lists — one for rules that write terms, one 
 * Advanced Custom Fields Pro is required for ACF-driven rules
 
 == Upgrade Notes ==
+
+= Unreleased =
+
+**New: *Term count limit* rule.** It caps how many terms a post may hold in a taxonomy, on flat and hierarchical taxonomies alike. Where a post is over the cap, the terms you just added are kept first, then the deepest terms, then the lowest term ID.
+
+**Level restriction no longer has *One term per level*.** It offers *Deepest only* and *Shallowest only*; use a Term count limit rule for the old behavior. A stored row still holding the removed mode runs as *Deepest only*, so check any such rule. The old mode kept the alphabetically last term at a level; Term count limit keeps the deepest, then the lowest term ID.
 
 = 0.10.0 =
 

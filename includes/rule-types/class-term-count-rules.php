@@ -104,7 +104,7 @@ final class TermCountRules extends RuleType {
                 'id'          => 'max_terms',
                 'type'        => 'number',
                 'label'       => __('Maximum terms', 'meta-conductor'),
-                'description' => __('When a post holds more, the extra terms are removed. Deeper terms are kept first, then the lowest term ID.', 'meta-conductor'),
+                'description' => __('When a post holds more, the extra terms are removed. The terms you just added are kept first, then the deepest terms, then the lowest term ID.', 'meta-conductor'),
                 'default'     => 1,
                 'columns'     => 6,
                 'args'        => ['integer' => true, 'min' => 1],

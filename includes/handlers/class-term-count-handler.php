@@ -92,7 +92,7 @@ class TermCountHandler extends UnifiedHandlerBase {
         }
 
         $key = $object_id . ':' . $taxonomy;
-        $this->added[$key] =array_values(array_unique(array_merge($this->added[$key] ?? [], array_map('intval', $term_ids))));
+        $this->added[$key] = array_values(array_unique(array_merge($this->added[$key] ?? [], array_map('intval', $term_ids))));
     }
 
     private function taxonomy_in_use(string $taxonomy): bool {
