@@ -9,6 +9,7 @@ namespace BWS\MetaConductor;
 
 use BWS\MetaConductor\Handlers\HierarchicalLevelRestrictionHandler;
 use BWS\MetaConductor\Handlers\TimeBasedHandler;
+use BWS\MetaConductor\RuleTypes\HierarchicalLevelRestrictionRules;
 use BWS\MetaConductor\RuleTypes\Registry;
 use BWS\MetaConductor\Core\AcfWriteQueue;
 use BWS\MetaConductor\Core\TermDispatcher;
@@ -343,7 +344,7 @@ class TaxonomyManager {
 		
 		$taxonomy = sanitize_text_field($_POST['taxonomy'] ?? '');
 		$term_ids = array_map('absint', $_POST['term_ids'] ?? array());
-		$restriction_mode = sanitize_text_field($_POST['restriction_mode'] ?? 'deepest_only');
+		$restriction_mode = HierarchicalLevelRestrictionRules::mode(array('restriction_mode' => sanitize_text_field($_POST['restriction_mode'] ?? '')));
 		$include_ancestors = !empty($_POST['include_ancestors']);
 		
 		if (!taxonomy_exists($taxonomy)) {
@@ -424,24 +425,19 @@ class TaxonomyManager {
 		
 		$final_terms = array();
 		
-		if ($restriction_mode === 'deepest_only') {
-			// Keep only terms from the deepest level
-			$max_level = max(array_keys($terms_by_level));
-			$final_terms = $terms_by_level[$max_level];
-			
-			// If including ancestors, add ancestors of the deepest terms
-			if ($include_ancestors) {
-				foreach ($final_terms as $term_id) {
-					$ancestors = get_ancestors($term_id, $taxonomy);
-					$final_terms = array_merge($final_terms, $ancestors);
-				}
+		// $restriction_mode is already normalized by mode(): one of the two.
+		$kept_level  = $restriction_mode === HierarchicalLevelRestrictionRules::MODE_SHALLOWEST
+			? min(array_keys($terms_by_level))
+			: max(array_keys($terms_by_level));
+		$final_terms = $terms_by_level[$kept_level];
+
+		// include_ancestors acts in both modes: add back the parent chain of what was kept.
+		if ($include_ancestors) {
+			foreach ($final_terms as $term_id) {
+				$final_terms = array_merge($final_terms, get_ancestors($term_id, $taxonomy));
 			}
-		} elseif ($restriction_mode === 'shallowest_only') {
-			// Keep only terms from the shallowest level
-			$min_level = min(array_keys($terms_by_level));
-			$final_terms = $terms_by_level[$min_level];
 		}
-		
+
 		return array_unique($final_terms);
 	}
 	
@@ -482,16 +478,10 @@ class TaxonomyManager {
 			$preview .= '<span style="color: #d63638;">' . implode(', ', $removed) . '</span><br><br>';
 		}
 		
-		$mode_description = '';
-		switch ($mode) {
-			case 'deepest_only':
-				$mode_description = __('Only the deepest level terms are kept.', 'meta-conductor');
-				break;
-			case 'shallowest_only':
-				$mode_description = __('Only the shallowest level terms are kept.', 'meta-conductor');
-				break;
-		}
-		
+		$mode_description = $mode === HierarchicalLevelRestrictionRules::MODE_SHALLOWEST
+			? __('Only the shallowest level terms are kept.', 'meta-conductor')
+			: __('Only the deepest level terms are kept.', 'meta-conductor');
+
 		$preview .= '<em>' . $mode_description . '</em>';
 		
 		return $preview;
