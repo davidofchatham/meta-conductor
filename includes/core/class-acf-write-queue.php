@@ -13,7 +13,7 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Learns about EVERY ACF field write and reapplies the handlers afterwards.
+ * Learns about EVERY ACF field write and marks the post for a dispatcher pass afterwards.
  *
  * PROBLEM (#42, generalising #37/B3). Every handler gates its apply on the
  * save_post family. A large class of ACF writes never fires those hooks at all
@@ -58,31 +58,20 @@ if (!defined('ABSPATH')) {
  * the tool built for that job. The `meta_conductor_acf_reapply_enabled` filter
  * overrides this either way.
  *
- * APPLY CONTRACT. Unchanged from #37: hand the post ID to EVERY handler's
- * reapply_for_post and let each self-gate on post type, rule match and
- * reentrancy. Field type is deliberately NOT filtered in the listener — the
- * handlers key off relationship, post-object, taxonomy and plain-text fields
- * respectively, so any narrowing would reintroduce a smaller version of the bug
- * this fixes. (arch.md handler-invariant #14)
- *
- * SECOND APPLY CONTRACT, FOR CONVERTED TYPES (#60). A handler the dispatcher
- * owns registers no hooks and overrides no reapply seam, so the loop above
- * reaches nothing for it. Those types are covered by marking the post dirty on
- * the dispatcher instead: the shutdown drain (priority 20, after this flush's
- * 10) runs one full ordered pass per post. As of #64 EVERY handler is converted
- * — the reapply loop above reaches nothing at all and survives only as the
- * declared seam #66 deletes. The one mark now covers both kinds, because the
+ * APPLY CONTRACT. Mark the post dirty on the dispatcher (#60): the shutdown
+ * drain (priority 20, after this flush's 10) runs one full ordered pass per
+ * post. Field type is deliberately NOT filtered in the listener — the rules key
+ * off relationship, post-object, taxonomy and plain-text fields respectively,
+ * so any narrowing would reintroduce a smaller version of the bug this fixes.
+ * (arch.md handler-invariant #14) The one mark covers both kinds, because the
  * drain runs the format pass inside its own per-entity step: a bare
  * `update_field()` that feeds a `{meta:}` title token reconciles the title on
  * the same drain that reconciles the terms.
  *
- * SIDE EFFECT WORTH KNOWING. The bare-`update_field()` sever gap (PR#24 round 8
- * #2) is closed through the SECOND contract now, not the first:
- * RelatedPostTermsHandler was converted in #63 and has no `reapply_for_post`
- * left, so this flush reaches it only by marking the post dirty. That is
- * enough — the drain asks every converted handler for its captured entities
- * before it starts (TermDispatcher::enqueue_captures), so the severed
- * dependent gets a full ordered pass whether or not the flush named it.
+ * The bare-`update_field()` sever gap (PR#24 round 8 #2) is closed the same
+ * way: the drain asks every converted handler for its captured entities before
+ * it starts (TermDispatcher::enqueue_captures), so a severed dependent gets a
+ * full ordered pass whether or not the flush named it.
  */
 class AcfWriteQueue {
 
@@ -101,13 +90,6 @@ class AcfWriteQueue {
     private const FLUSH_CAP = 100;
 
     /**
-     * Handlers to reapply, as built by TaxonomyManager.
-     *
-     * @var array<string,\BWS\MetaConductor\Handlers\UnifiedHandlerBase>
-     */
-    private array $handlers;
-
-    /**
      * Post IDs touched by an ACF write and not yet applied, as a hash SET
      * (`[post_id => true]`) so a post touched by several fields in one request
      * is applied once.
@@ -122,13 +104,10 @@ class AcfWriteQueue {
     /**
      * Term dispatcher, if one is running (#60).
      *
-     * A CONVERTED handler has no `reapply_for_post` to call — it has no hooks
-     * at all — so the loop below cannot reach it. This is how the ACF-only
-     * write path still provokes a pass for those rule types: the flush marks
-     * the post dirty and the dispatcher's own shutdown drain (priority 20, this
-     * flush is 10) runs the pass. Since #64 the mark reaches BOTH kinds: the
-     * term drain runs the format pass inside its per-entity step, so one
-     * `mark_dirty()` is the whole reconciliation.
+     * This is how the ACF-only write path provokes a pass: the flush marks the
+     * post dirty and the dispatcher's own shutdown drain (priority 20, this
+     * flush is 10) runs it. The term drain runs the format pass inside its
+     * per-entity step, so one `mark_dirty()` is the whole reconciliation.
      *
      * Nullable so the queue can still be constructed standalone.
      *
@@ -137,11 +116,9 @@ class AcfWriteQueue {
     private ?TermDispatcher $dispatcher;
 
     /**
-     * @param array<string,\BWS\MetaConductor\Handlers\UnifiedHandlerBase> $handlers
-     * @param TermDispatcher|null                                          $dispatcher
+     * @param TermDispatcher|null $dispatcher
      */
-    public function __construct(array $handlers, ?TermDispatcher $dispatcher = null) {
-        $this->handlers   = $handlers;
+    public function __construct(?TermDispatcher $dispatcher = null) {
         $this->dispatcher = $dispatcher;
     }
 
@@ -314,7 +291,7 @@ class AcfWriteQueue {
     }
 
     /**
-     * Hand one post to every handler; each self-gates. (arch.md #14)
+     * Mark one post dirty on the dispatcher. (arch.md #14)
      *
      * AUTHORITATIVE gate. Every flush path — shutdown, bounded, and the Admin
      * Columns one-post flush — funnels through here, so this is the single
@@ -326,15 +303,10 @@ class AcfWriteQueue {
         if (!$this->reapply_enabled($post_id)) {
             return;
         }
-        foreach ($this->handlers as $handler) {
-            $handler->reapply_for_post($post_id);
-        }
-
-        // Converted rule types have no reapply seam to call — the dispatcher
-        // runs them. Marking rather than passing here keeps the coalescing
-        // property: a flush of N posts leaves N dirty entities and the drain
-        // runs one pass each, instead of a pass firing inside this loop and
-        // re-entering it through its own writes. (#60)
+        // Marking rather than passing here keeps the coalescing property: a
+        // flush of N posts leaves N dirty entities and the drain runs one pass
+        // each, instead of a pass firing inside this loop and re-entering it
+        // through its own writes. (#60)
         $this->dispatcher?->mark_dirty($post_id);
     }
 

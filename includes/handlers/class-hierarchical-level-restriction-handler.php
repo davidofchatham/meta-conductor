@@ -277,27 +277,4 @@ class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
             );
         }
     }
-    
-    /**
-     * Get rules summary for admin display
-     */
-    public function get_rules_summary() {
-        $enabled_rules = $this->get_enabled_rules();
-        
-        $summary = array(
-            'total_rules' => count($enabled_rules),
-            'taxonomies' => array(),
-            'restriction_modes' => array()
-        );
-        
-        foreach ($enabled_rules as $rule) {
-            $summary['taxonomies'][] = $rule['taxonomy'];
-            $summary['restriction_modes'][] = HierarchicalLevelRestrictionRules::mode($rule);
-        }
-        
-        $summary['taxonomies'] = array_unique($summary['taxonomies']);
-        $summary['restriction_modes'] = array_unique($summary['restriction_modes']);
-        
-        return $summary;
-    }
 }

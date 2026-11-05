@@ -22,6 +22,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Removed
 
+- **Dead admin-ajax endpoints.** `bws_get_taxonomy_terms`, `bws_get_post_type_taxonomies`, `bws_test_related_posts` and `bws_preview_level_restrictions` no longer respond. Nothing in the plugin called them since the settings UI moved to Wireframe; a request to one now gets admin-ajax's standard `0`.
 - The activation notice no longer warns that Admin Columns Pro is not active. Quick-edit integration is simply absent without it. The ACF Pro warning stays.
 
 ## [0.10.0] — 2026-11-02
