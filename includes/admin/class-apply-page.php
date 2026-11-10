@@ -69,6 +69,67 @@ final class ApplyPage {
                 2
             );
         }
+
+        add_action('admin_enqueue_scripts', [self::class, 'enqueue_dismiss']);
+    }
+
+    /**
+     * Dismiss control for the result cards.
+     *
+     * Wireframe keeps one result slot PER BUTTON and only that button's next
+     * run replaces it, so a Preview card outlives an Apply and the first
+     * batch's card outlives every Continue. Until Wireframe offers a shared
+     * result region, the author closes a stale card by hand. The close button
+     * is part of the card's own markup; a script cannot ride in `html`, so the
+     * click is delegated from the document (the `.mc-token` pattern in
+     * `WireframeBootstrap::enqueue_token_copy()`). The class lands on markup
+     * inside the card, never on a node React owns, and a re-run replaces that
+     * markup, so the new card shows again. `:has()` hides Wireframe's bordered
+     * wrapper along with it.
+     *
+     * @param string $hook Admin page hook suffix.
+     */
+    public static function enqueue_dismiss(string $hook): void {
+        // The prefix before `_page_` is the sanitized, translatable title of the
+        // parent menu, so match only the slug-derived tail.
+        if (!str_ends_with($hook, '_page_' . ConfigHelpers::APPLY_PAGE_SLUG)) {
+            return;
+        }
+
+        wp_register_style('bws-mc-apply-dismiss', false, [], META_CONDUCTOR_VERSION);
+        wp_enqueue_style('bws-mc-apply-dismiss');
+        wp_add_inline_style(
+            'bws-mc-apply-dismiss',
+            '.mc-card{position:relative}'
+            . '.mc-dismiss{position:absolute;top:-4px;right:0;border:0;background:none;font-size:20px;line-height:1;cursor:pointer;color:#50575e}'
+            . '.mc-dismiss:hover{color:#d63638}'
+            . '.wireframe-action__result:has(.mc-dismissed){display:none}'
+        );
+
+        wp_register_script('bws-mc-apply-dismiss', false, [], META_CONDUCTOR_VERSION, true);
+        wp_enqueue_script('bws-mc-apply-dismiss');
+        wp_add_inline_script('bws-mc-apply-dismiss', <<<'JS'
+document.addEventListener('click', function (e) {
+    var btn = e.target.closest && e.target.closest('.mc-dismiss');
+    var card = btn && btn.closest('.mc-card');
+    if (card) { card.classList.add('mc-dismissed'); }
+});
+JS);
+    }
+
+    /**
+     * Wrap a rendered result in a card with a close button.
+     *
+     * @param array $result `{status, message, html}`; an empty `html` (Start over) stays empty.
+     * @return array
+     */
+    private static function dismissible(array $result): array {
+        if ($result['html'] !== '') {
+            $result['html'] = '<div class="mc-card"><button type="button" class="mc-dismiss" aria-label="'
+                . esc_attr__('Dismiss', 'meta-conductor') . '">&times;</button>' . $result['html'] . '</div>';
+        }
+
+        return $result;
     }
 
     /**
@@ -236,7 +297,7 @@ final class ApplyPage {
         switch ($button) {
             case 'preview':
                 $result = ExistingPostsApplier::preview($value);
-                return $result['status'] === 'success' ? self::render_preview($result) : self::render_error($result);
+                return self::dismissible($result['status'] === 'success' ? self::render_preview($result) : self::render_error($result));
 
             case 'continue':
                 if (!ExistingPostsApplier::in_progress($value)) {
@@ -245,8 +306,14 @@ final class ApplyPage {
                 // A run keeps its own limit; the one posted is ignored.
                 // Fall through.
             case 'apply':
+                // Apply past its confirm would only resume the stored run, which
+                // is Continue with a dialog in front. Say so instead.
+                if ($button === 'apply' && ExistingPostsApplier::in_progress($value)) {
+                    $message = __('A run of this choice is in progress. Press Continue for the next batch, or Start over to restart it.', 'meta-conductor');
+                    return self::dismissible(['status' => 'info', 'message' => $message, 'html' => '<p>' . esc_html($message) . '</p>']);
+                }
                 $result = ExistingPostsApplier::run_batch($value, max(0, (int) ($values['limit'] ?? 0)));
-                return $result['status'] === 'success' ? self::render_batch($result) : self::render_error($result);
+                return self::dismissible($result['status'] === 'success' ? self::render_batch($result) : self::render_error($result));
 
             case 'start_over':
                 ExistingPostsApplier::start_over($value);
