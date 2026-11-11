@@ -257,14 +257,6 @@ Separate `title_slug_rules` into a title type and a slug type in `format_rules`,
   - **Order.** The slug row must follow its title row, which is a consumer-before-producer case for FW-47.
 - **Blocked by:** — • **Interacts with:** FW-13, FW-36, FW-47, FW-51
 
-#### FW-56 — Multiple taxonomies per rule
-
-A rule names one taxonomy, so applying the same rule across several means keeping one near-identical row per taxonomy. Let a row name a list and expand it at read time into one scalar row per taxonomy, so no handler ever sees an array.
-
-- **Detail home:** [architecture.md → A row names several taxonomies](architecture.md#a-row-names-several-taxonomies-fw-56). It began as a bullet under FW-10.
-- **Progress:** Built on `feature/multi-taxonomy-rules`; see CHANGELOG *Added*. The case was authoring, not speed: rules duplicated per taxonomy already share the tier-3 reverse-lookup scan (`find_holders_referencing` memoizes per request on `related_id:holder_type:field_name`), so this row makes no performance claim.
-- **Blocked by:** — • **Interacts with:** FW-10, FW-57, FW-59
-
 ---
 
 ## Correctness, Consistency, Architecture
@@ -607,6 +599,7 @@ Shipped or cut items retire here, densely — a closed item is read in bulk and 
 | FW-48 | Retire this repo's ADRs into the architecture anchors | **Merged in [#82](https://github.com/davidofchatham/meta-conductor/pull/82)** (2026-11-02). Each ADR's decision and rejected alternatives moved to the anchor that owns the code fact: [architecture.md](architecture.md) invariants 17–19, *The ordered rule repeaters* and *Effect-kind rule lists*, the [CONTEXT.md](../CONTEXT.md) *Claim* and *Jurisdiction* entries, and the FW-3 row. `docs/adr/` is now a redirect map with the bar for any future ADR; live citations were repointed to the anchors. |
 | FW-51 | Flat URLs for hierarchical post types, and a general slug disambiguation ladder | **Merged in [#81](https://github.com/davidofchatham/meta-conductor/pull/81)** (2026-11-02). Collision avoidance on the title/slug rule is an ordered ladder of rung tokens (`slug_escalation` + `escalation_placement`, replacing `date_escalation` and `date_field`) walked by the pure `SlugLadder`, with `{mod_*}` and `{parent:slug}` tokens added to the engine; a one-shot upgrade rewrites stored rows. A `flat_urls` option serves a hierarchical type's posts at `/base/child/` through a `request` filter and `post_type_link`, makes `post_name` unique per type with reserved names numbered, 301s the nested form only when its ancestor chain matches, and raises an advisory notice for existing duplicate names. Read-time hooks are a descriptor fact (`runtime_hooks()`, [architecture.md invariant 20](architecture.md)). Spec and decision record: [design-history/flat-urls-slug-ladder.md](design-history/flat-urls-slug-ladder.md). Left out, additive if wanted: a slot token and a "don't splice dates" toggle for mid-slug placement; a whole-chain `{ancestors:slug}` token for types deeper than one level; slug-rename redirects on hierarchical types stay FW-36. The title/slug split is FW-52. |
 | FW-53 | `user_based_rules` edit-scope: edit only posts holding your terms | **Retired 2026-11-03, superseded by [FW-55](#fw-55--user_based_rules-term-granted-edit-access).** Deny-only scoping needed an Editor role to reach other people's posts, which left untagged posts, other post types and the rest of the role open; the strict variant locked users out of their legacy untagged posts. FW-55 grants access instead of restricting it. |
+| FW-56 | Multiple taxonomies per rule | **Merged in [#86](https://github.com/davidofchatham/meta-conductor/pull/86)** (2026-11-11). A row of a type that reads the shared `taxonomy` field may name a list; `project_kind_rules()` expands it to one scalar row per taxonomy on read, so no handler sees an array ([architecture.md → A row names several taxonomies](architecture.md#a-row-names-several-taxonomies-fw-56)). The Apply page offers one entry per stored row, and a stored scalar is rewritten as a one-element list on admin load because the multi-select would otherwise blank it on the next save. FW-57 inherits the stored-row choice; FW-59 still owns exact-duplicate detection. |
 
 ---
 
