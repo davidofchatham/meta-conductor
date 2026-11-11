@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
 
 /**
  * Named after the storage key `field_transformation_rules`, not a domain name —
- * FW-14 renames `label()` only. The editor calls it a Computed field.
+ * FW-14 renamed `label()` only; FW-63 renames the id and the class. The label reads "Set a field from a pattern"; the editor used to call it a Computed field.
  */
 final class FieldTransformationRules extends RuleType {
 
@@ -32,7 +32,7 @@ final class FieldTransformationRules extends RuleType {
     }
 
     public function label(): string {
-        return __('Computed field — store a pattern\'s output in an ACF field', 'meta-conductor');
+        return __('Set a field from a pattern', 'meta-conductor');
     }
 
     public function handler_class(): string {

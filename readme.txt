@@ -39,11 +39,13 @@ Rules are authored as two ordered lists — one for rules that write terms, one 
 
 = Unreleased =
 
-**New: *Term count limit* rule.** It caps how many terms a post may hold in a taxonomy, on flat and hierarchical taxonomies alike. Where a post is over the cap, the terms you just added are kept first, then the deepest terms, then the lowest term ID.
+**Rule types have new names in the *Rule type* dropdown.** *Hierarchy* is now *Set terms from the term hierarchy*, *Related term* is *Set terms from a trigger term*, *Date window* is *Set terms from a date window*, *Term count limit* is *Restrict how many terms a post holds*, *Level restriction* is *Restrict terms by tree level*, *Title & slug pattern* is *Set title and slug from a pattern*, and *Computed field* is *Set a field from a pattern*. Only the names changed; your rules behave exactly as before.
 
-**Level restriction no longer has *One term per level*.** It offers *Deepest only* and *Shallowest only*; use a Term count limit rule for the old behavior. A stored row still holding the removed mode runs as *Deepest only*, so check any such rule. The old mode kept the alphabetically last term at a level; Term count limit keeps the deepest, then the lowest term ID.
+**New: *Restrict how many terms a post holds* rule.** It caps how many terms a post may hold in a taxonomy, on flat and hierarchical taxonomies alike. Where a post is over the cap, the terms you just added are kept first, then the deepest terms, then the lowest term ID.
 
-**One rule can name several taxonomies.** On Term count limit, Propagation, Hierarchy inheritance, Level restriction and Related post terms, *Taxonomies* is now a multi-select, and a row naming several behaves as if it were repeated once per taxonomy. Your existing rules are unchanged: the first admin load of the rules tab rewrites each stored single taxonomy as a one-element list. An Apply to Existing Posts run in progress on one of these rules starts over once.
+**Restrict terms by tree level no longer has *One term per level*.** It offers *Deepest only* and *Shallowest only*; use a Restrict how many terms a post holds rule for the old behavior. A stored row still holding the removed mode runs as *Deepest only*, so check any such rule. The old mode kept the alphabetically last term at a level; the count rule keeps the deepest, then the lowest term ID.
+
+**One rule can name several taxonomies.** On Restrict how many terms a post holds, Propagation, Set terms from the term hierarchy, Restrict terms by tree level and Related post terms, *Taxonomies* is now a multi-select, and a row naming several behaves as if it were repeated once per taxonomy. Your existing rules are unchanged: the first admin load of the rules tab rewrites each stored single taxonomy as a one-element list. An Apply to Existing Posts run in progress on one of these rules starts over once.
 
 = 0.10.0 =
 

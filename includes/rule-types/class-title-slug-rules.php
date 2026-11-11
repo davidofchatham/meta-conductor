@@ -17,8 +17,8 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Named after the storage key `title_slug_rules`, not a domain name — FW-14 renames
- * `label()` only.
+ * Named after the storage key `title_slug_rules`, not a domain name — FW-14 renamed `label()` only;
+ * FW-63 renames the id and the class.
  */
 final class TitleSlugRules extends RuleType {
 
@@ -31,7 +31,7 @@ final class TitleSlugRules extends RuleType {
     }
 
     public function label(): string {
-        return __('Title & slug pattern — build the title and slug from tokens', 'meta-conductor');
+        return __('Set title and slug from a pattern', 'meta-conductor');
     }
 
     public function handler_class(): string {

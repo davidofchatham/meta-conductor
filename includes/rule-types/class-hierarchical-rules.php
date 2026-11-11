@@ -16,8 +16,8 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Named after the storage key `hierarchical_rules`, not a domain name — FW-14 renames
- * `label()` only.
+ * Named after the storage key `hierarchical_rules`, not a domain name — FW-14 renamed `label()` only;
+ * FW-63 renames the id and the class.
  */
 final class HierarchicalRules extends RuleType {
 
@@ -30,7 +30,7 @@ final class HierarchicalRules extends RuleType {
     }
 
     public function label(): string {
-        return __('Hierarchy — inherit terms up or down the taxonomy tree', 'meta-conductor');
+        return __('Set terms from the term hierarchy', 'meta-conductor');
     }
 
     public function handler_class(): string {
@@ -82,7 +82,7 @@ final class HierarchicalRules extends RuleType {
     }
 
     /**
-     * Hierarchy — inherit terms up or down a hierarchical taxonomy tree.
+     * Set terms from the term hierarchy — inherit terms up or down a hierarchical taxonomy tree.
      *
      * ### #16, settled here
      *

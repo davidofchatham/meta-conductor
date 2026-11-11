@@ -260,7 +260,7 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
     they are guarded by source inspection: `tests/verify-acf-write-queue.php`
     (H8), the same way and for the same reason as the AC gate guard.
 
-15. **Every END of a relationship that can drop a link needs its own capture
+15. **Every END of a relationship that can drop a relationship needs its own capture
     shape.** Direction of the RULE and direction of the EDIT are independent, so
     a push rule edited at the dependent end is a different code path from a push
     rule edited at the holder end — and from either end of a pull rule. Enumerate
@@ -404,15 +404,15 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
     removed.
 
     The corollary is that a **captured sever must be recorded against the rule
-    whose link was cut**, not against the taxonomy. That record is the one thing
+    whose relationship was cut**, not against the taxonomy. That record is the one thing
     permitted to bypass the zero-source gate (invariant #2) — the one thing that
     lets a rule empty a post it resolves no source for — and while a single
     cross-rule write could afford a taxonomy key (it summed `source_count` over
-    every rule before writing anything), a per-row applier cannot: a link cut
+    every rule before writing anything), a per-row applier cannot: a relationship cut
     under one row would license an unrelated row to empty-replace the taxonomy
     over what an earlier row had just legitimately written.
 
-    **A capture can name an entity no fan-out can reach, and needs its own way into the queue (#63).** A fan-out is asked while passing over a post and names entities reachable *from* it. A sever capture exists precisely because the link that made the far entity reachable is what the write destroyed — or because the post holding it was deleted — so there is nothing left to declare from. The handler therefore hands those entities over through `UnifiedHandlerBase::drain_captures()`, which `TermDispatcher::drain()` asks once per drain, before the loop, of every handler whose descriptor `drains_captures()`. That flag is declared, not inferred from `capture_hooks()`: propagation's capture is consumed by an applier the queue was going to run anyway, so having no override is correct there and a silent dead end for a sever. H13 holds the flag and the override in step. Asked rather than pushed: a capture callback that marked dirty itself would be reaching into the dispatcher, and "a capture records and applies nothing" would stop being a property H13 can read off the callback body. Consuming rather than repeating: a handler that returned the same IDs on every call would refill the queue faster than the drain empties it. The visible payoff is that a bare `update_field()` sever — no `save_post`, no `acf/save_post` — now reconciles, which was a documented dead end before (invariant #15's note, fixture matrix §4).
+    **A capture can name an entity no fan-out can reach, and needs its own way into the queue (#63).** A fan-out is asked while passing over a post and names entities reachable *from* it. A sever capture exists precisely because the relationship that made the far entity reachable is what the write destroyed — or because the post holding it was deleted — so there is nothing left to declare from. The handler therefore hands those entities over through `UnifiedHandlerBase::drain_captures()`, which `TermDispatcher::drain()` asks once per drain, before the loop, of every handler whose descriptor `drains_captures()`. That flag is declared, not inferred from `capture_hooks()`: propagation's capture is consumed by an applier the queue was going to run anyway, so having no override is correct there and a silent dead end for a sever. H13 holds the flag and the override in step. Asked rather than pushed: a capture callback that marked dirty itself would be reaching into the dispatcher, and "a capture records and applies nothing" would stop being a property H13 can read off the callback body. Consuming rather than repeating: a handler that returned the same IDs on every call would refill the queue faster than the drain empties it. The visible payoff is that a bare `update_field()` sever — no `save_post`, no `acf/save_post` — now reconciles, which was a documented dead end before (invariant #15's note, fixture matrix §4).
 
     **The one thing live state cannot answer is a removal, and that is what a
     capture hook is for.** A term the parent HELD and then lost is, on the
@@ -494,7 +494,7 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
       `post_title`. The idempotency meta is now written from the *resolved base*
       rather than the submitted title, which is what makes a re-pass over an
       unchanged post record the same pair back instead of compounding.
-    - **Rejected: partitioning by page or kind so that order never matters.** The claim that effect kind partitions cleanly ("nothing in the term group reads a title, so title/slug is a terminal sink") is false in both directions. `title_slug` reads terms and meta; the Computed field rule reads terms through the same token engine; `user_based` WRITES terms (a *deferring* claim for the preset, *owning* for the lock); a planned `acf_relationship_rules` would write `post_parent`, which propagation reads, and planned status mirroring `post_status`, which several rules use as a filter gate. These are **producer→consumer** edges — asymmetric, derivable — as against invariant 19's **collision** edges, which are symmetric and need an author. Collisions need the same effect target, hence the same kind; producer→consumer edges cross kinds. That is why order is authored within a kind and derived between kinds, and why a page boundary carries no semantics.
+    - **Rejected: partitioning by page or kind so that order never matters.** The claim that effect kind partitions cleanly ("nothing in the term group reads a title, so title/slug is a terminal sink") is false in both directions. `title_slug` reads terms and meta; the Set a field from a pattern rule reads terms through the same token engine; `user_based` WRITES terms (a *deferring* claim for the preset, *owning* for the lock); a planned `acf_relationship_rules` would write `post_parent`, which propagation reads, and planned status mirroring `post_status`, which several rules use as a filter gate. These are **producer→consumer** edges — asymmetric, derivable — as against invariant 19's **collision** edges, which are symmetric and need an author. Collisions need the same effect target, hence the same kind; producer→consumer edges cross kinds. That is why order is authored within a kind and derived between kinds, and why a page boundary carries no semantics.
     - **The kind graph must stay acyclic.** It is today. A rule that set terms *from* a title would close a cycle no ordering resolves; that must be a hard warning, not a silent pick.
 
 19. **A collision is DETECTED and named, never resolved (#65).** Two rules contend
@@ -520,7 +520,7 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
       often gets ignored, which is worse than none.
     - **The post types are the ones a rule WRITES.** Two rule types do not
       answer that with `post_types`: title & slug names one in a scalar
-      `post_type` (and the Computed field rule a `post_types` list of its own),
+      `post_type` (and the Set a field from a pattern rule a `post_types` list of its own),
       and the ACF-reference rule has no `post_types` subfield (#58) and writes
       its *dependent* end — unconstrained under `holder_role=source`, exactly as
       `dependent_post_type()` reports it. Empty means every post type, so the
@@ -590,7 +590,7 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
     - *Partitioning rules so ordering never matters*, inside the term group.
       Taxonomy fails as a key because term-pairing is cross-taxonomy by
       construction (`trigger_taxonomy` and `target_term_id` are independent). Post
-      type fails because relation-basis rules write OTHER entities.
+      type fails because relationship-basis rules write OTHER entities.
 
     H14 (`tests/verify-collision-detector.php`) pins the predicate in both
     directions, opening with a partition check that every rule type storage
@@ -730,7 +730,7 @@ Invariants asserted by H10 (`tests/verify-kind-lists.php`):
 
 ### Field effects ride the `$data` seam
 
-**The format pass stays post-write only; a Computed field rule (`field_transformation_rules`) returns its value in the seam's data array and the dispatcher writes it.** The array gains two maps: `fields[<name>]`, the computed value keyed by the field's **name** (tokens name fields by name), and `field_keys[<name>]`, the ACF **field key** the rule stores and the value is written by. `FormatDispatcher::write()` persists the difference through `update_field($key, …)` *before* the single row update, so the field's hidden reference row is maintained and neither `acf/save_post` nor `save_post` fires. A value equal to what the field holds is not written, and an all-empty result writes `''`. A **row rule** (a repeater subfield across every row) adds a third map, `rows[<repeater key>][<1-based row>][<subfield key>] = {name, meta, label, value}`, written through `update_sub_field([repeater key, row, subfield key], …)` under the same rules (slashed, unchanged cells skipped, write queue stood down); each row's tokens come from `RowTokenSource` — `field()` is that row's direct scalar siblings only, `terms()`/`published()` are the post's. The handler registers nothing and writes nothing — H13 holds its `apply_to_data()` to no write primitive (`update_field` included) and `write_fields()` to a by-key write.
+**The format pass stays post-write only; a Set a field from a pattern rule (`field_transformation_rules`) returns its value in the seam's data array and the dispatcher writes it.** The array gains two maps: `fields[<name>]`, the computed value keyed by the field's **name** (tokens name fields by name), and `field_keys[<name>]`, the ACF **field key** the rule stores and the value is written by. `FormatDispatcher::write()` persists the difference through `update_field($key, …)` *before* the single row update, so the field's hidden reference row is maintained and neither `acf/save_post` nor `save_post` fires. A value equal to what the field holds is not written, and an all-empty result writes `''`. A **row rule** (a repeater subfield across every row) adds a third map, `rows[<repeater key>][<1-based row>][<subfield key>] = {name, meta, label, value}`, written through `update_sub_field([repeater key, row, subfield key], …)` under the same rules (slashed, unchanged cells skipped, write queue stood down); each row's tokens come from `RowTokenSource` — `field()` is that row's direct scalar siblings only, `terms()`/`published()` are the post's. The handler registers nothing and writes nothing — H13 holds its `apply_to_data()` to no write primitive (`update_field` included) and `write_fields()` to a by-key write.
 
 - **Slash the value.** `update_field()` unslashes on the way to `update_metadata()`, so an unslashed `a` stores as `ab`; the dispatcher passes `wp_slash()`ed values, as it does for the row update.
 - **The ACF write queue is stood down for the write** (`meta_conductor_acf_reapply_enabled` returns false inside `write_fields()`). Otherwise the pass's own `update_field()` would record the post and queue a second, idempotent pass at shutdown.

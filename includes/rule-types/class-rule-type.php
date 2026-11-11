@@ -23,7 +23,8 @@ if (!defined('ABSPATH')) {
  * Subclasses are named after the STORAGE key (`TimeBasedRules` for
  * `time_based_rules`), not after the domain concept. The name is a mirror of
  * the key and must not be renamed on its own; renaming a rule type for
- * authors (FW-14) edits `label()` only.
+ * authors (FW-14) edits `label()` only, and the ids follow in FW-63. A label
+ * is the type's name and nothing else (CONTEXT.md → Rule type).
  */
 abstract class RuleType {
 

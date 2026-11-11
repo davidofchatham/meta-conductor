@@ -9,7 +9,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- **Term count limit rule.** A new term rule type, *Term count limit — cap how many terms a post may hold*, for "at most N terms in this taxonomy". It works on flat and hierarchical taxonomies.
+- **Term count limit rule.** A new term rule type, *Restrict how many terms a post holds* (named *Term count limit* while it was built), for "at most N terms in this taxonomy". It works on flat and hierarchical taxonomies.
   - Settings: a maximum (default 1) and *Apply the cap to each level* (default on), which counts each tree depth separately on a hierarchical taxonomy and makes no difference on a flat one. Post types and statuses scope it like every other rule. There is no *Keep ancestor terms* switch; a cap is a hard cap, so to keep ancestors place a hierarchy inheritance rule after it.
   - **Which terms survive an over-cap post:** the terms the editor just added in that save, where the plugin can tell; otherwise the deepest terms, then the lowest term ID. A term another rule adds earlier in the same pass does not count as the editor's edit. Nothing is stored to remember it, so bulk apply, the daily cron, a save that touched no terms and a field-only ACF write use the deepest-then-lowest-ID order, and a re-run never reshuffles survivors.
   - An ACF taxonomy field on the post is pruned first, then the native terms.
@@ -22,6 +22,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Rule types are renamed in the *Rule type* dropdown, and the explanation after the dash is gone.** Each name now reads *Verb effect from basis*: *Set* for a rule that writes a value, *Restrict* for one that only removes. No stored rule changes, and rules behave as before.
+  - *Hierarchy* → *Set terms from the term hierarchy*
+  - *Related term* → *Set terms from a trigger term*
+  - *Date window* → *Set terms from a date window*
+  - *Term count limit* → *Restrict how many terms a post holds*
+  - *Level restriction* → *Restrict terms by tree level*
+  - *Title & slug pattern* → *Set title and slug from a pattern*
+  - *Computed field* → *Set a field from a pattern*
+  - *From parent post* and *From referenced post (ACF)* keep their names until the two are merged.
 - **A stored single `taxonomy` is rewritten as a one-element list the first time the rules tab loads in the admin.** The new multi-select shows a stored single value as an empty selection and would drop it on the next save, so it is rewritten up front. Rules behave the same before and after; a rule set up from WP-CLI or a fixture with a single value still runs unchanged.
 - **An in-progress Apply run of a rule on one of those five types starts over once.** Its stored identity includes the row's taxonomy, which is now a list.
 - **Level restriction offers only *Deepest only* and *Shallowest only*.** *One term per level* moved to the new Term count limit rule, where it no longer sits under a depth rule or needs a hierarchical taxonomy. The *Keep ancestor terms* text and the row title drop their *one term per level* wording. The type is not known to be in use on any live site, so there is no migration; a stored row still holding the old mode runs as *Deepest only*, the same as a row with no mode.

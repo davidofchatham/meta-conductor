@@ -35,7 +35,7 @@ final class TermCountRules extends RuleType {
     }
 
     public function label(): string {
-        return __('Term count limit — cap how many terms a post may hold', 'meta-conductor');
+        return __('Restrict how many terms a post holds', 'meta-conductor');
     }
 
     public function handler_class(): string {

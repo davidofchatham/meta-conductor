@@ -16,8 +16,8 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Named after the storage key `hierarchical_level_restriction_rules`, not a domain name — FW-14 renames
- * `label()` only.
+ * Named after the storage key `hierarchical_level_restriction_rules`, not a domain name — FW-14 renamed `label()` only;
+ * FW-63 renames the id and the class.
  */
 final class HierarchicalLevelRestrictionRules extends RuleType {
 
@@ -30,7 +30,7 @@ final class HierarchicalLevelRestrictionRules extends RuleType {
     }
 
     public function label(): string {
-        return __('Level restriction — limit which tree depths may hold terms', 'meta-conductor');
+        return __('Restrict terms by tree level', 'meta-conductor');
     }
 
     public function handler_class(): string {
@@ -85,7 +85,7 @@ final class HierarchicalLevelRestrictionRules extends RuleType {
     }
 
     /**
-     * Level restriction — limit which tree depths may hold terms.
+     * Restrict terms by tree level — limit which tree depths may hold terms.
      *
      * Two modes, both about depth: keep the terms at the deepest level the post
      * uses, or at the shallowest. Capping HOW MANY terms a post holds is the

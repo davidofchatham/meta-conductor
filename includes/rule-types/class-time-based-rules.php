@@ -17,8 +17,8 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Named after the storage key `time_based_rules`, not a domain name — FW-14 renames
- * `label()` only.
+ * Named after the storage key `time_based_rules`, not a domain name — FW-14 renamed `label()` only;
+ * FW-63 renames the id and the class.
  */
 final class TimeBasedRules extends RuleType {
 
@@ -31,7 +31,7 @@ final class TimeBasedRules extends RuleType {
     }
 
     public function label(): string {
-        return __('Date window — apply a term while a date range is current', 'meta-conductor');
+        return __('Set terms from a date window', 'meta-conductor');
     }
 
     public function handler_class(): string {
@@ -117,7 +117,7 @@ final class TimeBasedRules extends RuleType {
     }
 
     /**
-     * Date window — apply a term while the current date is inside a range.
+     * Set terms from a date window — apply a term while the current date is inside a range.
      *
      * @return array[]
      */
