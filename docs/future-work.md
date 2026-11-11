@@ -64,17 +64,8 @@ Set a post's `post_parent` from a populated ACF relationship or post-object fiel
 - **Detail home:** none yet. Source reference: `plugins-to-integrate/acf-post-relationship-manager/` (deleted; reference the prior commit).
 - **Progress:** Not started. Storage decided: Options.
 - **Open:** circular-reference prevention, and how multi-post-type configs behave.
-- **Blocked by:** — • **Interacts with:** FW-2
+- **Blocked by:** — • **Interacts with:** FW-61
 - **Phase:** 6a
-
-#### FW-2 — Cross-type parent/child propagation
-
-Let propagation cascade terms down a `post_parent` hierarchy whose parent and child are *different* post types — e.g. an `event` parent propagating to `session` children. Today parent and child are always the same type, because WP's editor parent dropdown is type-scoped, so the propagation handler's two post-type gates always agree and the distinction is moot.
-
-- **Detail home:** none. The review note in `inherit_terms_from_parent` carries the open gate question.
-- **Progress:** Not started. Identified during the Phase 3 propagation review, 2026-07-01.
-- **Open:** the blocker is **UI, not logic** — the handler could support it trivially, but editors have no native way to *create* a cross-type `post_parent`. Two paths: (1) if only the TERMS need to cross types, `related_post_terms_rules` already does that over an ACF relationship field and may cover the real need without touching propagation; (2) FW-1 sets `post_parent` from an ACF field, which IS cross-type-capable and gives editors a UI — compose it with propagation and the cascade falls out. If pursued, two decisions: settle what `post_types` means for propagation (recommendation: scope the TARGET/child — "which posts receive terms" — and gate the parent only on "is a valid source", i.e. has terms), and rework `get_all_child_posts`, which today queries children BY the rule's `post_types`, so it can walk cross-type children.
-- **Blocked by:** `code:editors cannot set a cross-type post_parent` — cleared by FW-1 • **Interacts with:** FW-1
 
 #### FW-3 — `time_based_rules`: Temporal State Rule
 
@@ -88,15 +79,51 @@ Evolve the binary Date Window rule (in-window → apply, out → remove, fixed d
 - **Blocked by:** — • **Interacts with:** FW-25
 - **Phase:** targeting the 0.x line, before 1.0.0
 
-#### FW-5 — `relationship_field_rules`: Set a field across a relationship
+#### FW-5 — Field across a link: copy a field value from a linked post
 
-`related_post_terms_rules` already copies *terms* across an ACF relationship; the same edge should carry a *field value* — an event's venue post supplying its address into each session, or a team post pushing a season label onto every player. Same holder/direction model (the ACF field pins the holder post type, `holder_role` says which end is authoritative), with the effect swapped from terms to a target meta/ACF key.
+Copy a field value across a link, the way FW-61's merged rule copies terms: an event's venue post supplying its address into each session, a team post pushing a season label onto every player, a parent page handing a field down to its children. Working title only; FW-14 mints the name and storage key.
 
-- **Axes:** basis **relation** (authored — an ACF relationship / post-object field), effect target **field** (scalar), claim TBD.
-- **Detail home:** none. Raised 2026-08-12 in the cross-rule composition session.
-- **Progress:** Not started. Most of the traversal, direction and reverse-lookup machinery already exists in `related_post_terms_rules`; the field write path now exists (built for FW-4: `FormatDispatcher::write_fields()`), so the net-new work is the relationship traversal into it and deciding the claim.
-- **Open:** ⚠️ **Scalar effect target** — a scalar's **jurisdiction** is its single slot, so any two rules writing it share the whole of it and **always** collide. Unlike terms there is no contributing option: the claim is *owning* or nothing. Storage TBD — likely a `type` within `format_rules` alongside FW-4, since both write fields. **Split the relationship graph out first:** holder/direction/dependents/sources/reverse-lookup tiers and their memos move out of `RelatedPostTermsHandler` into a per-rule graph module that both the terms effect and this field effect read, and that `CollisionDetector` and `RuleChoice` stop re-deriving direction from. FW-11's reverse index would live behind it. The sever capture bookkeeping stays with each effect but needs the graph to diff old and new links. Premature while terms are the only effect (candidate 5 of the 2026-09-24 architecture review; see [design-history/rule-type-descriptor.md](design-history/rule-type-descriptor.md) → *Out of Scope*).
-- **Blocked by:** — (`code:no field write path exists` cleared 2026-10-16: `FormatDispatcher::write_fields()` writes ACF fields and repeater subfields by key, built for FW-4) • **Interacts with:** FW-4, FW-7, FW-11, FW-46
+- **Axes:** basis **relation** — a `post_parent` link (parent → child only) or an ACF relationship / post-object field — effect target **field** (scalar), claim **author's choice**.
+- **Detail home:** none yet; this row carries the design settled in the 2026-11-11 grilling session. Raised 2026-08-12 in the cross-rule composition session.
+- **Progress:** Not started. Design settled 2026-11-11. The field write path exists (`FormatDispatcher::write_fields()`, built for FW-4); the link module comes from FW-61.
+- **Design:**
+  - **Storage and kind.** A `type` within `format_rules`, ordered by the author among title/slug and Computed field rules. It gets *Apply to Existing Posts* through `ExistingPostsApplier` (`drain_post()` + `drain()`), not a bulk loop of its own.
+  - **Links.** The parent link is always offered. The ACF link is offered only while ACF is active and keeps `related_post_terms`' holder/direction model (`holder_role`, push/pull, reverse-lookup tiers) through FW-61's shared module. A stored ACF-link row survives ACF being off: it runs nothing and shows a "requires ACF" notice. The `link` control keeps both options stored and only labels the unavailable one, since a vanishing option drops the stored value on save (don't #3).
+  - **Source and target.** One field, or (ACF only) one whole field group. A field is an ACF field picked by key or a plain meta key. A meta name matching an ACF field still routes through ACF's write; a `_`-prefixed key is refused. This is FW-46's acceptance bar, built once as a shared write helper both types use. The target defaults to *Same*: the same ACF key, offered only when its group's location rules show it on the receiving post type, or the same meta key. Otherwise the author picks a target, and an ACF target must be the same field type as its source.
+  - **Value.** Copied raw (unformatted `get_field` → `update_field`, or meta to meta), so arrays, post IDs and images survive. A repeater, group or flexible-content field moves as one value.
+  - **Group mode.** Every top-level field of the group is copied into the same group on the receiving post; there is no cross-group mapping, since pairing by name is guesswork. Members are read live at pass time (`acf_get_fields()`), so a field added later joins without a rule re-save.
+  - **Several sources.** A parent link has one. On an ACF link the first linked post holding a value wins, in the field's own order; the config says only one source counts.
+  - **Claim, per field.** *Owning*: the target equals the source, including empty, so a root post (`post_parent` 0) or an empty link clears it. *Contributing* (the default): the source value is written when there is one and never cleared. *Deferring*: only an empty target is filled. In group mode each member field is its own slot.
+  - **Link changes.** The receiving post recomputes from stored state, and the claim decides what an old value does. A dependent dropped from a holder's push link reaches the queue through the sever capture FW-61 moves into the shared module.
+  - **Fan-out.** The format pass gains `fan_out()` after each rule, as the term pass has, so a source edit queues its receivers, and their own passes reach grandchildren. It declares far entities and never writes them. Invariant 18's "the format dispatcher owns no trigger" is amended to say so, and H13 pins it.
+  - **Collisions.** A scalar target always collides with any other rule writing it over overlapping post types: Computed field, another field copy, or any member of a group copy. `CollisionDetector` warns per field name and does not block; list order decides. A deferring rule contends at lower severity, as on the term side.
+- **Open:** repeater-subfield *targets* (writing one subfield across a repeater's rows, as FW-4 can) are undecided for v1.
+- **Blocked by:** `row:FW-61` — the shared link module and the merged term rule land first • **Interacts with:** FW-4, FW-7, FW-11, FW-14, FW-46, FW-62
+
+#### FW-61 — Terms across a link: merge propagation and Related Post Terms
+
+Merge `propagation_rules` ("From parent post — cascade terms to children") and `related_post_terms_rules` ("From referenced post (ACF) — copy terms across a relationship field") into one term rule with a **link type** option: `parent` or `acf`. In both, a post takes terms from a linked post; only the link differs. Working title only; FW-14 mints the name and storage key.
+
+- **Axes:** basis **relation** (`post_parent`, or an ACF relationship / post-object field), effect target **terms**, claim as today (`conflict_handling`).
+- **Detail home:** none yet; this row carries the design settled in the 2026-11-11 grilling session.
+- **Progress:** Not started. Design settled 2026-11-11.
+- **Design:**
+  - **Link module.** The relationship graph (holder, direction, dependents, sources, the reverse-lookup tiers and their memos) and the sever capture move out of `RelatedPostTermsHandler` into a per-rule link module with a `parent` and an `acf` implementation. `CollisionDetector` and `RuleChoice` read direction from it instead of re-deriving it. FW-11's reverse index would live behind it, and FW-5's field effect reads it too.
+  - **ACF optional.** The parent link always works, as propagation does today on a site without ACF. The ACF link is offered only while ACF is active; a stored ACF-link row survives ACF being off, as in FW-5.
+  - **`post_types` scopes the receiving post.** A parent is gated only on being a valid source, not on the rule's `post_types`. That gives one meaning for both links: on an ACF link the source type is already pinned by the field's holder. Behavior is unchanged for stock WP, where parent and child always share a type, and it tolerates a cross-type parent if FW-1 creates one (FW-2, retired, is where that came from).
+  - **Migration (both types are live).** A version-gated upgrade routine in `meta-conductor.php` rewrites each stored row in place: propagation → merged type with `link`=`parent`, keeping `conflict_handling`; `related_post_terms` → merged type with `link`=`acf`, keeping every other key, including the field reference stored whole. No read-time fallback for the old type strings (don't #6). A testbed sweep runs before and after, plus a check on the Site H clone.
+- **Blocked by:** — • **Interacts with:** FW-1, FW-5, FW-11, FW-14, FW-19, FW-62
+- **Phase:** after FW-14, so the merged type is named once
+
+#### FW-62 — Cross-post tokens for pattern rules
+
+Tokens that read another post's field through a link, such as `{parent:meta:address}` and `{related:<acf_field>:meta:season}`, so a Computed field or title/slug pattern can compose from a linked post. The receiving post pulls the value; it is rendered through `Tokens\TokenEngine` like any token, so only scalars are useful. FW-5 is the rule for raw copies.
+
+- **Axes:** as the host rule (FW-4, title/slug); basis widens to **relation**.
+- **Detail home:** none. Split out of FW-5 in the 2026-11-11 grilling session.
+- **Progress:** Not started. `{parent:slug}` already exists (FW-51) and is the precedent.
+- **Open:** resolve through FW-61's link module (parent, ACF holder/direction), so a source edit reaches its receivers through the format-pass `fan_out()` FW-5 adds. New token kinds land in `Tokens\` and add H17 golden rows deliberately. Several linked sources need a rule: the first like FW-5, or a join.
+- **Blocked by:** `row:FW-61` • **Interacts with:** FW-4, FW-5, FW-49
 
 #### FW-6 — `body_class_rules`: Document classes from terms/fields
 
@@ -232,7 +259,7 @@ Let a Computed field rule write a plain post meta key, not only an ACF field pic
 - **Axes:** as FW-4 — basis **intrinsic**, effect target **field** (scalar), claim *owning*.
 - **Detail home:** [design-history/field-transformation.md](design-history/field-transformation.md) → *Out of Scope*.
 - **Progress:** Not started. Left out of FW-4's v1 on purpose.
-- **Open:** the acceptance bar: a name that matches an ACF field still routes through ACF's write (so its field-key reference stays intact), and a `_`-prefixed key is refused, because those are core's and other plugins' private meta. Also whether the type stays hidden without ACF once it can work without it.
+- **Open:** the acceptance bar: a name that matches an ACF field still routes through ACF's write (so its field-key reference stays intact), and a `_`-prefixed key is refused, because those are core's and other plugins' private meta. Also whether the type stays hidden without ACF once it can work without it. FW-5 builds this bar into a shared write helper; whichever lands first builds it and the other reuses it.
 - **Blocked by:** — • **Interacts with:** FW-4, FW-5
 
 #### FW-49 — Value-filter and conditional tokens
@@ -278,7 +305,8 @@ Current rule-type names conflate **basis**, **effect target** and **claim** into
 
 - **Detail home:** none; this row carries it. Axis definitions: [CONTEXT.md](../CONTEXT.md).
 - **Progress:** Not started. Storage keys (`related_rules`, `time_based_rules`, …) are unaffected — this is domain and UI vocabulary only. Since FW-39, each rule type's descriptor `label()` is the single rename site; descriptor class names mirror the storage keys and do not change.
-- **Blocked by:** `code:the Effect axis carries only term values` — renaming before it carries field, title and body-class values means minting names twice • **Interacts with:** FW-4, FW-5, FW-6
+- **Blocked by:** — (`code:the Effect axis carries only term values` cleared 2026-11-11: FW-4 shipped field values, and title values already ran through format rules; body classes, FW-6, remain unbuilt but are a rendered sink and do not reshape the term or field names) • **Interacts with:** FW-4, FW-5, FW-6, FW-61
+- **Phase:** before FW-61, so the merged term type and FW-5's field type are named once
 
 #### FW-24 — Claim option propagation
 
@@ -588,6 +616,7 @@ Shipped or cut items retire here, densely — a closed item is read in bulk and 
 
 | Id | Item | Outcome |
 |---|---|---|
+| FW-2 | Cross-type parent/child propagation | **Retired 2026-11-11.** It fought WP's type-scoped parent UI, and nothing is left to build: FW-61's merged term rule gates a parent link only on the receiving post's type, so it already tolerates a cross-type parent if FW-1 ever creates one, and the "terms across types" case is the ACF link. |
 | FW-4 | `field_transformation_rules`: Computed Field Output | **Merged in [#80](https://github.com/davidofchatham/meta-conductor/pull/80)** (2026-10-22, Phase 6a). A *Computed field* row in `format_rules` writes a pattern into an ACF field by key — post-level, or one subfield across every row of a repeater from that row's siblings — through `FormatDispatcher::write_fields()` on the `$data` seam, with `text()` / `html()` output policies. It composes by list order with title/slug rules and joins the collision check, the preview and *Apply to Existing Posts*. No pre-write phase was reintroduced ([architecture.md → Field effects ride the `$data` seam](architecture.md#field-effects-ride-the-data-seam)). Spec: [design-history/field-transformation.md](design-history/field-transformation.md). Left out of v1: FW-46, FW-47, FW-49; format transforms stay in site PHP. |
 | FW-16 | Apply rules to existing posts | **Merged in [#75](https://github.com/davidofchatham/meta-conductor/pull/75)** (2026-09-24, Phase 7). Added the *Apply to Existing Posts* page: a bulk run is a full ordered pass over the chosen rule's reach, and a disabled rule can run once. Data Conversion and `includes/support/` were deleted. Spec: [design-history/apply-existing.md](design-history/apply-existing.md). Deferred parts are still open as FW-31 (in-row buttons), FW-32 (term dry run) and FW-33 (background runs); Copy / Map return as rule types through FW-4. |
 | FW-18 | Text-domain string sweep | **Shipped in 0.7.0** (Phase 2b rename sweep, [#48](https://github.com/davidofchatham/meta-conductor/pull/48)) — the row survived the 2026-09-11 migration describing work already done. Every `__()` / `_e()` / `_x()` / `_n()` call site now passes `'meta-conductor'`; `'bws-meta-manager'` survives only as the Composer package name in `vendor/`. The *conversion* subsystem's identifiers (JS object, cron / AJAX / transient names) were never part of this row — they were the 2b remainder, closed by deletion with the Data Conversion page in FW-16. |
