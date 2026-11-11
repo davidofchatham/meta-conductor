@@ -78,6 +78,19 @@ interface RuleStorage {
     public function get_kind_rules(string $kind, array $filters = []): array;
 
     /**
+     * Get one kind list as it is STORED: one row per stored row, in authored
+     * order, a multi-taxonomy row (FW-56) still whole — `taxonomy` its slug
+     * list. `get_kind_rules()` is this list with each such row expanded to one
+     * scalar row per taxonomy, which is what every runtime reader wants; this
+     * is for what names a stored row — the Apply page's choice.
+     *
+     * @since 0.11.0
+     * @param string $kind Kind list key (see get_kind_for_type()).
+     * @return array Canonical-shape rows in authored order; empty if the kind is unknown.
+     */
+    public function get_stored_kind_rules(string $kind): array;
+
+    /**
      * Get a single rule by type and ID
      *
      * @since 0.2.0

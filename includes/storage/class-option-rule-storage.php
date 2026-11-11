@@ -233,14 +233,37 @@ class OptionRuleStorage implements RuleStorage {
     }
 
     /**
+     * {@inheritDoc}
+     *
+     * @since 0.11.0
+     */
+    public function get_stored_kind_rules(string $kind): array {
+        if (Registry::of_kind($kind) === []) {
+            return [];
+        }
+
+        return self::project_kind_rules($this->get_all_settings()[$kind] ?? [], false);
+    }
+
+    /**
      * Read-time projection of a kind list: assign per-type `id`, then apply the
      * canonical-shape coercion. Pure — the harness runs it without WordPress.
      *
+     * FW-56: a row of a type that reads the shared `taxonomy` field may name a
+     * LIST of them. With `$expand` (every runtime reader) it becomes one scalar
+     * row per taxonomy, adjacent and in the list's order, so nothing downstream
+     * ever sees an array. The siblings share the stored row's `id` and fields
+     * and carry `stored_taxonomies` — the stored list — which is what lets
+     * `RuleChoice::fingerprint()` and `CollisionDetector` treat them as the one
+     * row they came from. Without `$expand` the row stays whole, `taxonomy`
+     * the list: the form's view, for a row title and the Apply page's choice.
+     *
      * @since 0.8.0
-     * @param array $rows Kind-list rows, each carrying `type`.
+     * @param array $rows   Kind-list rows, each carrying `type`.
+     * @param bool  $expand Split a taxonomy list into one row per taxonomy.
      * @return array
      */
-    public static function project_kind_rules(array $rows): array {
+    public static function project_kind_rules(array $rows, bool $expand = true): array {
         $counters = [];
         $out      = [];
 
@@ -259,10 +282,52 @@ class OptionRuleStorage implements RuleStorage {
                 $row['id'] = $index;
             }
 
-            $out[] = self::normalize_rule_shape($type, $row);
+            $row = self::normalize_rule_shape($type, $row);
+
+            // `taxonomy` is a list only where normalize_rule_shape() made it
+            // one; an absent key stays absent, like every other shared field.
+            if (!$expand || !is_array($row['taxonomy'] ?? null) || !self::reads_taxonomy_list($type)) {
+                $out[] = $row;
+                continue;
+            }
+
+            $row['stored_taxonomies'] = $row['taxonomy'];
+            foreach ($row['stored_taxonomies'] ?: [''] as $slug) {
+                // In place, so the key keeps its position: the fingerprint
+                // serializes the row and must match the unexpanded one.
+                $row['taxonomy'] = $slug;
+                $out[]           = $row;
+            }
         }
 
         return $out;
+    }
+
+    /**
+     * Whether a projected row is an expansion of a taxonomy list (FW-56) other
+     * than the first — a row that is not a place of its own in the stored list.
+     *
+     * @since 0.11.0
+     * @param mixed $row A projected kind-list row.
+     * @return bool
+     */
+    public static function is_expansion_sibling($row): bool {
+        return is_array($row)
+            && isset($row['stored_taxonomies'])
+            && ($row['taxonomy'] ?? '') !== ($row['stored_taxonomies'][0] ?? '');
+    }
+
+    /**
+     * Whether a row of this type reads the shared `taxonomy` field, and so may
+     * name a list of them. Derived from the descriptor's own declaration, so
+     * it can never disagree with which types the form shows the field to.
+     *
+     * @since 0.11.0
+     * @param string $type Rule type.
+     * @return bool
+     */
+    public static function reads_taxonomy_list(string $type): bool {
+        return in_array('taxonomy', Registry::get($type)?->reads_shared_fields() ?? [], true);
     }
 
     /**
@@ -382,6 +447,8 @@ class OptionRuleStorage implements RuleStorage {
      *   - `target_term_id` → int. The FormTokenField stores [N]; that is a FORM
      *     shape, never a runtime one.
      *   - `trigger_term_id`, `filter_terms` → int[], deduped, zeros dropped.
+     *   - `taxonomy`, for the types that read it → string[] slug list, deduped
+     *     (FW-56). `project_kind_rules()` then expands it to scalar rows.
      *   - Per-type fields → the type descriptor's `normalize()` (today only
      *     `RelatedPostTermsRules`, which splits the combined ACF field values)
      *
@@ -399,6 +466,15 @@ class OptionRuleStorage implements RuleStorage {
         if (isset($rule['target_term_id'])) {
             $raw                    = $rule['target_term_id'];
             $rule['target_term_id'] = (int) (is_array($raw) ? (reset($raw) ?: 0) : $raw);
+        }
+
+        // FW-56: a string (legacy) or a slug list → a deduped slug list, for
+        // the types that read it. Expanding it is project_kind_rules()'s job.
+        if (isset($rule['taxonomy']) && self::reads_taxonomy_list($type)) {
+            $rule['taxonomy'] = array_values(array_unique(array_filter(
+                array_map('strval', (array) $rule['taxonomy']),
+                static fn(string $slug): bool => $slug !== ''
+            )));
         }
 
         // Stored value may be a FormTokenField array [a,b,...] or a legacy scalar.
@@ -477,7 +553,15 @@ class OptionRuleStorage implements RuleStorage {
             return null;
         }
 
-        return $this->get_rules($type)[$rule_id] ?? null;
+        // By the row's `id`, not its place in the slice: a multi-taxonomy row
+        // (FW-56) is several rows sharing one id, so the Nth is no longer id N.
+        foreach ($this->get_rules($type) as $rule) {
+            if (($rule['id'] ?? null) === $rule_id) {
+                return $rule;
+            }
+        }
+
+        return null;
     }
 
     /**

@@ -140,7 +140,9 @@ JS);
      *
      * Built per request from the stored kind lists, so the dropdown on a
      * page load names the rows as they are now — and the fingerprint in each
-     * value is what lets the applier refuse a click after they change.
+     * value is what lets the applier refuse a click after they change. One
+     * entry per STORED row: a row naming several taxonomies (FW-56) is one
+     * choice, and a run of it passes all of them.
      *
      * @return array
      */
@@ -155,8 +157,8 @@ JS);
             'menu_slug'  => ConfigHelpers::APPLY_PAGE_SLUG,
             'parent'     => 'meta-conductor',
             'config'     => self::config(self::choice_options(
-                $storage->get_kind_rules(OptionRuleStorage::KIND_TERM),
-                $storage->get_kind_rules(OptionRuleStorage::KIND_FORMAT)
+                $storage->get_stored_kind_rules(OptionRuleStorage::KIND_TERM),
+                $storage->get_stored_kind_rules(OptionRuleStorage::KIND_FORMAT)
             )),
         ];
     }

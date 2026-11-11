@@ -696,6 +696,18 @@ $check('a single rule collides with nothing', $scan($KIND_TERM, [$s51[0]]) === [
 $check('a non-array row is skipped rather than fatal',
     CollisionDetector::detect($KIND_TERM, ['nonsense']) === []);
 
+// --- FW-56: a taxonomy list is one stored row, however many rows it expands to.
+
+$fw56 = $scan($KIND_TERM, [
+    ['type' => 'propagation_rules', 'taxonomy' => ['mc_a', 'mc_b']],
+    ['type' => 'hierarchical_rules', 'taxonomy' => 'mc_c'],
+    ['type' => 'propagation_rules', 'taxonomy' => 'mc_b'],
+]);
+$check('FW-56: one stored row\'s own expansions never collide with each other',
+    $scan($KIND_TERM, [['type' => 'propagation_rules', 'taxonomy' => ['mc_a', 'mc_b']]]) === []);
+$check('FW-56: a rule collides with one taxonomy of a list, and names the list row by its stored position',
+    count($fw56) === 1 && $pairs($fw56) === [[0, 2]] && $fw56[0]['target'] === 'mc_b');
+
 // --- Report. ----------------------------------------------------------------
 
 if ($fail) {

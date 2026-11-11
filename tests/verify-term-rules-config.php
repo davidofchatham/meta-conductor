@@ -206,6 +206,15 @@ $check('post_types gates on every type except the ACF-reference rule',
 $check('taxonomy gate includes the ACF-reference rule',
     in_array('related_post_terms_rules', $by_id['taxonomy']['conditions']['value'] ?? [], true));
 
+// FW-56: the field takes a LIST. `multiple` is what makes the stored value one;
+// `required` stays so a typed row cannot be saved with no taxonomy; and there is
+// no placeholder option, which a multi-select would offer as a pickable "taxonomy".
+$check('taxonomy is a required multi-select over the taxonomies, with no placeholder',
+    ($by_id['taxonomy']['type'] ?? '') === 'select'
+    && ($by_id['taxonomy']['args']['multiple'] ?? false) === true
+    && ($by_id['taxonomy']['required'] ?? false) === true
+    && ($by_id['taxonomy']['args']['options'] ?? null) === ConfigHelpers::taxonomy_checkbox_options());
+
 // --- Gated subfields name only real types, via `in`. ------------------------
 
 $ungated = ['type', 'enabled', 'post_status', 'row_title'];
@@ -402,6 +411,14 @@ $check('a rule-tab save payload carries the kind list and no type-keyed copy',
 $check('the snapshot keeps every row, in order, still typed',
     array_column($snapshotted[$KIND], 'type')
         === ['hierarchical_rules', 'propagation_rules']);
+// FW-56: a row naming several taxonomies is ONE row with ONE title that names
+// them all — "Categories, Tags", not the first.
+$listed = WireframeBootstrap::snapshot_term_rule_labels([
+    $KIND => [['type' => 'propagation_rules', 'taxonomy' => ['category', 'post_tag']]],
+]);
+$check('a multi-taxonomy row keeps one row, titled with every taxonomy',
+    count($listed[$KIND]) === 1
+    && str_contains($listed[$KIND][0]['row_title'] ?? '', 'Categories, Tags'));
 $check('the snapshot bakes the row title onto the list rows',
     ($snapshotted[$KIND][0]['row_title'] ?? '') !== ''
     && str_starts_with($snapshotted[$KIND][1]['row_title'] ?? '', '#2 [Disabled] '));
@@ -482,10 +499,24 @@ $stored = [
 $repaired = $r($stored);
 $check('the repair backfills every missing row_title',
     count(array_filter(array_column($repaired, 'row_title'))) === count($stored));
-$check('the repair changes NOTHING else about a stored row',
-    array_map(fn($row) => array_diff_key($row, ['row_title' => null]), $repaired) === $stored);
+// FW-56 adds ONE shape to it. The taxonomy control is a multi-select, and the
+// client renders a stored SCALAR in it as an empty selection while posting the
+// scalar back untouched; the server's multi-select sanitize then turns a
+// non-array into the default. Left alone, the first save of the rules tab would
+// blank every live row's taxonomy. So a scalar becomes the one-element list the
+// control reads, written back before Wireframe reads the option raw.
+$expected = $stored;
+$expected[0]['taxonomy'] = ['category'];
+$check('the repair changes NOTHING else about a stored row, but a scalar taxonomy becomes a list (FW-56)',
+    array_map(fn($row) => array_diff_key($row, ['row_title' => null]), $repaired) === $expected);
 $check('the repair is idempotent', $r($repaired) === $repaired);
 $check('the repair leaves an empty list empty', $r([]) === []);
+$check('FW-56: an empty or list taxonomy, and a type that does not read it, are left alone',
+    array_column($r([
+        ['type' => 'propagation_rules', 'taxonomy' => ''],
+        ['type' => 'propagation_rules', 'taxonomy' => ['category', 'post_tag']],
+        ['type' => 'related_rules', 'taxonomy' => 'category'],
+    ]), 'taxonomy') === ['', ['category', 'post_tag'], 'category']);
 
 // --- Tabs: exactly three, Personalize gone. ---------------------------------
 

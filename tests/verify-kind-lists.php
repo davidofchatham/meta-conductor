@@ -409,6 +409,64 @@ $check('a legacy row reads with an empty key, which callers treat as "by name"',
     && $legacy_read['post_type'] === 'event'
     && $legacy_read['acf_field_key'] === '');
 
+// =============================================================================
+// FW-56 — one row names a LIST of taxonomies; the read expands it to one scalar
+// row per taxonomy, so no handler, descriptor or detector sees an array.
+// =============================================================================
+
+$expand = static fn(array $rows): array => OptionRuleStorage::project_kind_rules($rows);
+
+// A legacy scalar reads as before — one row, `taxonomy` still a string.
+$one = $expand([['type' => 'propagation_rules', 'name' => 'P', 'taxonomy' => 'category']]);
+$check('FW-56: a scalar taxonomy reads as ONE row, taxonomy still a string',
+    count($one) === 1 && $one[0]['taxonomy'] === 'category');
+
+// A list expands to adjacent scalar rows in the authored order of the list.
+$many = $expand([
+    ['type' => 'propagation_rules', 'name' => 'before'],
+    ['type' => 'propagation_rules', 'name' => 'P', 'taxonomy' => ['sport', 'category', 'sport'], 'enabled' => true],
+    ['type' => 'propagation_rules', 'name' => 'after',  'taxonomy' => 'post_tag'],
+]);
+$check('FW-56: a list expands to one scalar row per taxonomy, adjacent, deduped, in order',
+    array_column($many, 'name') === ['before', 'P', 'P', 'after']
+    && array_column($many, 'taxonomy') === ['sport', 'category', 'post_tag']);
+$check('FW-56: siblings carry the stored row\'s own fields (name, enabled)',
+    $many[1]['enabled'] === true && $many[2]['enabled'] === true);
+$check('FW-56: siblings share the stored row\'s per-type id, and the next row is not shifted',
+    array_column($many, 'id') === [0, 1, 1, 2]);
+
+// An empty list keeps the row, with no taxonomy — inert, as an empty string was.
+$none = $expand([['type' => 'term_count_rules', 'taxonomy' => []]]);
+$check('FW-56: an empty list reads as one row with an empty taxonomy',
+    count($none) === 1 && $none[0]['taxonomy'] === '');
+
+// Only the types that read the shared taxonomy field expand.
+$other = $expand([['type' => 'related_rules', 'taxonomy' => ['sport', 'category']]]);
+$check('FW-56: a type that does not read the taxonomy field is left alone',
+    count($other) === 1 && $other[0]['taxonomy'] === ['sport', 'category']);
+
+$multi = $storage_over([
+    OptionRuleStorage::KIND_TERM => [
+        ['type' => 'propagation_rules', 'name' => 'P', 'taxonomy' => ['sport', 'category', 'post_tag']],
+        ['type' => 'propagation_rules', 'name' => 'Q', 'taxonomy' => 'category'],
+    ],
+    OptionRuleStorage::KIND_FORMAT => [],
+]);
+$check('FW-56: get_rule finds a type\'s Nth STORED rule, whatever expanded before it',
+    ($multi->get_rule('propagation_rules', 1)['name'] ?? '') === 'Q');
+$check('FW-56: the kind read serves the expanded rows (one per taxonomy)',
+    array_column($multi->get_kind_rules(OptionRuleStorage::KIND_TERM), 'taxonomy')
+        === ['sport', 'category', 'post_tag', 'category']);
+$check('FW-56: the taxonomy filter matches a sibling by its own scalar taxonomy',
+    array_column($multi->get_rules('propagation_rules', ['taxonomy' => 'category']), 'name') === ['P', 'Q']);
+
+$stored = $multi->get_stored_kind_rules(OptionRuleStorage::KIND_TERM);
+$check('FW-56: the stored view is one row per stored row, taxonomy still the list',
+    count($stored) === 2
+    && $stored[0]['taxonomy'] === ['sport', 'category', 'post_tag']
+    && $stored[1]['taxonomy'] === ['category']
+    && !array_key_exists('stored_taxonomies', $stored[0]));
+
 // --- Report. ----------------------------------------------------------------
 
 if ($fail) {

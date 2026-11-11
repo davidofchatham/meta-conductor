@@ -667,7 +667,7 @@ Wireframe writes some fields differently than handlers expect (e.g. a `multiple+
 
 The projection is a **guarantee**, not a convenience (FW-29): checkbox gates (`post_types`, `post_status`, `filter_taxonomies`) arrive as slug lists (empty = all; a legacy `{slug:bool}` map is decoded here), `target_term_id` as `int`, `trigger_term_id` and `filter_terms` as `int[]`. No consumer re-decodes or re-casts them, and runtime code never imports `Admin\Config` to do so. Admin code holding raw form values — the row-title snapshot, the on-demand collision check — runs them through `OptionRuleStorage::project_kind_rules()` first. The projection is read-only, so widening it needs no migration.
 
-Storage is the adapter boundary between writers (current: Wireframe REST) and handlers — future writers (CLI, import) plug in at the same boundary. **Caveat:** a key-RENAMING migration here is read-time-only and the Wireframe admin reads the option RAW, so a renamed/removed key must ALSO be persisted (one-time rewrite) or the admin renders defaults and corrupts on resave. (`WireframeBootstrap::repair_stored_rules()` was that rewrite until FW-39 deleted the migrations; it now only backfills row titles.)
+Storage is the adapter boundary between writers (current: Wireframe REST) and handlers — future writers (CLI, import) plug in at the same boundary. **Caveat:** a key-RENAMING migration here is read-time-only and the Wireframe admin reads the option RAW, so a renamed/removed key must ALSO be persisted (one-time rewrite) or the admin renders defaults and corrupts on resave. (`WireframeBootstrap::repair_stored_rules()` was that rewrite until FW-39 deleted the migrations; it now backfills row titles and, since FW-56, writes a scalar `taxonomy` back as a one-element list — see [A row names several taxonomies](#a-row-names-several-taxonomies-fw-56).)
 
 ### ACF field identity (#25)
 
@@ -699,7 +699,20 @@ It arrived expand-first (#56): from #56 to #64 the two lists lived alongside the
 
 `get_rule($type, $rule_id)` identifies a rule by its index **within its own type**, across a cross-type list. `id` deliberately did **not** re-base onto the kind-list position: it is the number `get_rule()` speaks, so a rule's `id` and the index it is addressed by stay the same number. It is still positional and re-derived on read, so nothing may persist state keyed on it — the title/slug status record that once did was deleted for exactly that reason.
 
-The storage interface (`RuleStorage`) declares only what has callers — `get_kind_rules`, `get_rules`, `get_rule`, `get_raw_settings`, `clear_cache` — and `StorageFactory` only `get_instance()`. The type-addressed CRUD (save / delete / toggle / duplicate / search / import / export) had no caller and is gone; rules are written by the ordered repeater. FW-17 grows the interface back if a second backend lands.
+The storage interface (`RuleStorage`) declares only what has callers — `get_kind_rules`, `get_stored_kind_rules`, `get_rules`, `get_rule`, `get_raw_settings`, `clear_cache` — and `StorageFactory` only `get_instance()`. The type-addressed CRUD (save / delete / toggle / duplicate / search / import / export) had no caller and is gone; rules are written by the ordered repeater. FW-17 grows the interface back if a second backend lands.
+
+### A row names several taxonomies (FW-56)
+
+A row of a type that reads the shared `taxonomy` field (`reads_shared_fields()` lists it: term count, propagation, hierarchical, hierarchical level restriction, related post terms) may hold a **list** of taxonomies. `project_kind_rules()` expands it on read into one scalar row per taxonomy, adjacent and in the list's order, so no handler, descriptor or the collision detector ever sees an array — the rule behaves exactly as if the row were repeated once per taxonomy (sweep `sweep-fw56-multi-taxonomy.php` pins that equivalence). The alternative, an array through every handler (`recompute_dependent`, `capture_removed_dependents`, `process_severed`, the label snapshots), cost far more for no gain.
+
+What the expansion keeps and what it adds:
+
+- Siblings share the stored row's `id`, so `get_rule()` finds a row by `id`, not by its place in the type's slice, and the rows after a list keep their ids. Nothing in the runtime keys on `id`, and `RelatedPostTermsHandler::sever_key()` is content-derived and includes `taxonomy`, so it stays distinct per taxonomy.
+- Each sibling carries `stored_taxonomies`, the stored list. `RuleChoice::fingerprint()` puts `taxonomy` back from it, so every expansion fingerprints as the stored row it came from; `OptionRuleStorage::is_expansion_sibling()` lets `CollisionDetector` name a finding by the row's place in the repeater rather than its place in the expansion.
+- Two reads exist. `get_kind_rules()` is expanded and what every runtime reader wants. `get_stored_kind_rules()` is one row per stored row with `taxonomy` the list, and is what *names* a stored row: the Apply page's choice (stored position, stored fingerprint, one dropdown entry per stored row, a run passing all of its expansions), and the row-title snapshot (`project_kind_rules($rows, false)`), which titles the row once, naming every taxonomy.
+- Siblings of one row never collide with each other: they differ in `taxonomy`, so their `taxonomy|<slug>` target keys differ.
+
+**The control is a multi-select, and it cannot read a scalar.** The client renders a stored string in a `multiple` select as an empty selection and posts it back untouched; `SelectField::sanitize()` turns a non-array into the default. Read alone, a live scalar row would lose its taxonomy on the first save of the tab. So `repair_term_rows()` writes the one-element list back on admin load (self-limiting, like the title backfill), and the read still accepts a string, so a CLI-written or fixture row works either way. `required` stays: Rakit rejects an empty list as it does an empty string.
 
 ### A pre-0.8.0 site
 

@@ -173,7 +173,8 @@ JS);
             $type       = (string) ($rule['type'] ?? '');
             $descriptor = $descriptors[$type] ?? null;
             if ($descriptor) {
-                $title = $descriptor->row_title(OptionRuleStorage::project_kind_rules([$rule])[0]);
+                // Unexpanded (FW-56): a taxonomy list is one row, one title.
+                $title = $descriptor->row_title(OptionRuleStorage::project_kind_rules([$rule], false)[0]);
             } elseif ($type === '') {
                 $title = __('(no rule type chosen)', 'meta-conductor');
             } else {
@@ -252,7 +253,9 @@ JS);
      *
      * This is not a migration. The every-boot shape migrations that used to
      * run here were deleted with FW-39 once no stored row was in a legacy
-     * shape.
+     * shape. The one shape it does write back is FW-56's: a scalar `taxonomy`
+     * becomes a one-element list (see `repair_term_rows()`), because the
+     * multi-select that now edits it would otherwise blank it on the next save.
      *
      * Self-limiting — once every row is titled there is nothing to do, so
      * this is at most one write per rule set, not one per admin load.
@@ -315,6 +318,23 @@ JS);
      */
     private static function repair_term_rows(array $rows): array {
         $key = OptionRuleStorage::KIND_TERM;
+
+        // FW-56: the taxonomy control is a multi-select. The client renders a
+        // stored scalar in it as an EMPTY selection and posts the scalar back
+        // unchanged, and `SelectField::sanitize()` turns a non-array into its
+        // default — so the first save of the tab would blank every live row's
+        // taxonomy. A one-element list is what the control reads and writes.
+        // Not a read-time upgrade: nothing reads the scalar differently.
+        foreach ($rows as &$row) {
+            if (is_array($row)
+                && is_string($row['taxonomy'] ?? null)
+                && $row['taxonomy'] !== ''
+                && OptionRuleStorage::reads_taxonomy_list((string) ($row['type'] ?? ''))
+            ) {
+                $row['taxonomy'] = [$row['taxonomy']];
+            }
+        }
+        unset($row);
 
         return self::snapshot_term_rule_labels([$key => $rows])[$key];
     }

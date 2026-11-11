@@ -200,10 +200,27 @@ final class Labels {
      * ConfigHelpers::all_term_options() and the user-facing examples
      * (e.g. "Shakers").
      *
-     * @param string $slug
+     * A LIST of slugs (a multi-taxonomy row, FW-56) reads "A, B, C", or
+     * "A, B, C, +2 more" past three. A slug that resolves to no taxonomy keeps
+     * its slug there, so a row naming a deleted one stays identifiable.
+     *
+     * @param string|string[] $slug
      * @return string
      */
-    public static function taxonomy_label(string $slug): string {
+    public static function taxonomy_label(string|array $slug): string {
+        if (is_array($slug)) {
+            $labels = array_map(
+                static fn(string $one): string => self::taxonomy_label($one) ?: $one,
+                array_values(array_filter($slug, static fn($one): bool => is_string($one) && $one !== ''))
+            );
+            $shown = implode(', ', array_slice($labels, 0, 3));
+
+            return count($labels) > 3
+                /* translators: 1: the first three taxonomy labels 2: how many more there are */
+                ? sprintf(\__('%1$s, +%2$d more', 'meta-conductor'), $shown, count($labels) - 3)
+                : $shown;
+        }
+
         if ($slug === '') {
             return '';
         }

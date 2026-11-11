@@ -295,6 +295,49 @@ $check('and its value decodes back to its own row',
 $check('a row with no descriptor is marked in the dropdown',
     in_array('Term rules: #1 (unknown type) nope_rules', ApplyPage::choice_options([['type' => 'nope_rules']], []), true));
 
+// --- 7. FW-56: a multi-taxonomy row is ONE choice. --------------------------
+//
+// The read expands it to a scalar row per taxonomy, but the author chose one
+// stored row. Its choice names that row (stored position, stored fingerprint)
+// and a run passes all of its expansions — and no other row.
+
+$multi_option = [
+    $KIND_TERM => [
+        ['type' => 'hierarchical_rules', 'row_title' => 'H1', 'taxonomy' => 'category', 'enabled' => true],
+        ['type' => 'propagation_rules', 'row_title' => 'P', 'taxonomy' => ['category', 'post_tag', 'sport'], 'enabled' => false],
+        ['type' => 'hierarchical_rules', 'row_title' => 'H2', 'taxonomy' => 'post_tag', 'enabled' => true],
+    ],
+    $KIND_FORMAT => [],
+];
+$GLOBALS['mc_options'] = [OptionRuleStorage::OPTION_NAME => $multi_option];
+$mstorage = new OptionRuleStorage();
+$stored   = $mstorage->get_stored_kind_rules($KIND_TERM);
+$expanded = $mstorage->get_kind_rules($KIND_TERM);
+
+$check('the dropdown offers one entry per STORED row',
+    count(array_filter(array_keys(ApplyPage::choice_options($stored, [])), fn($v) => str_starts_with($v, "$KIND_TERM:"))) === 3);
+$check('every expansion fingerprints as the stored row it came from',
+    RuleChoice::fingerprint($expanded[1]) === RuleChoice::fingerprint($stored[1])
+    && RuleChoice::fingerprint($expanded[2]) === RuleChoice::fingerprint($stored[1])
+    && RuleChoice::fingerprint($expanded[3]) === RuleChoice::fingerprint($stored[1]));
+$check('rows either side of it keep their own fingerprint',
+    RuleChoice::fingerprint($expanded[0]) === RuleChoice::fingerprint($stored[0])
+    && RuleChoice::fingerprint($expanded[4]) === RuleChoice::fingerprint($stored[2]));
+
+$mchoice = RuleChoice::decode(RuleChoice::encode($KIND_TERM, 1, $stored[1]));
+$check('the stored row resolves against a fresh stored read',
+    RuleChoice::resolve($mchoice, $mstorage->get_stored_kind_rules($KIND_TERM)) === $stored[1]);
+
+$retargeted = $multi_option;
+$retargeted[$KIND_TERM][1]['taxonomy'] = ['category', 'post_tag'];
+$GLOBALS['mc_options'] = [OptionRuleStorage::OPTION_NAME => $retargeted];
+$check('dropping a taxonomy from the list makes the choice stale',
+    RuleChoice::resolve($mchoice, (new OptionRuleStorage())->get_stored_kind_rules($KIND_TERM)) === null);
+
+$check('a one-time run of the disabled stored row passes ALL its expansions, nothing else',
+    array_column(RuleChoice::pass_rows($expanded, RuleChoice::fingerprint($stored[1])), 'taxonomy')
+        === ['category', 'category', 'post_tag', 'sport', 'post_tag']);
+
 // --- Report. ----------------------------------------------------------------
 
 if ($fail) {

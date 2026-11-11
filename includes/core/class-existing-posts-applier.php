@@ -314,7 +314,9 @@ final class ExistingPostsApplier {
             return ['choice' => $choice, 'row' => null, 'rows' => $rows];
         }
 
-        $row = RuleChoice::resolve($choice, $storage->get_kind_rules($choice['kind']));
+        // The STORED rows: the choice names one, and its position and
+        // fingerprint are over the row as stored (FW-56).
+        $row = RuleChoice::resolve($choice, $storage->get_stored_kind_rules($choice['kind']));
         if ($row === null) {
             return self::error(__('Rules changed since this page loaded — reload the page and choose the rule again.', 'meta-conductor'));
         }
