@@ -464,6 +464,19 @@ Two rows identical in type, taxonomy, scope, claim and config raise no distinct 
 - **Open:** whether exact-duplicate detection is a case of the pairwise warning with its own message or of FW-34's reach analysis, and where the advisory should sit so it is not missed (beside the offending rows). FW-56 removes the commonest cause, not the possibility.
 - **Blocked by:** — • **Interacts with:** FW-34, FW-56
 
+#### FW-60 — Apply page: show unfinished runs on load
+
+A stored run waits up to a day for its next batch, but nothing on the Apply page says it exists until a button is pressed. Apply on a choice with a stored run returns the "in progress" card with its tally; the same information should be there on arrival, with a way to discard the run.
+
+- **Detail home:** none; this row carries it. Interacts with FW-57's button-state bullet.
+- **Progress:** Not started. Raised when a stale run from an earlier test made Apply report "in progress" before any batch of the current session had run.
+- **Open:**
+  - **Finding runs.** The transient key is an md5 of user and choice, so runs cannot be listed from storage. Build the page's choice options as now and call `ExistingPostsApplier::progress()` (returns the stored tally or null) for each, including "All enabled rules". A run whose rule row changed gets a new fingerprint and so a new key; it is not listed and expires with its 24-hour transient.
+  - **Surface.** Wireframe has no static text or notice field and a custom field type renders nothing, so a standard `admin_notices` notice on the Apply page only: one line per run with its label and tally.
+  - **Dismiss.** A nonce-protected `admin-post` link calls `start_over()` and redirects back. "Permanently" means the stored run is deleted; no separate dismissed flag. Per user, like the runs.
+  - **No Continue link.** Continue needs the dropdown set to that rule and Wireframe has no client-side API to set it (FW-23), so the author picks the rule and presses Continue.
+- **Blocked by:** — • **Interacts with:** FW-23, FW-57
+
 ---
 
 ## UX polish

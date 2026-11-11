@@ -104,6 +104,9 @@ final class ApplyPage {
             . '.mc-dismiss{position:absolute;top:-4px;right:0;border:0;background:none;font-size:20px;line-height:1;cursor:pointer;color:#50575e}'
             . '.mc-dismiss:hover{color:#d63638}'
             . '.wireframe-action__result:has(.mc-dismissed){display:none}'
+            // Wireframe stacks the result slots flush against each other and
+            // the buttons; use its own gap token (WP design system) between them.
+            . '.wireframe-action__result{margin-top:var(--wpds-dimension-gap-md,12px)}'
         );
 
         wp_register_script('bws-mc-apply-dismiss', false, [], META_CONDUCTOR_VERSION, true);
@@ -308,8 +311,15 @@ JS);
             case 'apply':
                 // Apply past its confirm would only resume the stored run, which
                 // is Continue with a dialog in front. Say so instead.
-                if ($button === 'apply' && ExistingPostsApplier::in_progress($value)) {
-                    $message = __('A run of this choice is in progress. Press Continue for the next batch, or Start over to restart it.', 'meta-conductor');
+                $run = $button === 'apply' ? ExistingPostsApplier::progress($value) : null;
+                if ($run !== null) {
+                    $message = sprintf(
+                        /* translators: 1: posts processed so far, 2: posts in the run, 3: posts changed */
+                        __('A run of this choice is in progress: %1$d / %2$d posts processed, %3$d changed. Press Continue for the next batch, or Start over to restart it.', 'meta-conductor'),
+                        $run['processed'],
+                        $run['total'],
+                        $run['changed']
+                    );
                     return self::dismissible(['status' => 'info', 'message' => $message, 'html' => '<p>' . esc_html($message) . '</p>']);
                 }
                 $result = ExistingPostsApplier::run_batch($value, max(0, (int) ($values['limit'] ?? 0)));
