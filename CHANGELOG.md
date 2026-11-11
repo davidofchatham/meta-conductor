@@ -17,8 +17,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- **Level restriction offers only *Deepest only* and *Shallowest only*.** *One term per level* moved to the new Term count limit rule, where it no longer sits under a depth rule or needs a hierarchical taxonomy. The *Keep ancestor terms* text and the row title drop their *one term per level* wording. The type is not in use on any live site, so there is no migration; a stored row still holding the old mode runs as *Deepest only*, the same as a row with no mode.
+- **Level restriction offers only *Deepest only* and *Shallowest only*.** *One term per level* moved to the new Term count limit rule, where it no longer sits under a depth rule or needs a hierarchical taxonomy. The *Keep ancestor terms* text and the row title drop their *one term per level* wording. The type is not known to be in use on any live site, so there is no migration; a stored row still holding the old mode runs as *Deepest only*, the same as a row with no mode.
 - **Old *one term per level* kept the alphabetically last term; Term count limit does not.** Its tie-break is the deepest-then-lowest-ID order above.
+- **Apply to Existing Posts result cards can be dismissed.** Each button keeps its own result card until that same button runs again, so a Preview card, the first batch's card and the latest batch's card piled up. Each card now has a close button; running that button again shows its new card.
+- **Apply no longer silently resumes a run in progress.** Pressing Apply while a run of the chosen rule is in progress used to ask for confirmation and then behave as Continue. It now says to press Continue, or Start over to restart, and shows how far the run got (posts processed, total, changed).
+- **Apply to Existing Posts result cards are spaced apart.** Wireframe stacked them flush against each other and the buttons; they now have a gap.
 
 ### Removed
 

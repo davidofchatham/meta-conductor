@@ -347,7 +347,18 @@ final class ExistingPostsApplier {
      * @return bool
      */
     public static function in_progress(string $value): bool {
-        return is_array(get_transient(self::state_key($value)));
+        return self::progress($value) !== null;
+    }
+
+    /**
+     * @param string $value A `RuleChoice` dropdown value.
+     * @return array{processed:int,total:int,changed:int}|null The stored run's tally; null when none is waiting.
+     */
+    public static function progress(string $value): ?array {
+        $state = get_transient(self::state_key($value));
+        return is_array($state)
+            ? ['processed' => (int) $state['processed'], 'total' => (int) $state['total'], 'changed' => (int) $state['changed']]
+            : null;
     }
 
     /**

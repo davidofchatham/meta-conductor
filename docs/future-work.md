@@ -170,8 +170,8 @@ The refinements deliberately left out of the `related_post_terms_rules` rework. 
   - **True cross-taxonomy copy** — map terms by slug/name so source and target taxonomies can differ; the current copy is by ID, single taxonomy only.
   - **Multi-level chain propagation** — a post that is BOTH a dependent (of A) and a source (for C) used not to propagate to C in the same save, and the planned fix was a depth-bounded re-dispatch inside the handler. **Probably dissolved by #63**: the handler's `fan_out()` marks each dependent dirty, each dependent gets its own full ordered pass, and a dependent that is a source under another row fans out in turn; the drain's one-pass-per-entity bound terminates it. Confirm with a 3-level sweep, then drop this bullet.
   - **Single-owner optimization** — skip the multi-source rule-union when a dependent provably has one owner (ACF `max=1` / native bidi). Negligible gain when a reverse field is configured; only matters for the meta_query fallback with large fan-out.
-  - **Multiple taxonomies per rule.** `$rule['taxonomy']` is scalar, and so are `severed[post][taxonomy]`, the status gate and the capture — to sync several taxonomies across the *same* relationship you duplicate the rule once per taxonomy. Duplicating is **correct**, not a workaround: each taxonomy mirrors the source's full term set independently, so there is no correctness penalty. The only material win is **shared relationship-graph resolution** — N duplicated rules each run `dependents_of_source` / `resolve_reverse` per save, which is N cheap `get_field` reads under tier 2 (the common case) but N unindexed LIKE scans under tier 3, multiplying exactly the cost FW-11 flags. So the payoff scales with tier-3 usage and this is worth scoping *with* FW-11, not before it. Cost: scalar → array touches `recompute_dependent`, `capture_removed_dependents`, `process_severed`, every label snapshot and the storage shape — mechanical, since the per-taxonomy logic is already a clean loop boundary.
-- **Blocked by:** `decision:reopen provenance` — manual-survives only; the rest are unblocked • **Interacts with:** FW-9, FW-11, FW-19
+  - **Multiple taxonomies per rule** — moved to FW-56. The case for scoping it with FW-11 did not hold: `find_holders_referencing` memoizes per request without the taxonomy in its key, so rules duplicated per taxonomy already share one tier-3 scan.
+- **Blocked by:** `decision:reopen provenance` — manual-survives only; the rest are unblocked • **Interacts with:** FW-9, FW-11, FW-19, FW-56
 
 #### FW-12 — Sub-scope field for restricting rules
 
@@ -257,6 +257,20 @@ Separate `title_slug_rules` into a title type and a slug type in `format_rules`,
   - **Order.** The slug row must follow its title row, which is a consumer-before-producer case for FW-47.
 - **Blocked by:** — • **Interacts with:** FW-13, FW-36, FW-47, FW-51
 
+#### FW-56 — Multiple taxonomies per rule
+
+A rule names one taxonomy, so applying the same rule across several means keeping one near-identical row per taxonomy. Let a row name a list and expand it at read time into one scalar row per taxonomy, so no handler ever sees an array.
+
+- **Detail home:** none; this row carries it. It began as a bullet under FW-10.
+- **Progress:** Not started. A live site runs three propagation rules that differ only in taxonomy, and one authoring slip (a copy meant to be re-pointed at another taxonomy was saved unchanged) went unnoticed. The case is authoring, not speed: rules duplicated per taxonomy already share the tier-3 reverse-lookup scan (`find_holders_referencing` memoizes per request on `related_id:holder_type:field_name`), so this row makes no performance claim.
+- **Open:**
+  - **Which types.** The ones whose rows read the shared `taxonomy` field and name no term of it: term count, propagation, hierarchical, level restriction and related post terms. Check each descriptor's `subfields()` for a term picker bound to the taxonomy before listing a type. `related` is out; it keys on trigger terms.
+  - **Mechanism.** Expand in `StorageFactory` after `normalize_rule_shape()`, adjacent and in authored order, so handlers, descriptors and the collision detector stay scalar. The alternative, an array through every handler (`recompute_dependent`, `capture_removed_dependents`, `process_severed`, the label snapshots), costs far more for no payoff.
+  - **Storage shape.** Keep the key `taxonomy`; normalization accepts a string or a list and reads a string as a one-element list. Rows on a live rule type read unchanged, so no migration and no manual re-save.
+  - **Gates.** The field becomes a multi-select, and a condition-hidden subfield drops on save: update H11 / H12's expected visibility and run the round-trip sweep.
+  - **Apply page.** The fingerprint and the one-time run of a disabled row must treat the N virtual rows as one stored row (FW-57). The row title needs a form for several taxonomies.
+- **Blocked by:** — • **Interacts with:** FW-10, FW-57, FW-59
+
 ---
 
 ## Correctness, Consistency, Architecture
@@ -269,7 +283,7 @@ A pull rule with NEITHER an explicit reverse field NOR a detectable ACF bidirect
 
 - **Detail home:** [design-history/acf-reference-rework.md](design-history/acf-reference-rework.md) → the reverse-lookup tiers. The issue that framed it was #22.
 - **Progress:** Not started. Mitigated in the UI: the config warns the admin to set a reverse or bidirectional field. A code fix — a reverse index maintained on relationship-field save, or a registry built at rule-save time mapping related-post → holders — would remove the warning. Deliberately kept out of #63 even though that ticket rewrote the handler: the fix is its own design decision with its own invalidation questions, and riding it along would have widened the largest ticket in the phase with work that had no dependency on the ordering model.
-- **Open:** the reverse-lookup-resolution cluster is best decided in one sitting — this, FW-10's *multiple taxonomies per rule* (whose only material payoff is sharing exactly this resolution), and FW-19's key-based field matching all touch how the "other end" is resolved. #25 already made the field key each row's stored identity.
+- **Open:** the reverse-lookup-resolution cluster is best decided in one sitting — this and FW-19's key-based field matching both touch how the "other end" is resolved. #25 already made the field key each row's stored identity. FW-10's *multiple taxonomies per rule* (now FW-56) was part of this cluster until its shared-resolution payoff turned out to be already memoized.
 - **Blocked by:** — • **Interacts with:** FW-10
 
 #### FW-14 — Rule-type renaming on the domain axes
@@ -412,6 +426,57 @@ Warn when a format rule reading `{meta:x}` is ordered before the Computed field 
 - **Open:** whether it is its own advisory or a case of FW-34's reach analysis, since both walk the same reach and order. Row targets read their own row's siblings, so a row-rule pair is the same check one level down.
 - **Blocked by:** — • **Interacts with:** FW-4, FW-34
 
+#### FW-57 — Apply page: choose a scope, report what changed
+
+The Apply page asks for a rule, but a run applies every enabled rule to each post in the chosen rule's reach; the choice only decides which posts are passed. Rework it so the control says what it does and the report says what happened.
+
+- **Detail home:** [design-history/apply-existing.md](design-history/apply-existing.md) (FW-16's spec).
+- **Progress:** Not started. Raised by running a bulk apply on a live site, where one run of a single rule applied every applicable enabled rule, as designed; the dropdown's wording is what misled. A dismiss control on each result card shipped as an interim for the stale-card bullet.
+- **Open:**
+  - **Scope selector.** Post type(s) to bring up to date, running every enabled rule that applies, replacing the rule dropdown and "All enabled rules". An optional "also run this disabled rule once" keeps the one-time run.
+  - **Honest change count.** Count observed writes (the old and new term sets `set_object_terms` reports) instead of only the posts the run passed; today fan-out writes are noted, not counted, and a run that writes other posts can read "0 changed". For a run containing format rules, report posts processed only until their writes are observed too.
+  - **Attribution.** Each report row names the rule that caused the change and shows the post's status, since a pass writes drafts when a gate allows it. Check first that the dispatcher can name the row an applier is running.
+  - **Reach count.** "N posts these rules can affect", from FW-58, not every post of the type.
+  - **Stale result cards.** Wireframe 1.1.0 keeps one result slot per button and only that button's next run replaces it, so a Preview card outlives an Apply and the first batch's card outlives every Continue. The real fix is a shared result region upstream; that is an ask for the maintainer to file, not one to file from here. A CSS-only auto-hide was rejected because without recency it can hide a fresh result and keep a stale one.
+  - **Button state.** Preview and Apply stay enabled during a run while Continue and Start over are the ones that apply, and the reverse once the scope changes. Wireframe 1.1.0 offers only a global disable while any button is busy; there is no per-button `disabled` and no way for the response to set one. An upstream ask for state-driven buttons, next to the shared result region, for the maintainer to file. A script disabling by button position was rejected as fragile. Interim: Apply during a run returns a "press Continue or Start over" card instead of silently resuming.
+- **Blocked by:** — • **Interacts with:** FW-23, FW-31, FW-33, FW-56, FW-58
+
+
+#### FW-58 — Rule-declared reach narrowing for Apply
+
+Apply's reach is every post of the written post types in the default statuses, deliberately conservative, so a rule that can only change some of them still passes all of them. Let a rule type declare a narrower reach, defaulting to none.
+
+- **Detail home:** [design-history/apply-existing.md](design-history/apply-existing.md); [CONTEXT.md](../CONTEXT.md) → *Reach*.
+- **Progress:** Not started. A live site's propagation run passes about 6,000 posts when only the ones with a parent can change, which is most of its batch count.
+- **Open:**
+  - **Interface.** An optional narrowing on the rule-type descriptor beside `written_post_types()`. Across several rules the reach is the union of their narrowings, and a rule without one reaches its whole post type.
+  - **First type.** Propagation: `post_parent > 0`, with the parent gate staying in the applier. Every other type stays conservative until it has a safe narrowing; related post terms is a candidate (dependents holding the reverse field).
+  - **Safety.** A narrowing that leaves out a post the pass would have changed under-applies silently, so it must be provably a superset. Pin it with a sweep that compares narrowed and conservative runs on the fixture.
+- **Blocked by:** — • **Interacts with:** FW-57
+
+
+#### FW-59 — Flag identical rules
+
+Two rows identical in type, taxonomy, scope, claim and config raise no distinct warning, so an author cannot tell a true duplicate from an overlap. The collision advisory sits above the rule list, where it was missed.
+
+- **Detail home:** none; this row carries it. Raised alongside FW-34 (the minimal detector is #65).
+- **Progress:** Not started. A live site had two identical rows after one was meant to be pointed at another taxonomy. The advisory was there but not noticed, and nothing said these were the same rule.
+- **Open:** whether exact-duplicate detection is a case of the pairwise warning with its own message or of FW-34's reach analysis, and where the advisory should sit so it is not missed (beside the offending rows). FW-56 removes the commonest cause, not the possibility.
+- **Blocked by:** — • **Interacts with:** FW-34, FW-56
+
+#### FW-60 — Apply page: show unfinished runs on load
+
+A stored run waits up to a day for its next batch, but nothing on the Apply page says it exists until a button is pressed. Apply on a choice with a stored run returns the "in progress" card with its tally; the same information should be there on arrival, with a way to discard the run.
+
+- **Detail home:** none; this row carries it. Interacts with FW-57's button-state bullet.
+- **Progress:** Not started. Raised when a stale run from an earlier test made Apply report "in progress" before any batch of the current session had run.
+- **Open:**
+  - **Finding runs.** The transient key is an md5 of user and choice, so runs cannot be listed from storage. Build the page's choice options as now and call `ExistingPostsApplier::progress()` (returns the stored tally or null) for each, including "All enabled rules". A run whose rule row changed gets a new fingerprint and so a new key; it is not listed and expires with its 24-hour transient.
+  - **Surface.** Wireframe has no static text or notice field and a custom field type renders nothing, so a standard `admin_notices` notice on the Apply page only: one line per run with its label and tally.
+  - **Dismiss.** A nonce-protected `admin-post` link calls `start_over()` and redirects back. "Permanently" means the stored run is deleted; no separate dismissed flag. Per user, like the runs.
+  - **No Continue link.** Continue needs the dropdown set to that rule and Wireframe has no client-side API to set it (FW-23), so the author picks the rule and presses Continue.
+- **Blocked by:** — • **Interacts with:** FW-23, FW-57
+
 ---
 
 ## UX polish
@@ -502,7 +567,7 @@ Wireframe has no JS-side field-type *extension* API: a custom type declared via 
 - **Open:** two gaps, both upstream.
   - **Gap A — no JS field-type extension API (the root).** An additive registry plus `registerFieldType()` over the three `customEditComponents[type]` read sites. Next step: an upstream issue proposing it, drafted by us and filed by the maintainer of this repo; build the PR only if upstream agrees.
   - **Gap B — the `action` field has no repeater-row context.** Filed as [wp-wireframe#39](https://github.com/tdrayson/wp-wireframe/issues/39) (2026-09-23): an optional request `context` carrying both row identity and action continuation — the latter is what would retire FW-33. FW-16 ships without it; the in-row entry point it would enable is FW-31.
-- **Blocked by:** — • **Interacts with:** FW-16, FW-26, FW-31, FW-33, FW-45
+- **Blocked by:** — • **Interacts with:** FW-16, FW-26, FW-31, FW-33, FW-45, FW-59
 
 #### FW-45 — Assess Wireframe 1.1 features
 
