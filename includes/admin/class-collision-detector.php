@@ -151,8 +151,17 @@ class CollisionDetector {
     public static function detect(string $kind, array $rows): array {
         $facts   = [];
         $unknown = [];
+        $extra   = 0;
 
         foreach (array_values($rows) as $index => $row) {
+            // FW-56: a taxonomy list reads as one row per taxonomy, but it is
+            // one row in the repeater, and the finding names it by that place.
+            // Every expansion after the first is a place the list does not have.
+            if (OptionRuleStorage::is_expansion_sibling($row)) {
+                $extra++;
+            }
+            $place = $index - $extra;
+
             if (!is_array($row) || !($row['enabled'] ?? true)) {
                 continue;
             }
@@ -167,7 +176,7 @@ class CollisionDetector {
                 $unknown[] = [
                     'kind'   => $kind,
                     'code'   => 'unknown_type',
-                    'a'      => self::rule_ref(['index' => $index, 'type' => $type, 'row' => $row]),
+                    'a'      => self::rule_ref(['index' => $place, 'type' => $type, 'row' => $row]),
                     'target' => $type,
                 ];
                 continue;
@@ -183,7 +192,7 @@ class CollisionDetector {
             }
 
             $facts[] = [
-                'index'      => $index,
+                'index'      => $place,
                 'type'       => $type,
                 'descriptor' => $descriptor,
                 'row'        => $row,

@@ -274,16 +274,24 @@ class TermRulesConfig {
                 // reason subfield conditions exist — but note the consequence:
                 // a row switched to a date window loses its taxonomy, which is
                 // correct and is what the `type` description warns about.
+                //
+                // A LIST (FW-56): pick several and the rule applies to each,
+                // exactly as if the row were repeated once per taxonomy —
+                // OptionRuleStorage::project_kind_rules() does that expansion
+                // on read, so no handler ever sees more than one. `multiple`
+                // renders a token field with typeahead, which stays usable on a
+                // site with dozens of taxonomies where a checkbox list would not.
                 'id'          => 'taxonomy',
                 'type'        => 'select',
-                'label'       => __('Taxonomy', 'meta-conductor'),
-                'description' => __('The taxonomy this rule reads and writes.', 'meta-conductor'),
+                'label'       => __('Taxonomies', 'meta-conductor'),
+                'description' => __('The taxonomies this rule reads and writes. Pick several to apply the same rule to each of them.', 'meta-conductor'),
                 'default'     => '',
                 'required'    => true,
                 'columns'     => 12,
                 'conditions'  => self::readers('taxonomy'),
                 'args'        => [
-                    'options' => ConfigHelpers::taxonomy_options(),
+                    'multiple' => true,
+                    'options'  => ConfigHelpers::taxonomy_checkbox_options(),
                 ],
             ],
             [
@@ -305,7 +313,7 @@ class TermRulesConfig {
                 'conditions' => self::readers('acf_taxonomy_note'),
                 'args'       => [
                     'variant' => 'info',
-                    'content' => '<p>' . esc_html__('Terms are copied in this taxonomy, by ID — the same taxonomy on both ends of the relationship.', 'meta-conductor') . '</p>',
+                    'content' => '<p>' . esc_html__('Terms are copied within each chosen taxonomy, by ID — the same taxonomy on both ends of the relationship.', 'meta-conductor') . '</p>',
                 ],
             ],
             // Gated (#58): the ACF-reference rule's post type is pinned by the

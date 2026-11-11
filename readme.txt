@@ -43,6 +43,8 @@ Rules are authored as two ordered lists — one for rules that write terms, one 
 
 **Level restriction no longer has *One term per level*.** It offers *Deepest only* and *Shallowest only*; use a Term count limit rule for the old behavior. A stored row still holding the removed mode runs as *Deepest only*, so check any such rule. The old mode kept the alphabetically last term at a level; Term count limit keeps the deepest, then the lowest term ID.
 
+**One rule can name several taxonomies.** On Term count limit, Propagation, Hierarchy inheritance, Level restriction and Related post terms, *Taxonomies* is now a multi-select, and a row naming several behaves as if it were repeated once per taxonomy. Your existing rules are unchanged: the first admin load of the rules tab rewrites each stored single taxonomy as a one-element list. An Apply to Existing Posts run in progress on one of these rules starts over once.
+
 = 0.10.0 =
 
 **Title & slug collision avoidance is now an ordered ladder, and your existing rules are converted on update.** The old *Date-based collision* toggle and its date field are replaced by one *Collision avoidance — tokens to add* field. The first admin page load after updating rewrites each stored rule once: toggle on with no date field becomes `{pub_year}`, on with a date field becomes `{date_year:field}`, off becomes blank. **A rule that had the toggle on but no date token in its slug pattern used to fall back to `-2` numbering on a collision; it now appends the publication year first.** Check those rules and the slugs they produce on your next collision. Rules with a date field behave as before.

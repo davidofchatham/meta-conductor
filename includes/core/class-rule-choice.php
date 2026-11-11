@@ -52,11 +52,21 @@ final class RuleChoice {
      * legacy shape the storage adapter erases is not a change; `enabled`
      * included, so a toggle is.
      *
+     * A row expanded from a taxonomy list (FW-56) fingerprints as the STORED
+     * row it came from — `taxonomy` its list again — so every expansion shares
+     * the one fingerprint, which is also the stored row's own: the author chose
+     * one row, and a choice, a stale check and a one-time run all name it.
+     *
      * @param array $row One projected kind-list row.
      * @return string 32 hex chars.
      */
     public static function fingerprint(array $row): string {
         unset($row['id']);
+
+        if (isset($row['stored_taxonomies'])) {
+            $row['taxonomy'] = $row['stored_taxonomies'];
+            unset($row['stored_taxonomies']);
+        }
 
         return md5(serialize($row));
     }

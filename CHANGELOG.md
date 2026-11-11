@@ -15,8 +15,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - An ACF taxonomy field on the post is pruned first, then the native terms.
   - **Collision warnings:** a count rule is warned about against another count rule, a level restriction rule or a hierarchy inheritance rule on the same taxonomy and post types, as order-sensitive. With a parent-to-child or both-direction inheritance rule the warning says the two want opposite results, because the cap removes terms the other rule adds back on every pass.
 
+- **One rule can name several taxonomies.** On the five rule types that scope by a taxonomy (Term count limit, Propagation, Hierarchy inheritance, Level restriction and Related post terms), the *Taxonomies* field is now a multi-select, so applying the same rule across several taxonomies no longer means keeping a near-identical row per taxonomy.
+  - A row naming several behaves exactly as if it were repeated once per taxonomy, in the order listed; the rule list, its numbering and the collapsed row title (*Categories, Tags, +2 more* past three) still show it as one row.
+  - Collision warnings name the row by its place in the list and the taxonomy that clashes. The Apply to Existing Posts dropdown offers it once, and a run covers every taxonomy it names.
+  - At least one taxonomy is still required; an empty selection is rejected on save.
+
 ### Changed
 
+- **A stored single `taxonomy` is rewritten as a one-element list the first time the rules tab loads in the admin.** The new multi-select shows a stored single value as an empty selection and would drop it on the next save, so it is rewritten up front. Rules behave the same before and after; a rule set up from WP-CLI or a fixture with a single value still runs unchanged.
+- **An in-progress Apply run of a rule on one of those five types starts over once.** Its stored identity includes the row's taxonomy, which is now a list.
 - **Level restriction offers only *Deepest only* and *Shallowest only*.** *One term per level* moved to the new Term count limit rule, where it no longer sits under a depth rule or needs a hierarchical taxonomy. The *Keep ancestor terms* text and the row title drop their *one term per level* wording. The type is not known to be in use on any live site, so there is no migration; a stored row still holding the old mode runs as *Deepest only*, the same as a row with no mode.
 - **Old *one term per level* kept the alphabetically last term; Term count limit does not.** Its tie-break is the deepest-then-lowest-ID order above.
 - **Apply to Existing Posts result cards can be dismissed.** Each button keeps its own result card until that same button runs again, so a Preview card, the first batch's card and the latest batch's card piled up. Each card now has a close button; running that button again shows its new card.

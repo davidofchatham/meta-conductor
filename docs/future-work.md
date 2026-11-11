@@ -261,14 +261,8 @@ Separate `title_slug_rules` into a title type and a slug type in `format_rules`,
 
 A rule names one taxonomy, so applying the same rule across several means keeping one near-identical row per taxonomy. Let a row name a list and expand it at read time into one scalar row per taxonomy, so no handler ever sees an array.
 
-- **Detail home:** none; this row carries it. It began as a bullet under FW-10.
-- **Progress:** Not started. A live site runs three propagation rules that differ only in taxonomy, and one authoring slip (a copy meant to be re-pointed at another taxonomy was saved unchanged) went unnoticed. The case is authoring, not speed: rules duplicated per taxonomy already share the tier-3 reverse-lookup scan (`find_holders_referencing` memoizes per request on `related_id:holder_type:field_name`), so this row makes no performance claim.
-- **Open:**
-  - **Which types.** The ones whose rows read the shared `taxonomy` field and name no term of it: term count, propagation, hierarchical, level restriction and related post terms. Check each descriptor's `subfields()` for a term picker bound to the taxonomy before listing a type. `related` is out; it keys on trigger terms.
-  - **Mechanism.** Expand in `StorageFactory` after `normalize_rule_shape()`, adjacent and in authored order, so handlers, descriptors and the collision detector stay scalar. The alternative, an array through every handler (`recompute_dependent`, `capture_removed_dependents`, `process_severed`, the label snapshots), costs far more for no payoff.
-  - **Storage shape.** Keep the key `taxonomy`; normalization accepts a string or a list and reads a string as a one-element list. Rows on a live rule type read unchanged, so no migration and no manual re-save.
-  - **Gates.** The field becomes a multi-select, and a condition-hidden subfield drops on save: update H11 / H12's expected visibility and run the round-trip sweep.
-  - **Apply page.** The fingerprint and the one-time run of a disabled row must treat the N virtual rows as one stored row (FW-57). The row title needs a form for several taxonomies.
+- **Detail home:** [architecture.md → A row names several taxonomies](architecture.md#a-row-names-several-taxonomies-fw-56). It began as a bullet under FW-10.
+- **Progress:** Built on `feature/multi-taxonomy-rules`; see CHANGELOG *Added*. The case was authoring, not speed: rules duplicated per taxonomy already share the tier-3 reverse-lookup scan (`find_holders_referencing` memoizes per request on `related_id:holder_type:field_name`), so this row makes no performance claim.
 - **Blocked by:** — • **Interacts with:** FW-10, FW-57, FW-59
 
 ---
