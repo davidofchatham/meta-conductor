@@ -17,8 +17,8 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Named after the storage key `related_rules`, not a domain name — FW-14 renames
- * `label()` only.
+ * Named after the storage key `related_rules`, not a domain name — FW-14 renamed `label()` only;
+ * FW-63 renames the id and the class.
  */
 final class RelatedRules extends RuleType {
 
@@ -31,7 +31,7 @@ final class RelatedRules extends RuleType {
     }
 
     public function label(): string {
-        return __('Related term — a trigger term applies a target term', 'meta-conductor');
+        return __('Set terms from a trigger term', 'meta-conductor');
     }
 
     public function handler_class(): string {
@@ -65,7 +65,7 @@ final class RelatedRules extends RuleType {
     }
 
     /**
-     * Related term — when a trigger term is present, apply a target term.
+     * Set terms from a trigger term — when a trigger term is present, apply a target term.
      *
      * LIVE on a real site (#58): the field ids and stored shapes here are the
      * ones the per-type repeater persisted — `trigger_type`,

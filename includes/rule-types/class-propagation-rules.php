@@ -16,8 +16,8 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Named after the storage key `propagation_rules`, not a domain name — FW-14 renames
- * `label()` only.
+ * Named after the storage key `propagation_rules`, not a domain name — FW-61 merges it into `terms_from_related_post`;
+ * FW-14 leaves its label alone until then.
  */
 final class PropagationRules extends RuleType {
 

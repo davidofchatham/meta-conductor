@@ -42,7 +42,7 @@
  *
  * The stored `type` value is the LEGACY TYPE KEY VERBATIM
  * (`hierarchical_rules`, not `hierarchical`) — rule-type renaming stays
- * deferred (FW-14), and reusing the key is what lets every handler's
+ * deferred (FW-63), and reusing the key is what lets every handler's
  * `get_enabled_rules()` filter on `get_rule_type()` with no mapping table.
  * The author-facing labels are each descriptor's `label()`; the stored values
  * never change with them.

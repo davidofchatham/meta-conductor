@@ -37,7 +37,7 @@
  *
  * The stored `type` value is the LEGACY TYPE KEY VERBATIM (`title_slug_rules`,
  * not `title_slug`), for the same reason it is in the term list: rule-type
- * renaming stays deferred (FW-14), and reusing the key is what lets
+ * renaming stays deferred (FW-63), and reusing the key is what lets
  * `get_enabled_rules()` filter on `get_rule_type()` with no mapping table.
  *
  * Preview + Apply-to-Existing action buttons remain deferred until Wireframe
