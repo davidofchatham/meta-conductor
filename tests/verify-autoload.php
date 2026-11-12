@@ -101,6 +101,8 @@ $classes = [
     'BWS\\MetaConductor\\Tokens\\FlatSlug',
     // Storage\ upgrade routine (FW-51 03) — delete with the class.
     'BWS\\MetaConductor\\Storage\\SlugEscalationMigration',
+    // Storage\ rule-type id rewrite (FW-63 01) — delete with the class.
+    'BWS\\MetaConductor\\Storage\\RuleTypeIdMigration',
     // Admin\
     'BWS\\MetaConductor\\Admin\\Diagnostics',
     'BWS\\MetaConductor\\Admin\\WireframeBootstrap',
