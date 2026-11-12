@@ -80,7 +80,7 @@ Instead:
 - Put the varying value on the **entity** (user meta / ACF profile field, post meta).
 - Keep **one indirection rule**: *"apply the value in each entity's field `X`."*
 
-Result: rule count stays **O(1) in entities**; the per-entity data scales natively in `wp_usermeta` / `wp_postmeta` (indexed, one row per entity, no blob, no clobber). This dissolves the "unbounded accumulation → CPT" trigger for the whole class of per-entity rules. See [FW-8](future-work.md#fw-8--user_based_rules-user-based-term-setting--restriction) for the worked example (per-user default terms).
+Result: rule count stays **O(1) in entities**; the per-entity data scales natively in `wp_usermeta` / `wp_postmeta` (indexed, one row per entity, no blob, no clobber). This dissolves the "unbounded accumulation → CPT" trigger for the whole class of per-entity rules. See [FW-8](future-work.md#fw-8--terms_from_acting_user-user-based-term-setting--restriction) for the worked example (per-user default terms).
 
 ---
 
@@ -111,7 +111,7 @@ Splitting rules across more options would push the ceiling further out, but the 
 | `title_slug_rules` | Options *(reassess)* | Named patterns per post type; *can* accumulate, but single-author + bounded-in-practice. Prior ROADMAP marked CPT/Phase-4 — **re-open**: no concurrent authoring; blast radius covered by the version token, not by a page split. CPT only if a real draft/test lifecycle is wanted. |
 | `time_based_rules` | Options *(reassess)* | Schedule rules *can* multiply, but single-author. Same re-open as title_slug. |
 | `field_transformation_rules` | **Options** (a row type in `format_rules`) | Computed-field recipes; bounded per site, single author, no draft/test lifecycle. A CPT's entity chrome buys nothing here, and the ordered list is what lets a title rule read a field rule's output. |
-| `user_based_rules` (UBT) | **Options** | **Changed from CPT.** Role/user = *target*, not owner → single author, no concurrent writes. Per-user explosion solved by [indirection](#the-indirection-escape-hatch) (profile field + one rule), not N rules. CPT's entity chrome (author/date/trash) explicitly unwanted. Wireframe panel preferred over CPT editor. See [FW-8](future-work.md#fw-8--user_based_rules-user-based-term-setting--restriction). |
+| `terms_from_acting_user` (UBT) | **Options** | **Changed from CPT.** Role/user = *target*, not owner → single author, no concurrent writes. Per-user explosion solved by [indirection](#the-indirection-escape-hatch) (profile field + one rule), not N rules. CPT's entity chrome (author/date/trash) explicitly unwanted. Wireframe panel preferred over CPT editor. See [FW-8](future-work.md#fw-8--terms_from_acting_user-user-based-term-setting--restriction). |
 
 **As of Phase 4, the row above is not the unit of storage.** Rules are stored as one ordered list per **effect kind** — `term_rules` and `format_rules` — with each row carrying its own `type`. The per-type reasoning still governs *whether a type belongs in Options at all*; it no longer implies a per-type array. See [architecture.md → Effect-kind rule lists](architecture.md#effect-kind-rule-lists).
 
