@@ -153,7 +153,7 @@ if ( class_exists( '\\BWS\\MetaConductor\\Storage\\StorageFactory' ) ) {
 		);
 
 		foreach ( $mc_read as $mc_i => $mc_rule ) {
-			// A manifest row may be seeded disabled on purpose (term_count_rules);
+			// A manifest row may be seeded disabled on purpose (restrict_term_count);
 			// the check is that it reads back as authored.
 			$check( "{$mc_type}[{$mc_i}] enabled", ! empty( $mc_rule['enabled'] ) === ! empty( $mc_seeded[ $mc_i ]['enabled'] ) );
 

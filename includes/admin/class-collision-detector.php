@@ -68,7 +68,7 @@ use BWS\MetaConductor\RuleTypes\HierarchicalLevelRestrictionRules;
 use BWS\MetaConductor\RuleTypes\TermsFromTermHierarchyRules;
 use BWS\MetaConductor\RuleTypes\Registry;
 use BWS\MetaConductor\RuleTypes\TermsFromTriggerTermRules;
-use BWS\MetaConductor\RuleTypes\TermCountRules;
+use BWS\MetaConductor\RuleTypes\RestrictTermCountRules;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 use BWS\MetaConductor\Storage\StorageFactory;
 
@@ -309,7 +309,7 @@ class CollisionDetector {
         // back on every pass. A child-to-parent rule is not this: with per-level on
         // the kept ancestors fill one term per depth, and with it off the cap keeps
         // the deepest term, so that pair gets the generic order warning below.
-        $count_pair = self::as_pair($a, $b, TermsFromTermHierarchyRules::class, TermCountRules::class);
+        $count_pair = self::as_pair($a, $b, TermsFromTermHierarchyRules::class, RestrictTermCountRules::class);
         if ($count_pair !== null && self::adds_descendants($count_pair[0]['row'])) {
             return ['count_vs_descendants', $count_pair[0], $count_pair[1]];
         }

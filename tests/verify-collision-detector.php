@@ -360,7 +360,7 @@ $check('#39: moving one to a disjoint post type clears it',
 // --- 5b. Term count limit — a restricting claim over the whole taxonomy. ----
 
 $count_row = fn(array $over = []) => $over + [
-    'type' => 'term_count_rules', 'enabled' => true, 'taxonomy' => 'mc_topic',
+    'type' => 'restrict_term_count', 'enabled' => true, 'taxonomy' => 'mc_topic',
     'post_types' => ['mc_item'], 'max_terms' => 1, 'per_level' => true, 'row_title' => 'Cap Topics',
 ];
 $hier_row = fn(string $behavior) => [
@@ -369,9 +369,9 @@ $hier_row = fn(string $behavior) => [
 ];
 
 $check('count limit keys on its whole taxonomy',
-    $desc('term_count_rules')->target_key(['taxonomy' => 'mc_topic']) === 'taxonomy|mc_topic');
+    $desc('restrict_term_count')->target_key(['taxonomy' => 'mc_topic']) === 'taxonomy|mc_topic');
 $check('count limit with no taxonomy picked resolves nothing',
-    $desc('term_count_rules')->target_key([]) === null);
+    $desc('restrict_term_count')->target_key([]) === null);
 
 $check('two count rules on one taxonomy warn, generically',
     $codes($scan($KIND_TERM, [$count_row(), $count_row(['max_terms' => 2])])) === ['shared_target']);
@@ -389,7 +389,7 @@ foreach (['descendants_always', 'descendants_smart', 'both_always', 'both_smart'
 $found_count = $scan($KIND_TERM, [$count_row(), $hier_row('descendants_always')]);
 $check('the contradiction leads with the rule that ADDS, whatever the list order',
     ($found_count[0]['a']['type'] ?? '') === 'terms_from_term_hierarchy'
-    && ($found_count[0]['b']['type'] ?? '') === 'term_count_rules'
+    && ($found_count[0]['b']['type'] ?? '') === 'restrict_term_count'
     && [$found_count[0]['a']['index'], $found_count[0]['b']['index']] === [1, 0]);
 $check('and its message says the cap removes what the other rule adds back',
     str_starts_with(CollisionDetector::message($found_count[0]), '“Inherit Topics” adds descendant terms')

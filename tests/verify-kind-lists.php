@@ -127,7 +127,7 @@ $settings = [
     'hierarchical_level_restriction_rules' => [
         ['name' => 'L1', 'taxonomy' => 'category', 'enabled' => true, 'restriction_mode' => 'deepest_only'],
     ],
-    'term_count_rules' => [
+    'restrict_term_count' => [
         ['name' => 'C1', 'taxonomy' => 'category', 'enabled' => true, 'max_terms' => 2, 'per_level' => false],
     ],
     'title_slug_rules' => [
@@ -148,7 +148,7 @@ $all_types = [
     'terms_from_date_window',
     'related_post_terms_rules',
     'hierarchical_level_restriction_rules',
-    'term_count_rules',
+    'restrict_term_count',
     'title_slug_rules',
     'field_transformation_rules',
 ];
@@ -235,7 +235,7 @@ $migrated = array_merge(
 );
 $check('every config-migrated type is a known type',
     array_diff($migrated, $all_types) === []);
-$check('the term kind reports its migrated types — all seven as of term_count_rules',
+$check('the term kind reports its migrated types — all seven as of restrict_term_count',
     OptionRuleStorage::migrated_types_for_kind(OptionRuleStorage::KIND_TERM) === [
         'propagation_rules',
         'related_post_terms_rules',
@@ -243,7 +243,7 @@ $check('the term kind reports its migrated types — all seven as of term_count_
         'terms_from_trigger_term',
         'terms_from_term_hierarchy',
         'hierarchical_level_restriction_rules',
-        'term_count_rules',
+        'restrict_term_count',
     ]);
 $check('the format kind reports its migrated type (#59)',
     OptionRuleStorage::migrated_types_for_kind(OptionRuleStorage::KIND_FORMAT)
@@ -436,7 +436,7 @@ $check('FW-56: siblings share the stored row\'s per-type id, and the next row is
     array_column($many, 'id') === [0, 1, 1, 2]);
 
 // An empty list keeps the row, with no taxonomy — inert, as an empty string was.
-$none = $expand([['type' => 'term_count_rules', 'taxonomy' => []]]);
+$none = $expand([['type' => 'restrict_term_count', 'taxonomy' => []]]);
 $check('FW-56: an empty list reads as one row with an empty taxonomy',
     count($none) === 1 && $none[0]['taxonomy'] === '');
 

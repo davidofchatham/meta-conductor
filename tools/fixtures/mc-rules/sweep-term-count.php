@@ -2,7 +2,7 @@
 /**
  * mc-rules — Term count limit behavior sweep (term-count-limit ticket 02).
  *
- * `term_count_rules` caps how many terms a post holds in one taxonomy. With no
+ * `restrict_term_count` caps how many terms a post holds in one taxonomy. With no
  * edit to go on (no delta) the survivors are the deepest terms, then the lowest
  * term IDs (`Core\TermCountSurvivors`). The first block of steps (flat … scope)
  * is therefore NO-DELTA: terms are staged with the rules silenced, the rule is
@@ -70,7 +70,7 @@ function mctc_author( $taxonomy, $max, $per_level, array $over = array() ) {
 	mc_write_ordered_rules(
 		array(
 			$over + array(
-				'type'       => 'term_count_rules',
+				'type'       => 'restrict_term_count',
 				'enabled'    => true,
 				'taxonomy'   => $taxonomy,
 				'post_types' => array( 'mc_item' ),
@@ -305,7 +305,7 @@ switch ( $step ) {
 					'inheritance_depth'    => 'all',
 				),
 				array(
-					'type'       => 'term_count_rules',
+					'type'       => 'restrict_term_count',
 					'enabled'    => true,
 					'taxonomy'   => 'mc_topic',
 					'post_types' => array( 'mc_item' ),
@@ -336,7 +336,7 @@ switch ( $step ) {
 			mc_write_ordered_rules(
 				array(
 					array(
-						'type'       => 'term_count_rules',
+						'type'       => 'restrict_term_count',
 						'enabled'    => true,
 						'taxonomy'   => 'mc_topic',
 						'post_types' => array( 'mc_item' ),
@@ -467,7 +467,7 @@ switch ( $step ) {
 					'target_term_id' => array( $c ),
 				),
 				array(
-					'type'       => 'term_count_rules',
+					'type'       => 'restrict_term_count',
 					'enabled'    => true,
 					'taxonomy'   => 'mc_flag',
 					'post_types' => array( 'mc_item' ),

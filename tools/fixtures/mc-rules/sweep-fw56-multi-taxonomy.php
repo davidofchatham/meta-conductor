@@ -59,7 +59,7 @@ function mc56_dispatcher() {
 /** One term-count row, cap 1 over the whole taxonomy, scoped to mc_item. */
 function mc56_row( $taxonomy ) {
 	return array(
-		'type'       => 'term_count_rules',
+		'type'       => 'restrict_term_count',
 		'enabled'    => true,
 		'taxonomy'   => $taxonomy,
 		'post_types' => array( 'mc_item' ),

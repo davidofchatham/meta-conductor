@@ -35,7 +35,7 @@ final class Registry {
         TermsFromTriggerTermRules::class,
         TermsFromTermHierarchyRules::class,
         HierarchicalLevelRestrictionRules::class,
-        TermCountRules::class,
+        RestrictTermCountRules::class,
         TitleSlugRules::class,
         FieldTransformationRules::class,
     ];

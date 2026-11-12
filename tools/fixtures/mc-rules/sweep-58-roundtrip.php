@@ -84,7 +84,7 @@ $must_survive = [
                                    'reverse_acf_field_name', 'taxonomy', 'keep_in_sync', 'post_status'],
     // Baseline is max 2 / per level OFF — both non-default, so a gate that
     // dropped a field would show here instead of reading back as its default.
-    'term_count_rules'         => ['type', 'enabled', 'taxonomy', 'post_types', 'post_status',
+    'restrict_term_count'      => ['type', 'enabled', 'taxonomy', 'post_types', 'post_status',
                                    'max_terms', 'per_level'],
 ];
 

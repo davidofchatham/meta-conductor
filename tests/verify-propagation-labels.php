@@ -202,18 +202,18 @@ $check('level restriction: retired one_per_level reads as absent',
 // --- Term count limit: cap, plural, and the per-level clause. ---------------
 $check('count limit: plural cap, per level on',
     $title([
-        'type' => 'term_count_rules', 'taxonomy' => 'breaker',
+        'type' => 'restrict_term_count', 'taxonomy' => 'breaker',
         'max_terms' => 2, 'per_level' => true,
     ]) === 'Limit Breakers to 2 terms per level');
 
 $check('count limit: per level off drops the clause, singular cap',
     $title([
-        'type' => 'term_count_rules', 'taxonomy' => 'breaker',
+        'type' => 'restrict_term_count', 'taxonomy' => 'breaker',
         'max_terms' => 1, 'per_level' => false, 'post_types' => ['page'],
     ]) === 'Pages: Limit Breakers to 1 term');
 
 $check('count limit: absent fields read as the defaults (1, per level)',
-    $title(['type' => 'term_count_rules', 'taxonomy' => 'breaker'])
+    $title(['type' => 'restrict_term_count', 'taxonomy' => 'breaker'])
         === 'Limit Breakers to 1 term per level');
 
 // --- An untyped row stays findable rather than going blank. -----------------

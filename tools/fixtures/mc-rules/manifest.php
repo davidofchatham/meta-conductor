@@ -197,7 +197,7 @@ return array(
 		// trim every other sweep's mc_item subjects. The values are non-default
 		// (default is 1, per level on) so the settings round-trip sweep can tell a
 		// dropped field from a defaulted one; sweep-term-count.php enables its own.
-		'term_count_rules' => array(
+		'restrict_term_count' => array(
 			array(
 				'enabled'    => false,
 				'taxonomy'   => 'mc_topic',

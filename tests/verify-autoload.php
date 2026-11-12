@@ -75,7 +75,7 @@ $classes = [
     'BWS\\MetaConductor\\Handlers\\TermsFromDateWindowHandler',
     'BWS\\MetaConductor\\Handlers\\RelatedPostTermsHandler',
     'BWS\\MetaConductor\\Handlers\\HierarchicalLevelRestrictionHandler',
-    'BWS\\MetaConductor\\Handlers\\TermCountHandler',
+    'BWS\\MetaConductor\\Handlers\\RestrictTermCountHandler',
     'BWS\\MetaConductor\\Handlers\\TitleSlugHandler',
     'BWS\\MetaConductor\\Handlers\\FieldTransformationHandler',
     // RuleTypes\ (FW-39) — the descriptors and the registry that lists them.
@@ -89,7 +89,7 @@ $classes = [
     'BWS\\MetaConductor\\RuleTypes\\TermsFromTriggerTermRules',
     'BWS\\MetaConductor\\RuleTypes\\TermsFromTermHierarchyRules',
     'BWS\\MetaConductor\\RuleTypes\\HierarchicalLevelRestrictionRules',
-    'BWS\\MetaConductor\\RuleTypes\\TermCountRules',
+    'BWS\\MetaConductor\\RuleTypes\\RestrictTermCountRules',
     'BWS\\MetaConductor\\RuleTypes\\TitleSlugRules',
     'BWS\\MetaConductor\\RuleTypes\\FieldTransformationRules',
     // Tokens\ (FW-40) — the pattern engine title/slug renders through.

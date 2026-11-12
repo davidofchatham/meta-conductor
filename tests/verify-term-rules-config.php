@@ -341,7 +341,7 @@ $expected_visible = [
         'restriction_mode', 'include_ancestors', 'row_title',
     ],
     // No hierarchical_taxonomy_note: a cap means the same on a flat taxonomy.
-    'term_count_rules' => [
+    'restrict_term_count' => [
         'type', 'enabled', 'taxonomy', 'post_types', 'post_status',
         'max_terms', 'per_level', 'row_title',
     ],
