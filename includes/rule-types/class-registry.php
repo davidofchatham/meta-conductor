@@ -34,7 +34,7 @@ final class Registry {
         TermsFromDateWindowRules::class,
         TermsFromTriggerTermRules::class,
         TermsFromTermHierarchyRules::class,
-        HierarchicalLevelRestrictionRules::class,
+        RestrictTermsByLevelRules::class,
         RestrictTermCountRules::class,
         TitleSlugRules::class,
         FieldTransformationRules::class,

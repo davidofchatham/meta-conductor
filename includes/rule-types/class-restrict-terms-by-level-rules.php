@@ -1,13 +1,13 @@
 <?php
 /**
- * Descriptor for `hierarchical_level_restriction_rules` rows.
+ * Descriptor for `restrict_terms_by_level` rows.
  *
  * @since 0.10.0
  */
 
 namespace BWS\MetaConductor\RuleTypes;
 
-use BWS\MetaConductor\Handlers\HierarchicalLevelRestrictionHandler;
+use BWS\MetaConductor\Handlers\RestrictTermsByLevelHandler;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 
 // Prevent direct access
@@ -16,13 +16,13 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Named after the storage key `hierarchical_level_restriction_rules`, not a domain name — FW-14 renamed `label()` only;
+ * Named after the storage key `restrict_terms_by_level`, not a domain name — FW-14 renamed `label()` only;
  * FW-63 renames the id and the class.
  */
-final class HierarchicalLevelRestrictionRules extends RuleType {
+final class RestrictTermsByLevelRules extends RuleType {
 
     public function type(): string {
-        return 'hierarchical_level_restriction_rules';
+        return 'restrict_terms_by_level';
     }
 
     public function kind(): string {
@@ -34,7 +34,7 @@ final class HierarchicalLevelRestrictionRules extends RuleType {
     }
 
     public function handler_class(): string {
-        return HierarchicalLevelRestrictionHandler::class;
+        return RestrictTermsByLevelHandler::class;
     }
 
     public function target_key(array $rule): ?string {

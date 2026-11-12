@@ -55,7 +55,7 @@ $expected = [
         'terms_from_date_window',
         'terms_from_trigger_term',
         'terms_from_term_hierarchy',
-        'hierarchical_level_restriction_rules',
+        'restrict_terms_by_level',
         'restrict_term_count',
     ],
     OptionRuleStorage::KIND_FORMAT => [

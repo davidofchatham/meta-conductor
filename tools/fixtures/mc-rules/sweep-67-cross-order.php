@@ -37,7 +37,7 @@
  *
  * ⚠️ ACF-mirror trap, found running this: `item-solo-a` carries an ACF
  * `mc_topics` taxonomy mirror (`field_mc_topics_item`) that
- * `HierarchicalLevelRestrictionHandler::process_acf_level_restrictions()`
+ * `RestrictTermsByLevelHandler::process_acf_level_restrictions()`
  * reads BEFORE the native branch. A stale value left by an earlier scenario
  * (native reset alone does not touch it — same trap as propagation's
  * `mc_topics` mirror on `mc_section`, matrix §5/§62) silently swapped which
@@ -87,7 +87,7 @@ function mc67_hierarchical_row() {
 
 function mc67_level_restriction_row() {
 	return array(
-		'type'               => 'hierarchical_level_restriction_rules',
+		'type'               => 'restrict_terms_by_level',
 		'enabled'            => true,
 		'taxonomy'           => 'mc_topic',
 		'post_types'         => array( 'mc_item' ),

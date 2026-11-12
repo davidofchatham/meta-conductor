@@ -183,7 +183,7 @@ return array(
 		),
 
 		// matrix §2 — deepest_only, ancestors off.
-		'hierarchical_level_restriction_rules' => array(
+		'restrict_terms_by_level' => array(
 			array(
 				'enabled'           => true,
 				'taxonomy'          => 'mc_topic',

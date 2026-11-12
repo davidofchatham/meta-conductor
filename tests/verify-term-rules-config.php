@@ -280,7 +280,7 @@ $mode_opts = array_keys($by_id['restriction_mode']['args']['options']);
 $mode_titles = [];
 foreach ($mode_opts as $mode) {
     $mode_titles[] = WireframeBootstrap::snapshot_term_rule_labels([$KIND => [[
-        'type' => 'hierarchical_level_restriction_rules', 'taxonomy' => 'category',
+        'type' => 'restrict_terms_by_level', 'taxonomy' => 'category',
         'restriction_mode' => $mode,
     ]]])[$KIND][0]['row_title'];
 }
@@ -335,7 +335,7 @@ $expected_visible = [
         'post_types', 'post_status',
         'inheritance_behavior', 'inheritance_depth', 'row_title',
     ],
-    'hierarchical_level_restriction_rules' => [
+    'restrict_terms_by_level' => [
         'type', 'enabled', 'taxonomy', 'hierarchical_taxonomy_note',
         'post_types', 'post_status',
         'restriction_mode', 'include_ancestors', 'row_title',

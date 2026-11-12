@@ -64,7 +64,7 @@ namespace BWS\MetaConductor\Admin;
 
 use BWS\MetaConductor\Admin\Config\ConfigHelpers;
 use BWS\MetaConductor\Handlers\TermsFromTermHierarchyHandler;
-use BWS\MetaConductor\RuleTypes\HierarchicalLevelRestrictionRules;
+use BWS\MetaConductor\RuleTypes\RestrictTermsByLevelRules;
 use BWS\MetaConductor\RuleTypes\TermsFromTermHierarchyRules;
 use BWS\MetaConductor\RuleTypes\Registry;
 use BWS\MetaConductor\RuleTypes\TermsFromTriggerTermRules;
@@ -291,7 +291,7 @@ class CollisionDetector {
      * @return array{0:string,1:array,2:array}
      */
     private static function diagnose(array $a, array $b): array {
-        $pair = self::as_pair($a, $b, TermsFromTermHierarchyRules::class, HierarchicalLevelRestrictionRules::class);
+        $pair = self::as_pair($a, $b, TermsFromTermHierarchyRules::class, RestrictTermsByLevelRules::class);
 
         if ($pair !== null) {
             [$adds, $restricts] = $pair;
@@ -398,7 +398,7 @@ class CollisionDetector {
      */
     private static function keeps_ancestors(array $row): bool {
         return !empty($row['include_ancestors'])
-            || HierarchicalLevelRestrictionRules::mode($row) === HierarchicalLevelRestrictionRules::MODE_SHALLOWEST;
+            || RestrictTermsByLevelRules::mode($row) === RestrictTermsByLevelRules::MODE_SHALLOWEST;
     }
 
     /**
@@ -411,7 +411,7 @@ class CollisionDetector {
      * @return bool
      */
     private static function keeps_descendants(array $row): bool {
-        return HierarchicalLevelRestrictionRules::mode($row) === HierarchicalLevelRestrictionRules::MODE_DEEPEST;
+        return RestrictTermsByLevelRules::mode($row) === RestrictTermsByLevelRules::MODE_DEEPEST;
     }
 
     /**

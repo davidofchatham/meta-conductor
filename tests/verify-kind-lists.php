@@ -124,7 +124,7 @@ $settings = [
         ],
         ['name' => 'A2', 'enabled' => false, 'acf_field_name' => 'post:ref', 'taxonomy' => 'sport'],
     ],
-    'hierarchical_level_restriction_rules' => [
+    'restrict_terms_by_level' => [
         ['name' => 'L1', 'taxonomy' => 'category', 'enabled' => true, 'restriction_mode' => 'deepest_only'],
     ],
     'restrict_term_count' => [
@@ -147,7 +147,7 @@ $all_types = [
     'terms_from_trigger_term',
     'terms_from_date_window',
     'related_post_terms_rules',
-    'hierarchical_level_restriction_rules',
+    'restrict_terms_by_level',
     'restrict_term_count',
     'title_slug_rules',
     'field_transformation_rules',
@@ -242,7 +242,7 @@ $check('the term kind reports its migrated types — all seven as of restrict_te
         'terms_from_date_window',
         'terms_from_trigger_term',
         'terms_from_term_hierarchy',
-        'hierarchical_level_restriction_rules',
+        'restrict_terms_by_level',
         'restrict_term_count',
     ]);
 $check('the format kind reports its migrated type (#59)',
@@ -312,7 +312,7 @@ $check('canonical: an absent field stays absent — empty means all, read `?? []
 $check('id is the per-type index, not the kind-list position',
     array_column($of_type($projected, 'terms_from_term_hierarchy'), 'id') === [0, 1]
     && array_column($of_type($projected, 'terms_from_trigger_term'), 'id') === [0, 1]
-    && $of_type($projected, 'hierarchical_level_restriction_rules')[0]['id'] === 0
+    && $of_type($projected, 'restrict_terms_by_level')[0]['id'] === 0
     && $of_type($projected, 'title_slug_rules')[0]['id'] === 0);
 
 // An `id` already on the row is left alone — it is the caller's, not ours.

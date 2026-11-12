@@ -58,7 +58,7 @@ $valid_types = array(
 	'terms_from_trigger_term',
 	'terms_from_date_window',
 	'related_post_terms_rules',
-	'hierarchical_level_restriction_rules',
+	'restrict_terms_by_level',
 	'restrict_term_count',
 	'title_slug_rules',
 	'field_transformation_rules',

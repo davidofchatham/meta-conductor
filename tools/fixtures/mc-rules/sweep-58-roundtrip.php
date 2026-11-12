@@ -132,7 +132,7 @@ $note('the sanitized list keeps every row, in order',
 $lr_in = [];
 foreach (['deepest_only', 'shallowest_only'] as $mode) {
     foreach ([true, false] as $anc) {
-        $lr_in[] = ['type' => 'hierarchical_level_restriction_rules', 'enabled' => true,
+        $lr_in[] = ['type' => 'restrict_terms_by_level', 'enabled' => true,
                     'taxonomy' => 'mc_topic', 'post_types' => ['mc_item'],
                     'restriction_mode' => $mode, 'include_ancestors' => $anc];
     }

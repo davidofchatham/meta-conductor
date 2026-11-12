@@ -63,7 +63,7 @@ Status (L1)          — second root: related/time-based targets live here so
 | Scenarios | Assign Harbor (L4) → expect Coastal+East+Region auto-added; remove; promotion case (auto term kept manually). `_bws_auto_terms` asserted directly. |
 | Shared reuse | None (needs hierarchical tax it may freely rewrite). |
 
-## 2. hierarchical_level_restriction_rules — LevelRestrictionHandler
+## 2. restrict_terms_by_level — RestrictTermsByLevelHandler
 
 | Aspect | Need |
 |---|---|
@@ -802,7 +802,7 @@ Surviving keys per row:
 | `propagation_rules` | type, enabled, taxonomy, post_types, hierarchical_post_type_note, post_status, conflict_handling, row_title |
 | `terms_from_date_window` | type, enabled, post_types, post_status, filter_taxonomies, filter_terms, start_date, end_date, target_term_id, row_title |
 | `terms_from_term_hierarchy` | type, enabled, taxonomy, hierarchical_taxonomy_note, post_types, post_status, inheritance_behavior, inheritance_depth, row_title |
-| `hierarchical_level_restriction_rules` | type, enabled, taxonomy, hierarchical_taxonomy_note, post_types, post_status, restriction_mode, include_ancestors, row_title |
+| `restrict_terms_by_level` | type, enabled, taxonomy, hierarchical_taxonomy_note, post_types, post_status, restriction_mode, include_ancestors, row_title |
 
 (The two `*_note` keys are `html` subfields; Wireframe stores them as `null`.
 Harmless, and the same thing the old `expansion_behavior_help` did.)
@@ -1016,7 +1016,7 @@ Same rules, same edit, opposite outcome by list position — the point.
 
 **⚠️ ACF-mirror trap, found running this.** `item-solo-a` carries an ACF
 `mc_topics` taxonomy mirror (`field_mc_topics_item`) that
-`HierarchicalLevelRestrictionHandler::process_acf_level_restrictions()` reads
+`RestrictTermsByLevelHandler::process_acf_level_restrictions()` reads
 BEFORE the native branch. A stale value left by an earlier scenario (native
 reset alone does not touch it — the same trap as propagation's `mc_topics`
 mirror on `mc_section`, §5/§62) silently changed which term survived a prune,
@@ -1038,7 +1038,7 @@ that proof, not new handler code.
 gates the post being WRITTEN. Live subject: `TermsFromTermHierarchyHandler`, draft
 `item-solo-a`. Rule `post_status: [publish]` + assign Harbor → gated OUT, only
 Harbor lands (no ancestor expansion). Same edit, rule `post_status: [draft]` →
-gated IN, full ancestor chain expands. `HierarchicalLevelRestrictionHandler`,
+gated IN, full ancestor chain expands. `RestrictTermsByLevelHandler`,
 `PropagationHandler`, `TermsFromDateWindowHandler` and `TermsFromTriggerTermHandler` call the
 identical base method at the top of their own `apply_to_post()`
 (grep-confirmed: same call shape, same early return) — one live scenario

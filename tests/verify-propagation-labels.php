@@ -156,7 +156,7 @@ $check('hierarchical: disabled prefix applies',
 // --- Level restriction: mode phrase + the #32 ancestors clause. -------------
 $check('level restriction: mode phrase',
     $title([
-        'type'             => 'hierarchical_level_restriction_rules',
+        'type'             => 'restrict_terms_by_level',
         'enabled'          => true,
         'taxonomy'         => 'breaker',
         'restriction_mode' => 'deepest_only',
@@ -164,7 +164,7 @@ $check('level restriction: mode phrase',
 
 $check('level restriction: ancestors clause in ANY mode',
     $title([
-        'type'              => 'hierarchical_level_restriction_rules',
+        'type'              => 'restrict_terms_by_level',
         'taxonomy'          => 'breaker',
         'restriction_mode'  => 'shallowest_only',
         'include_ancestors' => true,
@@ -173,14 +173,14 @@ $check('level restriction: ancestors clause in ANY mode',
 
 $check('level restriction: shallowest, without the ancestors clause',
     $title([
-        'type'             => 'hierarchical_level_restriction_rules',
+        'type'             => 'restrict_terms_by_level',
         'taxonomy'         => 'breaker',
         'restriction_mode' => 'shallowest_only',
     ]) === 'Restrict Breakers to the shallowest level');
 
 $check('level restriction: deepest keeping ancestors',
     $title([
-        'type'              => 'hierarchical_level_restriction_rules',
+        'type'              => 'restrict_terms_by_level',
         'taxonomy'          => 'breaker',
         'restriction_mode'  => 'deepest_only',
         'include_ancestors' => true,
@@ -188,13 +188,13 @@ $check('level restriction: deepest keeping ancestors',
 
 $check('level restriction: absent mode ⇒ deepest',
     $title([
-        'type'     => 'hierarchical_level_restriction_rules',
+        'type'     => 'restrict_terms_by_level',
         'taxonomy' => 'breaker',
     ]) === 'Restrict Breakers to the deepest level');
 
 $check('level restriction: retired one_per_level reads as absent',
     $title([
-        'type'             => 'hierarchical_level_restriction_rules',
+        'type'             => 'restrict_terms_by_level',
         'taxonomy'         => 'breaker',
         'restriction_mode' => 'one_per_level',
     ]) === 'Restrict Breakers to the deepest level');

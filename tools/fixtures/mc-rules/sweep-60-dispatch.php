@@ -53,7 +53,7 @@ use BWS\MetaConductor\Storage\StorageFactory;
 $step = $args[0] ?? 'order';
 
 $HIER = 'terms_from_term_hierarchy';
-$LR   = 'hierarchical_level_restriction_rules';
+$LR   = 'restrict_terms_by_level';
 
 /**
  * Author the persisted `term_rules` list in an explicit TYPE order.

@@ -161,7 +161,7 @@ switch ( $step ) {
 		$a(
 			'§65b #51 names the hierarchy rule and the restriction rule',
 			array( $ancestors[0]['a']['type'], $ancestors[0]['b']['type'] ),
-			array( 'terms_from_term_hierarchy', 'hierarchical_level_restriction_rules' )
+			array( 'terms_from_term_hierarchy', 'restrict_terms_by_level' )
 		);
 		$a( '§65b #51 names the shared taxonomy', $ancestors[0]['target'], 'MC Topics' );
 		$msg = CollisionDetector::message( $ancestors[0] );
@@ -217,7 +217,7 @@ switch ( $step ) {
 			'row_title'         => 'Cascade Topics',
 		);
 		$restriction = array(
-			'type'              => 'hierarchical_level_restriction_rules',
+			'type'              => 'restrict_terms_by_level',
 			'enabled'           => true,
 			'taxonomy'          => 'mc_topic',
 			'post_types'        => array( 'mc_section' ),
