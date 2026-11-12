@@ -16,8 +16,8 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Named after the storage key `restrict_terms_by_level`, not a domain name — FW-14 renamed `label()` only;
- * FW-63 renames the id and the class.
+ * Named after the storage key `restrict_terms_by_level`, not a domain name — renaming a type for
+ * authors edits `label()` only.
  */
 final class RestrictTermsByLevelRules extends RuleType {
 

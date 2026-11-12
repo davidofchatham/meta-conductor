@@ -428,7 +428,7 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
 
     **A second question live state cannot answer: which terms did the author just
     add?** *Term count limit* needs it to keep the editor's choice over an older
-    term when a post exceeds the cap. `TermCountHandler` captures it on
+    term when a post exceeds the cap. `RestrictTermCountHandler` captures it on
     `set_object_terms` as `new − old` term IDs per object and taxonomy. It
     records only writes made OUTSIDE a pass (`TermDispatcher::any_pass_active()`),
     so a term another rule adds above the count rule is rule output, not the
@@ -455,7 +455,7 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
     reads terms (`{term:TAX}`, `{terms:TAX}`) and writes none, so it is a sink:
     terms must settle first.
 
-    Until #64 that order rested on two accidents — `TitleSlugHandler` registered
+    Until #64 that order rested on two accidents — `TitleSlugFromPatternHandler` registered
     at `acf/save_post`/`save_post` priority **99**, above every term handler,
     and `TaxonomyManager` constructed it **last**. Coalescing the term pass onto
     a late drain (#60) would have inverted both, and the result is a title
@@ -560,7 +560,7 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
       refer to. Two smaller asymmetries in the same area: `row_title` is stored
       *already* `esc_html()`-ed (the repeater's `title_template` renders raw),
       so the detector decodes it and escapes once at the end; and the hierarchy
-      outcome comes from `HierarchicalHandler::behavior_key()` rather than a
+      outcome comes from `TermsFromTermHierarchyHandler::behavior_key()` rather than a
       second reading of the legacy `hierarchy_direction`/`expansion_behavior`
       pair, which is the re-derived-switch drift invariant 17's cousins warn
       about.
@@ -585,7 +585,7 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
       rule instead owns exactly the terms its configuration names and recomputes
       from boundaries plus config on every pass. The accepted cost is that
       ownership is retroactive, so a manual tag matching a configured term is
-      swept. The single exception, `HierarchicalHandler`'s `_bws_auto_terms`, is
+      swept. The single exception, `TermsFromTermHierarchyHandler`'s `_bws_auto_terms`, is
       described under CONTEXT.md → **Jurisdiction**.
     - *Partitioning rules so ordering never matters*, inside the term group.
       Taxonomy fails as a key because term-pairing is cross-taxonomy by
@@ -598,7 +598,7 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
     fails there rather than being silently skipped. `sweep-65-collisions.php`
     runs it over the real fixture and through both real hooks.
 
-20. **Read-time hooks are a descriptor fact, and they only read (FW-51).** A rule type can serve visitors, not just write posts: `title_slug` with `flat_urls` rewrites a hierarchical type's permalink (`post_type_link`), resolves its flat path (`request`) and refuses a redirect back to the nested form (`wp_redirect`). Those filters are declared by the descriptor's `runtime_hooks()` (`hook => [method, priority, args]`), registered by `TaxonomyManager::init_handlers()` next to the dispatchers, and implemented on the handler — which still registers nothing itself. They are deliberately not `capture_hooks()`, which is for pre-write snapshots a pass consumes. H13 group 16 fails on a write primitive in any callback, on a listed method the handler does not declare, and on a registry that is never attached. The `request` callback picks the post for a path's last segment (published first, then lowest ID, then any status) and 301s a nested path only when its ancestor chain equals the post's real one; a stale chain, a feed, or a draft's nested URL falls through to core untouched. The third read-time hook is a `wp_redirect` veto (`veto_nested_redirect`, priority 99): a same-host redirect from a flat URL to the same published post's own nested URL (`FlatSlug::is_own_nested_form()`) returns false, which core's `wp_redirect()` and redirect plugins read as not redirected. It exists because a rule recorded before the toggle (`/base/child/` → `/base/parent/child/`) fires at `init`, before `request` can resolve the now-live flat URL, and loops with the nested → flat 301. It names no plugin, so it needs none; browsers that cached the old 301 can still bounce until cleared. Turning `flat_urls` off needs no cleanup: the permalink is derived, so URLs revert to nested. `sweep-flat-urls.php` covers it. The write half is per-type uniqueness: a flat type's slug is a segment straight under the base, so `TitleSlugHandler::make_unique_slug()` runs the ladder and then `Tokens\FlatSlug::number()` (lookup per TYPE, no `post_parent`) instead of `wp_unique_post_slug()`; a non-flat type still takes core's. `FlatSlug` refuses core's own bad hierarchical slugs (the rewrite's feed names, `embed`, `^(page)?\d+$`) plus `page` and `attachment`, and a reserved BASE skips the ladder (it is not a collision a parent or a date explains). Pinned by `tests/verify-flat-slug.php`, swept by `sweep-flat-slugs.php`.
+20. **Read-time hooks are a descriptor fact, and they only read (FW-51).** A rule type can serve visitors, not just write posts: `title_slug` with `flat_urls` rewrites a hierarchical type's permalink (`post_type_link`), resolves its flat path (`request`) and refuses a redirect back to the nested form (`wp_redirect`). Those filters are declared by the descriptor's `runtime_hooks()` (`hook => [method, priority, args]`), registered by `TaxonomyManager::init_handlers()` next to the dispatchers, and implemented on the handler — which still registers nothing itself. They are deliberately not `capture_hooks()`, which is for pre-write snapshots a pass consumes. H13 group 16 fails on a write primitive in any callback, on a listed method the handler does not declare, and on a registry that is never attached. The `request` callback picks the post for a path's last segment (published first, then lowest ID, then any status) and 301s a nested path only when its ancestor chain equals the post's real one; a stale chain, a feed, or a draft's nested URL falls through to core untouched. The third read-time hook is a `wp_redirect` veto (`veto_nested_redirect`, priority 99): a same-host redirect from a flat URL to the same published post's own nested URL (`FlatSlug::is_own_nested_form()`) returns false, which core's `wp_redirect()` and redirect plugins read as not redirected. It exists because a rule recorded before the toggle (`/base/child/` → `/base/parent/child/`) fires at `init`, before `request` can resolve the now-live flat URL, and loops with the nested → flat 301. It names no plugin, so it needs none; browsers that cached the old 301 can still bounce until cleared. Turning `flat_urls` off needs no cleanup: the permalink is derived, so URLs revert to nested. `sweep-flat-urls.php` covers it. The write half is per-type uniqueness: a flat type's slug is a segment straight under the base, so `TitleSlugFromPatternHandler::make_unique_slug()` runs the ladder and then `Tokens\FlatSlug::number()` (lookup per TYPE, no `post_parent`) instead of `wp_unique_post_slug()`; a non-flat type still takes core's. `FlatSlug` refuses core's own bad hierarchical slugs (the rewrite's feed names, `embed`, `^(page)?\d+$`) plus `page` and `attachment`, and a reserved BASE skips the ladder (it is not a collision a parent or a date explains). Pinned by `tests/verify-flat-slug.php`, swept by `sweep-flat-slugs.php`.
 
 ## Settings UI — WP Wireframe
 
@@ -748,7 +748,7 @@ Patterns like `{meta:x} {term:tax} {pub_year}` are rendered in one place: `Token
 - **The policy** (`OutputPolicy`) says how values are shaped, as data rather than a context string: month name or number, term name or slug, the term joiner, a value sanitizer, the duplicate-guard comparison, and whether the final trim collapses dashes. Four exist: `title()` and `slug()` for post fields, and `text()` and `html()` for a stored field value (FW-4). `text()` keeps every value exactly as resolved; `html()` keeps the pattern's literals verbatim and HTML-escapes every token value — field values, term names and bound variables alike — so authored markup survives and the value is the only trust boundary. Both use title's month names, term names and comma joiner, apply no duplicate guard (a field composes from scratch), and share the separator cleanup, which is text-based rather than markup-aware. A new output is one more named constructor and no new branch in the engine.
 - **The caller** binds variables (`{default_title}`, `{default_slug}`), which are never guarded and are returned as-is (escaped under `html()`), and decides whether a duplicate guard applies by passing a guard base or not.
 
-`tokens()` lists the tokens a pattern contains from the same parser, and `parse_date()` is the one date parser — both date tokens and slug date escalation go through it, so **site time** ([CONTEXT.md](../CONTEXT.md)) is enforced once. What `TitleSlugHandler` keeps is what is genuinely title/slug: the default-title idempotency meta and inverse strip, slug mode, and uniqueness with date escalation.
+`tokens()` lists the tokens a pattern contains from the same parser, and `parse_date()` is the one date parser — both date tokens and slug date escalation go through it, so **site time** ([CONTEXT.md](../CONTEXT.md)) is enforced once. What `TitleSlugFromPatternHandler` keeps is what is genuinely title/slug: the default-title idempotency meta and inverse strip, slug mode, and uniqueness with date escalation.
 
 H17 (`tests/verify-token-engine.php`) tests the engine on host PHP over a fake source, replaying a golden table of title/slug outputs captured from the handler before the extraction (`tests/fixtures/token-engine-golden.json`).
 

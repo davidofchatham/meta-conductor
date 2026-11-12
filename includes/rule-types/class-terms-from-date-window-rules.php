@@ -17,8 +17,8 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Named after the storage key `terms_from_date_window`, not a domain name — FW-14 renamed `label()` only;
- * FW-63 renames the id and the class.
+ * Named after the storage key `terms_from_date_window`, not a domain name — renaming a type for
+ * authors edits `label()` only.
  */
 final class TermsFromDateWindowRules extends RuleType {
 

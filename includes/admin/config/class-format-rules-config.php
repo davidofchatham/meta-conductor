@@ -35,10 +35,9 @@
  * compose in list order, so a scope is what it needs). The two are different
  * questions, which is why they are two subfields and not one shared one.
  *
- * The stored `type` value is the LEGACY TYPE KEY VERBATIM (`title_slug_from_pattern`,
- * not `title_slug`), for the same reason it is in the term list: rule-type
- * renaming stays deferred (FW-63), and reusing the key is what lets
- * `get_enabled_rules()` filter on `get_rule_type()` with no mapping table.
+ * The stored `type` value is the rule type's id verbatim (`title_slug_from_pattern`),
+ * as it is in the term list, which is what lets `get_enabled_rules()` filter
+ * on `get_rule_type()` with no mapping table.
  *
  * Preview + Apply-to-Existing action buttons remain deferred until Wireframe
  * exposes a client-side field-type extension API (FW-23).

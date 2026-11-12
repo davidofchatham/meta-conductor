@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
 
 /**
  * Named after the storage key `field_from_pattern`, not a domain name —
- * FW-14 renamed `label()` only; FW-63 renames the id and the class. The label reads "Set a field from a pattern"; the editor used to call it a Computed field.
+ * Renaming a type for authors edits `label()` only. The label reads "Set a field from a pattern"; the editor used to call it a Computed field.
  */
 final class FieldFromPatternRules extends RuleType {
 
