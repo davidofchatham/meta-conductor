@@ -5,7 +5,7 @@
  * Locks the merge/replace/skip decision matrix WITHOUT booting WordPress.
  *
  * WHAT MOVED (#62/#38 cluster 2). This harness used to exercise
- * `PropagationHandler::write_would_change_terms()`, a per-mode switch that
+ * `TermsFromRelatedPostHandler::write_would_change_terms()`, a per-mode switch that
  * re-encoded `apply_terms_to_post()`'s semantics so propagation could decide
  * whether a write was worth making. Two coupled switches, no shared source. The
  * semantics now live once, in `TermOperations::compute_end_state()`, which BOTH
@@ -47,9 +47,9 @@ if (!function_exists('wp_get_object_terms')) {
 require dirname(__DIR__) . '/vendor/autoload.php';
 require dirname(__DIR__) . '/autoload.php';
 
-use BWS\MetaConductor\Handlers\PropagationHandler;
+use BWS\MetaConductor\Handlers\TermsFromRelatedPostHandler;
 
-$handler = new PropagationHandler();
+$handler = new TermsFromRelatedPostHandler();
 
 // Protected trait/handler methods. No setAccessible() call: it is a no-op since
 // PHP 8.1 and deprecated in 8.5, and ReflectionMethod::invoke() already ignores

@@ -82,6 +82,10 @@ $must_survive = [
                                    'post_types', 'post_status'],
     'related_post_terms_rules' => ['type', 'enabled', 'acf_field_name', 'holder_role',
                                    'reverse_acf_field_name', 'taxonomy', 'keep_in_sync', 'post_status'],
+    // FW-61 03: the merged type. `relationship` is its own subfield; the rest
+    // are the shared frame it reads.
+    'terms_from_related_post'  => ['type', 'enabled', 'relationship', 'taxonomy', 'post_types',
+                                   'post_status', 'conflict_handling'],
     // Baseline is max 2 / per level OFF — both non-default, so a gate that
     // dropped a field would show here instead of reading back as its default.
     'restrict_term_count'      => ['type', 'enabled', 'taxonomy', 'post_types', 'post_status',

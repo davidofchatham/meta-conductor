@@ -19,9 +19,13 @@ if (!defined('ABSPATH')) {
  * handler's lost-terms capture is about TERMS, not about the link, so it stays
  * with the handler.
  *
- * Eligibility is the rule's `post_types` AND `post_status` gate, the same test
- * `UnifiedHandlerBase::should_process_post()` applies, for source and dependent
- * alike. Kept as it was; ticket 03 changes the post-types half deliberately.
+ * `post_types` scopes the RECEIVING post: a dependent must pass the rule's
+ * `post_types` and `post_status` gate (the test
+ * `UnifiedHandlerBase::should_process_post()` applies), but a parent is gated
+ * only on `post_status` — being a valid source does not depend on its type
+ * (FW-61 03). In stock WordPress a `post_parent` shares its child's post type,
+ * so the two readings agree; they differ only under a programmatic cross-type
+ * parent, where the old source gate would have refused it.
  */
 final class ParentRelationship implements Relationship {
 
@@ -87,11 +91,11 @@ final class ParentRelationship implements Relationship {
     }
 
     public function is_eligible_source(\WP_Post $post, array $row): bool {
-        return $this->passes_gate($post, $row);
+        return $this->passes_status_gate($post, $row);
     }
 
     public function is_eligible_dependent(\WP_Post $post, array $row): bool {
-        return $this->passes_gate($post, $row);
+        return $this->passes_post_type_gate($post, $row) && $this->passes_status_gate($post, $row);
     }
 
     /**
@@ -114,17 +118,19 @@ final class ParentRelationship implements Relationship {
     }
 
     /**
-     * The rule's `post_types` and `post_status` slug lists; empty = ungated,
-     * `any` = ungated. Same test as `UnifiedHandlerBase::should_process_post()`.
+     * The rule's `post_types` slug list; empty = ungated, `any` = ungated.
+     * Same test as `UnifiedHandlerBase::should_process_post()`.
      */
-    private function passes_gate(\WP_Post $post, array $row): bool {
+    private function passes_post_type_gate(\WP_Post $post, array $row): bool {
         $post_types = $row['post_types'] ?? [];
-        if (!empty($post_types)) {
-            if ($post_types[0] !== 'any' && !in_array($post->post_type, $post_types)) {
-                return false;
-            }
-        }
 
+        return empty($post_types) || $post_types[0] === 'any' || in_array($post->post_type, $post_types);
+    }
+
+    /**
+     * The rule's `post_status` slug list; empty = ungated, `any` = ungated.
+     */
+    private function passes_status_gate(\WP_Post $post, array $row): bool {
         $post_statuses = $row['post_status'] ?? [];
         if (!empty($post_statuses)) {
             if ($post_statuses[0] !== 'any' && !in_array($post->post_status, $post_statuses)) {

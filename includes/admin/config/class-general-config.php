@@ -78,7 +78,7 @@ class GeneralConfig {
                             // Snapshot row title. Not user-editable; assembled
                             // at save by snapshot_claim_override_labels in
                             // WireframeBootstrap. Declared so {row_title}
-                            // resolves. Same pattern as propagation_rules.
+                            // resolves. Same pattern as terms_from_related_post.
                             [
                                 'id'      => 'row_title',
                                 'type'    => 'hidden',

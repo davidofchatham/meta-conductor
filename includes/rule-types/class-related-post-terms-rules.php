@@ -58,8 +58,8 @@ final class RelatedPostTermsRules extends RuleType {
      * dependents by it would silently drop a draft dependent of a published
      * source from a run.
      */
-    public function status_gates_source(): bool {
-        return (new AcfRelationship())->status_gates_source([]);
+    public function status_gates_source(array $rule): bool {
+        return (new AcfRelationship())->status_gates_source($rule);
     }
 
     /**

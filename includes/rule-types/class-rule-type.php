@@ -205,11 +205,13 @@ abstract class RuleType {
      * Whether `post_status` gates a SOURCE post rather than the post written.
      *
      * When true, the rule's status gate must not narrow the posts a run
-     * writes (`RuleChoice::reach_statuses()`).
+     * writes (`RuleChoice::reach_statuses()`). Takes the row because a type
+     * with several relationships answers per row (FW-61).
      *
+     * @param array $rule Projected row.
      * @return bool
      */
-    public function status_gates_source(): bool {
+    public function status_gates_source(array $rule): bool {
         return false;
     }
 

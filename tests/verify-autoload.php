@@ -70,7 +70,7 @@ $classes = [
     // Handlers\
     'BWS\\MetaConductor\\Handlers\\UnifiedHandlerBase',
     'BWS\\MetaConductor\\Handlers\\TermsFromTermHierarchyHandler',
-    'BWS\\MetaConductor\\Handlers\\PropagationHandler',
+    'BWS\\MetaConductor\\Handlers\\TermsFromRelatedPostHandler',
     'BWS\\MetaConductor\\Handlers\\TermsFromTriggerTermHandler',
     'BWS\\MetaConductor\\Handlers\\TermsFromDateWindowHandler',
     'BWS\\MetaConductor\\Handlers\\RelatedPostTermsHandler',
@@ -83,7 +83,7 @@ $classes = [
     'BWS\\MetaConductor\\RuleTypes\\RuleType',
     'BWS\\MetaConductor\\RuleTypes\\Registry',
     'BWS\\MetaConductor\\RuleTypes\\Labels',
-    'BWS\\MetaConductor\\RuleTypes\\PropagationRules',
+    'BWS\\MetaConductor\\RuleTypes\\TermsFromRelatedPostRules',
     'BWS\\MetaConductor\\RuleTypes\\RelatedPostTermsRules',
     'BWS\\MetaConductor\\RuleTypes\\TermsFromDateWindowRules',
     'BWS\\MetaConductor\\RuleTypes\\TermsFromTriggerTermRules',

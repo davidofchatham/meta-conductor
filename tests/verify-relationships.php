@@ -26,6 +26,11 @@ define('BWS_META_CONDUCTOR_PATH', dirname(__DIR__) . '/');
 foreach (['add_action', 'add_filter'] as $fn) {
     if (!function_exists($fn)) { eval("function {$fn}() {}"); }
 }
+if (!class_exists('WP_Post')) {
+    class WP_Post {
+        public function __construct(public string $post_type, public string $post_status) {}
+    }
+}
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 require dirname(__DIR__) . '/autoload.php';
@@ -33,8 +38,8 @@ require dirname(__DIR__) . '/autoload.php';
 use BWS\MetaConductor\Relationships\AcfRelationship;
 use BWS\MetaConductor\Relationships\ParentRelationship;
 use BWS\MetaConductor\Relationships\Relationship;
-use BWS\MetaConductor\RuleTypes\PropagationRules;
 use BWS\MetaConductor\RuleTypes\RelatedPostTermsRules;
+use BWS\MetaConductor\RuleTypes\TermsFromRelatedPostRules;
 
 $fail  = [];
 $check = function (string $name, bool $cond) use (&$fail) { if (!$cond) { $fail[] = $name; } };
@@ -90,9 +95,21 @@ foreach (['taxonomy', 'post_type', 'acf_field_name', 'reverse_acf_field_name', '
 
 // The descriptors answer through the module.
 $check('descriptor written_post_types delegates (acf)', (new RelatedPostTermsRules())->written_post_types($row) === $acf->written_post_types($row));
-$check('descriptor status_gates_source delegates (acf)', (new RelatedPostTermsRules())->status_gates_source() === true);
-$check('descriptor written_post_types delegates (parent)', (new PropagationRules())->written_post_types(['post_types' => ['page']]) === ['page']);
-$check('descriptor status_gates_source (parent)', (new PropagationRules())->status_gates_source() === false);
+$check('descriptor status_gates_source delegates (acf)', (new RelatedPostTermsRules())->status_gates_source($row) === true);
+$merged = new TermsFromRelatedPostRules();
+$check('descriptor written_post_types delegates (parent)', $merged->written_post_types(['relationship' => 'parent', 'post_types' => ['page']]) === ['page']);
+$check('descriptor status_gates_source (parent)', $merged->status_gates_source(['relationship' => 'parent']) === false);
+$check('descriptor: a row with no known relationship writes every type and gates the written post',
+    $merged->written_post_types(['post_types' => ['page']]) === [] && $merged->status_gates_source([]) === false);
+
+// FW-61 03: post_types scopes the RECEIVING post; a parent is gated on status only.
+$page_parent = new WP_Post('page', 'draft');
+$post_parent = new WP_Post('post', 'publish');
+$gated       = ['post_types' => ['page'], 'post_status' => ['publish']];
+$check('parent: a dependent must pass post_types', !$parent->is_eligible_dependent($post_parent, ['post_types' => ['page']]));
+$check('parent: a dependent must pass post_status', !$parent->is_eligible_dependent($page_parent, $gated));
+$check('parent: a source is NOT gated on post_types', $parent->is_eligible_source($post_parent, $gated));
+$check('parent: a source is gated on post_status', !$parent->is_eligible_source($page_parent, $gated));
 
 // --- The graph left the handlers. ------------------------------------------------
 $strip = static function (string $src): string {
@@ -104,7 +121,7 @@ $strip = static function (string $src): string {
     return $out;
 };
 $rpt  = $strip((string) file_get_contents(dirname(__DIR__) . '/includes/handlers/class-related-post-terms-handler.php'));
-$prop = $strip((string) file_get_contents(dirname(__DIR__) . '/includes/handlers/class-propagation-handler.php'));
+$prop = $strip((string) file_get_contents(dirname(__DIR__) . '/includes/handlers/class-terms-from-related-post-handler.php'));
 
 foreach (['find_holders_referencing', 'resolve_reverse', 'acf_bidirectional_partners', 'acf_field_target_post_types',
           'reverse_lookup_cache', 'field_target_types_cache', 'record_sever', 'function sever_key', 'private array $severed',
@@ -116,7 +133,7 @@ foreach (['child_cache', 'CHILD_STATUSES', 'resolve_child_post_types', 'get_post
 }
 
 // Kept in the handlers by design.
-$check('parent lost-terms capture stays in the propagation handler', strpos($prop, 'captured_removals') !== false);
+$check('parent lost-terms capture stays in the related-post handler', strpos($prop, 'captured_removals') !== false);
 $check('zero-source gate stays in the ACF handler', strpos($rpt, 'empty($sources)') !== false);
 
 if ($fail) {

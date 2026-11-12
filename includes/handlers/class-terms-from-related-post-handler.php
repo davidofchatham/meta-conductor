@@ -1,8 +1,7 @@
 <?php
 /**
- * BWS Taxonomy Manager Propagation Handler
- * Reconciles a post's terms against its PARENT's, and declares the descendants
- * a change reaches.
+ * Set terms from a related post — reconciles a post's terms against its
+ * related post's, and declares the posts a change reaches.
  *
  * @since 0.1.0
  */
@@ -10,6 +9,7 @@
 namespace BWS\MetaConductor\Handlers;
 
 use BWS\MetaConductor\Relationships\ParentRelationship;
+use BWS\MetaConductor\Relationships\Relationship;
 
 // Prevent direct access
 if (!defined('ABSPATH')) {
@@ -17,7 +17,14 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Propagation, inverted to PULL (#62).
+ * Set terms from a related post (FW-61): one handler for every relationship a
+ * post can take terms across. The row's `relationship` picks the graph
+ * (`relationship_for()`); the claim, the mirror read and write, the lost-terms
+ * capture, the no-change short-circuit and the dispatcher entry points live
+ * here once. Only `parent` exists in this ticket; the ACF relationship joins it
+ * in FW-61 04. A row whose `relationship` has no implementation here is skipped.
+ *
+ * The parent relationship is propagation, inverted to PULL (#62).
  *
  * WHAT CHANGED AND WHY. Propagation is the first rule type whose effect is
  * genuinely about a second entity, and until 0.8.0 it acted on that directly:
@@ -60,11 +67,11 @@ if (!defined('ABSPATH')) {
  * applying nothing. Each child's applier subtracts what ITS parent lost. The
  * child's own resulting write fires the same hook for the child, so the
  * subtraction reaches the next level down through the same mechanism as
- * everything else. The hook is listed in `PropagationRules::capture_hooks()`;
+ * everything else. The hook is listed in `TermsFromRelatedPostRules::capture_hooks()`;
  * capture is not execution, so the dispatcher stays the sole caller of
  * `apply_to_post`.
  */
-class PropagationHandler extends UnifiedHandlerBase {
+class TermsFromRelatedPostHandler extends UnifiedHandlerBase {
 
     /**
      * Terms removed from an object THIS REQUEST, keyed `"object_id:taxonomy"`.
@@ -87,11 +94,24 @@ class PropagationHandler extends UnifiedHandlerBase {
      * its per-request memo. This handler keeps the lost-terms capture, the
      * claim and the writes.
      */
-    private ParentRelationship $relationship;
+    private ParentRelationship $parent_relationship;
 
     public function __construct() {
-        $this->relationship = new ParentRelationship();
+        $this->parent_relationship = new ParentRelationship();
         parent::__construct();
+    }
+
+    /**
+     * The graph a row traverses, chosen by its `relationship`; null when this
+     * handler has no implementation for it (the row is skipped, never guessed
+     * at). Instances are held on the handler so their request memos live as
+     * long as the handler does.
+     */
+    private function relationship_for(array $rule): ?Relationship {
+        return match ((string) ($rule['relationship'] ?? '')) {
+            'parent' => $this->parent_relationship,
+            default  => null,
+        };
     }
 
     /**
@@ -127,16 +147,17 @@ class PropagationHandler extends UnifiedHandlerBase {
      * conversion is not the place to change what a claim means (that is #54).
      *
      * @param int   $post_id Post to reconcile.
-     * @param array $rule    One enabled propagation rule (canonical shape).
+     * @param array $rule    One enabled rule (canonical shape).
      * @return bool Whether this post's terms actually changed.
      */
     public function apply_to_post(int $post_id, array $rule): bool {
-        $post = get_post($post_id);
-        if (!$post || !$this->relationship->is_eligible_dependent($post, $rule)) {
+        $relationship = $this->relationship_for($rule);
+        $post         = get_post($post_id);
+        if (!$relationship || !$post || !$relationship->is_eligible_dependent($post, $rule)) {
             return false;
         }
 
-        $sources = $this->relationship->sources_of($post_id, $rule);
+        $sources = $relationship->sources_of($post_id, $rule);
         if (empty($sources)) {
             return false;
         }
@@ -150,7 +171,7 @@ class PropagationHandler extends UnifiedHandlerBase {
         // decide whether propagation scopes the source (parent), the target
         // (child), or both. (0.6.0 review, carried through #62.)
         $parent = get_post($parent_id);
-        if (!$parent || !$this->relationship->is_eligible_source($parent, $rule)) {
+        if (!$parent || !$relationship->is_eligible_source($parent, $rule)) {
             return false;
         }
 
@@ -223,19 +244,20 @@ class PropagationHandler extends UnifiedHandlerBase {
      * apply.
      *
      * @param int   $post_id Post just passed over.
-     * @param array $rule    The propagation rule.
+     * @param array $rule    The rule.
      * @return int[] Immediate child post IDs.
      */
     public function fan_out(int $post_id, array $rule): array {
         if ((string) ($rule['taxonomy'] ?? '') === '') {
             return array();
         }
-        $post = get_post($post_id);
-        if (!$post || !$this->relationship->is_eligible_source($post, $rule)) {
+        $relationship = $this->relationship_for($rule);
+        $post         = get_post($post_id);
+        if (!$relationship || !$post || !$relationship->is_eligible_source($post, $rule)) {
             return array();
         }
 
-        return $this->relationship->dependents_of($post_id, $rule);
+        return $relationship->dependents_of($post_id, $rule);
     }
 
     /**

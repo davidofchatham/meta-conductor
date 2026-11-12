@@ -339,7 +339,7 @@ $check('#51: a disjoint taxonomy clears the warning', $scan($KIND_TERM, $s51_oth
 // --- 5. #39 — propagation vs level restriction, one taxonomy. ---------------
 
 $s39 = [
-    ['type' => 'propagation_rules', 'enabled' => true, 'taxonomy' => 'mc_topic',
+    ['type' => 'terms_from_related_post', 'relationship' => 'parent', 'enabled' => true, 'taxonomy' => 'mc_topic',
      'post_types' => ['mc_section'], 'conflict_handling' => 'merge', 'row_title' => 'Cascade Topics'],
     ['type' => 'restrict_terms_by_level', 'enabled' => true, 'taxonomy' => 'mc_topic',
      'post_types' => ['mc_section'], 'restriction_mode' => 'deepest_only', 'row_title' => 'Deepest level'],
@@ -699,12 +699,12 @@ $check('a non-array row is skipped rather than fatal',
 // --- FW-56: a taxonomy list is one stored row, however many rows it expands to.
 
 $fw56 = $scan($KIND_TERM, [
-    ['type' => 'propagation_rules', 'taxonomy' => ['mc_a', 'mc_b']],
+    ['type' => 'terms_from_related_post', 'taxonomy' => ['mc_a', 'mc_b']],
     ['type' => 'terms_from_term_hierarchy', 'taxonomy' => 'mc_c'],
-    ['type' => 'propagation_rules', 'taxonomy' => 'mc_b'],
+    ['type' => 'terms_from_related_post', 'taxonomy' => 'mc_b'],
 ]);
 $check('FW-56: one stored row\'s own expansions never collide with each other',
-    $scan($KIND_TERM, [['type' => 'propagation_rules', 'taxonomy' => ['mc_a', 'mc_b']]]) === []);
+    $scan($KIND_TERM, [['type' => 'terms_from_related_post', 'taxonomy' => ['mc_a', 'mc_b']]]) === []);
 $check('FW-56: a rule collides with one taxonomy of a list, and names the list row by its stored position',
     count($fw56) === 1 && $pairs($fw56) === [[0, 2]] && $fw56[0]['target'] === 'mc_b');
 

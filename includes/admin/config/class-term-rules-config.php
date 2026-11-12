@@ -23,7 +23,7 @@
  *      half — unique ids, a gate on every type-specific subfield, no gate on
  *      the shared ones — but only a real save proves the round-trip.
  *   2. Changing a row's `type` DISCARDS that row's type-specific values, by
- *      the same mechanism. That is correct behaviour (a propagation rule's
+ *      the same mechanism. That is correct behaviour (a parent-relationship rule's
  *      claim is meaningless on a date-window rule) but it is silent, so the
  *      `type` select says so in its own description.
  *
@@ -161,9 +161,10 @@ class TermRulesConfig {
      * The row's subfields: what every rule shares, then each descriptor's
      * own `subfields()` gated to its type, then the shared tail.
      *
-     * Propagation has no group of its own — every field it ever had is now a
-     * shared one, which is the clearest evidence the unification was real
-     * rather than a re-shuffle.
+     * The parent relationship has no group of its own — every field propagation
+     * ever had is a shared one, which is the clearest evidence the unification
+     * was real rather than a re-shuffle. The merged type owns only its
+     * `relationship` select.
      *
      * Order matters to the author, not to storage — `type` leads because
      * nothing else in the row means anything until it is picked.
@@ -232,7 +233,7 @@ class TermRulesConfig {
      *     `post_types`. Every other type reads it via should_process_post.
      *     The gate lists all five reader types, so nothing that reads the
      *     value can lose it on save.
-     *   - claim (`conflict_handling`) — propagation is the only type here
+     *   - claim (`conflict_handling`) — the related-post type is the only type here
      *     whose handler reads it. The others have a claim fixed in code,
      *     which #54 is where it gets stated.
      * All still come from the shared builders, and their ids and meanings
@@ -330,7 +331,7 @@ class TermRulesConfig {
                 'conditions' => self::readers('hierarchical_post_type_note'),
                 'args'       => [
                     'variant' => 'info',
-                    'content' => '<p>' . esc_html__('Propagation needs a parent/child relationship, so it only acts on hierarchical post types. Scoping this rule to a flat post type matches nothing.', 'meta-conductor') . '</p>',
+                    'content' => '<p>' . esc_html__('A parent relationship needs a parent/child tree, so it only acts on hierarchical post types. Scoping this rule to a flat post type matches nothing.', 'meta-conductor') . '</p>',
                 ],
             ],
             // The config half of #23: every type in this list now gets the
@@ -359,7 +360,7 @@ class TermRulesConfig {
             // behind the dropdowns and the row titles alike (#53 §6). The
             // builder deliberately does not force its `id`, because the two
             // existing surfaces store under different keys, so the id is
-            // supplied here. Gated to propagation: it is the only type in
+            // supplied here. Gated to the related-post type: it is the only type in
             // this batch whose handler reads `conflict_handling`; the others
             // have a claim fixed in code (#54 is where that gets stated).
             ConfigHelpers::claim_field('child', [

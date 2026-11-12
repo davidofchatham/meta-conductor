@@ -2,7 +2,7 @@
 /**
  * mc-rules — #62 behaviour sweep: propagation as pull + declared fan-out.
  *
- * H13 can see that PropagationHandler registers only its capture hook, that the
+ * H13 can see that TermsFromRelatedPostHandler registers only its capture hook, that the
  * dispatcher collects a fan-out, and that `fan_out()` writes nothing. It cannot
  * see any of the following, all of which are runtime questions:
  *
@@ -153,7 +153,8 @@ function mc62_slugs( $post_id, $taxonomy = 'mc_topic' ) {
  */
 function mc62_propagation_row( $claim = 'merge' ) {
 	return array(
-		'type'              => 'propagation_rules',
+		'type'              => 'terms_from_related_post',
+		'relationship'      => 'parent',
 		'enabled'           => true,
 		'taxonomy'          => 'mc_topic',
 		'post_types'        => array( 'mc_section' ),

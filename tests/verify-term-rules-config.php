@@ -303,13 +303,13 @@ foreach ($TYPES as $type) {
 }
 $check('every offered rule type reaches a real row-title builder', $titled);
 
-// --- The propagation post-type note (what replaced SPEC §V5). ---------------
+// --- The parent-relationship post-type note (what replaced SPEC §V5). -------
 // The hierarchical-only option list is gone; the guarantee it stood for is now
 // this note, so the note is what gets machine-checked.
 
 $note = $by_id['hierarchical_post_type_note'] ?? [];
-$check('propagation carries a hierarchical-post-type note',
-    ($note['conditions']['value'] ?? []) === ['propagation_rules']);
+$check('the related-post type carries a hierarchical-post-type note',
+    ($note['conditions']['value'] ?? []) === ['terms_from_related_post']);
 $check('the note actually says hierarchical',
     str_contains(strtolower($note['args']['content'] ?? ''), 'hierarchical'));
 
@@ -321,9 +321,9 @@ $check('the note actually says hierarchical',
 // dropped on save; an extra one is junk stored for a type that never reads it.
 
 $expected_visible = [
-    'propagation_rules' => [
+    'terms_from_related_post' => [
         'type', 'enabled', 'taxonomy', 'hierarchical_post_type_note',
-        'post_types', 'post_status', 'conflict_handling', 'row_title',
+        'post_types', 'post_status', 'conflict_handling', 'relationship', 'row_title',
     ],
     'terms_from_date_window' => [
         'type', 'enabled', 'post_types', 'post_status',
@@ -403,18 +403,18 @@ $check('the type-keyed save projection is gone (#66)',
 $snapshotted = WireframeBootstrap::snapshot_term_rule_labels([
     $KIND => [
         ['type' => 'terms_from_term_hierarchy', 'taxonomy' => 'category'],
-        ['type' => 'propagation_rules', 'enabled' => false, 'taxonomy' => 'category'],
+        ['type' => 'terms_from_related_post', 'enabled' => false, 'taxonomy' => 'category'],
     ],
 ]);
 $check('a rule-tab save payload carries the kind list and no type-keyed copy',
     array_keys($snapshotted) === [$KIND]);
 $check('the snapshot keeps every row, in order, still typed',
     array_column($snapshotted[$KIND], 'type')
-        === ['terms_from_term_hierarchy', 'propagation_rules']);
+        === ['terms_from_term_hierarchy', 'terms_from_related_post']);
 // FW-56: a row naming several taxonomies is ONE row with ONE title that names
 // them all — "Categories, Tags", not the first.
 $listed = WireframeBootstrap::snapshot_term_rule_labels([
-    $KIND => [['type' => 'propagation_rules', 'taxonomy' => ['category', 'post_tag']]],
+    $KIND => [['type' => 'terms_from_related_post', 'taxonomy' => ['category', 'post_tag']]],
 ]);
 $check('a multi-taxonomy row keeps one row, titled with every taxonomy',
     count($listed[$KIND]) === 1
@@ -513,8 +513,8 @@ $check('the repair is idempotent', $r($repaired) === $repaired);
 $check('the repair leaves an empty list empty', $r([]) === []);
 $check('FW-56: an empty or list taxonomy, and a type that does not read it, are left alone',
     array_column($r([
-        ['type' => 'propagation_rules', 'taxonomy' => ''],
-        ['type' => 'propagation_rules', 'taxonomy' => ['category', 'post_tag']],
+        ['type' => 'terms_from_related_post', 'taxonomy' => ''],
+        ['type' => 'terms_from_related_post', 'taxonomy' => ['category', 'post_tag']],
         ['type' => 'terms_from_trigger_term', 'taxonomy' => 'category'],
     ]), 'taxonomy') === ['', ['category', 'post_tag'], 'category']);
 
