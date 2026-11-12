@@ -55,7 +55,7 @@ $owned_tax   = $m['defines']['taxonomies'];
 $valid_types = array(
 	'terms_from_term_hierarchy',
 	'propagation_rules',
-	'related_rules',
+	'terms_from_trigger_term',
 	'time_based_rules',
 	'related_post_terms_rules',
 	'hierarchical_level_restriction_rules',

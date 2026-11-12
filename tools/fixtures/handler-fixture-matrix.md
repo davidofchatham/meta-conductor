@@ -76,7 +76,7 @@ Status (L1)          — second root: related/time-based targets live here so
 | Scenarios | Native path: assign Region+East+Coastal+Harbor → the deepest level survives. ACF path: set via `mc_topics` field → same cut lands in both channels. Interaction: p5 runs before hierarchical p10 — combined-rule scenario (restriction then expansion) is its own row. |
 | Shared reuse | None. |
 
-## 3. related_rules — RelatedHandler
+## 3. terms_from_trigger_term — TermsFromTriggerTermHandler
 
 | Aspect | Need |
 |---|---|
@@ -188,7 +188,7 @@ Two constraints that shape EVERY per-handler sweep — not §1-specific:
      (observed: Harbor expansion `[13,14,15,16]` overwritten to `[14,15]` by the
      p15 push). **Dodge it** by using the push-free subjects `item-solo-a` /
      `item-solo-b` (referenced by no holder, no seeded terms).
-   - **Rule-scope overlap (expected, visible):** `related_rules`,
+   - **Rule-scope overlap (expected, visible):** `terms_from_trigger_term`,
      `level_restriction`, and `time_based` all also scope `mc_item` + `mc_topic`.
      On a solo subject with all rules live, assigning Harbor yields
      `[Region,Coastal,Harbor,Featured]` — hierarchical expands, related adds
@@ -819,7 +819,7 @@ a hierarchical row needs no start/end date. An **untyped** row is *rejected*
 
 **§8d defaults + vocabulary** ✅ Untouched subfields land their declared
 defaults (`deepest_only`, `false`, `enabled=true`). A row naming a
-not-yet-migrated type (`related_rules`) is refused by the select's validator —
+not-yet-migrated type (`terms_from_trigger_term`) is refused by the select's validator —
 the live types cannot be reached from this repeater.
 
 **§8e persistence + handler visibility** ✅ `sync_kind_lists()` writes
@@ -835,7 +835,7 @@ emptying the repeater took all four migrated types to 0 while `related` (2),
 load titles all six and writes the same titles into the type-keyed arrays, so
 the authored list stays trusted. Second load is a no-op.
 
-**§8g the un-migrated sections still save** ✅ `related_rules`,
+**§8g the un-migrated sections still save** ✅ `terms_from_trigger_term`,
 `related_post_terms_rules` and `title_slug_rules` each validate clean and
 round-trip 2/2/1 rows through their own sections, and the fan-out touches no
 migrated array when they save. `snapshot_claim_override_labels` unchanged.
@@ -1039,7 +1039,7 @@ gates the post being WRITTEN. Live subject: `TermsFromTermHierarchyHandler`, dra
 `item-solo-a`. Rule `post_status: [publish]` + assign Harbor → gated OUT, only
 Harbor lands (no ancestor expansion). Same edit, rule `post_status: [draft]` →
 gated IN, full ancestor chain expands. `HierarchicalLevelRestrictionHandler`,
-`PropagationHandler`, `TimeBasedHandler` and `RelatedHandler` call the
+`PropagationHandler`, `TimeBasedHandler` and `TermsFromTriggerTermHandler` call the
 identical base method at the top of their own `apply_to_post()`
 (grep-confirmed: same call shape, same early return) — one live scenario
 stands for all five rather than repeating an identical code path four more

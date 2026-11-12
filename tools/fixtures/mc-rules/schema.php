@@ -23,7 +23,7 @@ if ( ! defined( 'ABSPATH' ) && ! defined( 'WP_CLI' ) ) {
  * mc_section — hierarchical (propagation post_parent chains; relationship holder).
  * mc_flat    — hierarchical, URL-only subject for the flat-URL sweep (FW-51).
  * mc_topic   — hierarchical taxonomy, 4-level tree (see manifest).
- * mc_flag    — flat taxonomy (related_rules taxonomy-trigger fixture).
+ * mc_flag    — flat taxonomy (terms_from_trigger_term taxonomy-trigger fixture).
  */
 function bws_fixture_mc_rules_register_types() {
 	register_post_type(

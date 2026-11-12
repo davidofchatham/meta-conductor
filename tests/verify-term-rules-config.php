@@ -347,7 +347,7 @@ $expected_visible = [
     ],
     // The two LIVE types (#58). A subfield missing here is a live rule's
     // value silently dropped on the next settings save.
-    'related_rules' => [
+    'terms_from_trigger_term' => [
         'type', 'enabled', 'post_types', 'post_status',
         'trigger_type', 'trigger_term_id', 'trigger_taxonomy',
         'target_term_id', 'bidirectional', 'row_title',
@@ -438,7 +438,7 @@ $check('a payload without the rule list is returned untouched',
 
 // Related: trigger → target, with the disabled prefix like everything else.
 $rel_title = WireframeBootstrap::snapshot_term_rule_labels([$KIND => [[
-    'type' => 'related_rules', 'enabled' => false,
+    'type' => 'terms_from_trigger_term', 'enabled' => false,
     'trigger_type' => 'term', 'trigger_term_id' => [7],
     'target_term_id' => [9],
 ]]])[$KIND][0]['row_title'];
@@ -450,7 +450,7 @@ $check('related title carries the uniform disabled prefix',
 
 // Taxonomy-triggered variant names the taxonomy, not a term.
 $rel_tax_title = WireframeBootstrap::snapshot_term_rule_labels([$KIND => [[
-    'type' => 'related_rules',
+    'type' => 'terms_from_trigger_term',
     'trigger_type' => 'taxonomy', 'trigger_taxonomy' => 'category',
     'target_term_id' => [9],
 ]]])[$KIND][0]['row_title'];
@@ -492,7 +492,7 @@ $r = fn(array $rows) => $repair->invoke(null, $rows);
 $stored = [
     ['type' => 'terms_from_term_hierarchy', 'enabled' => true, 'taxonomy' => 'category',
      'hierarchy_direction' => 'parent_to_child', 'expansion_behavior' => 'merge'],
-    ['type' => 'related_rules', 'trigger_term_id' => '12', 'target_term_id' => 9],
+    ['type' => 'terms_from_trigger_term', 'trigger_term_id' => '12', 'target_term_id' => 9],
     ['type' => 'related_post_terms_rules', 'acf_field_name' => 'event:ref',
      'source_taxonomy' => 'category', 'bidirectional' => true],
 ];
@@ -515,7 +515,7 @@ $check('FW-56: an empty or list taxonomy, and a type that does not read it, are 
     array_column($r([
         ['type' => 'propagation_rules', 'taxonomy' => ''],
         ['type' => 'propagation_rules', 'taxonomy' => ['category', 'post_tag']],
-        ['type' => 'related_rules', 'taxonomy' => 'category'],
+        ['type' => 'terms_from_trigger_term', 'taxonomy' => 'category'],
     ]), 'taxonomy') === ['', ['category', 'post_tag'], 'category']);
 
 // --- Tabs: exactly three, Personalize gone. ---------------------------------

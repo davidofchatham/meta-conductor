@@ -152,10 +152,10 @@ $check('the ACF-reference type keys on its taxonomy too',
 $check('a date-window rule keys on its target TERM, not a taxonomy',
     $desc('time_based_rules')->target_key(['target_term_id' => 21]) === 'term|21');
 $check('a related-term rule keys on its target term',
-    $desc('related_rules')->target_key(['target_term_id' => 22]) === 'term|22');
+    $desc('terms_from_trigger_term')->target_key(['target_term_id' => 22]) === 'term|22');
 $check('the FormTokenField [N] shape, projected, resolves to the same key',
-    $desc('related_rules')->target_key(
-        OptionRuleStorage::project_kind_rules([['type' => 'related_rules', 'target_term_id' => [22]]])[0]) === 'term|22');
+    $desc('terms_from_trigger_term')->target_key(
+        OptionRuleStorage::project_kind_rules([['type' => 'terms_from_trigger_term', 'target_term_id' => [22]]])[0]) === 'term|22');
 
 $check('a format rule keys on the fields it writes',
     $desc('title_slug_rules')->target_key(['post_type' => 'mc_item']) === 'fields|title_slug');
@@ -444,12 +444,12 @@ $check('#69: changing one rule\'s target term clears it',
 $check('#69: two date rules on different terms in one taxonomy are independent',
     $scan($KIND_TERM, $s69_retarget) === []);
 
-// --- 7. related_rules: only a bidirectional rule can cancel. ----------------
+// --- 7. terms_from_trigger_term: only a bidirectional rule can cancel. ----------------
 
 $s_related = [
-    ['type' => 'related_rules', 'enabled' => true, 'post_types' => ['mc_item'],
+    ['type' => 'terms_from_trigger_term', 'enabled' => true, 'post_types' => ['mc_item'],
      'target_term_id' => 22, 'bidirectional' => false, 'row_title' => 'Coastal ⇒ Featured'],
-    ['type' => 'related_rules', 'enabled' => true, 'post_types' => ['mc_item'],
+    ['type' => 'terms_from_trigger_term', 'enabled' => true, 'post_types' => ['mc_item'],
      'target_term_id' => 22, 'bidirectional' => false, 'row_title' => 'Any flag ⇒ Featured'],
 ];
 $check('two add-only related rules collide but cannot cancel',
@@ -465,7 +465,7 @@ $check('two bidirectional related rules can cancel',
 // date rule always removes.
 $s_cross = [
     $s69[0],
-    ['type' => 'related_rules', 'enabled' => true, 'post_types' => ['mc_item'],
+    ['type' => 'terms_from_trigger_term', 'enabled' => true, 'post_types' => ['mc_item'],
      'target_term_id' => 21, 'bidirectional' => true, 'row_title' => 'Trigger ⇒ Archived'],
 ];
 $check('a date rule and a bidirectional related rule over one term cancel',

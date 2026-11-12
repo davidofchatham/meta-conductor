@@ -32,7 +32,7 @@ final class Registry {
         PropagationRules::class,
         RelatedPostTermsRules::class,
         TimeBasedRules::class,
-        RelatedRules::class,
+        TermsFromTriggerTermRules::class,
         TermsFromTermHierarchyRules::class,
         HierarchicalLevelRestrictionRules::class,
         TermCountRules::class,

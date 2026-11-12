@@ -103,7 +103,7 @@ $settings = [
     'propagation_rules' => [
         ['name' => 'P1', 'taxonomy' => 'category', 'enabled' => true, 'conflict_handling' => 'merge'],
     ],
-    'related_rules' => [
+    'terms_from_trigger_term' => [
         // Legacy scalar trigger + FormTokenField single-value target.
         ['name' => 'R1', 'enabled' => true, 'trigger_term_id' => '12', 'target_term_id' => [34]],
         ['name' => 'R2', 'enabled' => true, 'trigger_term_id' => [5, 5, 0, 7], 'target_term_id' => '9'],
@@ -144,7 +144,7 @@ $settings = [
 $all_types = [
     'terms_from_term_hierarchy',
     'propagation_rules',
-    'related_rules',
+    'terms_from_trigger_term',
     'time_based_rules',
     'related_post_terms_rules',
     'hierarchical_level_restriction_rules',
@@ -181,7 +181,7 @@ $check('a fresh install (empty option) does not',
 $check('non-rule globals and garbage buckets do not',
     OptionRuleStorage::holds_pre_08_rows([
         'conflict_handling_overrides' => [['taxonomy' => 'category', 'mode' => 'replace']],
-        'related_rules'               => 'not-an-array',
+        'terms_from_trigger_term'               => 'not-an-array',
     ]) === false);
 
 // Storage no longer upgrades on read: that is WHY the guard exists.
@@ -240,7 +240,7 @@ $check('the term kind reports its migrated types — all seven as of term_count_
         'propagation_rules',
         'related_post_terms_rules',
         'time_based_rules',
-        'related_rules',
+        'terms_from_trigger_term',
         'terms_from_term_hierarchy',
         'hierarchical_level_restriction_rules',
         'term_count_rules',
@@ -271,10 +271,10 @@ $check('the read no longer migrates legacy acf-ref keys',
         'bidirectional' => true,
     ]])[0]));
 $check('the read normalizes: related term ids are canonicalized',
-    $of_type($projected, 'related_rules')[0]['trigger_term_id'] === [12]
-    && $of_type($projected, 'related_rules')[0]['target_term_id'] === 34
-    && $of_type($projected, 'related_rules')[1]['trigger_term_id'] === [5, 7]
-    && $of_type($projected, 'related_rules')[1]['target_term_id'] === 9);
+    $of_type($projected, 'terms_from_trigger_term')[0]['trigger_term_id'] === [12]
+    && $of_type($projected, 'terms_from_trigger_term')[0]['target_term_id'] === 34
+    && $of_type($projected, 'terms_from_trigger_term')[1]['trigger_term_id'] === [5, 7]
+    && $of_type($projected, 'terms_from_trigger_term')[1]['target_term_id'] === 9);
 $check('the read normalizes: time_based single-term array collapses to int',
     $of_type($projected, 'time_based_rules')[0]['target_term_id'] === 21);
 
@@ -311,7 +311,7 @@ $check('canonical: an absent field stays absent — empty means all, read `?? []
 // position 7 but must still report id 1; the sole title_slug rule must be 0.
 $check('id is the per-type index, not the kind-list position',
     array_column($of_type($projected, 'terms_from_term_hierarchy'), 'id') === [0, 1]
-    && array_column($of_type($projected, 'related_rules'), 'id') === [0, 1]
+    && array_column($of_type($projected, 'terms_from_trigger_term'), 'id') === [0, 1]
     && $of_type($projected, 'hierarchical_level_restriction_rules')[0]['id'] === 0
     && $of_type($projected, 'title_slug_rules')[0]['id'] === 0);
 
@@ -441,7 +441,7 @@ $check('FW-56: an empty list reads as one row with an empty taxonomy',
     count($none) === 1 && $none[0]['taxonomy'] === '');
 
 // Only the types that read the shared taxonomy field expand.
-$other = $expand([['type' => 'related_rules', 'taxonomy' => ['sport', 'category']]]);
+$other = $expand([['type' => 'terms_from_trigger_term', 'taxonomy' => ['sport', 'category']]]);
 $check('FW-56: a type that does not read the taxonomy field is left alone',
     count($other) === 1 && $other[0]['taxonomy'] === ['sport', 'category']);
 

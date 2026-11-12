@@ -33,7 +33,7 @@
  * `OptionRuleStorage::migrated_types_for_kind()` so the set of types this
  * repeater offers and the set storage treats as authored cannot drift. Batch 1 (#57)
  * was the four types not live on any real site; #58 moved the two live ones
- * (`related_rules`, `related_post_terms_rules`) in, completing the collapse.
+ * (`terms_from_trigger_term`, `related_post_terms_rules`) in, completing the collapse.
  * Their rows exist in real data, so two shapes are load-bearing: the ACF
  * field select's combined "post_type:field_name" value round-trips WHOLE
  * (the handler splits at read time; persisting the split would break the

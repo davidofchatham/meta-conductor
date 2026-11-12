@@ -12,7 +12,7 @@
  *
  * The acceptance criteria say *shared taxonomy plus overlapping post types*,
  * and four of the six term types can be read that way. Two cannot:
- * `time_based_rules` and `related_rules` have **no `taxonomy` subfield at all**
+ * `time_based_rules` and `terms_from_trigger_term` have **no `taxonomy` subfield at all**
  * (H11's expected-visible map is the proof) — they are **term-pairing** types
  * that identify their write target by `target_term_id` alone. So the detector
  * resolves each rule's **effect target** rather than reading one field name:
@@ -67,7 +67,7 @@ use BWS\MetaConductor\Handlers\TermsFromTermHierarchyHandler;
 use BWS\MetaConductor\RuleTypes\HierarchicalLevelRestrictionRules;
 use BWS\MetaConductor\RuleTypes\TermsFromTermHierarchyRules;
 use BWS\MetaConductor\RuleTypes\Registry;
-use BWS\MetaConductor\RuleTypes\RelatedRules;
+use BWS\MetaConductor\RuleTypes\TermsFromTriggerTermRules;
 use BWS\MetaConductor\RuleTypes\TermCountRules;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 use BWS\MetaConductor\Storage\StorageFactory;
@@ -426,7 +426,7 @@ class CollisionDetector {
      * @return bool
      */
     private static function removes(array $fact): bool {
-        if ($fact['descriptor'] instanceof RelatedRules) {
+        if ($fact['descriptor'] instanceof TermsFromTriggerTermRules) {
             return !empty($fact['row']['bidirectional']);
         }
 

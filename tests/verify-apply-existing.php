@@ -69,7 +69,7 @@ $read = function (string $kind, array $option, array $filters = []): array {
 
 $term_rows = [
     ['type' => 'terms_from_term_hierarchy', 'row_title' => 'H1', 'taxonomy' => 'category', 'enabled' => true],
-    ['type' => 'related_rules', 'row_title' => 'R1', 'taxonomy' => 'category', 'target_term_id' => [7], 'trigger_term_id' => [3], 'enabled' => false],
+    ['type' => 'terms_from_trigger_term', 'row_title' => 'R1', 'taxonomy' => 'category', 'target_term_id' => [7], 'trigger_term_id' => [3], 'enabled' => false],
     ['type' => 'terms_from_term_hierarchy', 'row_title' => 'H2', 'taxonomy' => 'post_tag', 'enabled' => true],
 ];
 $format_rows = [
@@ -203,7 +203,7 @@ $check('trash and auto-draft are dropped from a narrowed set',
 $check('a gate of only trash reaches nothing, never the default set',
     $reach($h + ['post_status' => ['trash' => true]]) === []);
 
-foreach (['propagation_rules', 'related_rules', 'time_based_rules', 'hierarchical_level_restriction_rules'] as $type) {
+foreach (['propagation_rules', 'terms_from_trigger_term', 'time_based_rules', 'hierarchical_level_restriction_rules'] as $type) {
     $check("$type narrows by post_status",
         $reach(['type' => $type, 'post_status' => ['publish' => true]]) === ['publish']);
 }

@@ -1,6 +1,6 @@
 <?php
 /**
- * Descriptor for `related_rules` rows.
+ * Descriptor for `terms_from_trigger_term` rows.
  *
  * @since 0.10.0
  */
@@ -8,7 +8,7 @@
 namespace BWS\MetaConductor\RuleTypes;
 
 use BWS\MetaConductor\Admin\Config\ConfigHelpers;
-use BWS\MetaConductor\Handlers\RelatedHandler;
+use BWS\MetaConductor\Handlers\TermsFromTriggerTermHandler;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 
 // Prevent direct access
@@ -17,13 +17,13 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Named after the storage key `related_rules`, not a domain name — FW-14 renamed `label()` only;
- * FW-63 renames the id and the class.
+ * The id and class read like the label. The old stored string `related_rules`
+ * is rewritten by Storage\RuleTypeIdMigration.
  */
-final class RelatedRules extends RuleType {
+final class TermsFromTriggerTermRules extends RuleType {
 
     public function type(): string {
-        return 'related_rules';
+        return 'terms_from_trigger_term';
     }
 
     public function kind(): string {
@@ -35,7 +35,7 @@ final class RelatedRules extends RuleType {
     }
 
     public function handler_class(): string {
-        return RelatedHandler::class;
+        return TermsFromTriggerTermHandler::class;
     }
 
     public function target_key(array $rule): ?string {

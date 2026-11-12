@@ -189,7 +189,7 @@ function mc63_rule_s() {
  */
 function mc63_rule_b() {
 	return array(
-		'type'            => 'related_rules',
+		'type'            => 'terms_from_trigger_term',
 		'enabled'         => true,
 		'post_types'      => array( 'mc_item' ),
 		'trigger_type'    => 'term',

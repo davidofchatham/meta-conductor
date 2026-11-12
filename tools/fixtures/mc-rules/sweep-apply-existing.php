@@ -425,7 +425,7 @@ switch ( $step ) {
 				'conflict_handling' => 'merge',
 			),
 			array(
-				'type'            => 'related_rules',
+				'type'            => 'terms_from_trigger_term',
 				'enabled'         => true,
 				'post_types'      => array( 'mc_section' ),
 				'post_status'     => array( 'publish' ),

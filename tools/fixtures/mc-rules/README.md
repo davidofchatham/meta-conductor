@@ -164,4 +164,4 @@ Status › Featured                  (related/time-based targets — separate ro
 Status › Archived
 ```
 
-`mc_flag` (flat): `Priority` — taxonomy-trigger fixture for related_rules.
+`mc_flag` (flat): `Priority` — taxonomy-trigger fixture for terms_from_trigger_term.

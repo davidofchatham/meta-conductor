@@ -53,7 +53,7 @@ $expected = [
         'propagation_rules',
         'related_post_terms_rules',
         'time_based_rules',
-        'related_rules',
+        'terms_from_trigger_term',
         'terms_from_term_hierarchy',
         'hierarchical_level_restriction_rules',
         'term_count_rules',

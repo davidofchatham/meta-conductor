@@ -59,7 +59,7 @@ return array(
 		// the related_post_terms *push* (holder → referenced item) can't reach
 		// them. This removes the one non-obvious, reference-based clobber.
 		//
-		// It does NOT fully isolate a single handler: related_rules,
+		// It does NOT fully isolate a single handler: terms_from_trigger_term,
 		// level_restriction and time_based all also scope mc_item + mc_topic, so
 		// they still fire on any mc_topic edit here. Verified: assigning Harbor to
 		// solo-a with all rules live yields [Region,Coastal,Harbor,Featured] — the
@@ -101,7 +101,7 @@ return array(
 		// its OWN posts + its OWN taxonomy (mc_flag) so it can't perturb any
 		// existing subject: an explicit reverse_acf_field_name short-circuits
 		// tier 2, so tier 1 and tier 2 cannot share a rule. Known interaction:
-		// related_rules §3's taxonomy trigger (any mc_flag ⇒ Featured) fires on
+		// terms_from_trigger_term §3's taxonomy trigger (any mc_flag ⇒ Featured) fires on
 		// item-bidi once it inherits Priority — expected, and contained here.
 		'section-bidi' => array( 'post_type' => 'mc_section', 'post_name' => 'mc-bidi-holder', 'post_title' => 'MC Bidi Holder' ),
 		'item-bidi'    => array( 'post_type' => 'mc_item', 'post_name' => 'mc-item-bidi', 'post_title' => 'MC Item Bidi' ),
@@ -209,7 +209,7 @@ return array(
 
 		// matrix §3 — term trigger (Coastal ⇒ Featured, bidirectional) +
 		// taxonomy trigger (any mc_flag ⇒ Featured).
-		'related_rules' => array(
+		'terms_from_trigger_term' => array(
 			array(
 				'enabled'         => true,
 				'post_types'      => array( 'mc_item' ),
