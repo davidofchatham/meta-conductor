@@ -130,7 +130,7 @@ $settings = [
     'restrict_term_count' => [
         ['name' => 'C1', 'taxonomy' => 'category', 'enabled' => true, 'max_terms' => 2, 'per_level' => false],
     ],
-    'title_slug_rules' => [
+    'title_slug_from_pattern' => [
         ['name' => 'S1', 'enabled' => true, 'post_type' => 'event', 'title_pattern' => '{term:sport}'],
     ],
     'field_transformation_rules' => [
@@ -149,7 +149,7 @@ $all_types = [
     'related_post_terms_rules',
     'restrict_terms_by_level',
     'restrict_term_count',
-    'title_slug_rules',
+    'title_slug_from_pattern',
     'field_transformation_rules',
 ];
 
@@ -171,7 +171,7 @@ foreach (OptionRuleStorage::all_types() as $type) {
 $check('legacy rows and no kind lists trip the guard',
     OptionRuleStorage::holds_pre_08_rows($settings) === true);
 $check('one legacy row is enough',
-    OptionRuleStorage::holds_pre_08_rows(['title_slug_rules' => [['name' => 'S1']]]) === true);
+    OptionRuleStorage::holds_pre_08_rows(['title_slug_from_pattern' => [['name' => 'S1']]]) === true);
 $check('empty legacy arrays (a 0.7.x site with no rules) do not',
     OptionRuleStorage::holds_pre_08_rows(array_fill_keys($all_types, [])) === false);
 $check('a present kind list means the site already crossed 0.8.0',
@@ -247,7 +247,7 @@ $check('the term kind reports its migrated types — all seven as of restrict_te
     ]);
 $check('the format kind reports its migrated type (#59)',
     OptionRuleStorage::migrated_types_for_kind(OptionRuleStorage::KIND_FORMAT)
-        === ['title_slug_rules', 'field_transformation_rules']);
+        === ['title_slug_from_pattern', 'field_transformation_rules']);
 
 // =============================================================================
 // 4. THE READ — projection, normalization, and the per-type `id`.
@@ -313,7 +313,7 @@ $check('id is the per-type index, not the kind-list position',
     array_column($of_type($projected, 'terms_from_term_hierarchy'), 'id') === [0, 1]
     && array_column($of_type($projected, 'terms_from_trigger_term'), 'id') === [0, 1]
     && $of_type($projected, 'restrict_terms_by_level')[0]['id'] === 0
-    && $of_type($projected, 'title_slug_rules')[0]['id'] === 0);
+    && $of_type($projected, 'title_slug_from_pattern')[0]['id'] === 0);
 
 // An `id` already on the row is left alone — it is the caller's, not ours.
 $check('a row carrying its own id keeps it',
@@ -357,7 +357,7 @@ $seed = static fn(): array => [
         ['type' => 'terms_from_term_hierarchy', 'name' => 'h1', 'enabled' => false],
     ],
     OptionRuleStorage::KIND_FORMAT => [
-        ['type' => 'title_slug_rules', 'name' => 's0', 'enabled' => true],
+        ['type' => 'title_slug_from_pattern', 'name' => 's0', 'enabled' => true],
     ],
 ];
 

@@ -191,7 +191,7 @@ abstract class RuleType {
      * type's turn in a format pass — the rest are skipped.
      *
      * True only for a rule set that is a lookup table keyed by post type
-     * (`title_slug_rules`, #59). False ⇒ every applicable rule runs in authored
+     * (`title_slug_from_pattern`, #59). False ⇒ every applicable rule runs in authored
      * order and a later write supersedes an earlier one. Meaningful for the
      * format kind only; the term dispatcher never asks.
      *

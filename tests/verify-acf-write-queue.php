@@ -16,7 +16,7 @@
  *      post from the pending set before that callback ran, so neither the
  *      ordinary path NOR the flush would apply it. The bound is DERIVED from
  *      the source rather than written down: it used to be the literal 99 of
- *      `TitleSlugHandler::acf/save_post`, which #64 deleted — a hard-coded
+ *      `TitleSlugFromPatternHandler::acf/save_post`, which #64 deleted — a hard-coded
  *      number outlives the registration it was pinned to and then guards
  *      nothing.
  *   2. The WP_IMPORTING suppression gate is present. Without it an import

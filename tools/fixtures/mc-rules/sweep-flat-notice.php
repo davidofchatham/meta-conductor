@@ -35,8 +35,8 @@ function mcnote_html() {
 
 function mcnote_author( $flat ) {
 	mc_write_rule_types( array(
-		'title_slug_rules' => array( array(
-			'type' => 'title_slug_rules', 'enabled' => true, 'name' => 'MC flat',
+		'title_slug_from_pattern' => array( array(
+			'type' => 'title_slug_from_pattern', 'enabled' => true, 'name' => 'MC flat',
 			'post_type' => 'mc_flat', 'flat_urls' => (bool) $flat,
 		) ),
 	) );

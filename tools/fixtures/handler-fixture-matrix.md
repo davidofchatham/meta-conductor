@@ -129,7 +129,7 @@ Status (L1)          — second root: related/time-based targets live here so
 | Scenarios | Save in-range → term added; save post against expired rule holding the term → removed; future rule → no-op; cron fire (`wp cron event run bws_taxonomy_manager_cleanup` or `do_action` eval) → bulk strip. |
 | Shared reuse | None. |
 
-## 7. title_slug_rules — TitleSlugHandler
+## 7. title_slug_from_pattern — TitleSlugFromPatternHandler
 
 | Aspect | Need |
 |---|---|
@@ -144,11 +144,11 @@ Status (L1)          — second root: related/time-based targets live here so
 
 ---
 
-## 8. flat URLs — TitleSlugHandler read-time hooks (FW-51 04)
+## 8. flat URLs — TitleSlugFromPatternHandler read-time hooks (FW-51 04)
 
 | Aspect | Need |
 |---|---|
-| Trigger | `post_type_link` (p20) and `request` (p10), declared by `TitleSlugRules::runtime_hooks()` and registered by `TaxonomyManager`. No write; no pass. |
+| Trigger | `post_type_link` (p20) and `request` (p10), declared by `TitleSlugFromPatternRules::runtime_hooks()` and registered by `TaxonomyManager`. No write; no pass. |
 | Schema | `mc_flat` — hierarchical, no taxonomies/ACF/seeded rules (manifest v9). The sweep authors its one row (`flat_urls` on). |
 | Data | Two parent/child pairs seeded (`flat-parent`/`flat-child`, `flat-parent-2`/`flat-child-2`, unique names). The same-name twin pair (draft with the LOWER ID under `flat-parent-2`, published under `flat-parent`) is created and deleted by the sweep — a seeded twin would collapse onto one post at the next seed (`mc_fixture_find_post` returns the oldest match). |
 | Scenarios | Permalink flat for children, unchanged for parents / other types / `flat_urls` on a non-hierarchical type; first row per type decides; off reverts to nested; REST `link`, sitemap, attachment link follow; request resolves `/child/` and `/child/N/`; exact nested chain 301s (paging kept); stale / foreign-parent / extra-segment chain, feed, and a draft's nested URL fall through; twin order published → lowest ID → any status. |
@@ -208,7 +208,7 @@ Two constraints that shape EVERY per-handler sweep — not §1-specific:
 
 2. **Handler dedup is per-request — but NOT for hierarchical anymore (0.6.2).**
    Some handlers keep a per-request `$processed[key]` map (`UnifiedHandlerBase`,
-   `TitleSlugHandler`) that short-circuits a second apply for the same subject
+   `TitleSlugFromPatternHandler`) that short-circuits a second apply for the same subject
    within one PHP request. For THOSE, two user-edits in one `wp eval` → the second
    is a silent no-op; give each user-edit scenario its **own eval** (one WP-CLI
    call = one request = fresh dedup), or a single-eval multi-edit sweep reports
@@ -731,7 +731,7 @@ re-seeding.
 **RESTORE GOTCHA (the original): it renames `post_name`.** Re-seed's
 `mc_fixture_find_post` addresses posts by `post_name`, so a renamed subject reads
 as missing and the seeder INSERTS a duplicate. Before re-seeding after a
-title_slug sweep you MUST first (a) empty the `title_slug_rules` array (so the
+title_slug sweep you MUST first (a) empty the `title_slug_from_pattern` array (so the
 rename doesn't re-fire) and (b) `wp_update_post` the subjects' `post_name` back to
 their manifest values. Then re-seed. Verified afterward: `mc_item` count = 8
 (6 fixtures + 2 solo), all unique names, rule live, no duplicates.
@@ -836,7 +836,7 @@ load titles all six and writes the same titles into the type-keyed arrays, so
 the authored list stays trusted. Second load is a no-op.
 
 **§8g the un-migrated sections still save** ✅ `terms_from_trigger_term`,
-`related_post_terms_rules` and `title_slug_rules` each validate clean and
+`related_post_terms_rules` and `title_slug_from_pattern` each validate clean and
 round-trip 2/2/1 rows through their own sections, and the fan-out touches no
 migrated array when they save. `snapshot_claim_override_labels` unchanged.
 
@@ -859,9 +859,9 @@ existing rule survives, and a rule authored the new way still fires.
 sequence (`sync_kind_lists()` → `repair_stored_rules()`) leaves `format_rules`
 carrying the seeded rule with its `type`, a backfilled `row_title`
 (`MC item slug (MC Items)`) and every stored key intact. What the handler reads
-is byte-identical apart from `row_title`. Every key `TitleSlugHandler` reads
+is byte-identical apart from `row_title`. Every key `TitleSlugFromPatternHandler` reads
 survives Wireframe's real `RepeaterField::sanitize` against the live
-`FormatRulesConfig` subfields, and the fan-out reproduces `title_slug_rules`
+`FormatRulesConfig` subfields, and the fan-out reproduces `title_slug_from_pattern`
 row-for-row. Both copies were repaired in ONE `update_option`.
 
 **§9b validator + sanitizer over the whole page** ✅ A fully populated
@@ -1053,7 +1053,7 @@ a draft dependent being kept in sync by a published source). Draft holder
 `item-solo-a` → gated OUT, dependent untouched. Publish the holder, same rule →
 gated IN, dependent synced.
 
-**Scope note: `title_slug_rules` is OUT.** `FormatRulesConfig` never gained a
+**Scope note: `title_slug_from_pattern` is OUT.** `FormatRulesConfig` never gained a
 `post_status` subfield in #59, and #67's acceptance criterion is scoped to
 "every TERM type" — #23's original text named title_slug too, but nothing in
 Phase 4 wired it, and closing #23 in the term-repeater's terms is what
@@ -1111,7 +1111,7 @@ a full `seed.php` repairs it, same shape as the §63 restore gotcha.
   one rule type a gate that should not exist deletes its field outright rather
   than narrowing it, so the shared frame's ungatedness is asserted first. Runs
   Wireframe's real `Conditions::evaluate()` for the visible set, then checks
-  separately that every key `TitleSlugHandler` reads is inside it.
+  separately that every key `TitleSlugFromPatternHandler` reads is inside it.
 - **H10 — `tests/verify-kind-lists.php`** (static, no WP): the kind lists as the
   only stored shape (#56 expand → #66 contract). Three blocks: the 7-type-arrays
   → 2-kind-lists migration is idempotent and lossless with every legacy rule

@@ -28,7 +28,7 @@
  *         draft holder must be excluded from copying; publishing it must
  *         turn the copy on.
  *
- * `title_slug_rules` (the one FORMAT-kind type) is OUT OF SCOPE here on
+ * `title_slug_from_pattern` (the one FORMAT-kind type) is OUT OF SCOPE here on
  * purpose: `FormatRulesConfig` never gained a `post_status` subfield in
  * #59, and #67's acceptance criterion is scoped to "every TERM type" — #23's
  * original text named title_slug too, but nothing in Phase 4 wired it, and

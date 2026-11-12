@@ -54,7 +54,7 @@ try {
 	$check( '§guard-b empty legacy arrays with no kind list stay quiet', ! $notice_for( array(
 		'terms_from_term_hierarchy' => array(),
 		'terms_from_date_window'          => array(),
-		'title_slug_rules'          => array(),
+		'title_slug_from_pattern'          => array(),
 	) ) );
 
 	$check( '§guard-c the current fixture stays quiet', ! $notice_for( is_array( $snapshot ) ? $snapshot : array() ) );

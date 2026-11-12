@@ -1,7 +1,7 @@
 <?php
 /**
  * FW-40 golden capture — what today's title/slug token resolution produces,
- * recorded BEFORE the engine moves out of `TitleSlugHandler`, so the extraction
+ * recorded BEFORE the engine moves out of `TitleSlugFromPatternHandler`, so the extraction
  * can prove it changed nothing.
  *
  * Every value a token reads is INJECTED, not seeded: `get_post_metadata` and
@@ -40,7 +40,7 @@
  * Prereq: mc-rules seeded (seed.php).
  */
 
-use BWS\MetaConductor\Handlers\TitleSlugHandler;
+use BWS\MetaConductor\Handlers\TitleSlugFromPatternHandler;
 use BWS\MetaConductor\TaxonomyManager;
 use BWS\MetaConductor\Tokens\OutputPolicy;
 use BWS\MetaConductor\Tokens\PostTokenSource;
@@ -55,8 +55,8 @@ if (!$post_id) {
     fwrite(STDERR, "cannot find fixture post mc-item-alpha — seed.php first\n");
     exit(1);
 }
-$handler = TaxonomyManager::get_instance()->get_handler('title_slug_rules');
-if (!$handler instanceof TitleSlugHandler) {
+$handler = TaxonomyManager::get_instance()->get_handler('title_slug_from_pattern');
+if (!$handler instanceof TitleSlugFromPatternHandler) {
     fwrite(STDERR, "title_slug handler not live\n");
     exit(1);
 }
@@ -108,7 +108,7 @@ $resolve = static function (string $pattern, int $post_id, object $post, string 
         $guard ? ($slug ? sanitize_title($base) : $base) : null
     );
 };
-$rule_out = new ReflectionMethod(TitleSlugHandler::class, 'resolve_rule_output');
+$rule_out = new ReflectionMethod(TitleSlugFromPatternHandler::class, 'resolve_rule_output');
 
 // ── The resolver grid ───────────────────────────────────────────────────────
 
@@ -209,7 +209,7 @@ foreach ($patterns as $pattern) {
 // ── Whole rules ─────────────────────────────────────────────────────────────
 
 $rule = static fn(array $r) => $r + [
-    'type' => 'title_slug_rules', 'enabled' => true, 'post_type' => 'mc_item',
+    'type' => 'title_slug_from_pattern', 'enabled' => true, 'post_type' => 'mc_item',
     'title_pattern' => '', 'slug_pattern' => '', 'slug_mode' => 'prefix',
     'slug_escalation' => '', 'escalation_placement' => 'suffix',
 ];
@@ -266,7 +266,7 @@ $san = $GLOBALS['mc_golden_san'];
 ksort($san, SORT_STRING);
 
 $golden = [
-    'about' => 'FW-40 golden: token resolution captured from TitleSlugHandler before extraction. '
+    'about' => 'FW-40 golden: token resolution captured from TitleSlugFromPatternHandler before extraction. '
              . 'Regenerate only on purpose (tools/fixtures/mc-rules/golden-token-engine.php capture).',
     'site_timezone'   => wp_timezone_string(),
     'server_timezone' => date_default_timezone_get(),

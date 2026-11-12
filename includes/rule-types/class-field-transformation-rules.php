@@ -122,7 +122,7 @@ final class FieldTransformationRules extends RuleType {
      * The checked `post_types`. A row with none checked applies to nothing (the
      * handler skips it), so it yields `['']` — which intersects nothing — rather
      * than [], which would claim every post type; see
-     * `TitleSlugRules::written_post_types()`.
+     * `TitleSlugFromPatternRules::written_post_types()`.
      */
     public function written_post_types(array $rule): array {
         $types = array_values(array_filter(array_map('strval', (array) ($rule['post_types'] ?? []))));

@@ -73,7 +73,7 @@ $check('a cut through a percent-encoded byte leaves no stray %', !preg_match('/%
 
 // --- The handler's side: per-type scope, flat branch numbers through FlatSlug. --
 
-$src = file_get_contents(dirname(__DIR__) . '/includes/handlers/class-title-slug-handler.php');
+$src = file_get_contents(dirname(__DIR__) . '/includes/handlers/class-title-slug-from-pattern-handler.php');
 preg_match('/private function slug_is_unique\b.*?\R    }\R/s', $src, $m);
 $check('the uniqueness lookup is per type (no post_parent in it)', isset($m[0]) && !str_contains($m[0], 'post_parent') && str_contains($m[0], 'post_type = %s'));
 $check('a flat type numbers through FlatSlug, a non-flat type still through core',
@@ -96,7 +96,7 @@ $check('a paged flat URL is not refused (its last segment is the page number)', 
 $check('a target no deeper than the request is not refused', !FlatSlug::is_own_nested_form($req, $req, ['mc-flat-parent']));
 $check('an empty request is not refused', !FlatSlug::is_own_nested_form([], ['x'], ['x']));
 $check('a deeper base still matches', FlatSlug::is_own_nested_form(['en', 'mc-flat', 'mc-flat-child'], ['en', 'mc-flat', 'mc-flat-parent', 'mc-flat-child'], ['mc-flat-parent']));
-$check('the veto is declared and registered', str_contains(file_get_contents(dirname(__DIR__) . '/includes/rule-types/class-title-slug-rules.php'), "'wp_redirect'")
+$check('the veto is declared and registered', str_contains(file_get_contents(dirname(__DIR__) . '/includes/rule-types/class-title-slug-from-pattern-rules.php'), "'wp_redirect'")
     && str_contains($src, 'public function veto_nested_redirect'));
 
 // --- Report. ----------------------------------------------------------------

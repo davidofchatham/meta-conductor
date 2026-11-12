@@ -73,7 +73,7 @@ $term_rows = [
     ['type' => 'terms_from_term_hierarchy', 'row_title' => 'H2', 'taxonomy' => 'post_tag', 'enabled' => true],
 ];
 $format_rows = [
-    ['type' => 'title_slug_rules', 'name' => 'T1', 'post_type' => 'post', 'title_pattern' => '{title}', 'enabled' => true],
+    ['type' => 'title_slug_from_pattern', 'name' => 'T1', 'post_type' => 'post', 'title_pattern' => '{title}', 'enabled' => true],
 ];
 $option = [$KIND_TERM => $term_rows, $KIND_FORMAT => $format_rows];
 
@@ -283,10 +283,10 @@ $check('an enabled row carries its kind and position',
     $options[$values[2]] === 'Term rules: #1 H1'
     && $options[$values[5]] === 'Format rules: #1 T1 (Posts)');
 $check('a stale stored position is replaced by the real one',
-    ApplyPage::choice_options([], [['type' => 'title_slug_rules', 'row_title' => '#9 X']] )[RuleChoice::encode($KIND_FORMAT, 0, ['type' => 'title_slug_rules', 'row_title' => '#9 X'])]
+    ApplyPage::choice_options([], [['type' => 'title_slug_from_pattern', 'row_title' => '#9 X']] )[RuleChoice::encode($KIND_FORMAT, 0, ['type' => 'title_slug_from_pattern', 'row_title' => '#9 X'])]
     === 'Format rules: #1 X');
 $check('an untitled row is labeled by its type',
-    in_array('Format rules: #1 title_slug_rules', ApplyPage::choice_options([], [['type' => 'title_slug_rules']]), true));
+    in_array('Format rules: #1 title_slug_from_pattern', ApplyPage::choice_options([], [['type' => 'title_slug_from_pattern']]), true));
 $cf_titled = ['type' => 'field_transformation_rules', 'row_title' => '#2 Display — Display name (Books)', 'post_types' => ['book']];
 $check('a Computed field rule is offered in the format group with its own row title',
     in_array('Format rules: #2 Display — Display name (Books)', ApplyPage::choice_options([], [$formats[0], $cf_titled]), true));

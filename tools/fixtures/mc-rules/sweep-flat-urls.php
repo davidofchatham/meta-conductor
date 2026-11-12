@@ -40,16 +40,16 @@ $step = $args[0] ?? 'run';
 
 /** The live title/slug handler. */
 function mcflat_handler() {
-	return TaxonomyManager::get_instance()->get_handler( 'title_slug_rules' );
+	return TaxonomyManager::get_instance()->get_handler( 'title_slug_from_pattern' );
 }
 
 /** Author the one flat row (or an off one). */
 function mcflat_author( $flat, array $extra = array() ) {
 	mc_write_rule_types( array(
-		'title_slug_rules' => array_merge(
+		'title_slug_from_pattern' => array_merge(
 			array(
 				array(
-					'type'      => 'title_slug_rules',
+					'type'      => 'title_slug_from_pattern',
 					'enabled'   => true,
 					'name'      => 'MC flat',
 					'post_type' => 'mc_flat',
@@ -137,10 +137,10 @@ mc_assert( '1e non-hierarchical mc_item untouched', get_permalink( mc_pid( 'item
 mc_assert( '1f flat_post_types', mcflat_handler()->flat_post_types(), array( 'mc_flat' ) );
 
 // flat_urls on a NON-hierarchical type is ignored.
-mcflat_author( true, array( array( 'type' => 'title_slug_rules', 'enabled' => true, 'name' => 'item', 'post_type' => 'mc_item', 'flat_urls' => true ) ) );
+mcflat_author( true, array( array( 'type' => 'title_slug_from_pattern', 'enabled' => true, 'name' => 'item', 'post_type' => 'mc_item', 'flat_urls' => true ) ) );
 mc_assert( '1g flat_urls on a flat (non-hierarchical) type is ignored', mcflat_handler()->flat_post_types(), array( 'mc_flat' ) );
 // A second row on the same type does not flatten what the winning row did not.
-mcflat_author( false, array( array( 'type' => 'title_slug_rules', 'enabled' => true, 'name' => 'dup', 'post_type' => 'mc_flat', 'flat_urls' => true ) ) );
+mcflat_author( false, array( array( 'type' => 'title_slug_from_pattern', 'enabled' => true, 'name' => 'dup', 'post_type' => 'mc_flat', 'flat_urls' => true ) ) );
 mc_assert( '1h first row per type decides (off row above an on row = off)', mcflat_handler()->flat_post_types(), array() );
 mc_assert( '1i off reverts the permalink to nested', get_permalink( $child ), "$home/mc-flat/mc-flat-parent/mc-flat-child/" );
 mcflat_author( true );

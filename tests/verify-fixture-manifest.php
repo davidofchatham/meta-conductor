@@ -60,7 +60,7 @@ $valid_types = array(
 	'related_post_terms_rules',
 	'restrict_terms_by_level',
 	'restrict_term_count',
-	'title_slug_rules',
+	'title_slug_from_pattern',
 	'field_transformation_rules',
 );
 

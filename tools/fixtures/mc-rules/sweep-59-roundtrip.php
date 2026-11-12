@@ -14,7 +14,7 @@
  *   2. Runs every persisted row through Wireframe's REAL
  *      RepeaterField::sanitize against the live FormatRulesConfig subfields —
  *      the exact code path a settings save takes — and asserts no value
- *      TitleSlugHandler reads is dropped or altered. This is #59's "existing
+ *      TitleSlugFromPatternHandler reads is dropped or altered. This is #59's "existing
  *      stored title/slug rules survive the move with their patterns and slug
  *      mode intact" criterion, checked against the real sanitizer rather than
  *      reasoned about.
@@ -42,7 +42,7 @@ $note = static function (string $label, bool $ok) use (&$fail): void {
 $storage = StorageFactory::get_instance();
 
 // What the handler sees BEFORE any of this runs. The move must not change it.
-$before = $storage->get_rules('title_slug_rules');
+$before = $storage->get_rules('title_slug_from_pattern');
 
 $repair = new ReflectionMethod(WireframeBootstrap::class, 'repair_stored_rules');
 $repair->invoke(null, $storage);
@@ -52,11 +52,11 @@ $rows     = $settings[OptionRuleStorage::KIND_FORMAT] ?? [];
 
 $note('format_rules is populated', !empty($rows));
 // The format list holds title/slug rules and, since FW-4, Computed field rules.
-$format_types = ['title_slug_rules', 'field_transformation_rules'];
+$format_types = ['title_slug_from_pattern', 'field_transformation_rules'];
 $note('every format row is a known format rule type',
     array_diff(array_column($rows, 'type'), $format_types) === []);
-$note('the legacy title_slug_rules array is gone from storage (#66)',
-    !array_key_exists('title_slug_rules', $settings));
+$note('the legacy title_slug_from_pattern array is gone from storage (#66)',
+    !array_key_exists('title_slug_from_pattern', $settings));
 
 $titled = array_filter($rows, static fn($r) => ($r['row_title'] ?? '') !== '');
 $note('every row carries a repaired row_title', count($titled) === count($rows));
@@ -71,7 +71,7 @@ foreach ($rows as $i => $r) {
 // repair adds row_title and nothing else.
 $after = StorageFactory::get_instance();
 $after->clear_cache();
-$after_rules = $after->get_rules('title_slug_rules');
+$after_rules = $after->get_rules('title_slug_from_pattern');
 $strip = static fn(array $rs) => array_map(
     static function (array $r) { unset($r['row_title']); return $r; },
     $rs
@@ -106,7 +106,7 @@ foreach ($rows as $i => $row) {
 }
 
 // What the sanitize produced IS what gets stored (#66 — there is no projection
-// onto title_slug_rules any more), so the list has to survive it in place.
+// onto title_slug_from_pattern any more), so the list has to survive it in place.
 $note('the sanitized list keeps every row', count($sanitized) === count($rows));
 $note('every sanitized row is still typed',
     array_column($sanitized, 'type') === array_column($rows, 'type'));

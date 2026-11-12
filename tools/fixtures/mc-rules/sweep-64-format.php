@@ -102,8 +102,8 @@ function mc64_subject() {
  * @param array[]  $ts_rules        Rules to write as the format list.
  */
 function mc64_setup( array $keep_term_types, array $ts_rules ) {
-	mc_isolate( array_merge( $keep_term_types, array( 'title_slug_rules' ) ) );
-	mc_write_rule_types( array( 'title_slug_rules' => $ts_rules ) );
+	mc_isolate( array_merge( $keep_term_types, array( 'title_slug_from_pattern' ) ) );
+	mc_write_rule_types( array( 'title_slug_from_pattern' => $ts_rules ) );
 }
 
 /** The rule under test: title from the post's first topic, slug derived. */

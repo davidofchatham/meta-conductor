@@ -38,7 +38,7 @@ if (!defined('ABSPATH')) exit;
  * data-in/data-out seam and the pass stays post-write (docs/architecture.md →
  * Field effects ride the $data seam).
  */
-class TitleSlugHandler extends UnifiedHandlerBase {
+class TitleSlugFromPatternHandler extends UnifiedHandlerBase {
 
     // -------------------------------------------------------------------------
     // Required abstracts

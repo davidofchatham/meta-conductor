@@ -186,7 +186,7 @@ function mcf_setup_list( array $rows ) {
 /** A title/slug row that sets the title from the computed display field. */
 function mcf_title_rule( array $over = array() ) {
 	return array_merge( array(
-		'type'          => 'title_slug_rules',
+		'type'          => 'title_slug_from_pattern',
 		'enabled'       => true,
 		'name'          => 'Sweep title from display',
 		'post_type'     => 'mc_item',

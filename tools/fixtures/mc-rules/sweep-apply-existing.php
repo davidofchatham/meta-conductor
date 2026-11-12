@@ -207,7 +207,7 @@ function mcae_passed( array $ids ) {
 /** A title/slug row over mc_item that appends $suffix to the title. */
 function mcae_title_row( $suffix, $enabled = true ) {
 	return array(
-		'type'          => 'title_slug_rules',
+		'type'          => 'title_slug_from_pattern',
 		'enabled'       => $enabled,
 		'name'          => 'Sweep apply-existing ' . $suffix,
 		'post_type'     => 'mc_item',

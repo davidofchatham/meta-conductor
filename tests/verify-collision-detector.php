@@ -158,7 +158,7 @@ $check('the FormTokenField [N] shape, projected, resolves to the same key',
         OptionRuleStorage::project_kind_rules([['type' => 'terms_from_trigger_term', 'target_term_id' => [22]]])[0]) === 'term|22');
 
 $check('a format rule keys on the fields it writes',
-    $desc('title_slug_rules')->target_key(['post_type' => 'mc_item']) === 'fields|title_slug');
+    $desc('title_slug_from_pattern')->target_key(['post_type' => 'mc_item']) === 'fields|title_slug');
 
 $check('a row with no taxonomy picked resolves nothing',
     $desc('terms_from_term_hierarchy')->target_key([]) === null);
@@ -195,7 +195,7 @@ $check('empty post_types means every post type',
 $check('the `any` sentinel means every post type, not a type called any',
     $desc('terms_from_term_hierarchy')->written_post_types(['post_types' => ['any']]) === []);
 $check('a format rule reads its scalar post_type',
-    $desc('title_slug_rules')->written_post_types(['post_type' => 'mc_item']) === ['mc_item']);
+    $desc('title_slug_from_pattern')->written_post_types(['post_type' => 'mc_item']) === ['mc_item']);
 
 // The ACF-reference rule writes its DEPENDENT end, and a push rule does not
 // constrain that end's type — so "all", exactly as dependent_post_type() reads.
@@ -556,9 +556,9 @@ $check('a snapshot title is decoded, so the page escapes it exactly once',
 // --- 10. The format kind: first-match-wins, stated as a collision. ----------
 
 $s_format = [
-    ['type' => 'title_slug_rules', 'enabled' => true, 'post_type' => 'mc_item',
+    ['type' => 'title_slug_from_pattern', 'enabled' => true, 'post_type' => 'mc_item',
      'row_title' => 'MC item slug'],
-    ['type' => 'title_slug_rules', 'enabled' => true, 'post_type' => 'mc_item',
+    ['type' => 'title_slug_from_pattern', 'enabled' => true, 'post_type' => 'mc_item',
      'row_title' => 'MC item slug (second)'],
 ];
 $found_fmt = $scan($KIND_FORMAT, $s_format);
@@ -573,11 +573,11 @@ $s_format_split[1]['post_type'] = 'mc_section';
 $check('two format rules on different post types are independent',
     $scan($KIND_FORMAT, $s_format_split) === []);
 
-// A blank new row writes nothing — `TitleSlugHandler::rule_matches()` requires
+// A blank new row writes nothing — `TitleSlugFromPatternHandler::rule_matches()` requires
 // a non-empty post_type — so it is unfinished, not colliding. The format target
 // key is a constant, so nothing else in the scan would have caught this.
 $check('a format rule with no post type resolves no target',
-    $desc('title_slug_rules')->target_key(['post_type' => '']) === null);
+    $desc('title_slug_from_pattern')->target_key(['post_type' => '']) === null);
 $s_format_blank = $s_format;
 $s_format_blank[1]['post_type'] = '';
 $check('a blank format row collides with nothing',

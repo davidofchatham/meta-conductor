@@ -79,7 +79,7 @@ class AcfWriteQueue {
      * Claim priority on save_post / acf/save_post. Must sit ABOVE every OTHER
      * registration on those two hooks, or the claim would remove the post from
      * the pending set before that callback ran. The tallest one used to be
-     * `TitleSlugHandler` at `acf/save_post` 99; #64 deleted it, and what is
+     * `TitleSlugFromPatternHandler` at `acf/save_post` 99; #64 deleted it, and what is
      * left is the dispatcher's own mark-only triggers at 10.
      * H8 (tests/verify-acf-write-queue.php) DERIVES the bound from the source
      * rather than restating a number, so this stays true as registrations move.

@@ -25,7 +25,7 @@ if (!defined('ABSPATH')) {
  * title/field is DERIVED, not authored: `title_slug` reads terms
  * (`{term:TAX}`, `{terms:TAX}`) and writes none, so it is a sink with inbound
  * edges. Until this ticket that derived order was held together by two
- * accidents — `TitleSlugHandler` registered at `acf/save_post`/`save_post`
+ * accidents — `TitleSlugFromPatternHandler` registered at `acf/save_post`/`save_post`
  * priority 99, above every term handler, and `TaxonomyManager` constructed it
  * last. Coalescing the term pass onto a late drain (#60) would have inverted
  * both silently: the title would have been computed from the PREVIOUS save's

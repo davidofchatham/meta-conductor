@@ -31,8 +31,8 @@ if ( 'run' !== $step ) {
 	WP_CLI::error( 'Only the "run" step exists.' );
 }
 
-mc_isolate( array( 'title_slug_rules' ) );
-mc_write_rule_types( array( 'title_slug_rules' => array( array(
+mc_isolate( array( 'title_slug_from_pattern' ) );
+mc_write_rule_types( array( 'title_slug_from_pattern' => array( array(
 	'enabled'       => true,
 	'name'          => 'FW-51 01 tokens',
 	'post_type'     => 'mc_section',

@@ -302,7 +302,7 @@ return array(
 		),
 
 		// matrix §7 — one rule per post type (first-match-wins).
-		'title_slug_rules' => array(
+		'title_slug_from_pattern' => array(
 			array(
 				'enabled'         => true,
 				'name'            => 'MC item slug',

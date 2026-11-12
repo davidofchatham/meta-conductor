@@ -71,7 +71,7 @@ class DuplicateNameNotice {
      * @return string[]
      */
     private static function flat_types(): array {
-        $handler = TaxonomyManager::get_instance()->get_handler('title_slug_rules');
+        $handler = TaxonomyManager::get_instance()->get_handler('title_slug_from_pattern');
 
         return $handler ? $handler->flat_post_types() : [];
     }

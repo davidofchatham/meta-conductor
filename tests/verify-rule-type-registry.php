@@ -59,7 +59,7 @@ $expected = [
         'restrict_term_count',
     ],
     OptionRuleStorage::KIND_FORMAT => [
-        'title_slug_rules',
+        'title_slug_from_pattern',
         'field_transformation_rules',
     ],
 ];
@@ -125,8 +125,8 @@ foreach ($all as $key => $d) {
 // The format pass's first-match gate is a descriptor fact (FW-4 ticket 04):
 // true only for the title/slug lookup table, so a Computed field rule composes.
 foreach ($all as $key => $d) {
-    $check("$key: first_match_wins() is true only for title_slug_rules",
-        $d->first_match_wins() === ($key === 'title_slug_rules'));
+    $check("$key: first_match_wins() is true only for title_slug_from_pattern",
+        $d->first_match_wins() === ($key === 'title_slug_from_pattern'));
 }
 
 // The runtime question the dispatchers ask before running a row (ticket 10).
