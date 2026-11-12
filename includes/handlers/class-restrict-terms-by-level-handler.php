@@ -1,6 +1,6 @@
 <?php
 /**
- * BWS Taxonomy Manager Hierarchical Level Restriction Handler
+ * BWS Taxonomy Manager Restrict Terms By Level Handler
  * Restricts a post's terms to the deepest or shallowest hierarchical level it uses
  *
  * @since 0.1.0
@@ -8,14 +8,14 @@
 
 namespace BWS\MetaConductor\Handlers;
 
-use BWS\MetaConductor\RuleTypes\HierarchicalLevelRestrictionRules;
+use BWS\MetaConductor\RuleTypes\RestrictTermsByLevelRules;
 
 // Prevent direct access
 if (!defined('ABSPATH')) {
     exit;
 }
 
-class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
+class RestrictTermsByLevelHandler extends UnifiedHandlerBase {
 
     /**
      * Cache for term level calculations
@@ -142,8 +142,8 @@ class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
      *
      * `include_ancestors` has one meaning in both modes: keep the lineage of
      * whatever the mode kept. A stored mode outside the two reads as the
-     * default through HierarchicalLevelRestrictionRules::mode(). Config side:
-     * HierarchicalLevelRestrictionRules::subfields().
+     * default through RestrictTermsByLevelRules::mode(). Config side:
+     * RestrictTermsByLevelRules::subfields().
      *
      * @param int[]  $term_ids Term IDs currently on the post.
      * @param string $taxonomy Taxonomy slug.
@@ -161,7 +161,7 @@ class HierarchicalLevelRestrictionHandler extends UnifiedHandlerBase {
         $terms_by_level = $this->group_terms_by_level($term_ids, $taxonomy);
 
         $levels = array_keys($terms_by_level);
-        $kept_level = HierarchicalLevelRestrictionRules::mode($rule) === HierarchicalLevelRestrictionRules::MODE_SHALLOWEST
+        $kept_level = RestrictTermsByLevelRules::mode($rule) === RestrictTermsByLevelRules::MODE_SHALLOWEST
             ? min($levels)
             : max($levels);
         $final_terms = $terms_by_level[$kept_level];

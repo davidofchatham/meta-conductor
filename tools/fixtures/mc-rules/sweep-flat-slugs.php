@@ -71,8 +71,8 @@ function mcf_slug_of( $title, $parent ) {
  * and compare the names they end with.
  */
 function mcf_case( $label, array $rule_extra, array $posts, array $want ) {
-	mc_write_rule_types( array( 'title_slug_rules' => array( $rule_extra + array(
-		'type'                 => 'title_slug_rules',
+	mc_write_rule_types( array( 'title_slug_from_pattern' => array( $rule_extra + array(
+		'type'                 => 'title_slug_from_pattern',
 		'enabled'              => true,
 		'name'                 => 'Flat slug sweep',
 		'post_type'            => 'mc_flat',
@@ -92,7 +92,7 @@ function mcf_case( $label, array $rule_extra, array $posts, array $want ) {
 	mcf_cleanup();
 }
 
-mc_isolate( array( 'title_slug_rules' ) );
+mc_isolate( array( 'title_slug_from_pattern' ) );
 
 $p1 = mc_pid( 'flat-parent' );
 $p2 = mc_pid( 'flat-parent-2' );

@@ -226,7 +226,7 @@ JS);
      * The list this replaces interpolated `{name}` live, which needed no
      * snapshot at all. Baking one now is what lets the title carry the
      * disabled marker and the post-type scope — and, when
-     * `field_transformation` joins, a per-type schema — none of which
+     * `field_from_pattern` joins, a per-type schema — none of which
      * Wireframe's substitution-only `title_template` can produce.
      *
      * @since 0.8.0

@@ -169,7 +169,7 @@ function mc62_propagation_row( $claim = 'merge' ) {
  */
 function mc62_hierarchical_row() {
 	return array(
-		'type'                 => 'hierarchical_rules',
+		'type'                 => 'terms_from_term_hierarchy',
 		'enabled'              => true,
 		'taxonomy'             => 'mc_topic',
 		'post_types'           => array( 'mc_section' ),

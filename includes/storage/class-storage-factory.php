@@ -36,7 +36,7 @@ class StorageFactory {
      *
      * @example
      * $storage = StorageFactory::get_instance();
-     * $rules = $storage->get_rules('hierarchical_rules');
+     * $rules = $storage->get_rules('terms_from_term_hierarchy');
      */
     public static function get_instance(): RuleStorage {
         return self::$instance ??= new OptionRuleStorage();

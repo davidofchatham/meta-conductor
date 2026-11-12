@@ -12,7 +12,7 @@
  *
  * The acceptance criteria say *shared taxonomy plus overlapping post types*,
  * and four of the six term types can be read that way. Two cannot:
- * `time_based_rules` and `related_rules` have **no `taxonomy` subfield at all**
+ * `terms_from_date_window` and `terms_from_trigger_term` have **no `taxonomy` subfield at all**
  * (H11's expected-visible map is the proof) — they are **term-pairing** types
  * that identify their write target by `target_term_id` alone. So the detector
  * resolves each rule's **effect target** rather than reading one field name:
@@ -63,12 +63,12 @@
 namespace BWS\MetaConductor\Admin;
 
 use BWS\MetaConductor\Admin\Config\ConfigHelpers;
-use BWS\MetaConductor\Handlers\HierarchicalHandler;
-use BWS\MetaConductor\RuleTypes\HierarchicalLevelRestrictionRules;
-use BWS\MetaConductor\RuleTypes\HierarchicalRules;
+use BWS\MetaConductor\Handlers\TermsFromTermHierarchyHandler;
+use BWS\MetaConductor\RuleTypes\RestrictTermsByLevelRules;
+use BWS\MetaConductor\RuleTypes\TermsFromTermHierarchyRules;
 use BWS\MetaConductor\RuleTypes\Registry;
-use BWS\MetaConductor\RuleTypes\RelatedRules;
-use BWS\MetaConductor\RuleTypes\TermCountRules;
+use BWS\MetaConductor\RuleTypes\TermsFromTriggerTermRules;
+use BWS\MetaConductor\RuleTypes\RestrictTermCountRules;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 use BWS\MetaConductor\Storage\StorageFactory;
 
@@ -291,7 +291,7 @@ class CollisionDetector {
      * @return array{0:string,1:array,2:array}
      */
     private static function diagnose(array $a, array $b): array {
-        $pair = self::as_pair($a, $b, HierarchicalRules::class, HierarchicalLevelRestrictionRules::class);
+        $pair = self::as_pair($a, $b, TermsFromTermHierarchyRules::class, RestrictTermsByLevelRules::class);
 
         if ($pair !== null) {
             [$adds, $restricts] = $pair;
@@ -309,7 +309,7 @@ class CollisionDetector {
         // back on every pass. A child-to-parent rule is not this: with per-level on
         // the kept ancestors fill one term per depth, and with it off the cap keeps
         // the deepest term, so that pair gets the generic order warning below.
-        $count_pair = self::as_pair($a, $b, HierarchicalRules::class, TermCountRules::class);
+        $count_pair = self::as_pair($a, $b, TermsFromTermHierarchyRules::class, RestrictTermCountRules::class);
         if ($count_pair !== null && self::adds_descendants($count_pair[0]['row'])) {
             return ['count_vs_descendants', $count_pair[0], $count_pair[1]];
         }
@@ -353,7 +353,7 @@ class CollisionDetector {
     /**
      * The hierarchy rule's outcome — delegated, never re-derived.
      *
-     * `HierarchicalHandler::behavior_key()` is the single answer to "what does
+     * `TermsFromTermHierarchyHandler::behavior_key()` is the single answer to "what does
      * this row actually do", legacy `hierarchy_direction`/`expansion_behavior`
      * pair included, and it is already what the row-title snapshot reads. A
      * second switch here is the drift architecture.md invariant 17 warns about, and it
@@ -367,7 +367,7 @@ class CollisionDetector {
      *                applies nothing.
      */
     private static function inheritance_behavior(array $row): string {
-        return HierarchicalHandler::behavior_key($row);
+        return TermsFromTermHierarchyHandler::behavior_key($row);
     }
 
     private static function adds_ancestors(array $row): bool {
@@ -398,7 +398,7 @@ class CollisionDetector {
      */
     private static function keeps_ancestors(array $row): bool {
         return !empty($row['include_ancestors'])
-            || HierarchicalLevelRestrictionRules::mode($row) === HierarchicalLevelRestrictionRules::MODE_SHALLOWEST;
+            || RestrictTermsByLevelRules::mode($row) === RestrictTermsByLevelRules::MODE_SHALLOWEST;
     }
 
     /**
@@ -411,7 +411,7 @@ class CollisionDetector {
      * @return bool
      */
     private static function keeps_descendants(array $row): bool {
-        return HierarchicalLevelRestrictionRules::mode($row) === HierarchicalLevelRestrictionRules::MODE_DEEPEST;
+        return RestrictTermsByLevelRules::mode($row) === RestrictTermsByLevelRules::MODE_DEEPEST;
     }
 
     /**
@@ -426,7 +426,7 @@ class CollisionDetector {
      * @return bool
      */
     private static function removes(array $fact): bool {
-        if ($fact['descriptor'] instanceof RelatedRules) {
+        if ($fact['descriptor'] instanceof TermsFromTriggerTermRules) {
             return !empty($fact['row']['bidirectional']);
         }
 

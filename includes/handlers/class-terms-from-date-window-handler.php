@@ -13,7 +13,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-class TimeBasedHandler extends UnifiedHandlerBase {
+class TermsFromDateWindowHandler extends UnifiedHandlerBase {
 
     /**
      * Pure applier: no hooks (#61).
@@ -65,7 +65,7 @@ class TimeBasedHandler extends UnifiedHandlerBase {
             $taxonomy = $target_term->taxonomy;
         }
         $before = $this->terms_fingerprint($post_id, $taxonomy);
-        $this->apply_time_based_rule($post_id, $post, $rule);
+        $this->apply_date_window_rule($post_id, $post, $rule);
         return $this->terms_fingerprint($post_id, $taxonomy) !== $before;
     }
 
@@ -84,7 +84,7 @@ class TimeBasedHandler extends UnifiedHandlerBase {
     /**
      * Apply time-based rule to a post
      */
-    private function apply_time_based_rule($post_id, $post, $rule) {
+    private function apply_date_window_rule($post_id, $post, $rule) {
         $current_date = current_time('Y-m-d');
         $start_date = $rule['start_date'];
         $end_date = $rule['end_date'];
@@ -170,7 +170,7 @@ class TimeBasedHandler extends UnifiedHandlerBase {
      * `init_hooks()`.
      *
      * WHY IT NO LONGER REMOVES ANYTHING ITSELF. The removal it used to perform
-     * is exactly `apply_time_based_rule()`'s trailing out-of-range branch, so
+     * is exactly `apply_date_window_rule()`'s trailing out-of-range branch, so
      * the sweep was a second, private execution path for one rule — running
      * that rule in isolation, outside any pass, in whatever order the handler
      * map happened to be in. A term the sweep stripped at 3am was therefore

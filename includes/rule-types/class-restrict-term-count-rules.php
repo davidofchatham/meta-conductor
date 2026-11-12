@@ -1,13 +1,13 @@
 <?php
 /**
- * Descriptor for `term_count_rules` rows.
+ * Descriptor for `restrict_term_count` rows.
  *
  * @since 0.11.0
  */
 
 namespace BWS\MetaConductor\RuleTypes;
 
-use BWS\MetaConductor\Handlers\TermCountHandler;
+use BWS\MetaConductor\Handlers\RestrictTermCountHandler;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 
 // Prevent direct access
@@ -24,10 +24,10 @@ if (!defined('ABSPATH')) {
  * It has no *Keep ancestor terms* switch; a cap is a hard cap, and ancestors
  * come from an inheritance rule placed in the list.
  */
-final class TermCountRules extends RuleType {
+final class RestrictTermCountRules extends RuleType {
 
     public function type(): string {
-        return 'term_count_rules';
+        return 'restrict_term_count';
     }
 
     public function kind(): string {
@@ -39,7 +39,7 @@ final class TermCountRules extends RuleType {
     }
 
     public function handler_class(): string {
-        return TermCountHandler::class;
+        return RestrictTermCountHandler::class;
     }
 
     public function target_key(array $rule): ?string {

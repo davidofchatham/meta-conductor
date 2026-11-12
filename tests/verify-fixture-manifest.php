@@ -53,15 +53,15 @@ $owned_tax   = $m['defines']['taxonomies'];
 
 // The 8 rule-type keys of bws_meta_conductor_settings (OptionRuleStorage).
 $valid_types = array(
-	'hierarchical_rules',
+	'terms_from_term_hierarchy',
 	'propagation_rules',
-	'related_rules',
-	'time_based_rules',
+	'terms_from_trigger_term',
+	'terms_from_date_window',
 	'related_post_terms_rules',
-	'hierarchical_level_restriction_rules',
-	'term_count_rules',
-	'title_slug_rules',
-	'field_transformation_rules',
+	'restrict_terms_by_level',
+	'restrict_term_count',
+	'title_slug_from_pattern',
+	'field_from_pattern',
 );
 
 // ── composes_on: family-standard two-key shape.

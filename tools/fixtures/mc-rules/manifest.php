@@ -12,7 +12,7 @@
 
 return array(
 	'blueprint'   => 'mc-rules',
-	'version'     => 11, // 11: Term count limit baseline (disabled, non-default max_terms/per_level so a round-trip drop shows). 10: title_slug fixture rule uses the slug_escalation ladder (FW-51 02). 9: hierarchical mc_flat type + two parent/child pairs for the flat-URL sweep (FW-51). 8: roster-style repeater mc_cf_roster in group_mc_computed_fields (FW-4 06 row targets). 7: Computed field rule (FW-4) — group_mc_computed_fields (text sources, text + wysiwyg targets), the item-computed subject, and a field_transformation_rules baseline. 6: ACF field-identity decoy (#25) — group_mc_decoy_fields declares a SECOND `mc_related_items` relationship field on mc_section, pointing at a different target post type, so bare-name resolution is provably wrong and key resolution provably right. 5: related_post_terms reverse-field coverage — explicit reverse (mc_parent_section, tier 1) on the existing rule + a native-bidi pair (mc_bidi_items/mc_bidi_sections on section-bidi/item-bidi, mc_flag, tier 2) for the #43 dependent-end sever. 4: section-child independent term moved native→ACF field (both channels agree; propagation ACF-merge no longer clobbers it). 3: item-solo-a/b clobber-free subjects. 2: composes_on two-key shape. 1: initial.
+	'version'     => 11, // 11: Term count limit baseline (disabled, non-default max_terms/per_level so a round-trip drop shows). 10: title_slug fixture rule uses the slug_escalation ladder (FW-51 02). 9: hierarchical mc_flat type + two parent/child pairs for the flat-URL sweep (FW-51). 8: roster-style repeater mc_cf_roster in group_mc_computed_fields (FW-4 06 row targets). 7: Computed field rule (FW-4) — group_mc_computed_fields (text sources, text + wysiwyg targets), the item-computed subject, and a field_from_pattern baseline. 6: ACF field-identity decoy (#25) — group_mc_decoy_fields declares a SECOND `mc_related_items` relationship field on mc_section, pointing at a different target post type, so bare-name resolution is provably wrong and key resolution provably right. 5: related_post_terms reverse-field coverage — explicit reverse (mc_parent_section, tier 1) on the existing rule + a native-bidi pair (mc_bidi_items/mc_bidi_sections on section-bidi/item-bidi, mc_flag, tier 2) for the #43 dependent-end sever. 4: section-child independent term moved native→ACF field (both channels agree; propagation ACF-merge no longer clobbers it). 3: item-solo-a/b clobber-free subjects. 2: composes_on two-key shape. 1: initial.
 	// Family-standard shape — matches layout-states and view-structures.
 	// bin/seed-all.sh --only builds its dependency graph from this.
 	'composes_on' => array(
@@ -59,7 +59,7 @@ return array(
 		// the related_post_terms *push* (holder → referenced item) can't reach
 		// them. This removes the one non-obvious, reference-based clobber.
 		//
-		// It does NOT fully isolate a single handler: related_rules,
+		// It does NOT fully isolate a single handler: terms_from_trigger_term,
 		// level_restriction and time_based all also scope mc_item + mc_topic, so
 		// they still fire on any mc_topic edit here. Verified: assigning Harbor to
 		// solo-a with all rules live yields [Region,Coastal,Harbor,Featured] — the
@@ -101,7 +101,7 @@ return array(
 		// its OWN posts + its OWN taxonomy (mc_flag) so it can't perturb any
 		// existing subject: an explicit reverse_acf_field_name short-circuits
 		// tier 2, so tier 1 and tier 2 cannot share a rule. Known interaction:
-		// related_rules §3's taxonomy trigger (any mc_flag ⇒ Featured) fires on
+		// terms_from_trigger_term §3's taxonomy trigger (any mc_flag ⇒ Featured) fires on
 		// item-bidi once it inherits Priority — expected, and contained here.
 		'section-bidi' => array( 'post_type' => 'mc_section', 'post_name' => 'mc-bidi-holder', 'post_title' => 'MC Bidi Holder' ),
 		'item-bidi'    => array( 'post_type' => 'mc_item', 'post_name' => 'mc-item-bidi', 'post_title' => 'MC Item Bidi' ),
@@ -172,7 +172,7 @@ return array(
 		// expansion_behavior pair in 0.8.0 (#16). The handler still reads the
 		// legacy pair when the outcome key is absent, but a fixture is a
 		// statement about the CURRENT schema, so it seeds the new key.
-		'hierarchical_rules' => array(
+		'terms_from_term_hierarchy' => array(
 			array(
 				'enabled'              => true,
 				'taxonomy'             => 'mc_topic',
@@ -183,7 +183,7 @@ return array(
 		),
 
 		// matrix §2 — deepest_only, ancestors off.
-		'hierarchical_level_restriction_rules' => array(
+		'restrict_terms_by_level' => array(
 			array(
 				'enabled'           => true,
 				'taxonomy'          => 'mc_topic',
@@ -197,7 +197,7 @@ return array(
 		// trim every other sweep's mc_item subjects. The values are non-default
 		// (default is 1, per level on) so the settings round-trip sweep can tell a
 		// dropped field from a defaulted one; sweep-term-count.php enables its own.
-		'term_count_rules' => array(
+		'restrict_term_count' => array(
 			array(
 				'enabled'    => false,
 				'taxonomy'   => 'mc_topic',
@@ -209,7 +209,7 @@ return array(
 
 		// matrix §3 — term trigger (Coastal ⇒ Featured, bidirectional) +
 		// taxonomy trigger (any mc_flag ⇒ Featured).
-		'related_rules' => array(
+		'terms_from_trigger_term' => array(
 			array(
 				'enabled'         => true,
 				'post_types'      => array( 'mc_item' ),
@@ -276,7 +276,7 @@ return array(
 		// lands, and this is the ready-made fixture for its detector. Do NOT give
 		// [2] a different target to make §6 read cleanly — the duplication IS the
 		// case, and verify.php A7 already works around it deliberately.
-		'time_based_rules' => array(
+		'terms_from_date_window' => array(
 			array(
 				'enabled'           => true,
 				'post_types'        => array( 'mc_item' ),
@@ -302,7 +302,7 @@ return array(
 		),
 
 		// matrix §7 — one rule per post type (first-match-wins).
-		'title_slug_rules' => array(
+		'title_slug_from_pattern' => array(
 			array(
 				'enabled'         => true,
 				'name'            => 'MC item slug',
@@ -315,7 +315,7 @@ return array(
 
 		// FW-4 — Computed field. Stored by ACF field KEY; the sweep authors the
 		// html and multi-rule cases itself.
-		'field_transformation_rules' => array(
+		'field_from_pattern' => array(
 			array(
 				'enabled'      => true,
 				'name'         => 'MC computed display',

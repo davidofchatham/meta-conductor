@@ -1,5 +1,5 @@
 {
-    "about": "FW-40 golden: token resolution captured from TitleSlugHandler before extraction. Regenerate only on purpose (tools/fixtures/mc-rules/golden-token-engine.php capture).",
+    "about": "FW-40 golden: token resolution captured from TitleSlugFromPatternHandler before extraction. Regenerate only on purpose (tools/fixtures/mc-rules/golden-token-engine.php capture).",
     "site_timezone": "America/New_York",
     "server_timezone": "UTC",
     "post_date": "2026-04-03 23:30:00",
@@ -6917,7 +6917,7 @@
                 "slug_mode": "suffix",
                 "slug_escalation": "{date_year:start_date}",
                 "escalation_placement": "suffix",
-                "type": "title_slug_rules",
+                "type": "title_slug_from_pattern",
                 "enabled": true,
                 "post_type": "mc_item",
                 "title_pattern": ""
@@ -6941,7 +6941,7 @@
                 "slug_mode": "suffix",
                 "slug_escalation": "{date_year:start_date}",
                 "escalation_placement": "suffix",
-                "type": "title_slug_rules",
+                "type": "title_slug_from_pattern",
                 "enabled": true,
                 "post_type": "mc_item",
                 "title_pattern": ""
@@ -6963,7 +6963,7 @@
                 "slug_pattern": "{meta:name_first}-{meta:name_last}-{meta:name_post}",
                 "slug_mode": "replace",
                 "slug_escalation": "{pub_year}",
-                "type": "title_slug_rules",
+                "type": "title_slug_from_pattern",
                 "enabled": true,
                 "post_type": "mc_item",
                 "escalation_placement": "suffix"
@@ -6988,7 +6988,7 @@
                 "slug_pattern": "{meta:name_first}-{meta:name_last}-{meta:name_post}",
                 "slug_mode": "replace",
                 "slug_escalation": "{pub_year}",
-                "type": "title_slug_rules",
+                "type": "title_slug_from_pattern",
                 "enabled": true,
                 "post_type": "mc_item",
                 "escalation_placement": "suffix"
@@ -7011,7 +7011,7 @@
                 "slug_pattern": "{meta:name_first}-{meta:name_last}-{meta:name_post}",
                 "slug_mode": "replace",
                 "slug_escalation": "{pub_year}",
-                "type": "title_slug_rules",
+                "type": "title_slug_from_pattern",
                 "enabled": true,
                 "post_type": "mc_item",
                 "escalation_placement": "suffix"
@@ -7031,7 +7031,7 @@
                 "slug_mode": "replace",
                 "slug_escalation": "{date_year:mc_event_date}",
                 "escalation_placement": "suffix",
-                "type": "title_slug_rules",
+                "type": "title_slug_from_pattern",
                 "enabled": true,
                 "post_type": "mc_item",
                 "title_pattern": ""
@@ -7055,7 +7055,7 @@
                 "slug_mode": "replace",
                 "slug_escalation": "{date_year:mc_event_date}",
                 "escalation_placement": "suffix",
-                "type": "title_slug_rules",
+                "type": "title_slug_from_pattern",
                 "enabled": true,
                 "post_type": "mc_item",
                 "title_pattern": ""
@@ -7075,7 +7075,7 @@
                 "name": "slug prefix",
                 "slug_pattern": "{pub_year}",
                 "slug_mode": "prefix",
-                "type": "title_slug_rules",
+                "type": "title_slug_from_pattern",
                 "enabled": true,
                 "post_type": "mc_item",
                 "title_pattern": "",
@@ -7095,7 +7095,7 @@
                 "name": "slug prefix",
                 "slug_pattern": "{pub_year}",
                 "slug_mode": "prefix",
-                "type": "title_slug_rules",
+                "type": "title_slug_from_pattern",
                 "enabled": true,
                 "post_type": "mc_item",
                 "title_pattern": "",
@@ -7115,7 +7115,7 @@
                 "name": "slug replace",
                 "slug_pattern": "{meta:other}-{pub_year}",
                 "slug_mode": "replace",
-                "type": "title_slug_rules",
+                "type": "title_slug_from_pattern",
                 "enabled": true,
                 "post_type": "mc_item",
                 "title_pattern": "",
@@ -7140,7 +7140,7 @@
                 "title_pattern": "{meta:other}: {default_title}",
                 "slug_pattern": "{pub_year}",
                 "slug_mode": "suffix",
-                "type": "title_slug_rules",
+                "type": "title_slug_from_pattern",
                 "enabled": true,
                 "post_type": "mc_item",
                 "slug_escalation": "",
@@ -7162,7 +7162,7 @@
             "rule": {
                 "name": "default_title suffix",
                 "title_pattern": "{default_title} - {meta:other}",
-                "type": "title_slug_rules",
+                "type": "title_slug_from_pattern",
                 "enabled": true,
                 "post_type": "mc_item",
                 "slug_pattern": "",
@@ -7186,7 +7186,7 @@
             "rule": {
                 "name": "default_title suffix",
                 "title_pattern": "{default_title} - {meta:other}",
-                "type": "title_slug_rules",
+                "type": "title_slug_from_pattern",
                 "enabled": true,
                 "post_type": "mc_item",
                 "slug_pattern": "",
@@ -7212,7 +7212,7 @@
             "rule": {
                 "name": "default_title suffix",
                 "title_pattern": "{default_title} - {meta:other}",
-                "type": "title_slug_rules",
+                "type": "title_slug_from_pattern",
                 "enabled": true,
                 "post_type": "mc_item",
                 "slug_pattern": "",
@@ -7238,7 +7238,7 @@
             "rule": {
                 "name": "default_title suffix",
                 "title_pattern": "{default_title} - {meta:other}",
-                "type": "title_slug_rules",
+                "type": "title_slug_from_pattern",
                 "enabled": true,
                 "post_type": "mc_item",
                 "slug_pattern": "",
@@ -7264,7 +7264,7 @@
             "rule": {
                 "name": "default_title suffix",
                 "title_pattern": "{default_title} - {meta:other}",
-                "type": "title_slug_rules",
+                "type": "title_slug_from_pattern",
                 "enabled": true,
                 "post_type": "mc_item",
                 "slug_pattern": "",

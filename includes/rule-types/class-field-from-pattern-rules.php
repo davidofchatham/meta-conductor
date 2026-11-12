@@ -1,6 +1,6 @@
 <?php
 /**
- * Descriptor for `field_transformation_rules` rows — the Computed field rule.
+ * Descriptor for `field_from_pattern` rows — the Computed field rule.
  *
  * @since 0.10.0
  */
@@ -8,7 +8,7 @@
 namespace BWS\MetaConductor\RuleTypes;
 
 use BWS\MetaConductor\Admin\Config\ConfigHelpers;
-use BWS\MetaConductor\Handlers\FieldTransformationHandler;
+use BWS\MetaConductor\Handlers\FieldFromPatternHandler;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 use BWS\MetaConductor\Tokens\TokenEngine;
 
@@ -18,13 +18,13 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Named after the storage key `field_transformation_rules`, not a domain name —
- * FW-14 renamed `label()` only; FW-63 renames the id and the class. The label reads "Set a field from a pattern"; the editor used to call it a Computed field.
+ * Named after the storage key `field_from_pattern`, not a domain name —
+ * Renaming a type for authors edits `label()` only. The label reads "Set a field from a pattern"; the editor used to call it a Computed field.
  */
-final class FieldTransformationRules extends RuleType {
+final class FieldFromPatternRules extends RuleType {
 
     public function type(): string {
-        return 'field_transformation_rules';
+        return 'field_from_pattern';
     }
 
     public function kind(): string {
@@ -36,7 +36,7 @@ final class FieldTransformationRules extends RuleType {
     }
 
     public function handler_class(): string {
-        return FieldTransformationHandler::class;
+        return FieldFromPatternHandler::class;
     }
 
     /**
@@ -122,7 +122,7 @@ final class FieldTransformationRules extends RuleType {
      * The checked `post_types`. A row with none checked applies to nothing (the
      * handler skips it), so it yields `['']` — which intersects nothing — rather
      * than [], which would claim every post type; see
-     * `TitleSlugRules::written_post_types()`.
+     * `TitleSlugFromPatternRules::written_post_types()`.
      */
     public function written_post_types(array $rule): array {
         $types = array_values(array_filter(array_map('strval', (array) ($rule['post_types'] ?? []))));

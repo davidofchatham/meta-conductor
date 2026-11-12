@@ -20,10 +20,10 @@ if (!defined('ABSPATH')) {
  * admin and runtime both read, and names its handler class. Constructing one
  * does nothing.
  *
- * Subclasses are named after the STORAGE key (`TimeBasedRules` for
- * `time_based_rules`), not after the domain concept. The name is a mirror of
+ * Subclasses are named after the STORAGE key (`TermsFromDateWindowRules` for
+ * `terms_from_date_window`), not after the domain concept. The name is a mirror of
  * the key and must not be renamed on its own; renaming a rule type for
- * authors (FW-14) edits `label()` only, and the ids follow in FW-63. A label
+ * authors edits `label()` only. A label
  * is the type's name and nothing else (CONTEXT.md → Rule type).
  */
 abstract class RuleType {
@@ -191,7 +191,7 @@ abstract class RuleType {
      * type's turn in a format pass — the rest are skipped.
      *
      * True only for a rule set that is a lookup table keyed by post type
-     * (`title_slug_rules`, #59). False ⇒ every applicable rule runs in authored
+     * (`title_slug_from_pattern`, #59). False ⇒ every applicable rule runs in authored
      * order and a later write supersedes an earlier one. Meaningful for the
      * format kind only; the term dispatcher never asks.
      *

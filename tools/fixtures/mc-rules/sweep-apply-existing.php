@@ -80,7 +80,7 @@ function mcae_choice( $kind, $pos ) {
 
 function mcae_hier_row( $enabled = true ) {
 	return array(
-		'type'                 => 'hierarchical_rules',
+		'type'                 => 'terms_from_term_hierarchy',
 		'enabled'              => $enabled,
 		'taxonomy'             => 'mc_topic',
 		'post_types'           => array( 'mc_item' ),
@@ -207,7 +207,7 @@ function mcae_passed( array $ids ) {
 /** A title/slug row over mc_item that appends $suffix to the title. */
 function mcae_title_row( $suffix, $enabled = true ) {
 	return array(
-		'type'          => 'title_slug_rules',
+		'type'          => 'title_slug_from_pattern',
 		'enabled'       => $enabled,
 		'name'          => 'Sweep apply-existing ' . $suffix,
 		'post_type'     => 'mc_item',
@@ -218,7 +218,7 @@ function mcae_title_row( $suffix, $enabled = true ) {
 /** A Computed field row over mc_item writing the fixture's text target. */
 function mcae_field_row( array $over = array() ) {
 	return array_merge( array(
-		'type'         => 'field_transformation_rules',
+		'type'         => 'field_from_pattern',
 		'enabled'      => true,
 		'name'         => 'Sweep apply-existing display',
 		'post_types'   => array( 'mc_item' ),
@@ -425,7 +425,7 @@ switch ( $step ) {
 				'conflict_handling' => 'merge',
 			),
 			array(
-				'type'            => 'related_rules',
+				'type'            => 'terms_from_trigger_term',
 				'enabled'         => true,
 				'post_types'      => array( 'mc_section' ),
 				'post_status'     => array( 'publish' ),

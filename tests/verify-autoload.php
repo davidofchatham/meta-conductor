@@ -69,15 +69,15 @@ $classes = [
     'BWS\\MetaConductor\\Storage\\StorageFactory',
     // Handlers\
     'BWS\\MetaConductor\\Handlers\\UnifiedHandlerBase',
-    'BWS\\MetaConductor\\Handlers\\HierarchicalHandler',
+    'BWS\\MetaConductor\\Handlers\\TermsFromTermHierarchyHandler',
     'BWS\\MetaConductor\\Handlers\\PropagationHandler',
-    'BWS\\MetaConductor\\Handlers\\RelatedHandler',
-    'BWS\\MetaConductor\\Handlers\\TimeBasedHandler',
+    'BWS\\MetaConductor\\Handlers\\TermsFromTriggerTermHandler',
+    'BWS\\MetaConductor\\Handlers\\TermsFromDateWindowHandler',
     'BWS\\MetaConductor\\Handlers\\RelatedPostTermsHandler',
-    'BWS\\MetaConductor\\Handlers\\HierarchicalLevelRestrictionHandler',
-    'BWS\\MetaConductor\\Handlers\\TermCountHandler',
-    'BWS\\MetaConductor\\Handlers\\TitleSlugHandler',
-    'BWS\\MetaConductor\\Handlers\\FieldTransformationHandler',
+    'BWS\\MetaConductor\\Handlers\\RestrictTermsByLevelHandler',
+    'BWS\\MetaConductor\\Handlers\\RestrictTermCountHandler',
+    'BWS\\MetaConductor\\Handlers\\TitleSlugFromPatternHandler',
+    'BWS\\MetaConductor\\Handlers\\FieldFromPatternHandler',
     // RuleTypes\ (FW-39) — the descriptors and the registry that lists them.
     // Also proves the kebab DIRECTORY mapping (RuleTypes -> rule-types/).
     'BWS\\MetaConductor\\RuleTypes\\RuleType',
@@ -85,13 +85,13 @@ $classes = [
     'BWS\\MetaConductor\\RuleTypes\\Labels',
     'BWS\\MetaConductor\\RuleTypes\\PropagationRules',
     'BWS\\MetaConductor\\RuleTypes\\RelatedPostTermsRules',
-    'BWS\\MetaConductor\\RuleTypes\\TimeBasedRules',
-    'BWS\\MetaConductor\\RuleTypes\\RelatedRules',
-    'BWS\\MetaConductor\\RuleTypes\\HierarchicalRules',
-    'BWS\\MetaConductor\\RuleTypes\\HierarchicalLevelRestrictionRules',
-    'BWS\\MetaConductor\\RuleTypes\\TermCountRules',
-    'BWS\\MetaConductor\\RuleTypes\\TitleSlugRules',
-    'BWS\\MetaConductor\\RuleTypes\\FieldTransformationRules',
+    'BWS\\MetaConductor\\RuleTypes\\TermsFromDateWindowRules',
+    'BWS\\MetaConductor\\RuleTypes\\TermsFromTriggerTermRules',
+    'BWS\\MetaConductor\\RuleTypes\\TermsFromTermHierarchyRules',
+    'BWS\\MetaConductor\\RuleTypes\\RestrictTermsByLevelRules',
+    'BWS\\MetaConductor\\RuleTypes\\RestrictTermCountRules',
+    'BWS\\MetaConductor\\RuleTypes\\TitleSlugFromPatternRules',
+    'BWS\\MetaConductor\\RuleTypes\\FieldFromPatternRules',
     // Tokens\ (FW-40) — the pattern engine title/slug renders through.
     'BWS\\MetaConductor\\Tokens\\TokenEngine',
     'BWS\\MetaConductor\\Tokens\\PostTokenSource',
@@ -101,6 +101,8 @@ $classes = [
     'BWS\\MetaConductor\\Tokens\\FlatSlug',
     // Storage\ upgrade routine (FW-51 03) — delete with the class.
     'BWS\\MetaConductor\\Storage\\SlugEscalationMigration',
+    // Storage\ rule-type id rewrite (FW-63 01) — delete with the class.
+    'BWS\\MetaConductor\\Storage\\RuleTypeIdMigration',
     // Admin\
     'BWS\\MetaConductor\\Admin\\Diagnostics',
     'BWS\\MetaConductor\\Admin\\WireframeBootstrap',
@@ -112,7 +114,7 @@ $classes = [
     // Admin\Config\
     'BWS\\MetaConductor\\Admin\\Config\\ConfigHelpers',
     'BWS\\MetaConductor\\Admin\\Config\\GeneralConfig',
-    // The ordered term-rule list. Propagation/TimeBased/Hierarchical/
+    // The ordered term-rule list. Propagation/TermsFromDateWindow/Hierarchical/
     // LevelRestriction/Personalize config classes were deleted in 0.8.0 (#57)
     // when their sections collapsed into this one; Related and
     // RelatedPostTerms followed in #58.

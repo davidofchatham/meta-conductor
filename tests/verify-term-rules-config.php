@@ -126,7 +126,7 @@ use BWS\MetaConductor\Admin\WireframeBootstrap;
 use BWS\MetaConductor\Admin\Config\ConfigHelpers;
 use BWS\MetaConductor\Admin\Config\TermRulesConfig;
 use BWS\MetaConductor\Admin\Config\WireframeConfig;
-use BWS\MetaConductor\Handlers\HierarchicalHandler;
+use BWS\MetaConductor\Handlers\TermsFromTermHierarchyHandler;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 use Wireframe\Framework\Conditions;
 
@@ -259,14 +259,14 @@ $check('claim default is the builder\'s', ($claim['default'] ?? null) === $expec
 $behaviour_opts = array_keys($by_id['inheritance_behavior']['args']['options']);
 $check('the hierarchy outcomes offered are exactly the ones the handler maps',
     $behaviour_opts === array_keys((new ReflectionClassConstant(
-        HierarchicalHandler::class, 'BEHAVIOR_MAP'
+        TermsFromTermHierarchyHandler::class, 'BEHAVIOR_MAP'
     ))->getValue()));
 
 // Every offered outcome must produce a distinct, non-fallback row-title phrase.
 $phrases = [];
 foreach ($behaviour_opts as $outcome) {
     $phrases[] = WireframeBootstrap::snapshot_term_rule_labels([$KIND => [[
-        'type' => 'hierarchical_rules', 'taxonomy' => 'category',
+        'type' => 'terms_from_term_hierarchy', 'taxonomy' => 'category',
         'inheritance_behavior' => $outcome,
     ]]])[$KIND][0]['row_title'];
 }
@@ -280,7 +280,7 @@ $mode_opts = array_keys($by_id['restriction_mode']['args']['options']);
 $mode_titles = [];
 foreach ($mode_opts as $mode) {
     $mode_titles[] = WireframeBootstrap::snapshot_term_rule_labels([$KIND => [[
-        'type' => 'hierarchical_level_restriction_rules', 'taxonomy' => 'category',
+        'type' => 'restrict_terms_by_level', 'taxonomy' => 'category',
         'restriction_mode' => $mode,
     ]]])[$KIND][0]['row_title'];
 }
@@ -325,29 +325,29 @@ $expected_visible = [
         'type', 'enabled', 'taxonomy', 'hierarchical_post_type_note',
         'post_types', 'post_status', 'conflict_handling', 'row_title',
     ],
-    'time_based_rules' => [
+    'terms_from_date_window' => [
         'type', 'enabled', 'post_types', 'post_status',
         'filter_taxonomies', 'filter_terms', 'start_date', 'end_date',
         'target_term_id', 'row_title',
     ],
-    'hierarchical_rules' => [
+    'terms_from_term_hierarchy' => [
         'type', 'enabled', 'taxonomy', 'hierarchical_taxonomy_note',
         'post_types', 'post_status',
         'inheritance_behavior', 'inheritance_depth', 'row_title',
     ],
-    'hierarchical_level_restriction_rules' => [
+    'restrict_terms_by_level' => [
         'type', 'enabled', 'taxonomy', 'hierarchical_taxonomy_note',
         'post_types', 'post_status',
         'restriction_mode', 'include_ancestors', 'row_title',
     ],
     // No hierarchical_taxonomy_note: a cap means the same on a flat taxonomy.
-    'term_count_rules' => [
+    'restrict_term_count' => [
         'type', 'enabled', 'taxonomy', 'post_types', 'post_status',
         'max_terms', 'per_level', 'row_title',
     ],
     // The two LIVE types (#58). A subfield missing here is a live rule's
     // value silently dropped on the next settings save.
-    'related_rules' => [
+    'terms_from_trigger_term' => [
         'type', 'enabled', 'post_types', 'post_status',
         'trigger_type', 'trigger_term_id', 'trigger_taxonomy',
         'target_term_id', 'bidirectional', 'row_title',
@@ -402,7 +402,7 @@ $check('the type-keyed save projection is gone (#66)',
 // list: same rows, same order, still typed, `row_title` baked on.
 $snapshotted = WireframeBootstrap::snapshot_term_rule_labels([
     $KIND => [
-        ['type' => 'hierarchical_rules', 'taxonomy' => 'category'],
+        ['type' => 'terms_from_term_hierarchy', 'taxonomy' => 'category'],
         ['type' => 'propagation_rules', 'enabled' => false, 'taxonomy' => 'category'],
     ],
 ]);
@@ -410,7 +410,7 @@ $check('a rule-tab save payload carries the kind list and no type-keyed copy',
     array_keys($snapshotted) === [$KIND]);
 $check('the snapshot keeps every row, in order, still typed',
     array_column($snapshotted[$KIND], 'type')
-        === ['hierarchical_rules', 'propagation_rules']);
+        === ['terms_from_term_hierarchy', 'propagation_rules']);
 // FW-56: a row naming several taxonomies is ONE row with ONE title that names
 // them all — "Categories, Tags", not the first.
 $listed = WireframeBootstrap::snapshot_term_rule_labels([
@@ -438,7 +438,7 @@ $check('a payload without the rule list is returned untouched',
 
 // Related: trigger → target, with the disabled prefix like everything else.
 $rel_title = WireframeBootstrap::snapshot_term_rule_labels([$KIND => [[
-    'type' => 'related_rules', 'enabled' => false,
+    'type' => 'terms_from_trigger_term', 'enabled' => false,
     'trigger_type' => 'term', 'trigger_term_id' => [7],
     'target_term_id' => [9],
 ]]])[$KIND][0]['row_title'];
@@ -450,7 +450,7 @@ $check('related title carries the uniform disabled prefix',
 
 // Taxonomy-triggered variant names the taxonomy, not a term.
 $rel_tax_title = WireframeBootstrap::snapshot_term_rule_labels([$KIND => [[
-    'type' => 'related_rules',
+    'type' => 'terms_from_trigger_term',
     'trigger_type' => 'taxonomy', 'trigger_taxonomy' => 'category',
     'target_term_id' => [9],
 ]]])[$KIND][0]['row_title'];
@@ -490,9 +490,9 @@ $repair = new ReflectionMethod(WireframeBootstrap::class, 'repair_term_rows');
 $r = fn(array $rows) => $repair->invoke(null, $rows);
 
 $stored = [
-    ['type' => 'hierarchical_rules', 'enabled' => true, 'taxonomy' => 'category',
+    ['type' => 'terms_from_term_hierarchy', 'enabled' => true, 'taxonomy' => 'category',
      'hierarchy_direction' => 'parent_to_child', 'expansion_behavior' => 'merge'],
-    ['type' => 'related_rules', 'trigger_term_id' => '12', 'target_term_id' => 9],
+    ['type' => 'terms_from_trigger_term', 'trigger_term_id' => '12', 'target_term_id' => 9],
     ['type' => 'related_post_terms_rules', 'acf_field_name' => 'event:ref',
      'source_taxonomy' => 'category', 'bidirectional' => true],
 ];
@@ -515,7 +515,7 @@ $check('FW-56: an empty or list taxonomy, and a type that does not read it, are 
     array_column($r([
         ['type' => 'propagation_rules', 'taxonomy' => ''],
         ['type' => 'propagation_rules', 'taxonomy' => ['category', 'post_tag']],
-        ['type' => 'related_rules', 'taxonomy' => 'category'],
+        ['type' => 'terms_from_trigger_term', 'taxonomy' => 'category'],
     ]), 'taxonomy') === ['', ['category', 'post_tag'], 'category']);
 
 // --- Tabs: exactly three, Personalize gone. ---------------------------------

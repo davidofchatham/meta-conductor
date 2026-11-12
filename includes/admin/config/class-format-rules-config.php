@@ -5,7 +5,7 @@
  * ticket #59).
  *
  * The `term_rules` collapse's smaller twin: `title_slug` and, since FW-4, the
- * Computed field rule (`field_transformation_rules`) are the members of the
+ * Computed field rule (`field_from_pattern`) are the members of the
  * `format_rules` kind. The second type was a row type added to the existing
  * list, not a tab restructured around a second section.
  *
@@ -28,17 +28,16 @@
  * Shared frame: `type`, `enabled`, `name`, `row_title`. Every one of them is a
  * question any format rule has to answer — which rule is this, does it run,
  * what is it called. Everything else is gated to the descriptor that declares
- * it, including the post-type scope: `title_slug_rules` owns a SCALAR
+ * it, including the post-type scope: `title_slug_from_pattern` owns a SCALAR
  * `post_type` select (the format pass is first-match-wins per rule type, so
  * the value is a lookup key into a table keyed by post type), and
- * `field_transformation_rules` owns a `post_types` checkboxes list (its rules
+ * `field_from_pattern` owns a `post_types` checkboxes list (its rules
  * compose in list order, so a scope is what it needs). The two are different
  * questions, which is why they are two subfields and not one shared one.
  *
- * The stored `type` value is the LEGACY TYPE KEY VERBATIM (`title_slug_rules`,
- * not `title_slug`), for the same reason it is in the term list: rule-type
- * renaming stays deferred (FW-63), and reusing the key is what lets
- * `get_enabled_rules()` filter on `get_rule_type()` with no mapping table.
+ * The stored `type` value is the rule type's id verbatim (`title_slug_from_pattern`),
+ * as it is in the term list, which is what lets `get_enabled_rules()` filter
+ * on `get_rule_type()` with no mapping table.
  *
  * Preview + Apply-to-Existing action buttons remain deferred until Wireframe
  * exposes a client-side field-type extension API (FW-23).

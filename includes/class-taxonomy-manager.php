@@ -7,7 +7,7 @@
 
 namespace BWS\MetaConductor;
 
-use BWS\MetaConductor\Handlers\TimeBasedHandler;
+use BWS\MetaConductor\Handlers\TermsFromDateWindowHandler;
 use BWS\MetaConductor\RuleTypes\Registry;
 use BWS\MetaConductor\Core\AcfWriteQueue;
 use BWS\MetaConductor\Core\TermDispatcher;
@@ -159,13 +159,13 @@ class TaxonomyManager {
         }
 
         // Time-based's daily sweep (#61). It lives HERE rather than in
-        // TimeBasedHandler::init_hooks() because a converted handler must
+        // TermsFromDateWindowHandler::init_hooks() because a converted handler must
         // register nothing at all — that is the bright line H13 holds, and
         // "nothing except the one hook that only enqueues" is not a line a
         // static check can hold. The sweep is a provocation like bulk apply,
         // not an apply: it selects the posts an expired rule still holds, marks
         // them dirty on the dispatcher above and drains ordered passes.
-        add_action('bws_taxonomy_manager_cleanup', array($this->handlers[Registry::for_handler(TimeBasedHandler::class)->type()], 'cleanup_expired_rules'));
+        add_action('bws_taxonomy_manager_cleanup', array($this->handlers[Registry::for_handler(TermsFromDateWindowHandler::class)->type()], 'cleanup_expired_rules'));
 
         // AC-agnostic ACF write queue (#42). Watches ACF's own write filter, so
         // EVERY write that bypasses the save_post family — AC v7 inline/bulk,
@@ -229,7 +229,7 @@ class TaxonomyManager {
     /**
      * Get handler instance
      *
-     * @param string $type Stored rule type (`time_based_rules`).
+     * @param string $type Stored rule type (`terms_from_date_window`).
      */
     public function get_handler($type) {
         return $this->handlers[$type] ?? null;

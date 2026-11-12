@@ -5,7 +5,7 @@
  * Exercises WireframeBootstrap::snapshot_term_rule_labels() end-to-end with
  * stubbed WP, WITHOUT booting WordPress. Catches what H1/H2 cannot:
  *   - cross-namespace FQN resolution (the Config\ConfigHelpers and
- *     Handlers\HierarchicalHandler calls the autoload harness can't see — it
+ *     Handlers\TermsFromTermHierarchyHandler calls the autoload harness can't see — it
  *     checks class_exists, not call sites)
  *   - dispatch on each row's `type`, which is what one repeater made possible
  *     and what a wrong `type` value would silently break
@@ -61,7 +61,7 @@ if (!function_exists('get_taxonomy')) {
     }
 }
 
-// The real autoloader: HierarchicalHandler::behavior_key() is part of the
+// The real autoloader: TermsFromTermHierarchyHandler::behavior_key() is part of the
 // hierarchical title, and loading that class pulls its base + traits.
 require dirname(__DIR__) . '/vendor/autoload.php';
 require dirname(__DIR__) . '/autoload.php';
@@ -121,7 +121,7 @@ $check('claim suffix = deferring',  str_contains($t, '(deferring)'));
 // --- Hierarchical: the #16 outcome selector reaches the title. --------------
 $check('hierarchical: outcome + depth',
     $title([
-        'type'                 => 'hierarchical_rules',
+        'type'                 => 'terms_from_term_hierarchy',
         'enabled'              => true,
         'taxonomy'             => 'category',
         'inheritance_behavior' => 'both_always',
@@ -130,7 +130,7 @@ $check('hierarchical: outcome + depth',
 
 $check('hierarchical: default depth reads all levels',
     str_contains($title([
-        'type'                 => 'hierarchical_rules',
+        'type'                 => 'terms_from_term_hierarchy',
         'taxonomy'             => 'breaker',
         'inheritance_behavior' => 'descendants_smart',
     ]), 'descendants when none picked (all levels)'));
@@ -139,7 +139,7 @@ $check('hierarchical: default depth reads all levels',
 // still name the outcome that pair produces, not "(nothing)".
 $check('hierarchical: legacy pair maps to an outcome',
     str_contains($title([
-        'type'               => 'hierarchical_rules',
+        'type'               => 'terms_from_term_hierarchy',
         'taxonomy'           => 'category',
         'hierarchy_direction' => 'both',
         'expansion_behavior' => 'never',
@@ -147,7 +147,7 @@ $check('hierarchical: legacy pair maps to an outcome',
 
 $check('hierarchical: disabled prefix applies',
     str_starts_with($title([
-        'type'                 => 'hierarchical_rules',
+        'type'                 => 'terms_from_term_hierarchy',
         'enabled'              => false,
         'taxonomy'             => 'category',
         'inheritance_behavior' => 'ancestors',
@@ -156,7 +156,7 @@ $check('hierarchical: disabled prefix applies',
 // --- Level restriction: mode phrase + the #32 ancestors clause. -------------
 $check('level restriction: mode phrase',
     $title([
-        'type'             => 'hierarchical_level_restriction_rules',
+        'type'             => 'restrict_terms_by_level',
         'enabled'          => true,
         'taxonomy'         => 'breaker',
         'restriction_mode' => 'deepest_only',
@@ -164,7 +164,7 @@ $check('level restriction: mode phrase',
 
 $check('level restriction: ancestors clause in ANY mode',
     $title([
-        'type'              => 'hierarchical_level_restriction_rules',
+        'type'              => 'restrict_terms_by_level',
         'taxonomy'          => 'breaker',
         'restriction_mode'  => 'shallowest_only',
         'include_ancestors' => true,
@@ -173,14 +173,14 @@ $check('level restriction: ancestors clause in ANY mode',
 
 $check('level restriction: shallowest, without the ancestors clause',
     $title([
-        'type'             => 'hierarchical_level_restriction_rules',
+        'type'             => 'restrict_terms_by_level',
         'taxonomy'         => 'breaker',
         'restriction_mode' => 'shallowest_only',
     ]) === 'Restrict Breakers to the shallowest level');
 
 $check('level restriction: deepest keeping ancestors',
     $title([
-        'type'              => 'hierarchical_level_restriction_rules',
+        'type'              => 'restrict_terms_by_level',
         'taxonomy'          => 'breaker',
         'restriction_mode'  => 'deepest_only',
         'include_ancestors' => true,
@@ -188,13 +188,13 @@ $check('level restriction: deepest keeping ancestors',
 
 $check('level restriction: absent mode ⇒ deepest',
     $title([
-        'type'     => 'hierarchical_level_restriction_rules',
+        'type'     => 'restrict_terms_by_level',
         'taxonomy' => 'breaker',
     ]) === 'Restrict Breakers to the deepest level');
 
 $check('level restriction: retired one_per_level reads as absent',
     $title([
-        'type'             => 'hierarchical_level_restriction_rules',
+        'type'             => 'restrict_terms_by_level',
         'taxonomy'         => 'breaker',
         'restriction_mode' => 'one_per_level',
     ]) === 'Restrict Breakers to the deepest level');
@@ -202,18 +202,18 @@ $check('level restriction: retired one_per_level reads as absent',
 // --- Term count limit: cap, plural, and the per-level clause. ---------------
 $check('count limit: plural cap, per level on',
     $title([
-        'type' => 'term_count_rules', 'taxonomy' => 'breaker',
+        'type' => 'restrict_term_count', 'taxonomy' => 'breaker',
         'max_terms' => 2, 'per_level' => true,
     ]) === 'Limit Breakers to 2 terms per level');
 
 $check('count limit: per level off drops the clause, singular cap',
     $title([
-        'type' => 'term_count_rules', 'taxonomy' => 'breaker',
+        'type' => 'restrict_term_count', 'taxonomy' => 'breaker',
         'max_terms' => 1, 'per_level' => false, 'post_types' => ['page'],
     ]) === 'Pages: Limit Breakers to 1 term');
 
 $check('count limit: absent fields read as the defaults (1, per level)',
-    $title(['type' => 'term_count_rules', 'taxonomy' => 'breaker'])
+    $title(['type' => 'restrict_term_count', 'taxonomy' => 'breaker'])
         === 'Limit Breakers to 1 term per level');
 
 // --- An untyped row stays findable rather than going blank. -----------------

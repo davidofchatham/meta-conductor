@@ -143,27 +143,27 @@ foreach (Registry::all() as $type => $descriptor) {
 // --- 2. Target keys. --------------------------------------------------------
 
 $check('a taxonomy-declaring type keys on its taxonomy',
-    $desc('hierarchical_rules')->target_key(['taxonomy' => 'mc_topic']) === 'taxonomy|mc_topic');
+    $desc('terms_from_term_hierarchy')->target_key(['taxonomy' => 'mc_topic']) === 'taxonomy|mc_topic');
 $check('the ACF-reference type keys on its taxonomy too',
     $desc('related_post_terms_rules')->target_key(['taxonomy' => 'mc_topic']) === 'taxonomy|mc_topic');
 
 // The gap the #65 comment names: neither term-pairing type HAS a taxonomy
 // subfield, so keying on `taxonomy` would resolve nothing for either.
 $check('a date-window rule keys on its target TERM, not a taxonomy',
-    $desc('time_based_rules')->target_key(['target_term_id' => 21]) === 'term|21');
+    $desc('terms_from_date_window')->target_key(['target_term_id' => 21]) === 'term|21');
 $check('a related-term rule keys on its target term',
-    $desc('related_rules')->target_key(['target_term_id' => 22]) === 'term|22');
+    $desc('terms_from_trigger_term')->target_key(['target_term_id' => 22]) === 'term|22');
 $check('the FormTokenField [N] shape, projected, resolves to the same key',
-    $desc('related_rules')->target_key(
-        OptionRuleStorage::project_kind_rules([['type' => 'related_rules', 'target_term_id' => [22]]])[0]) === 'term|22');
+    $desc('terms_from_trigger_term')->target_key(
+        OptionRuleStorage::project_kind_rules([['type' => 'terms_from_trigger_term', 'target_term_id' => [22]]])[0]) === 'term|22');
 
 $check('a format rule keys on the fields it writes',
-    $desc('title_slug_rules')->target_key(['post_type' => 'mc_item']) === 'fields|title_slug');
+    $desc('title_slug_from_pattern')->target_key(['post_type' => 'mc_item']) === 'fields|title_slug');
 
 $check('a row with no taxonomy picked resolves nothing',
-    $desc('hierarchical_rules')->target_key([]) === null);
+    $desc('terms_from_term_hierarchy')->target_key([]) === null);
 $check('a row with no target term picked resolves nothing',
-    $desc('time_based_rules')->target_key(['target_term_id' => 0]) === null);
+    $desc('terms_from_date_window')->target_key(['target_term_id' => 0]) === null);
 $check('untyped rows take no part in the scan',
     $scan($KIND_TERM, [
         ['type' => '', 'taxonomy' => 'mc_topic'],
@@ -173,7 +173,7 @@ $check('untyped rows take no part in the scan',
 // A stored type with no descriptor is REPORTED, not skipped (ticket 10) — a
 // silent skip reads as "checked, no collision". Never paired with anything.
 $ghost = $scan($KIND_TERM, [
-    ['type' => 'hierarchical_rules', 'taxonomy' => 'mc_topic', 'row_title' => '#1 H'],
+    ['type' => 'terms_from_term_hierarchy', 'taxonomy' => 'mc_topic', 'row_title' => '#1 H'],
     ['type' => 'nope_rules', 'taxonomy' => 'mc_topic', 'row_title' => '#2 Ghost'],
 ]);
 $check('an unknown-type row is reported as unknown_type',
@@ -187,15 +187,15 @@ $check('a disabled unknown-type row is not reported',
 // --- 3. Written post types. -------------------------------------------------
 
 $check('a projected checkbox map reads as its selected slugs',
-    $desc('hierarchical_rules')->written_post_types(
-        OptionRuleStorage::project_kind_rules([['type' => 'hierarchical_rules', 'post_types' => ['mc_item' => true, 'mc_section' => false]]])[0])
+    $desc('terms_from_term_hierarchy')->written_post_types(
+        OptionRuleStorage::project_kind_rules([['type' => 'terms_from_term_hierarchy', 'post_types' => ['mc_item' => true, 'mc_section' => false]]])[0])
     === ['mc_item']);
 $check('empty post_types means every post type',
-    $desc('hierarchical_rules')->written_post_types([]) === []);
+    $desc('terms_from_term_hierarchy')->written_post_types([]) === []);
 $check('the `any` sentinel means every post type, not a type called any',
-    $desc('hierarchical_rules')->written_post_types(['post_types' => ['any']]) === []);
+    $desc('terms_from_term_hierarchy')->written_post_types(['post_types' => ['any']]) === []);
 $check('a format rule reads its scalar post_type',
-    $desc('title_slug_rules')->written_post_types(['post_type' => 'mc_item']) === ['mc_item']);
+    $desc('title_slug_from_pattern')->written_post_types(['post_type' => 'mc_item']) === ['mc_item']);
 
 // The ACF-reference rule writes its DEPENDENT end, and a push rule does not
 // constrain that end's type — so "all", exactly as dependent_post_type() reads.
@@ -219,10 +219,10 @@ $check('disjoint post types do not overlap',
 // them. One taxonomy, overlapping post types.
 
 $s51 = [
-    ['type' => 'hierarchical_rules', 'enabled' => true, 'taxonomy' => 'mc_topic',
+    ['type' => 'terms_from_term_hierarchy', 'enabled' => true, 'taxonomy' => 'mc_topic',
      'post_types' => ['mc_item'], 'inheritance_behavior' => 'ancestors',
      'row_title' => 'Inherit Topics'],
-    ['type' => 'hierarchical_level_restriction_rules', 'enabled' => true, 'taxonomy' => 'mc_topic',
+    ['type' => 'restrict_terms_by_level', 'enabled' => true, 'taxonomy' => 'mc_topic',
      'post_types' => ['mc_item'], 'restriction_mode' => 'deepest_only',
      'include_ancestors' => false, 'row_title' => 'Deepest level'],
 ];
@@ -279,8 +279,8 @@ $found_swapped = $scan($KIND_TERM, $s51_swapped);
 $check('#51: the contradiction survives the rules being authored the other way',
     $codes($found_swapped) === ['ancestors_stripped']);
 $check('#51: and the rule that ADDS leads the sentence, whatever its position',
-    ($found_swapped[0]['a']['type'] ?? '') === 'hierarchical_rules'
-    && ($found_swapped[0]['b']['type'] ?? '') === 'hierarchical_level_restriction_rules');
+    ($found_swapped[0]['a']['type'] ?? '') === 'terms_from_term_hierarchy'
+    && ($found_swapped[0]['b']['type'] ?? '') === 'restrict_terms_by_level');
 $check('#51: while the positions still report the authored order',
     [$found_swapped[0]['a']['index'], $found_swapped[0]['b']['index']] === [1, 0]);
 $check('#51: so the message names the adder first',
@@ -303,7 +303,7 @@ $check('and no position is ever appended a second time',
 
 // A legacy row carrying only the pre-#16 pair must not be read as the
 // `ancestors` default — that would name the wrong contradiction. Resolved
-// through HierarchicalHandler::behavior_key(), the one reading of that pair.
+// through TermsFromTermHierarchyHandler::behavior_key(), the one reading of that pair.
 $s51_legacy = $s51;
 unset($s51_legacy[0]['inheritance_behavior']);
 $s51_legacy[0]['hierarchy_direction'] = 'parent_to_child';
@@ -341,7 +341,7 @@ $check('#51: a disjoint taxonomy clears the warning', $scan($KIND_TERM, $s51_oth
 $s39 = [
     ['type' => 'propagation_rules', 'enabled' => true, 'taxonomy' => 'mc_topic',
      'post_types' => ['mc_section'], 'conflict_handling' => 'merge', 'row_title' => 'Cascade Topics'],
-    ['type' => 'hierarchical_level_restriction_rules', 'enabled' => true, 'taxonomy' => 'mc_topic',
+    ['type' => 'restrict_terms_by_level', 'enabled' => true, 'taxonomy' => 'mc_topic',
      'post_types' => ['mc_section'], 'restriction_mode' => 'deepest_only', 'row_title' => 'Deepest level'],
 ];
 $found39 = $scan($KIND_TERM, $s39);
@@ -360,18 +360,18 @@ $check('#39: moving one to a disjoint post type clears it',
 // --- 5b. Term count limit — a restricting claim over the whole taxonomy. ----
 
 $count_row = fn(array $over = []) => $over + [
-    'type' => 'term_count_rules', 'enabled' => true, 'taxonomy' => 'mc_topic',
+    'type' => 'restrict_term_count', 'enabled' => true, 'taxonomy' => 'mc_topic',
     'post_types' => ['mc_item'], 'max_terms' => 1, 'per_level' => true, 'row_title' => 'Cap Topics',
 ];
 $hier_row = fn(string $behavior) => [
-    'type' => 'hierarchical_rules', 'enabled' => true, 'taxonomy' => 'mc_topic',
+    'type' => 'terms_from_term_hierarchy', 'enabled' => true, 'taxonomy' => 'mc_topic',
     'post_types' => ['mc_item'], 'inheritance_behavior' => $behavior, 'row_title' => 'Inherit Topics',
 ];
 
 $check('count limit keys on its whole taxonomy',
-    $desc('term_count_rules')->target_key(['taxonomy' => 'mc_topic']) === 'taxonomy|mc_topic');
+    $desc('restrict_term_count')->target_key(['taxonomy' => 'mc_topic']) === 'taxonomy|mc_topic');
 $check('count limit with no taxonomy picked resolves nothing',
-    $desc('term_count_rules')->target_key([]) === null);
+    $desc('restrict_term_count')->target_key([]) === null);
 
 $check('two count rules on one taxonomy warn, generically',
     $codes($scan($KIND_TERM, [$count_row(), $count_row(['max_terms' => 2])])) === ['shared_target']);
@@ -388,8 +388,8 @@ foreach (['descendants_always', 'descendants_smart', 'both_always', 'both_smart'
 
 $found_count = $scan($KIND_TERM, [$count_row(), $hier_row('descendants_always')]);
 $check('the contradiction leads with the rule that ADDS, whatever the list order',
-    ($found_count[0]['a']['type'] ?? '') === 'hierarchical_rules'
-    && ($found_count[0]['b']['type'] ?? '') === 'term_count_rules'
+    ($found_count[0]['a']['type'] ?? '') === 'terms_from_term_hierarchy'
+    && ($found_count[0]['b']['type'] ?? '') === 'restrict_term_count'
     && [$found_count[0]['a']['index'], $found_count[0]['b']['index']] === [1, 0]);
 $check('and its message says the cap removes what the other rule adds back',
     str_starts_with(CollisionDetector::message($found_count[0]), '“Inherit Topics” adds descendant terms')
@@ -409,10 +409,10 @@ $check('a disabled count rule does not warn',
 // (future) both target topic-archived, both scoped to mc_item.
 
 $s69 = [
-    ['type' => 'time_based_rules', 'enabled' => true, 'post_types' => ['mc_item'],
+    ['type' => 'terms_from_date_window', 'enabled' => true, 'post_types' => ['mc_item'],
      'start_date' => '2020-01-01', 'end_date' => '2020-12-31', 'target_term_id' => 21,
      'row_title' => 'Archive window (expired)'],
-    ['type' => 'time_based_rules', 'enabled' => true, 'post_types' => ['mc_item'],
+    ['type' => 'terms_from_date_window', 'enabled' => true, 'post_types' => ['mc_item'],
      'start_date' => '2099-01-01', 'end_date' => '2099-12-31', 'target_term_id' => 21,
      'row_title' => 'Archive window (future)'],
 ];
@@ -444,12 +444,12 @@ $check('#69: changing one rule\'s target term clears it',
 $check('#69: two date rules on different terms in one taxonomy are independent',
     $scan($KIND_TERM, $s69_retarget) === []);
 
-// --- 7. related_rules: only a bidirectional rule can cancel. ----------------
+// --- 7. terms_from_trigger_term: only a bidirectional rule can cancel. ----------------
 
 $s_related = [
-    ['type' => 'related_rules', 'enabled' => true, 'post_types' => ['mc_item'],
+    ['type' => 'terms_from_trigger_term', 'enabled' => true, 'post_types' => ['mc_item'],
      'target_term_id' => 22, 'bidirectional' => false, 'row_title' => 'Coastal ⇒ Featured'],
-    ['type' => 'related_rules', 'enabled' => true, 'post_types' => ['mc_item'],
+    ['type' => 'terms_from_trigger_term', 'enabled' => true, 'post_types' => ['mc_item'],
      'target_term_id' => 22, 'bidirectional' => false, 'row_title' => 'Any flag ⇒ Featured'],
 ];
 $check('two add-only related rules collide but cannot cancel',
@@ -465,7 +465,7 @@ $check('two bidirectional related rules can cancel',
 // date rule always removes.
 $s_cross = [
     $s69[0],
-    ['type' => 'related_rules', 'enabled' => true, 'post_types' => ['mc_item'],
+    ['type' => 'terms_from_trigger_term', 'enabled' => true, 'post_types' => ['mc_item'],
      'target_term_id' => 21, 'bidirectional' => true, 'row_title' => 'Trigger ⇒ Archived'],
 ];
 $check('a date rule and a bidirectional related rule over one term cancel',
@@ -480,9 +480,9 @@ $check('a date rule and a bidirectional related rule over one term cancel',
 // oversight someone "fixes" without reading architecture.md invariant 19.
 
 $s_nested = [
-    ['type' => 'hierarchical_level_restriction_rules', 'enabled' => true, 'taxonomy' => 'mc_topic',
+    ['type' => 'restrict_terms_by_level', 'enabled' => true, 'taxonomy' => 'mc_topic',
      'post_types' => ['mc_item'], 'restriction_mode' => 'deepest_only', 'row_title' => 'Deepest level'],
-    ['type' => 'time_based_rules', 'enabled' => true, 'post_types' => ['mc_item'],
+    ['type' => 'terms_from_date_window', 'enabled' => true, 'post_types' => ['mc_item'],
      'target_term_id' => 21, 'row_title' => 'Archive window'],
 ];
 $check('a taxonomy-wide rule is not paired with a term rule inside it (deferred)',
@@ -508,11 +508,11 @@ $check('a half-authored row is unfinished, not colliding',
 // the positions are what the author reorders, so they must survive a row that
 // took no part in the scan.
 $s_three = [
-    ['type' => 'time_based_rules', 'enabled' => false, 'post_types' => ['mc_item'],
+    ['type' => 'terms_from_date_window', 'enabled' => false, 'post_types' => ['mc_item'],
      'target_term_id' => 21, 'row_title' => 'off'],
     $s69[0],
     $s69[1],
-    ['type' => 'time_based_rules', 'enabled' => true, 'post_types' => ['mc_item'],
+    ['type' => 'terms_from_date_window', 'enabled' => true, 'post_types' => ['mc_item'],
      'target_term_id' => 21, 'row_title' => 'third'],
 ];
 $check('every contending pair is reported once',
@@ -556,9 +556,9 @@ $check('a snapshot title is decoded, so the page escapes it exactly once',
 // --- 10. The format kind: first-match-wins, stated as a collision. ----------
 
 $s_format = [
-    ['type' => 'title_slug_rules', 'enabled' => true, 'post_type' => 'mc_item',
+    ['type' => 'title_slug_from_pattern', 'enabled' => true, 'post_type' => 'mc_item',
      'row_title' => 'MC item slug'],
-    ['type' => 'title_slug_rules', 'enabled' => true, 'post_type' => 'mc_item',
+    ['type' => 'title_slug_from_pattern', 'enabled' => true, 'post_type' => 'mc_item',
      'row_title' => 'MC item slug (second)'],
 ];
 $found_fmt = $scan($KIND_FORMAT, $s_format);
@@ -573,11 +573,11 @@ $s_format_split[1]['post_type'] = 'mc_section';
 $check('two format rules on different post types are independent',
     $scan($KIND_FORMAT, $s_format_split) === []);
 
-// A blank new row writes nothing — `TitleSlugHandler::rule_matches()` requires
+// A blank new row writes nothing — `TitleSlugFromPatternHandler::rule_matches()` requires
 // a non-empty post_type — so it is unfinished, not colliding. The format target
 // key is a constant, so nothing else in the scan would have caught this.
 $check('a format rule with no post type resolves no target',
-    $desc('title_slug_rules')->target_key(['post_type' => '']) === null);
+    $desc('title_slug_from_pattern')->target_key(['post_type' => '']) === null);
 $s_format_blank = $s_format;
 $s_format_blank[1]['post_type'] = '';
 $check('a blank format row collides with nothing',
@@ -586,7 +586,7 @@ $check('a blank format row collides with nothing',
 // --- 10b. The Computed field rule: one ACF field is the target (FW-4). -------
 
 $cf = fn(array $over = []) => $over + [
-    'type' => 'field_transformation_rules', 'enabled' => true, 'post_types' => ['mc_item'],
+    'type' => 'field_from_pattern', 'enabled' => true, 'post_types' => ['mc_item'],
     'target_field' => 'field_mc_a', 'pattern' => '{meta:first}', 'row_title' => 'Display',
 ];
 
@@ -622,7 +622,7 @@ $check('an unresolvable field key is named by the key, not dropped',
 // The self-reference advisory rides the row title (the collapsed row is what the
 // author scans): it appears when the pattern reads the rule's own target and goes
 // when the pattern is fixed.
-$self  = Registry::get('field_transformation_rules');
+$self  = Registry::get('field_from_pattern');
 $bad   = $cf(['pattern' => '{meta:display_name} {meta:last}']);
 $bad_d = $cf(['pattern' => '{date_year:display_name}']);
 $ok    = $cf(['pattern' => '{meta:first} {meta:last}']);
@@ -636,7 +636,7 @@ $check('and drops it once the pattern is fixed', !str_contains($self->row_title(
 // --- 10c. Repeater-row targets: one subfield across every row (FW-4 06). ----
 
 $rr = fn(array $over = []) => $over + [
-    'type' => 'field_transformation_rules', 'enabled' => true, 'post_types' => ['mc_item'],
+    'type' => 'field_from_pattern', 'enabled' => true, 'post_types' => ['mc_item'],
     'target_field' => 'row|field_mc_r|field_mc_rl', 'pattern' => '{meta:pos}', 'row_title' => 'Roster line',
 ];
 
@@ -700,7 +700,7 @@ $check('a non-array row is skipped rather than fatal',
 
 $fw56 = $scan($KIND_TERM, [
     ['type' => 'propagation_rules', 'taxonomy' => ['mc_a', 'mc_b']],
-    ['type' => 'hierarchical_rules', 'taxonomy' => 'mc_c'],
+    ['type' => 'terms_from_term_hierarchy', 'taxonomy' => 'mc_c'],
     ['type' => 'propagation_rules', 'taxonomy' => 'mc_b'],
 ]);
 $check('FW-56: one stored row\'s own expansions never collide with each other',

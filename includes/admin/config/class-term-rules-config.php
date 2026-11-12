@@ -33,16 +33,15 @@
  * `OptionRuleStorage::migrated_types_for_kind()` so the set of types this
  * repeater offers and the set storage treats as authored cannot drift. Batch 1 (#57)
  * was the four types not live on any real site; #58 moved the two live ones
- * (`related_rules`, `related_post_terms_rules`) in, completing the collapse.
+ * (`terms_from_trigger_term`, `related_post_terms_rules`) in, completing the collapse.
  * Their rows exist in real data, so two shapes are load-bearing: the ACF
  * field select's combined "post_type:field_name" value round-trips WHOLE
  * (the handler splits at read time; persisting the split would break the
  * select's option keys), and a stored row must render with its own values,
  * never config defaults — which is why no row may be left in a legacy shape.
  *
- * The stored `type` value is the LEGACY TYPE KEY VERBATIM
- * (`hierarchical_rules`, not `hierarchical`) — rule-type renaming stays
- * deferred (FW-63), and reusing the key is what lets every handler's
+ * The stored `type` value is the descriptor's id VERBATIM
+ * (`terms_from_term_hierarchy`) — that is what lets every handler's
  * `get_enabled_rules()` filter on `get_rule_type()` with no mapping table.
  * The author-facing labels are each descriptor's `label()`; the stored values
  * never change with them.

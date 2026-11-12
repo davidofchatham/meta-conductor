@@ -52,15 +52,15 @@ $expected = [
     OptionRuleStorage::KIND_TERM => [
         'propagation_rules',
         'related_post_terms_rules',
-        'time_based_rules',
-        'related_rules',
-        'hierarchical_rules',
-        'hierarchical_level_restriction_rules',
-        'term_count_rules',
+        'terms_from_date_window',
+        'terms_from_trigger_term',
+        'terms_from_term_hierarchy',
+        'restrict_terms_by_level',
+        'restrict_term_count',
     ],
     OptionRuleStorage::KIND_FORMAT => [
-        'title_slug_rules',
-        'field_transformation_rules',
+        'title_slug_from_pattern',
+        'field_from_pattern',
     ],
 ];
 $expected_flat = array_merge(...array_values($expected));
@@ -119,18 +119,18 @@ foreach ($all as $key => $d) {
 // without ACF (this harness) it is unavailable, every other type is not.
 foreach ($all as $key => $d) {
     $check("$key: availability follows ACF only for the Computed field rule",
-        $d->available() === ($key === 'field_transformation_rules' ? function_exists('acf_get_field') : true));
+        $d->available() === ($key === 'field_from_pattern' ? function_exists('acf_get_field') : true));
 }
 
 // The format pass's first-match gate is a descriptor fact (FW-4 ticket 04):
 // true only for the title/slug lookup table, so a Computed field rule composes.
 foreach ($all as $key => $d) {
-    $check("$key: first_match_wins() is true only for title_slug_rules",
-        $d->first_match_wins() === ($key === 'title_slug_rules'));
+    $check("$key: first_match_wins() is true only for title_slug_from_pattern",
+        $d->first_match_wins() === ($key === 'title_slug_from_pattern'));
 }
 
 // The runtime question the dispatchers ask before running a row (ticket 10).
-$check('a registered type is known', Registry::known('hierarchical_rules'));
+$check('a registered type is known', Registry::known('terms_from_term_hierarchy'));
 $check('a type with no descriptor is not known — the pass skips it', !Registry::known('nope_rules'));
 $check('an untyped row is not known', !Registry::known(''));
 

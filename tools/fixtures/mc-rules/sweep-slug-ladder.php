@@ -75,7 +75,7 @@ function mcl_slug( $id ) {
 function mcl_case( $label, $title, array $rule_extra, array $b_extra, $want_b, array $a_extra = array(), $want_a = null ) {
 	$dispatcher = TermDispatcher::instance();
 
-	mc_write_rule_types( array( 'title_slug_rules' => array( $rule_extra + array(
+	mc_write_rule_types( array( 'title_slug_from_pattern' => array( $rule_extra + array(
 		'enabled'              => true,
 		'name'                 => 'Ladder sweep',
 		'post_type'            => 'mc_item',
@@ -96,7 +96,7 @@ function mcl_case( $label, $title, array $rule_extra, array $b_extra, $want_b, a
 }
 
 // Only the title/slug rule live: a hierarchy rule would add Inland's ancestors and change which term is first.
-mc_isolate( array( 'title_slug_rules' ) );
+mc_isolate( array( 'title_slug_from_pattern' ) );
 
 $year = wp_date( 'Y' );
 $pub  = array( 'post_date' => '2026-03-14 09:05:00' );

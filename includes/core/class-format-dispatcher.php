@@ -25,7 +25,7 @@ if (!defined('ABSPATH')) {
  * title/field is DERIVED, not authored: `title_slug` reads terms
  * (`{term:TAX}`, `{terms:TAX}`) and writes none, so it is a sink with inbound
  * edges. Until this ticket that derived order was held together by two
- * accidents — `TitleSlugHandler` registered at `acf/save_post`/`save_post`
+ * accidents — `TitleSlugFromPatternHandler` registered at `acf/save_post`/`save_post`
  * priority 99, above every term handler, and `TaxonomyManager` constructed it
  * last. Coalescing the term pass onto a late drain (#60) would have inverted
  * both silently: the title would have been computed from the PREVIOUS save's
@@ -67,7 +67,7 @@ if (!defined('ABSPATH')) {
  * `apply_to_data()` returns null for a rule that does not apply to the entity,
  * and once a rule of a `first_match_wins()` type has returned data the
  * remaining rules OF THAT TYPE are skipped. A type that is not
- * (`field_transformation`) runs every applicable rule in list order, so the
+ * (`field_from_pattern`) runs every applicable rule in list order, so the
  * last write to a field wins. This is `title_slug`'s
  * documented semantics — a rule set is a lookup table keyed by post type, not a
  * set of independently-scoped rules (#59) — and enforcing it here rather than
@@ -82,7 +82,7 @@ if (!defined('ABSPATH')) {
  * pre-write half cannot survive #64: it runs BEFORE the term pass, so a
  * `{term:TAX}` pattern would read the previous save's terms — the exact defect
  * that ticket exists to remove. The format pass was once expected to split
- * in two again when `field_transformation` landed; it did not need to. A field
+ * in two again when `field_from_pattern` landed; it did not need to. A field
  * write is post meta, which `wp_insert_post_data` never carries, and the
  * post-write pass already sees the current pass's terms. REJECTED ALTERNATIVE:
  * a pre-write phase — it would reintroduce the stale-term read and gain nothing

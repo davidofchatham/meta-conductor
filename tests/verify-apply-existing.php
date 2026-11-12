@@ -68,12 +68,12 @@ $read = function (string $kind, array $option, array $filters = []): array {
 };
 
 $term_rows = [
-    ['type' => 'hierarchical_rules', 'row_title' => 'H1', 'taxonomy' => 'category', 'enabled' => true],
-    ['type' => 'related_rules', 'row_title' => 'R1', 'taxonomy' => 'category', 'target_term_id' => [7], 'trigger_term_id' => [3], 'enabled' => false],
-    ['type' => 'hierarchical_rules', 'row_title' => 'H2', 'taxonomy' => 'post_tag', 'enabled' => true],
+    ['type' => 'terms_from_term_hierarchy', 'row_title' => 'H1', 'taxonomy' => 'category', 'enabled' => true],
+    ['type' => 'terms_from_trigger_term', 'row_title' => 'R1', 'taxonomy' => 'category', 'target_term_id' => [7], 'trigger_term_id' => [3], 'enabled' => false],
+    ['type' => 'terms_from_term_hierarchy', 'row_title' => 'H2', 'taxonomy' => 'post_tag', 'enabled' => true],
 ];
 $format_rows = [
-    ['type' => 'title_slug_rules', 'name' => 'T1', 'post_type' => 'post', 'title_pattern' => '{title}', 'enabled' => true],
+    ['type' => 'title_slug_from_pattern', 'name' => 'T1', 'post_type' => 'post', 'title_pattern' => '{title}', 'enabled' => true],
 ];
 $option = [$KIND_TERM => $term_rows, $KIND_FORMAT => $format_rows];
 
@@ -132,7 +132,7 @@ $check('the "All enabled rules" sentinel round-trips',
 $fp = RuleChoice::fingerprint($first[0]);
 foreach ([
     'empty'              => '',
-    'unknown kind'       => "hierarchical_rules:0:$fp",
+    'unknown kind'       => "terms_from_term_hierarchy:0:$fp",
     'negative position'  => "$KIND_TERM:-1:$fp",
     'non-numeric pos'    => "$KIND_TERM:x:$fp",
     'bad fingerprint'    => "$KIND_TERM:0:nothex",
@@ -188,7 +188,7 @@ $check('no default status is trash or auto-draft',
 // (checkbox maps) reach it the way they would from storage.
 $reach = fn(?array $row) => RuleChoice::reach_statuses($row === null ? null : OptionRuleStorage::project_kind_rules([$row])[0]);
 
-$h = ['type' => 'hierarchical_rules', 'taxonomy' => 'category'];
+$h = ['type' => 'terms_from_term_hierarchy', 'taxonomy' => 'category'];
 $check('no post_status → default set', $reach($h) === $default);
 $check('an empty checkbox map → default set',
     $reach($h + ['post_status' => ['publish' => false]]) === $default);
@@ -203,7 +203,7 @@ $check('trash and auto-draft are dropped from a narrowed set',
 $check('a gate of only trash reaches nothing, never the default set',
     $reach($h + ['post_status' => ['trash' => true]]) === []);
 
-foreach (['propagation_rules', 'related_rules', 'time_based_rules', 'hierarchical_level_restriction_rules'] as $type) {
+foreach (['propagation_rules', 'terms_from_trigger_term', 'terms_from_date_window', 'restrict_terms_by_level'] as $type) {
     $check("$type narrows by post_status",
         $reach(['type' => $type, 'post_status' => ['publish' => true]]) === ['publish']);
 }
@@ -216,22 +216,22 @@ $types = fn(array $rows) => RuleChoice::reach_post_types(OptionRuleStorage::proj
 $ghost = ['type' => 'nope_rules', 'post_types' => []];
 
 $check('a known row with no post_types reaches every type',
-    $types([['type' => 'hierarchical_rules', 'post_types' => []]]) === null);
+    $types([['type' => 'terms_from_term_hierarchy', 'post_types' => []]]) === null);
 $check('a row with no descriptor reaches nothing, never every type',
     $types([$ghost]) === []);
 $check('an unknown row does not widen a known row\'s reach',
-    $types([$ghost, ['type' => 'hierarchical_rules', 'post_types' => ['page' => true]]]) === ['page']);
+    $types([$ghost, ['type' => 'terms_from_term_hierarchy', 'post_types' => ['page' => true]]]) === ['page']);
 
 // The Computed field rule (FW-4): reach is its `post_types` and nothing else, and
 // it owns no `post_status` gate, so statuses stay the default set.
-$cf = ['type' => 'field_transformation_rules', 'enabled' => true, 'name' => 'Display', 'post_types' => ['book'], 'target_field' => 'field_x', 'pattern' => '{meta:a}'];
+$cf = ['type' => 'field_from_pattern', 'enabled' => true, 'name' => 'Display', 'post_types' => ['book'], 'target_field' => 'field_x', 'pattern' => '{meta:a}'];
 $check('a Computed field rule reaches exactly its post type', $types([$cf]) === ['book']);
 $check('two Computed field rules reach the union of their post types',
     $types([$cf, ['post_types' => ['page']] + $cf]) === ['book', 'page']);
 $check('one Computed field rule reaches every post type it names',
     $types([['post_types' => ['book', 'page']] + $cf]) === ['book', 'page']);
 $check('beside a term rule, the reach is the union of each rule\'s own',
-    $types([$cf, ['type' => 'hierarchical_rules', 'post_types' => ['page' => true]]]) === ['book', 'page']);
+    $types([$cf, ['type' => 'terms_from_term_hierarchy', 'post_types' => ['page' => true]]]) === ['book', 'page']);
 $check('a Computed field rule with no post type reaches no real type, never every type',
     $types([['post_types' => []] + $cf]) === ['']);
 $check('a Computed field rule reaches the default statuses', $reach($cf) === $default);
@@ -241,7 +241,7 @@ $check('a Computed field rule reaches the default statuses', $reach($cf) === $de
 $names = fn(array $rows) => array_column($rows, 'row_title');
 
 $over = $option;
-$over[$KIND_TERM][] = ['type' => 'hierarchical_rules', 'row_title' => 'H3', 'taxonomy' => 'post_tag', 'enabled' => false];
+$over[$KIND_TERM][] = ['type' => 'terms_from_term_hierarchy', 'row_title' => 'H3', 'taxonomy' => 'post_tag', 'enabled' => false];
 $today = $read($KIND_TERM, $over, ['enabled' => true]);
 $all   = $read($KIND_TERM, $over);
 
@@ -283,11 +283,11 @@ $check('an enabled row carries its kind and position',
     $options[$values[2]] === 'Term rules: #1 H1'
     && $options[$values[5]] === 'Format rules: #1 T1 (Posts)');
 $check('a stale stored position is replaced by the real one',
-    ApplyPage::choice_options([], [['type' => 'title_slug_rules', 'row_title' => '#9 X']] )[RuleChoice::encode($KIND_FORMAT, 0, ['type' => 'title_slug_rules', 'row_title' => '#9 X'])]
+    ApplyPage::choice_options([], [['type' => 'title_slug_from_pattern', 'row_title' => '#9 X']] )[RuleChoice::encode($KIND_FORMAT, 0, ['type' => 'title_slug_from_pattern', 'row_title' => '#9 X'])]
     === 'Format rules: #1 X');
 $check('an untitled row is labeled by its type',
-    in_array('Format rules: #1 title_slug_rules', ApplyPage::choice_options([], [['type' => 'title_slug_rules']]), true));
-$cf_titled = ['type' => 'field_transformation_rules', 'row_title' => '#2 Display — Display name (Books)', 'post_types' => ['book']];
+    in_array('Format rules: #1 title_slug_from_pattern', ApplyPage::choice_options([], [['type' => 'title_slug_from_pattern']]), true));
+$cf_titled = ['type' => 'field_from_pattern', 'row_title' => '#2 Display — Display name (Books)', 'post_types' => ['book']];
 $check('a Computed field rule is offered in the format group with its own row title',
     in_array('Format rules: #2 Display — Display name (Books)', ApplyPage::choice_options([], [$formats[0], $cf_titled]), true));
 $check('and its value decodes back to its own row',
@@ -303,9 +303,9 @@ $check('a row with no descriptor is marked in the dropdown',
 
 $multi_option = [
     $KIND_TERM => [
-        ['type' => 'hierarchical_rules', 'row_title' => 'H1', 'taxonomy' => 'category', 'enabled' => true],
+        ['type' => 'terms_from_term_hierarchy', 'row_title' => 'H1', 'taxonomy' => 'category', 'enabled' => true],
         ['type' => 'propagation_rules', 'row_title' => 'P', 'taxonomy' => ['category', 'post_tag', 'sport'], 'enabled' => false],
-        ['type' => 'hierarchical_rules', 'row_title' => 'H2', 'taxonomy' => 'post_tag', 'enabled' => true],
+        ['type' => 'terms_from_term_hierarchy', 'row_title' => 'H2', 'taxonomy' => 'post_tag', 'enabled' => true],
     ],
     $KIND_FORMAT => [],
 ];

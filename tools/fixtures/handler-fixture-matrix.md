@@ -50,7 +50,7 @@ Status (L1)          — second root: related/time-based targets live here so
 
 ---
 
-## 1. hierarchical_rules — HierarchicalHandler
+## 1. terms_from_term_hierarchy — TermsFromTermHierarchyHandler
 
 | Aspect | Need |
 |---|---|
@@ -63,7 +63,7 @@ Status (L1)          — second root: related/time-based targets live here so
 | Scenarios | Assign Harbor (L4) → expect Coastal+East+Region auto-added; remove; promotion case (auto term kept manually). `_bws_auto_terms` asserted directly. |
 | Shared reuse | None (needs hierarchical tax it may freely rewrite). |
 
-## 2. hierarchical_level_restriction_rules — LevelRestrictionHandler
+## 2. restrict_terms_by_level — RestrictTermsByLevelHandler
 
 | Aspect | Need |
 |---|---|
@@ -76,7 +76,7 @@ Status (L1)          — second root: related/time-based targets live here so
 | Scenarios | Native path: assign Region+East+Coastal+Harbor → the deepest level survives. ACF path: set via `mc_topics` field → same cut lands in both channels. Interaction: p5 runs before hierarchical p10 — combined-rule scenario (restriction then expansion) is its own row. |
 | Shared reuse | None. |
 
-## 3. related_rules — RelatedHandler
+## 3. terms_from_trigger_term — TermsFromTriggerTermHandler
 
 | Aspect | Need |
 |---|---|
@@ -116,7 +116,7 @@ Status (L1)          — second root: related/time-based targets live here so
 | Scenarios | Term on grandparent → appears on all descendants incl. draft; remove from parent → removed from child except independently-held; create/save new child under parent → inherits; replace vs merge conflict modes. |
 | Shared reuse | None. **The empty-post_types ⇒ all-hierarchical default is the single biggest shared-site foot-gun in the plugin — never seed a propagation rule with empty post_types on this testbed.** |
 
-## 6. time_based_rules — TimeBasedHandler
+## 6. terms_from_date_window — TermsFromDateWindowHandler
 
 | Aspect | Need |
 |---|---|
@@ -129,7 +129,7 @@ Status (L1)          — second root: related/time-based targets live here so
 | Scenarios | Save in-range → term added; save post against expired rule holding the term → removed; future rule → no-op; cron fire (`wp cron event run bws_taxonomy_manager_cleanup` or `do_action` eval) → bulk strip. |
 | Shared reuse | None. |
 
-## 7. title_slug_rules — TitleSlugHandler
+## 7. title_slug_from_pattern — TitleSlugFromPatternHandler
 
 | Aspect | Need |
 |---|---|
@@ -144,11 +144,11 @@ Status (L1)          — second root: related/time-based targets live here so
 
 ---
 
-## 8. flat URLs — TitleSlugHandler read-time hooks (FW-51 04)
+## 8. flat URLs — TitleSlugFromPatternHandler read-time hooks (FW-51 04)
 
 | Aspect | Need |
 |---|---|
-| Trigger | `post_type_link` (p20) and `request` (p10), declared by `TitleSlugRules::runtime_hooks()` and registered by `TaxonomyManager`. No write; no pass. |
+| Trigger | `post_type_link` (p20) and `request` (p10), declared by `TitleSlugFromPatternRules::runtime_hooks()` and registered by `TaxonomyManager`. No write; no pass. |
 | Schema | `mc_flat` — hierarchical, no taxonomies/ACF/seeded rules (manifest v9). The sweep authors its one row (`flat_urls` on). |
 | Data | Two parent/child pairs seeded (`flat-parent`/`flat-child`, `flat-parent-2`/`flat-child-2`, unique names). The same-name twin pair (draft with the LOWER ID under `flat-parent-2`, published under `flat-parent`) is created and deleted by the sweep — a seeded twin would collapse onto one post at the next seed (`mc_fixture_find_post` returns the oldest match). |
 | Scenarios | Permalink flat for children, unchanged for parents / other types / `flat_urls` on a non-hierarchical type; first row per type decides; off reverts to nested; REST `link`, sitemap, attachment link follow; request resolves `/child/` and `/child/N/`; exact nested chain 301s (paging kept); stale / foreign-parent / extra-segment chain, feed, and a draft's nested URL fall through; twin order published → lowest ID → any status. |
@@ -188,7 +188,7 @@ Two constraints that shape EVERY per-handler sweep — not §1-specific:
      (observed: Harbor expansion `[13,14,15,16]` overwritten to `[14,15]` by the
      p15 push). **Dodge it** by using the push-free subjects `item-solo-a` /
      `item-solo-b` (referenced by no holder, no seeded terms).
-   - **Rule-scope overlap (expected, visible):** `related_rules`,
+   - **Rule-scope overlap (expected, visible):** `terms_from_trigger_term`,
      `level_restriction`, and `time_based` all also scope `mc_item` + `mc_topic`.
      On a solo subject with all rules live, assigning Harbor yields
      `[Region,Coastal,Harbor,Featured]` — hierarchical expands, related adds
@@ -208,12 +208,12 @@ Two constraints that shape EVERY per-handler sweep — not §1-specific:
 
 2. **Handler dedup is per-request — but NOT for hierarchical anymore (0.6.2).**
    Some handlers keep a per-request `$processed[key]` map (`UnifiedHandlerBase`,
-   `TitleSlugHandler`) that short-circuits a second apply for the same subject
+   `TitleSlugFromPatternHandler`) that short-circuits a second apply for the same subject
    within one PHP request. For THOSE, two user-edits in one `wp eval` → the second
    is a silent no-op; give each user-edit scenario its **own eval** (one WP-CLI
    call = one request = fresh dedup), or a single-eval multi-edit sweep reports
    artifacts (e.g. "removal did nothing"), not real behavior.
-   **`HierarchicalHandler` no longer has this map** — it was removed (commit
+   **`TermsFromTermHierarchyHandler` no longer has this map** — it was removed (commit
    `03ee8b4`) because it silently skipped legitimate double-saves. Re-entrant
    recursion is still blocked by the separate `$processing` flag, and `apply_rule`
    recomputes from current terms + `_bws_auto_terms` fresh each call (idempotent),
@@ -609,7 +609,7 @@ this is date-independent.)
 
 - **§6e-bis cron cleanup, provenance-neutral** ✅ **this is what A7 asserts.**
   `verify.php` A7 drives the apply through the handler and then fires the event:
-  isolate `time_based_rules`, synthesize a rule set holding ONLY the seeded
+  isolate `terms_from_date_window`, synthesize a rule set holding ONLY the seeded
   expired-Archived rule with its window slid in-range, save `item-solo-a` so the
   handler applies Archived, assert that landed, append Featured by hand as a
   negative control, write the expiry back, fire, assert Archived went and
@@ -640,7 +640,7 @@ this is date-independent.)
 
 - **§6g the collision on the SAVE path** ⚠ *known collision, warned not resolved
   — [#69](https://github.com/davidofchatham/meta-conductor/issues/69).* The
-  sharper of the two. `apply_time_based_rule()` ends with
+  sharper of the two. `apply_date_window_rule()` ends with
   `elseif (!$in_date_range && $has_target_term) { remove }`, evaluated per rule
   in array order against a freshly-read `$has_target_term`. So an out-of-range
   rule removes the target term whoever applied it — including a rule earlier in
@@ -731,7 +731,7 @@ re-seeding.
 **RESTORE GOTCHA (the original): it renames `post_name`.** Re-seed's
 `mc_fixture_find_post` addresses posts by `post_name`, so a renamed subject reads
 as missing and the seeder INSERTS a duplicate. Before re-seeding after a
-title_slug sweep you MUST first (a) empty the `title_slug_rules` array (so the
+title_slug sweep you MUST first (a) empty the `title_slug_from_pattern` array (so the
 rename doesn't re-fire) and (b) `wp_update_post` the subjects' `post_name` back to
 their manifest values. Then re-seed. Verified afterward: `mc_item` count = 8
 (6 fixtures + 2 solo), all unique names, rule live, no duplicates.
@@ -800,9 +800,9 @@ Surviving keys per row:
 | type | keys that persisted |
 |---|---|
 | `propagation_rules` | type, enabled, taxonomy, post_types, hierarchical_post_type_note, post_status, conflict_handling, row_title |
-| `time_based_rules` | type, enabled, post_types, post_status, filter_taxonomies, filter_terms, start_date, end_date, target_term_id, row_title |
-| `hierarchical_rules` | type, enabled, taxonomy, hierarchical_taxonomy_note, post_types, post_status, inheritance_behavior, inheritance_depth, row_title |
-| `hierarchical_level_restriction_rules` | type, enabled, taxonomy, hierarchical_taxonomy_note, post_types, post_status, restriction_mode, include_ancestors, row_title |
+| `terms_from_date_window` | type, enabled, post_types, post_status, filter_taxonomies, filter_terms, start_date, end_date, target_term_id, row_title |
+| `terms_from_term_hierarchy` | type, enabled, taxonomy, hierarchical_taxonomy_note, post_types, post_status, inheritance_behavior, inheritance_depth, row_title |
+| `restrict_terms_by_level` | type, enabled, taxonomy, hierarchical_taxonomy_note, post_types, post_status, restriction_mode, include_ancestors, row_title |
 
 (The two `*_note` keys are `html` subfields; Wireframe stores them as `null`.
 Harmless, and the same thing the old `expansion_behavior_help` did.)
@@ -819,7 +819,7 @@ a hierarchical row needs no start/end date. An **untyped** row is *rejected*
 
 **§8d defaults + vocabulary** ✅ Untouched subfields land their declared
 defaults (`deepest_only`, `false`, `enabled=true`). A row naming a
-not-yet-migrated type (`related_rules`) is refused by the select's validator —
+not-yet-migrated type (`terms_from_trigger_term`) is refused by the select's validator —
 the live types cannot be reached from this repeater.
 
 **§8e persistence + handler visibility** ✅ `sync_kind_lists()` writes
@@ -835,8 +835,8 @@ emptying the repeater took all four migrated types to 0 while `related` (2),
 load titles all six and writes the same titles into the type-keyed arrays, so
 the authored list stays trusted. Second load is a no-op.
 
-**§8g the un-migrated sections still save** ✅ `related_rules`,
-`related_post_terms_rules` and `title_slug_rules` each validate clean and
+**§8g the un-migrated sections still save** ✅ `terms_from_trigger_term`,
+`related_post_terms_rules` and `title_slug_from_pattern` each validate clean and
 round-trip 2/2/1 rows through their own sections, and the fan-out touches no
 migrated array when they save. `snapshot_claim_override_labels` unchanged.
 
@@ -859,9 +859,9 @@ existing rule survives, and a rule authored the new way still fires.
 sequence (`sync_kind_lists()` → `repair_stored_rules()`) leaves `format_rules`
 carrying the seeded rule with its `type`, a backfilled `row_title`
 (`MC item slug (MC Items)`) and every stored key intact. What the handler reads
-is byte-identical apart from `row_title`. Every key `TitleSlugHandler` reads
+is byte-identical apart from `row_title`. Every key `TitleSlugFromPatternHandler` reads
 survives Wireframe's real `RepeaterField::sanitize` against the live
-`FormatRulesConfig` subfields, and the fan-out reproduces `title_slug_rules`
+`FormatRulesConfig` subfields, and the fan-out reproduces `title_slug_from_pattern`
 row-for-row. Both copies were repaired in ONE `update_option`.
 
 **§9b validator + sanitizer over the whole page** ✅ A fully populated
@@ -1016,7 +1016,7 @@ Same rules, same edit, opposite outcome by list position — the point.
 
 **⚠️ ACF-mirror trap, found running this.** `item-solo-a` carries an ACF
 `mc_topics` taxonomy mirror (`field_mc_topics_item`) that
-`HierarchicalLevelRestrictionHandler::process_acf_level_restrictions()` reads
+`RestrictTermsByLevelHandler::process_acf_level_restrictions()` reads
 BEFORE the native branch. A stale value left by an earlier scenario (native
 reset alone does not touch it — the same trap as propagation's `mc_topics`
 mirror on `mc_section`, §5/§62) silently changed which term survived a prune,
@@ -1035,11 +1035,11 @@ rule skip a post outside it, then fire once the post matched — this sweep is
 that proof, not new handler code.
 
 **§67c the standard shape** ✅ `UnifiedHandlerBase::should_process_post()`
-gates the post being WRITTEN. Live subject: `HierarchicalHandler`, draft
+gates the post being WRITTEN. Live subject: `TermsFromTermHierarchyHandler`, draft
 `item-solo-a`. Rule `post_status: [publish]` + assign Harbor → gated OUT, only
 Harbor lands (no ancestor expansion). Same edit, rule `post_status: [draft]` →
-gated IN, full ancestor chain expands. `HierarchicalLevelRestrictionHandler`,
-`PropagationHandler`, `TimeBasedHandler` and `RelatedHandler` call the
+gated IN, full ancestor chain expands. `RestrictTermsByLevelHandler`,
+`PropagationHandler`, `TermsFromDateWindowHandler` and `TermsFromTriggerTermHandler` call the
 identical base method at the top of their own `apply_to_post()`
 (grep-confirmed: same call shape, same early return) — one live scenario
 stands for all five rather than repeating an identical code path four more
@@ -1053,7 +1053,7 @@ a draft dependent being kept in sync by a published source). Draft holder
 `item-solo-a` → gated OUT, dependent untouched. Publish the holder, same rule →
 gated IN, dependent synced.
 
-**Scope note: `title_slug_rules` is OUT.** `FormatRulesConfig` never gained a
+**Scope note: `title_slug_from_pattern` is OUT.** `FormatRulesConfig` never gained a
 `post_status` subfield in #59, and #67's acceptance criterion is scoped to
 "every TERM type" — #23's original text named title_slug too, but nothing in
 Phase 4 wired it, and closing #23 in the term-repeater's terms is what
@@ -1111,7 +1111,7 @@ a full `seed.php` repairs it, same shape as the §63 restore gotcha.
   one rule type a gate that should not exist deletes its field outright rather
   than narrowing it, so the shared frame's ungatedness is asserted first. Runs
   Wireframe's real `Conditions::evaluate()` for the visible set, then checks
-  separately that every key `TitleSlugHandler` reads is inside it.
+  separately that every key `TitleSlugFromPatternHandler` reads is inside it.
 - **H10 — `tests/verify-kind-lists.php`** (static, no WP): the kind lists as the
   only stored shape (#56 expand → #66 contract). Three blocks: the 7-type-arrays
   → 2-kind-lists migration is idempotent and lossless with every legacy rule

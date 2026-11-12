@@ -1,6 +1,6 @@
 <?php
 /**
- * BWS Taxonomy Manager Related Terms Handler
+ * Terms-from-trigger-term handler
  * Handles linking terms so applying one automatically applies another
  *
  * @since 0.1.0
@@ -13,7 +13,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-class RelatedHandler extends UnifiedHandlerBase {
+class TermsFromTriggerTermHandler extends UnifiedHandlerBase {
 
     /**
      * Pure applier: no hooks (#61).

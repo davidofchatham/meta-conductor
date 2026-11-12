@@ -9,7 +9,7 @@ namespace BWS\MetaConductor\Handlers;
 
 use BWS\MetaConductor\Core\TermCountSurvivors;
 use BWS\MetaConductor\Core\TermDispatcher;
-use BWS\MetaConductor\RuleTypes\TermCountRules;
+use BWS\MetaConductor\RuleTypes\RestrictTermCountRules;
 
 // Prevent direct access
 if (!defined('ABSPATH')) {
@@ -27,7 +27,7 @@ if (!defined('ABSPATH')) {
  * is the one place that ordering lives. This class only reads the post's terms
  * with their depths, hands them over, and removes what did not survive.
  */
-class TermCountHandler extends UnifiedHandlerBase {
+class RestrictTermCountHandler extends UnifiedHandlerBase {
 
     /**
      * Term depth by "{taxonomy}_{id}". A flat taxonomy has no ancestors, so
@@ -190,7 +190,7 @@ class TermCountHandler extends UnifiedHandlerBase {
         $terms = array_map(fn(int $id): array => ['id' => $id, 'depth' => $this->depth($id, $taxonomy)], $term_ids);
         $delta = $this->added[$post_id . ':' . $taxonomy] ?? [];
 
-        $kept = TermCountSurvivors::select($terms, $delta, (int) ($rule['max_terms'] ?? 1), TermCountRules::per_level($rule));
+        $kept = TermCountSurvivors::select($terms, $delta, (int) ($rule['max_terms'] ?? 1), RestrictTermCountRules::per_level($rule));
 
         return array_column($kept, 'id');
     }

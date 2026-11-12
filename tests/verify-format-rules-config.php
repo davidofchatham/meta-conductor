@@ -17,10 +17,10 @@
  * `Conditions::evaluate()`, the same evaluator the sanitizer runs.
  *
  * Also locks #59's structural claims: the repeater binds the persisted kind
- * list, the `type` select stores the legacy key `title_slug_rules` and keeps
+ * list, the `type` select stores the legacy key `title_slug_from_pattern` and keeps
  * its untyped placeholder, the row-title snapshot replaced the live `{name}`
  * template, and the save-time projection lands rows back in
- * `title_slug_rules` so a rule authored here still fires.
+ * `title_slug_from_pattern` so a rule authored here still fires.
  *
  * Run:  php tests/verify-format-rules-config.php   (local PHP CLI, no WP needed)
  *
@@ -167,7 +167,7 @@ $subfields = $field['args']['subfields'];
 
 // --- The repeater is bound to the persisted kind list. ----------------------
 
-$check('the format kind has its migrated types (#59)', $TYPES === ['title_slug_rules', 'field_transformation_rules']);
+$check('the format kind has its migrated types (#59)', $TYPES === ['title_slug_from_pattern', 'field_from_pattern']);
 $check('repeater binds the format kind list', $field['id'] === $KIND);
 $check('repeater is sortable (order is authored)', !empty($field['args']['sortable']));
 $check('row title template resolves the snapshot', $field['args']['title_template'] === '{row_title}');
@@ -222,10 +222,10 @@ foreach (['type', 'enabled', 'name', 'row_title'] as $shared) {
 // own type — an ungated copy would persist junk on the other type's rows.
 $check('post_type is a single-value select, gated to title & slug',
     ($by_id['post_type']['type'] ?? '') === 'select'
-    && ($by_id['post_type']['conditions']['value'] ?? null) === ['title_slug_rules']);
+    && ($by_id['post_type']['conditions']['value'] ?? null) === ['title_slug_from_pattern']);
 $check('post_types is a checkboxes list, gated to computed field',
     ($by_id['post_types']['type'] ?? '') === 'checkboxes'
-    && ($by_id['post_types']['conditions']['value'] ?? null) === ['field_transformation_rules']);
+    && ($by_id['post_types']['conditions']['value'] ?? null) === ['field_from_pattern']);
 $check('the computed field scope drops attachment and has no placeholder row',
     array_keys($by_id['post_types']['args']['options']) === ['post', 'page', 'mc_item']);
 $check('the computed field scope says none checked does nothing',
@@ -272,16 +272,16 @@ $check('no subfield uses not_in',
     empty(array_filter($subfields, fn($s) => ($s['conditions']['operator'] ?? '') === 'not_in')));
 
 // --- The real evaluator: what actually persists, per type. ------------------
-// Every key TitleSlugHandler reads must be in this set. A key missing here is
+// Every key TitleSlugFromPatternHandler reads must be in this set. A key missing here is
 // a stored value dropped on the next settings save.
 
 $expected_visible = [
-    'title_slug_rules' => [
+    'title_slug_from_pattern' => [
         'type', 'enabled', 'name', 'post_type',
         'title_pattern', 'slug_pattern', 'slug_mode',
         'slug_escalation', 'slug_escalation_tokens', 'escalation_placement', 'flat_urls', 'row_title',
     ],
-    'field_transformation_rules' => [
+    'field_from_pattern' => [
         'type', 'enabled', 'name', 'post_types',
         'target_field', 'pattern', 'output', 'row_title',
     ],
@@ -304,12 +304,12 @@ foreach ($TYPES as $type) {
 
 // Stated separately from the set above, because the set can be edited to match
 // a regression while this list is the handler's actual read contract
-// (TitleSlugHandler::apply_to_data / rule_matches / escalation).
+// (TitleSlugFromPatternHandler::apply_to_data / rule_matches / escalation).
 $handler_reads = ['enabled', 'post_type', 'title_pattern', 'slug_pattern',
                   'slug_mode', 'slug_escalation', 'escalation_placement', 'flat_urls'];
 $visible_title_slug = [];
 foreach ($subfields as $s) {
-    if (Conditions::evaluate($s['conditions'] ?? null, ['type' => 'title_slug_rules'])) {
+    if (Conditions::evaluate($s['conditions'] ?? null, ['type' => 'title_slug_from_pattern'])) {
         $visible_title_slug[] = $s['id'];
     }
 }
@@ -320,7 +320,7 @@ $check('every key the title/slug handler reads survives a save',
 // for the same reason. `target_field` is stored by ACF FIELD KEY.
 $visible_field = [];
 foreach ($subfields as $s) {
-    if (Conditions::evaluate($s['conditions'] ?? null, ['type' => 'field_transformation_rules'])) {
+    if (Conditions::evaluate($s['conditions'] ?? null, ['type' => 'field_from_pattern'])) {
         $visible_field[] = $s['id'];
     }
 }
@@ -336,13 +336,13 @@ $check('flat_urls is a toggle, off by default, whose description says hierarchic
     && ($by_id['flat_urls']['default'] ?? null) === false
     && stripos((string) ($by_id['flat_urls']['description'] ?? ''), 'hierarchical custom post types only') !== false);
 $check('flat_urls carries the type gate and nothing else',
-    ($by_id['flat_urls']['conditions'] ?? null) === ['field' => 'type', 'operator' => 'in', 'value' => ['title_slug_rules']]);
+    ($by_id['flat_urls']['conditions'] ?? null) === ['field' => 'type', 'operator' => 'in', 'value' => ['title_slug_from_pattern']]);
 // The ladder fields (FW-51 02) ride the same gate as every title/slug field —
 // never one on the shared frame, which would delete them on a type that is not
 // title & slug, and (with one type) on the only type there is.
 $check('the ladder fields carry the type gate and nothing else',
-    ($by_id['slug_escalation']['conditions'] ?? null) === ['field' => 'type', 'operator' => 'in', 'value' => ['title_slug_rules']]
-    && ($by_id['escalation_placement']['conditions'] ?? null) === ['field' => 'type', 'operator' => 'in', 'value' => ['title_slug_rules']]);
+    ($by_id['slug_escalation']['conditions'] ?? null) === ['field' => 'type', 'operator' => 'in', 'value' => ['title_slug_from_pattern']]
+    && ($by_id['escalation_placement']['conditions'] ?? null) === ['field' => 'type', 'operator' => 'in', 'value' => ['title_slug_from_pattern']]);
 $check('slug_escalation is a text field with the year placeholder and an Available tokens table',
     ($by_id['slug_escalation']['type'] ?? '') === 'text'
     && ($by_id['slug_escalation']['args']['placeholder'] ?? '') === '{pub_year}'
@@ -397,55 +397,55 @@ $titled = fn(array $row) => WireframeBootstrap::snapshot_format_rule_labels(
 // collision advisory names and what the author reorders. Asserted once, then
 // stripped — the per-type schema checks below are about the schema.
 $check('a row title leads with its list position',
-    str_starts_with($titled(['type' => 'title_slug_rules', 'name' => 'X']), '#1 '));
+    str_starts_with($titled(['type' => 'title_slug_from_pattern', 'name' => 'X']), '#1 '));
 $title = fn(array $row) => preg_replace('/^#\d+ /', '', $titled($row));
 
 $check('a title/slug row title is the name plus its post-type scope',
-    $title(['type' => 'title_slug_rules', 'name' => 'MC item slug', 'post_type' => 'mc_item'])
+    $title(['type' => 'title_slug_from_pattern', 'name' => 'MC item slug', 'post_type' => 'mc_item'])
         === 'MC item slug (MC Items)');
 $check('a row naming no post type carries no scope suffix',
-    $title(['type' => 'title_slug_rules', 'name' => 'MC item slug']) === 'MC item slug');
+    $title(['type' => 'title_slug_from_pattern', 'name' => 'MC item slug']) === 'MC item slug');
 $check('an unresolvable post type falls back to its slug',
-    $title(['type' => 'title_slug_rules', 'name' => 'X', 'post_type' => 'gone'])
+    $title(['type' => 'title_slug_from_pattern', 'name' => 'X', 'post_type' => 'gone'])
         === 'X (gone)');
 // The Computed field row names the field it writes and the post type.
 $check('a computed field row title names its target field and post type',
-    $title(['type' => 'field_transformation_rules', 'name' => 'Display line', 'post_types' => ['mc_item'], 'target_field' => 'field_a'])
+    $title(['type' => 'field_from_pattern', 'name' => 'Display line', 'post_types' => ['mc_item'], 'target_field' => 'field_a'])
         === 'Display line — Display name (MC Items)');
 $check('a computed field row whose key no longer resolves shows no field',
-    $title(['type' => 'field_transformation_rules', 'name' => 'Display line', 'post_types' => ['mc_item'], 'target_field' => 'field_gone'])
+    $title(['type' => 'field_from_pattern', 'name' => 'Display line', 'post_types' => ['mc_item'], 'target_field' => 'field_gone'])
         === 'Display line (MC Items)');
 $check('a computed field row targeting a repeater subfield names repeater and subfield',
-    $title(['type' => 'field_transformation_rules', 'name' => 'Line', 'post_types' => ['mc_item'], 'target_field' => 'row|field_d|field_d_line'])
+    $title(['type' => 'field_from_pattern', 'name' => 'Line', 'post_types' => ['mc_item'], 'target_field' => 'row|field_d|field_d_line'])
         === 'Line — Roster › Line (MC Items)');
 $check('an unnamed computed field row is named rather than left blank',
-    str_starts_with($title(['type' => 'field_transformation_rules', 'post_types' => ['mc_item']]), 'Untitled computed field rule'));
+    str_starts_with($title(['type' => 'field_from_pattern', 'post_types' => ['mc_item']]), 'Untitled computed field rule'));
 $check('a computed field row naming several post types lists them all',
-    $title(['type' => 'field_transformation_rules', 'name' => 'Display line', 'post_types' => ['mc_item', 'page'], 'target_field' => 'field_a'])
+    $title(['type' => 'field_from_pattern', 'name' => 'Display line', 'post_types' => ['mc_item', 'page'], 'target_field' => 'field_a'])
         === 'Display line — Display name (MC Items, Pages)');
 // The uniform marker the term list gained in #57 — the whole reason the live
 // {name} template was replaced by a snapshot.
 $check('a disabled row carries the uniform prefix',
     str_starts_with(
-        $title(['type' => 'title_slug_rules', 'enabled' => false, 'name' => 'X']),
+        $title(['type' => 'title_slug_from_pattern', 'enabled' => false, 'name' => 'X']),
         '[Disabled] '
     ));
 $check('an enabled row carries no prefix',
-    !str_contains($title(['type' => 'title_slug_rules', 'enabled' => true, 'name' => 'X']), '['));
+    !str_contains($title(['type' => 'title_slug_from_pattern', 'enabled' => true, 'name' => 'X']), '['));
 // A fixture/import row has no name; it must stay findable in a collapsed list.
 $check('an unnamed row is named rather than left blank',
-    $title(['type' => 'title_slug_rules', 'post_type' => 'page']) === 'Untitled title/slug rule (Pages)');
+    $title(['type' => 'title_slug_from_pattern', 'post_type' => 'page']) === 'Untitled title/slug rule (Pages)');
 $check('an untyped row says so rather than rendering blank',
     str_contains($title(['name' => 'X']), 'no rule type chosen'));
 // Titles are snapshot on a list, not a single row.
 $snapshotted = WireframeBootstrap::snapshot_format_rule_labels([$KIND => [
-    ['type' => 'title_slug_rules', 'name' => 'A'],
-    ['type' => 'title_slug_rules', 'name' => 'B'],
+    ['type' => 'title_slug_from_pattern', 'name' => 'A'],
+    ['type' => 'title_slug_from_pattern', 'name' => 'B'],
 ]])[$KIND];
 $check('every row in the list is titled',
     array_column($snapshotted, 'row_title') === ['#1 A', '#2 B']);
 // A payload without the format list must not be touched — the term tab saves
-// without one, and inventing an empty list here would clear title_slug_rules
+// without one, and inventing an empty list here would clear title_slug_from_pattern
 // at the projection below.
 $check('a payload without the format list is returned untouched',
     WireframeBootstrap::snapshot_format_rule_labels(['manual_processing_enabled' => true])
@@ -453,8 +453,8 @@ $check('a payload without the format list is returned untouched',
 
 // --- The save path: the repeater's list IS the stored shape (#66). ---------
 //
-// Until #66 these rows had to be projected back onto `title_slug_rules` on the
-// same save, because that was what TitleSlugHandler read. The contract ticket
+// Until #66 these rows had to be projected back onto `title_slug_from_pattern` on the
+// same save, because that was what TitleSlugFromPatternHandler read. The contract ticket
 // deleted the projection along with the array: `format_rules` is what storage
 // holds and what the format pass reads.
 
@@ -463,16 +463,16 @@ $check('the type-keyed save projection is gone (#66)',
 
 $ordered = WireframeBootstrap::snapshot_format_rule_labels([
     $KIND => [
-        ['type' => 'title_slug_rules', 'enabled' => false,
+        ['type' => 'title_slug_from_pattern', 'enabled' => false,
          'name' => 'MC item slug', 'post_type' => 'mc_item'],
-        ['type' => 'title_slug_rules', 'name' => 'Page slug', 'post_type' => 'page'],
+        ['type' => 'title_slug_from_pattern', 'name' => 'Page slug', 'post_type' => 'page'],
     ],
 ]);
 $check('a format-tab save payload carries the kind list and no type-keyed copy',
     array_keys($ordered) === [$KIND]);
 $check('the snapshot keeps the authored order, still typed',
     array_column($ordered[$KIND], 'post_type') === ['mc_item', 'page']
-    && array_column($ordered[$KIND], 'type') === ['title_slug_rules', 'title_slug_rules']);
+    && array_column($ordered[$KIND], 'type') === ['title_slug_from_pattern', 'title_slug_from_pattern']);
 $check('the snapshot bakes the row title onto the list rows',
     ($ordered[$KIND][0]['row_title'] ?? '') === '#1 [Disabled] MC item slug (MC Items)');
 
@@ -491,7 +491,7 @@ $stored = [[
     'enabled' => true, 'name' => 'MC item slug', 'post_type' => 'mc_item',
     'slug_pattern' => '{default_slug}-{date_year:mc_event_date}',
     'slug_mode' => 'replace', 'slug_escalation' => '{date_year:mc_event_date}',
-    'escalation_placement' => 'suffix', 'type' => 'title_slug_rules',
+    'escalation_placement' => 'suffix', 'type' => 'title_slug_from_pattern',
 ]];
 $repaired = $r($stored);
 $check('the repair backfills a missing row_title',

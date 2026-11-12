@@ -170,7 +170,7 @@ class TermDispatcher {
     private const MAX_PASSES_PER_DRAIN = 3;
 
     /**
-     * Handlers keyed by stored rule type (`hierarchical_rules`).
+     * Handlers keyed by stored rule type (`terms_from_term_hierarchy`).
      *
      * A kind-list row carries its rule type, so that is the key a pass has in
      * hand. Every handler is in the map, including format-kind ones — the map

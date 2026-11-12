@@ -13,7 +13,7 @@
  *   1. **Author.** Two rows on the SAME post type are pushed through
  *      `RepeaterField::sanitize` + both save-payload filters and written to the
  *      option, exactly as a settings save would. The stored `format_rules`
- *      order and the projected `title_slug_rules` array are asserted, and the
+ *      order and the projected `title_slug_from_pattern` array are asserted, and the
  *      handler is asked which rule it would apply.
  *   2. **Reorder.** The two rows are swapped and re-saved. The format pass is
  *      first-match-wins per rule type (`rule_matches()`, #64 — it was
@@ -42,7 +42,7 @@
 
 use BWS\MetaConductor\Admin\Config\FormatRulesConfig;
 use BWS\MetaConductor\Admin\WireframeBootstrap;
-use BWS\MetaConductor\Handlers\TitleSlugHandler;
+use BWS\MetaConductor\Handlers\TitleSlugFromPatternHandler;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 use BWS\MetaConductor\Storage\StorageFactory;
 use BWS\MetaConductor\TaxonomyManager;
@@ -98,13 +98,13 @@ try {
     // ── 1. Author two rules on one post type. ──────────────────────────────
 
     $first = [
-        'type' => 'title_slug_rules', 'enabled' => true, 'name' => 'Sweep 59 first',
+        'type' => 'title_slug_from_pattern', 'enabled' => true, 'name' => 'Sweep 59 first',
         'post_type' => 'mc_item', 'slug_pattern' => 'first-{default_slug}',
         'slug_mode' => 'replace', 'slug_escalation' => '', 'escalation_placement' => 'suffix',
         'title_pattern' => '',
     ];
     $second = [
-        'type' => 'title_slug_rules', 'enabled' => true, 'name' => 'Sweep 59 second',
+        'type' => 'title_slug_from_pattern', 'enabled' => true, 'name' => 'Sweep 59 second',
         'post_type' => 'mc_item', 'slug_pattern' => 'second-{default_slug}',
         'slug_mode' => 'replace', 'slug_escalation' => '', 'escalation_placement' => 'suffix',
         'title_pattern' => '',
@@ -117,31 +117,31 @@ try {
     $note('stored order is the authored order',
         array_column($saved[$KIND], 'name') === ['Sweep 59 first', 'Sweep 59 second']);
     $note('the save writes no type-keyed copy (#66)',
-        !array_key_exists('title_slug_rules', $saved));
+        !array_key_exists('title_slug_from_pattern', $saved));
     // The title LEADS with the row's list position (#65) — this assertion
     // predates that and expected the bare schema.
     $note('the row title was snapshot onto the list row',
         ($saved[$KIND][0]['row_title'] ?? '') === '#1 Sweep 59 first (MC Items)');
 
     // What the handler reads — the derived kind-list path, on a fresh cache.
-    $read = $storage->get_rules('title_slug_rules');
+    $read = $storage->get_rules('title_slug_from_pattern');
     $note('the handler reads both authored rules, in order',
         array_column($read, 'name') === ['Sweep 59 first', 'Sweep 59 second']);
     $note('the patterns and slug mode read back intact',
         ($read[0]['slug_pattern'] ?? '') === 'first-{default_slug}'
         && ($read[0]['slug_mode'] ?? '') === 'replace');
 
-    $handler = TaxonomyManager::get_instance()->get_handler('title_slug_rules');
-    $note('the title_slug handler is live', $handler instanceof TitleSlugHandler);
+    $handler = TaxonomyManager::get_instance()->get_handler('title_slug_from_pattern');
+    $note('the title_slug handler is live', $handler instanceof TitleSlugFromPatternHandler);
 
     // First-match-wins moved off `find_matching_rule()` in #64: the format
     // dispatcher offers every rule in list order and stops at the first of a
     // type whose `rule_matches()` answers. The winner is therefore the first
     // enabled rule the handler claims — computed here the same way the pass
     // computes it, and still without applying anything.
-    $matches = new ReflectionMethod(TitleSlugHandler::class, 'rule_matches');
+    $matches = new ReflectionMethod(TitleSlugFromPatternHandler::class, 'rule_matches');
     $winner = static function (object $p) use ($handler, $matches): array {
-        foreach (StorageFactory::get_instance()->get_rules('title_slug_rules') as $rule) {
+        foreach (StorageFactory::get_instance()->get_rules('title_slug_from_pattern') as $rule) {
             if ($matches->invoke($handler, $rule, $p->post_type)) {
                 return $rule;
             }
@@ -171,7 +171,7 @@ try {
     $disabled_second['enabled'] = false;
     $save_rows([$disabled_second, $first]);
     $enabled_only = array_values(array_filter(
-        StorageFactory::get_instance()->get_rules('title_slug_rules'),
+        StorageFactory::get_instance()->get_rules('title_slug_from_pattern'),
         static fn($r) => !empty($r['enabled'])
     ));
     $note('a disabled row still stores, and drops out of the enabled set',
@@ -260,7 +260,7 @@ try {
         $guarded('{pub_year}', 'slug', $year_base, false) === $pub_year);
 
     // Which side of that a rule lands on is slug_keeps_default()'s call.
-    $keeps = new ReflectionMethod(TitleSlugHandler::class, 'slug_keeps_default');
+    $keeps = new ReflectionMethod(TitleSlugFromPatternHandler::class, 'slug_keeps_default');
     $keeps->setAccessible(true);
     $note('prefix mode keeps the base, so it is guarded',
         $keeps->invoke($handler, ['slug_mode' => 'prefix', 'slug_pattern' => '{pub_year}']) === true);
@@ -276,7 +276,7 @@ try {
     // the WIRING, not just the flag's semantics. Without this the sweep proves
     // the guard parameter behaves and says nothing about which value production
     // hands it, which is exactly where the flip-flop lived.
-    $uses_dt = new ReflectionMethod(TitleSlugHandler::class, 'pattern_uses_default_title');
+    $uses_dt = new ReflectionMethod(TitleSlugFromPatternHandler::class, 'pattern_uses_default_title');
     $uses_dt->setAccessible(true);
 
     $compose  = '{pub_year} {pub_day}';

@@ -55,7 +55,7 @@ foreach ((array) ($opt['term_rules'] ?? []) as $i => $row) {
         continue;
     }
 
-    if ($type === 'hierarchical_rules') {
+    if ($type === 'terms_from_term_hierarchy') {
         foreach (['hierarchy_direction', 'expansion_behavior'] as $k) {
             if (isset($row[$k])) {
                 $findings[] = "$at: legacy key '$k'";
@@ -66,7 +66,7 @@ foreach ((array) ($opt['term_rules'] ?? []) as $i => $row) {
         }
     }
 
-    if ($type === 'related_rules' || $type === 'time_based_rules') {
+    if ($type === 'terms_from_trigger_term' || $type === 'terms_from_date_window') {
         foreach (['trigger_term_id', 'target_term_id'] as $k) {
             if (isset($row[$k]) && !is_array($row[$k])) {
                 $findings[] = "$at: scalar '$k' (" . var_export($row[$k], true) . ')';

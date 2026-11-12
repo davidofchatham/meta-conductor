@@ -49,7 +49,7 @@ foreach ($rows as $row) {
 }
 
 $note('term_rules carries all 11 fixture term-kind rows', count($rows) === 11);
-$note('2 related rows present',  count($by_type['related_rules'] ?? []) === 2);
+$note('2 related rows present',  count($by_type['terms_from_trigger_term'] ?? []) === 2);
 $note('2 acf-reference rows present', count($by_type['related_post_terms_rules'] ?? []) === 2);
 
 foreach ($by_type['related_post_terms_rules'] ?? [] as $i => $r) {
@@ -58,7 +58,7 @@ foreach ($by_type['related_post_terms_rules'] ?? [] as $i => $r) {
     $note("acf row $i is in migrated shape (taxonomy present, no source_taxonomy)",
         !empty($r['taxonomy']) && !isset($r['source_taxonomy']));
 }
-foreach ($by_type['related_rules'] ?? [] as $i => $r) {
+foreach ($by_type['terms_from_trigger_term'] ?? [] as $i => $r) {
     $note("related row $i trigger_term_id is the select's array shape",
         !isset($r['trigger_term_id']) || is_array($r['trigger_term_id']));
     $note("related row $i target_term_id is the select's array shape",
@@ -77,14 +77,14 @@ $note('sanitize keeps every row', count($sanitized) === count($rows));
 
 // Keys the handler READS per live type — these must survive a save unchanged.
 $must_survive = [
-    'related_rules'            => ['type', 'enabled', 'trigger_type', 'trigger_term_id',
+    'terms_from_trigger_term'            => ['type', 'enabled', 'trigger_type', 'trigger_term_id',
                                    'trigger_taxonomy', 'target_term_id', 'bidirectional',
                                    'post_types', 'post_status'],
     'related_post_terms_rules' => ['type', 'enabled', 'acf_field_name', 'holder_role',
                                    'reverse_acf_field_name', 'taxonomy', 'keep_in_sync', 'post_status'],
     // Baseline is max 2 / per level OFF — both non-default, so a gate that
     // dropped a field would show here instead of reading back as its default.
-    'term_count_rules'         => ['type', 'enabled', 'taxonomy', 'post_types', 'post_status',
+    'restrict_term_count'      => ['type', 'enabled', 'taxonomy', 'post_types', 'post_status',
                                    'max_terms', 'per_level'],
 ];
 
@@ -121,7 +121,7 @@ foreach ($sanitized as $row) {
     $sanitized_types[$row['type'] ?? ''][] = $row;
 }
 $note('the sanitized list still carries both live types row-for-row',
-    count($sanitized_types['related_rules'] ?? []) === 2
+    count($sanitized_types['terms_from_trigger_term'] ?? []) === 2
     && count($sanitized_types['related_post_terms_rules'] ?? []) === 2);
 $note('the sanitized list keeps every row, in order',
     array_column($sanitized, 'type') === array_column($rows, 'type'));
@@ -132,7 +132,7 @@ $note('the sanitized list keeps every row, in order',
 $lr_in = [];
 foreach (['deepest_only', 'shallowest_only'] as $mode) {
     foreach ([true, false] as $anc) {
-        $lr_in[] = ['type' => 'hierarchical_level_restriction_rules', 'enabled' => true,
+        $lr_in[] = ['type' => 'restrict_terms_by_level', 'enabled' => true,
                     'taxonomy' => 'mc_topic', 'post_types' => ['mc_item'],
                     'restriction_mode' => $mode, 'include_ancestors' => $anc];
     }

@@ -336,7 +336,7 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
 
     **A provocation names entities; the pass decides their fate (#61).** Not
     every entry point is one of the dispatcher's own hooks — bulk apply and
-    `time_based`'s daily expiry sweep are ordinary callers. Both mark entities
+    `terms_from_date_window`'s daily expiry sweep are ordinary callers. Both mark entities
     dirty and drain; neither applies a rule. The sweep is the instructive one,
     because it used to do the opposite: it removed its own rule's target term
     from each post it found, which is one rule executed alone, outside any pass,
@@ -428,7 +428,7 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
 
     **A second question live state cannot answer: which terms did the author just
     add?** *Term count limit* needs it to keep the editor's choice over an older
-    term when a post exceeds the cap. `TermCountHandler` captures it on
+    term when a post exceeds the cap. `RestrictTermCountHandler` captures it on
     `set_object_terms` as `new − old` term IDs per object and taxonomy. It
     records only writes made OUTSIDE a pass (`TermDispatcher::any_pass_active()`),
     so a term another rule adds above the count rule is rule output, not the
@@ -455,7 +455,7 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
     reads terms (`{term:TAX}`, `{terms:TAX}`) and writes none, so it is a sink:
     terms must settle first.
 
-    Until #64 that order rested on two accidents — `TitleSlugHandler` registered
+    Until #64 that order rested on two accidents — `TitleSlugFromPatternHandler` registered
     at `acf/save_post`/`save_post` priority **99**, above every term handler,
     and `TaxonomyManager` constructed it **last**. Coalescing the term pass onto
     a late drain (#60) would have inverted both, and the result is a title
@@ -509,7 +509,7 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
     - **The detector resolves each rule's effect target, not one field name.**
       The obvious predicate — shared `taxonomy` plus overlapping post types —
       reads four of the six term types and is *blind* to the other two:
-      `time_based_rules` and `related_rules` have no `taxonomy` subfield at all
+      `terms_from_date_window` and `terms_from_trigger_term` have no `taxonomy` subfield at all
       (H11's expected-visible map is the proof) and name their target by
       `target_term_id`. So the target key is a taxonomy for the four that
       declare one, a **term** for the two term-pairing types, and the
@@ -560,7 +560,7 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
       refer to. Two smaller asymmetries in the same area: `row_title` is stored
       *already* `esc_html()`-ed (the repeater's `title_template` renders raw),
       so the detector decodes it and escapes once at the end; and the hierarchy
-      outcome comes from `HierarchicalHandler::behavior_key()` rather than a
+      outcome comes from `TermsFromTermHierarchyHandler::behavior_key()` rather than a
       second reading of the legacy `hierarchy_direction`/`expansion_behavior`
       pair, which is the re-derived-switch drift invariant 17's cousins warn
       about.
@@ -585,7 +585,7 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
       rule instead owns exactly the terms its configuration names and recomputes
       from boundaries plus config on every pass. The accepted cost is that
       ownership is retroactive, so a manual tag matching a configured term is
-      swept. The single exception, `HierarchicalHandler`'s `_bws_auto_terms`, is
+      swept. The single exception, `TermsFromTermHierarchyHandler`'s `_bws_auto_terms`, is
       described under CONTEXT.md → **Jurisdiction**.
     - *Partitioning rules so ordering never matters*, inside the term group.
       Taxonomy fails as a key because term-pairing is cross-taxonomy by
@@ -598,7 +598,7 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
     fails there rather than being silently skipped. `sweep-65-collisions.php`
     runs it over the real fixture and through both real hooks.
 
-20. **Read-time hooks are a descriptor fact, and they only read (FW-51).** A rule type can serve visitors, not just write posts: `title_slug` with `flat_urls` rewrites a hierarchical type's permalink (`post_type_link`), resolves its flat path (`request`) and refuses a redirect back to the nested form (`wp_redirect`). Those filters are declared by the descriptor's `runtime_hooks()` (`hook => [method, priority, args]`), registered by `TaxonomyManager::init_handlers()` next to the dispatchers, and implemented on the handler — which still registers nothing itself. They are deliberately not `capture_hooks()`, which is for pre-write snapshots a pass consumes. H13 group 16 fails on a write primitive in any callback, on a listed method the handler does not declare, and on a registry that is never attached. The `request` callback picks the post for a path's last segment (published first, then lowest ID, then any status) and 301s a nested path only when its ancestor chain equals the post's real one; a stale chain, a feed, or a draft's nested URL falls through to core untouched. The third read-time hook is a `wp_redirect` veto (`veto_nested_redirect`, priority 99): a same-host redirect from a flat URL to the same published post's own nested URL (`FlatSlug::is_own_nested_form()`) returns false, which core's `wp_redirect()` and redirect plugins read as not redirected. It exists because a rule recorded before the toggle (`/base/child/` → `/base/parent/child/`) fires at `init`, before `request` can resolve the now-live flat URL, and loops with the nested → flat 301. It names no plugin, so it needs none; browsers that cached the old 301 can still bounce until cleared. Turning `flat_urls` off needs no cleanup: the permalink is derived, so URLs revert to nested. `sweep-flat-urls.php` covers it. The write half is per-type uniqueness: a flat type's slug is a segment straight under the base, so `TitleSlugHandler::make_unique_slug()` runs the ladder and then `Tokens\FlatSlug::number()` (lookup per TYPE, no `post_parent`) instead of `wp_unique_post_slug()`; a non-flat type still takes core's. `FlatSlug` refuses core's own bad hierarchical slugs (the rewrite's feed names, `embed`, `^(page)?\d+$`) plus `page` and `attachment`, and a reserved BASE skips the ladder (it is not a collision a parent or a date explains). Pinned by `tests/verify-flat-slug.php`, swept by `sweep-flat-slugs.php`.
+20. **Read-time hooks are a descriptor fact, and they only read (FW-51).** A rule type can serve visitors, not just write posts: `title_slug` with `flat_urls` rewrites a hierarchical type's permalink (`post_type_link`), resolves its flat path (`request`) and refuses a redirect back to the nested form (`wp_redirect`). Those filters are declared by the descriptor's `runtime_hooks()` (`hook => [method, priority, args]`), registered by `TaxonomyManager::init_handlers()` next to the dispatchers, and implemented on the handler — which still registers nothing itself. They are deliberately not `capture_hooks()`, which is for pre-write snapshots a pass consumes. H13 group 16 fails on a write primitive in any callback, on a listed method the handler does not declare, and on a registry that is never attached. The `request` callback picks the post for a path's last segment (published first, then lowest ID, then any status) and 301s a nested path only when its ancestor chain equals the post's real one; a stale chain, a feed, or a draft's nested URL falls through to core untouched. The third read-time hook is a `wp_redirect` veto (`veto_nested_redirect`, priority 99): a same-host redirect from a flat URL to the same published post's own nested URL (`FlatSlug::is_own_nested_form()`) returns false, which core's `wp_redirect()` and redirect plugins read as not redirected. It exists because a rule recorded before the toggle (`/base/child/` → `/base/parent/child/`) fires at `init`, before `request` can resolve the now-live flat URL, and loops with the nested → flat 301. It names no plugin, so it needs none; browsers that cached the old 301 can still bounce until cleared. Turning `flat_urls` off needs no cleanup: the permalink is derived, so URLs revert to nested. `sweep-flat-urls.php` covers it. The write half is per-type uniqueness: a flat type's slug is a segment straight under the base, so `TitleSlugFromPatternHandler::make_unique_slug()` runs the ladder and then `Tokens\FlatSlug::number()` (lookup per TYPE, no `post_parent`) instead of `wp_unique_post_slug()`; a non-flat type still takes core's. `FlatSlug` refuses core's own bad hierarchical slugs (the rewrite's feed names, `embed`, `^(page)?\d+$`) plus `page` and `attachment`, and a reserved BASE skips the ladder (it is not a collision a parent or a date explains). Pinned by `tests/verify-flat-slug.php`, swept by `sweep-flat-slugs.php`.
 
 ## Settings UI — WP Wireframe
 
@@ -614,7 +614,7 @@ Boot path: [class-wireframe-bootstrap.php](../includes/admin/class-wireframe-boo
 
 ### The ordered rule repeaters
 
-**One repeater per effect kind**, each bound to that kind's persisted list — `term_rules` (#57, #58) and `format_rules` (#59). No tab holds a per-type section any more. Each row carries a `type` select — storing the **legacy type key verbatim** (`hierarchical_rules`, not `hierarchical`), so `get_enabled_rules()` filters on `get_rule_type()` with no mapping table — and every type-specific subfield is `conditions`-gated on it. Restrict stopped being a tab because a level-restriction rule writes terms like every other rule in the list; Personalize went because it described rule types that do not exist yet.
+**One repeater per effect kind**, each bound to that kind's persisted list — `term_rules` (#57, #58) and `format_rules` (#59). No tab holds a per-type section any more. Each row carries a `type` select — storing the **registry id verbatim** (`terms_from_term_hierarchy`), so `get_enabled_rules()` filters on `get_rule_type()` with no mapping table — and every type-specific subfield is `conditions`-gated on it. Restrict stopped being a tab because a level-restriction rule writes terms like every other rule in the list; Personalize went because it described rule types that do not exist yet.
 
 Two Wireframe constraints drive the shape, both still true of the vendored 1.1.0: there is **no cross-repeater ordering primitive** (so an ordered list spanning rule types must be one repeater), and there is **no flexible content** (so that repeater has one fixed subfield superset, gated per type). Sanitization and value resolution are per top-level field, conditions resolve against a flat scope that inside a repeater is the row alone, and each page has its own `option_key`.
 
@@ -730,7 +730,7 @@ Invariants asserted by H10 (`tests/verify-kind-lists.php`):
 
 ### Field effects ride the `$data` seam
 
-**The format pass stays post-write only; a Set a field from a pattern rule (`field_transformation_rules`) returns its value in the seam's data array and the dispatcher writes it.** The array gains two maps: `fields[<name>]`, the computed value keyed by the field's **name** (tokens name fields by name), and `field_keys[<name>]`, the ACF **field key** the rule stores and the value is written by. `FormatDispatcher::write()` persists the difference through `update_field($key, …)` *before* the single row update, so the field's hidden reference row is maintained and neither `acf/save_post` nor `save_post` fires. A value equal to what the field holds is not written, and an all-empty result writes `''`. A **row rule** (a repeater subfield across every row) adds a third map, `rows[<repeater key>][<1-based row>][<subfield key>] = {name, meta, label, value}`, written through `update_sub_field([repeater key, row, subfield key], …)` under the same rules (slashed, unchanged cells skipped, write queue stood down); each row's tokens come from `RowTokenSource` — `field()` is that row's direct scalar siblings only, `terms()`/`published()` are the post's. The handler registers nothing and writes nothing — H13 holds its `apply_to_data()` to no write primitive (`update_field` included) and `write_fields()` to a by-key write.
+**The format pass stays post-write only; a Set a field from a pattern rule (`field_from_pattern`) returns its value in the seam's data array and the dispatcher writes it.** The array gains two maps: `fields[<name>]`, the computed value keyed by the field's **name** (tokens name fields by name), and `field_keys[<name>]`, the ACF **field key** the rule stores and the value is written by. `FormatDispatcher::write()` persists the difference through `update_field($key, …)` *before* the single row update, so the field's hidden reference row is maintained and neither `acf/save_post` nor `save_post` fires. A value equal to what the field holds is not written, and an all-empty result writes `''`. A **row rule** (a repeater subfield across every row) adds a third map, `rows[<repeater key>][<1-based row>][<subfield key>] = {name, meta, label, value}`, written through `update_sub_field([repeater key, row, subfield key], …)` under the same rules (slashed, unchanged cells skipped, write queue stood down); each row's tokens come from `RowTokenSource` — `field()` is that row's direct scalar siblings only, `terms()`/`published()` are the post's. The handler registers nothing and writes nothing — H13 holds its `apply_to_data()` to no write primitive (`update_field` included) and `write_fields()` to a by-key write.
 
 - **Slash the value.** `update_field()` unslashes on the way to `update_metadata()`, so an unslashed `a` stores as `ab`; the dispatcher passes `wp_slash()`ed values, as it does for the row update.
 - **The ACF write queue is stood down for the write** (`meta_conductor_acf_reapply_enabled` returns false inside `write_fields()`). Otherwise the pass's own `update_field()` would record the post and queue a second, idempotent pass at shutdown.
@@ -748,7 +748,7 @@ Patterns like `{meta:x} {term:tax} {pub_year}` are rendered in one place: `Token
 - **The policy** (`OutputPolicy`) says how values are shaped, as data rather than a context string: month name or number, term name or slug, the term joiner, a value sanitizer, the duplicate-guard comparison, and whether the final trim collapses dashes. Four exist: `title()` and `slug()` for post fields, and `text()` and `html()` for a stored field value (FW-4). `text()` keeps every value exactly as resolved; `html()` keeps the pattern's literals verbatim and HTML-escapes every token value — field values, term names and bound variables alike — so authored markup survives and the value is the only trust boundary. Both use title's month names, term names and comma joiner, apply no duplicate guard (a field composes from scratch), and share the separator cleanup, which is text-based rather than markup-aware. A new output is one more named constructor and no new branch in the engine.
 - **The caller** binds variables (`{default_title}`, `{default_slug}`), which are never guarded and are returned as-is (escaped under `html()`), and decides whether a duplicate guard applies by passing a guard base or not.
 
-`tokens()` lists the tokens a pattern contains from the same parser, and `parse_date()` is the one date parser — both date tokens and slug date escalation go through it, so **site time** ([CONTEXT.md](../CONTEXT.md)) is enforced once. What `TitleSlugHandler` keeps is what is genuinely title/slug: the default-title idempotency meta and inverse strip, slug mode, and uniqueness with date escalation.
+`tokens()` lists the tokens a pattern contains from the same parser, and `parse_date()` is the one date parser — both date tokens and slug date escalation go through it, so **site time** ([CONTEXT.md](../CONTEXT.md)) is enforced once. What `TitleSlugFromPatternHandler` keeps is what is genuinely title/slug: the default-title idempotency meta and inverse strip, slug mode, and uniqueness with date escalation.
 
 H17 (`tests/verify-token-engine.php`) tests the engine on host PHP over a fake source, replaying a golden table of title/slug outputs captured from the handler before the extraction (`tests/fixtures/token-engine-golden.json`).
 

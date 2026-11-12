@@ -109,7 +109,7 @@ function mc61_cron_rows( $consumer_first = false ) {
 	// The sweep's selection basis: expired, so its target term is what the
 	// sweep queries for and what its pass then removes.
 	$expired = array(
-		'type'           => 'time_based_rules',
+		'type'           => 'terms_from_date_window',
 		'enabled'        => true,
 		'post_types'     => array( 'mc_item' ),
 		'start_date'     => gmdate( 'Y-m-d', strtotime( $today . ' -30 days' ) ),
@@ -119,7 +119,7 @@ function mc61_cron_rows( $consumer_first = false ) {
 
 	// The PRODUCER: in range, so the pass applies Featured.
 	$producer = array(
-		'type'           => 'time_based_rules',
+		'type'           => 'terms_from_date_window',
 		'enabled'        => true,
 		'post_types'     => array( 'mc_item' ),
 		'start_date'     => gmdate( 'Y-m-d', strtotime( $today . ' -1 day' ) ),
@@ -132,7 +132,7 @@ function mc61_cron_rows( $consumer_first = false ) {
 	// what the pass lock suppresses — so it can only see it by running later in
 	// the same pass.
 	$consumer = array(
-		'type'            => 'related_rules',
+		'type'            => 'terms_from_trigger_term',
 		'enabled'         => true,
 		'post_types'      => array( 'mc_item' ),
 		'trigger_type'    => 'term',
@@ -171,7 +171,7 @@ switch ( $step ) {
 		// expansion (which would add Coastal's ancestors) out of the read.
 		mc61_silence();
 		mc_reset_subject( $a );
-		mc_isolate( 'related_rules' );
+		mc_isolate( 'terms_from_trigger_term' );
 		wp_set_object_terms( $a, array( mc_tid( 'topic-coastal' ) ), 'mc_topic' );
 		mc61_dispatcher()->drain();
 		mc_assert( '§61a  editor path: trigger term applies the target', mc61_slugs( $a ), array( 'coastal', 'featured' ) );
@@ -189,7 +189,7 @@ switch ( $step ) {
 		// programmatic ACF edit make, and it fires no save_post at all.
 		mc61_silence();
 		mc_reset_subject( $b );
-		mc_isolate( 'related_rules' );
+		mc_isolate( 'terms_from_trigger_term' );
 		if ( function_exists( 'update_field' ) ) {
 			update_field( 'mc_topics', array( mc_tid( 'topic-coastal' ) ), $b );
 			mc61_dispatcher()->drain();
@@ -203,7 +203,7 @@ switch ( $step ) {
 		// ever arrived. A live-state recompute removes it, because that is what
 		// "the target mirrors the trigger" means.
 		mc61_stage( $b, array( 'topic-featured' ) );
-		mc_isolate( 'related_rules' );
+		mc_isolate( 'terms_from_trigger_term' );
 		mc61_dispatcher()->run_pass( $b );
 		mc_assert( '§61d  bidirectional: target with no trigger EVER is removed', mc61_slugs( $b ), array() );
 
@@ -215,7 +215,7 @@ switch ( $step ) {
 		mc61_stage( $b, array( 'topic-featured' ) );
 		mc61_author( array(
 			array(
-				'type'            => 'related_rules',
+				'type'            => 'terms_from_trigger_term',
 				'enabled'         => true,
 				'post_types'      => array( 'mc_item' ),
 				'trigger_type'    => 'term',
@@ -269,7 +269,7 @@ switch ( $step ) {
 		wp_update_post( array( 'ID' => $a, 'post_status' => 'draft' ) );
 		mc61_dispatcher()->drain();
 
-		mc_isolate( 'time_based_rules' );
+		mc_isolate( 'terms_from_date_window' );
 
 		// The publish transition, and NO explicit drain: the save path's own
 		// drain (wp_after_insert_post p999) is what must run the pass, or an
@@ -319,7 +319,7 @@ switch ( $step ) {
 		mc_assert( '§52  get_term() on a ghost id answers WP_Error…', is_wp_error( $probe ), true );
 		mc_assert( '§52  …which is TRUTHY — the laxity the bare test had', (bool) $probe, true );
 
-		$handler = \BWS\MetaConductor\TaxonomyManager::get_instance()->get_handler( 'related_rules' );
+		$handler = \BWS\MetaConductor\TaxonomyManager::get_instance()->get_handler( 'terms_from_trigger_term' );
 
 		// §52 — the fix's discriminating check. Validation is the surface that
 		// took the bare test, so this is what failed before it: a rule pointing
@@ -327,7 +327,7 @@ switch ( $step ) {
 		$good = array(
 			// `type` is for the authored list below; `name` is what the generic
 			// half of validate_rule() insists on.
-			'type'            => 'related_rules',
+			'type'            => 'terms_from_trigger_term',
 			'name'            => 'mc52 probe',
 			'enabled'         => true,
 			'post_types'      => array( 'mc_item' ),

@@ -1,6 +1,6 @@
 <?php
 /**
- * Descriptor for `title_slug_rules` rows.
+ * Descriptor for `title_slug_from_pattern` rows.
  *
  * @since 0.10.0
  */
@@ -8,7 +8,7 @@
 namespace BWS\MetaConductor\RuleTypes;
 
 use BWS\MetaConductor\Admin\Config\ConfigHelpers;
-use BWS\MetaConductor\Handlers\TitleSlugHandler;
+use BWS\MetaConductor\Handlers\TitleSlugFromPatternHandler;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 
 // Prevent direct access
@@ -17,13 +17,13 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Named after the storage key `title_slug_rules`, not a domain name — FW-14 renamed `label()` only;
- * FW-63 renames the id and the class.
+ * Named after the storage key `title_slug_from_pattern`, not a domain name — renaming a type for
+ * authors edits `label()` only.
  */
-final class TitleSlugRules extends RuleType {
+final class TitleSlugFromPatternRules extends RuleType {
 
     public function type(): string {
-        return 'title_slug_rules';
+        return 'title_slug_from_pattern';
     }
 
     public function kind(): string {
@@ -35,7 +35,7 @@ final class TitleSlugRules extends RuleType {
     }
 
     public function handler_class(): string {
-        return TitleSlugHandler::class;
+        return TitleSlugFromPatternHandler::class;
     }
 
     /**
@@ -104,8 +104,8 @@ final class TitleSlugRules extends RuleType {
     /**
      * Title & slug patterns — the mechanics of this one transformation.
      *
-     * Every field here is gated: they are read only by `TitleSlugHandler`, and
-     * offering them on a future `field_transformation` row would store junk
+     * Every field here is gated: they are read only by `TitleSlugFromPatternHandler`, and
+     * offering them on a future `field_from_pattern` row would store junk
      * that reads as a working setting.
      *
      * @return array[]
@@ -114,7 +114,7 @@ final class TitleSlugRules extends RuleType {
         return [
             [
                 // Scalar, not a `post_types` checkboxes scope.
-                // `TitleSlugHandler::rule_matches()` reads this key by name
+                // `TitleSlugFromPatternHandler::rule_matches()` reads this key by name
                 // and the format pass stops at the FIRST title & slug rule
                 // matching the post's type, so the value is a lookup key
                 // rather than a scope, and two rules on one post type means

@@ -8,7 +8,7 @@
  *
  * Two halves:
  *   - the golden table (`tests/fixtures/token-engine-golden.json`), captured
- *     from `TitleSlugHandler` BEFORE the engine moved out of it. Every resolver
+ *     from `TitleSlugFromPatternHandler` BEFORE the engine moved out of it. Every resolver
  *     row replays here with the same inputs, so the extraction is proven, not
  *     asserted. The stub sanitizer is a LOOKUP into the `sanitize_title` pairs
  *     the capture logged: an input it never saw fails rather than guessing.
