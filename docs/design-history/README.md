@@ -30,3 +30,4 @@ A file here is **not** an ADR. An ADR states a decision and its consequences in 
 | [field-transformation.md](field-transformation.md) | Computed field rules (`field_transformation_rules`, FW-4) + separator cleanup around empty tokens (FW-44) | 2026-10-22 |
 | [flat-urls-slug-ladder.md](flat-urls-slug-ladder.md) | Disambiguation ladder, `{mod_*}`/`{parent:slug}` tokens, flat URLs for hierarchical types (FW-51) | 2026-11-02 |
 | [term-count-limit.md](term-count-limit.md) | `term_count_rules` — count cap split out of level restriction, newest-wins via request-lifetime delta capture | 2026-11-05 |
+| [rule-type-ids.md](rule-type-ids.md) | The seven rule-type ids renamed to their labels minus the verb, `RuleTypeIdMigration` (FW-63) | 2026-11-12 |
