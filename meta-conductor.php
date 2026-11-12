@@ -177,6 +177,7 @@ if (!function_exists('bws_meta_manager_init')) {
 		delete_option('bws_meta_conductor_settings');
 		delete_option('bws_meta_conductor_version');
 		delete_option('bws_mc_slug_escalation_schema');
+		delete_option('bws_mc_rule_type_id_schema');
 		delete_option('bws_title_slug_rule_status');
 		delete_option('bws_taxonomy_manager_settings'); // legacy
 		delete_option('bws_taxonomy_manager_version');  // legacy
@@ -220,6 +221,15 @@ if (!function_exists('bws_meta_manager_init')) {
 		// release after it ships (with the class, its harness and its flag option).
 		// The PHP floor guard: below 8.1 the plugin autoloader is never required.
 		if (version_compare(PHP_VERSION, '8.1', '>=') && \BWS\MetaConductor\Storage\SlugEscalationMigration::run()) {
+			\BWS\MetaConductor\Storage\StorageFactory::get_instance()->clear_cache();
+		}
+
+		// FW-63: the seven old rule-type ids become the ids that read like their
+		// labels. Same gating and PHP-floor reasoning as above. MUST run after the
+		// escalation rewrite, which still matches the old `title_slug_rules` string.
+		// Both migrations are deleted one minor release after they ship, the
+		// escalation one first (each with its class, harness and flag option).
+		if (version_compare(PHP_VERSION, '8.1', '>=') && \BWS\MetaConductor\Storage\RuleTypeIdMigration::run()) {
 			\BWS\MetaConductor\Storage\StorageFactory::get_instance()->clear_cache();
 		}
 

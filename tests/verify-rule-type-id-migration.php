@@ -124,6 +124,17 @@ foreach ([[], [S::OPTION_NAME => []], [S::OPTION_NAME => 'junk'], [S::OPTION_NAM
     $check("run() on empty/malformed option #$i: option unchanged", array_diff_key($GLOBALS['mc_opts'], [M::FLAG_OPTION => 1]) === $start);
 }
 
+// --- Sequencing: escalation first, then the id rewrite (FW-63 09). ------------
+
+$legacy = ['type' => 'title_slug_rules', 'name' => 'r', 'date_escalation' => true, 'date_field' => 'mc_event_date'];
+$GLOBALS['mc_opts'] = [S::OPTION_NAME => [S::KIND_FORMAT => [$legacy]]];
+$e = \BWS\MetaConductor\Storage\SlugEscalationMigration::run();
+$i = M::run();
+$r = get_option(S::OPTION_NAME)[S::KIND_FORMAT][0];
+$check('escalation then id: both report a rewrite', $e === true && $i === true);
+$check('escalation then id: new id AND slug_escalation ladder',
+    $r['type'] === 'title_slug_from_pattern' && $r['slug_escalation'] === '{date_year:mc_event_date}' && !array_key_exists('date_escalation', $r));
+
 // --- Report. -----------------------------------------------------------------
 
 if ($fail) {
