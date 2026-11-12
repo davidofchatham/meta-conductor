@@ -73,7 +73,7 @@ trait TermOperations {
      *
      * THE single source for the claim semantics (#38 cluster 2). It used to be
      * encoded twice — once as the switch inside `apply_terms_to_post` above,
-     * once as `PropagationHandler::write_would_change_terms`'s parallel switch
+     * once as the old propagation handler's `write_would_change_terms()` parallel switch
      * deciding whether that write was worth making. Two coupled switches with
      * no shared source: a change to one silently made the other's answer wrong,
      * and the failure is invisible in both directions (a skipped write that

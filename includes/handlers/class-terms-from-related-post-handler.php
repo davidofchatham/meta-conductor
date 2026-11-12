@@ -152,8 +152,11 @@ class TermsFromRelatedPostHandler extends UnifiedHandlerBase {
      */
     public function apply_to_post(int $post_id, array $rule): bool {
         $relationship = $this->relationship_for($rule);
-        $post         = get_post($post_id);
-        if (!$relationship || !$post || !$relationship->is_eligible_dependent($post, $rule)) {
+        if (!$relationship) {
+            return false;
+        }
+        $post = get_post($post_id);
+        if (!$post || !$relationship->is_eligible_dependent($post, $rule)) {
             return false;
         }
 
@@ -252,8 +255,11 @@ class TermsFromRelatedPostHandler extends UnifiedHandlerBase {
             return array();
         }
         $relationship = $this->relationship_for($rule);
-        $post         = get_post($post_id);
-        if (!$relationship || !$post || !$relationship->is_eligible_source($post, $rule)) {
+        if (!$relationship) {
+            return array();
+        }
+        $post = get_post($post_id);
+        if (!$post || !$relationship->is_eligible_source($post, $rule)) {
             return array();
         }
 
@@ -345,7 +351,8 @@ class TermsFromRelatedPostHandler extends UnifiedHandlerBase {
             return false;
         }
         foreach ($this->get_enabled_rules() as $rule) {
-            if (($rule['taxonomy'] ?? '') === $taxonomy) {
+            // The lost-terms capture is the parent relationship's alone.
+            if (($rule['relationship'] ?? '') === 'parent' && ($rule['taxonomy'] ?? '') === $taxonomy) {
                 return true;
             }
         }

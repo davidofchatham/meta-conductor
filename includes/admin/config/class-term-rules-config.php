@@ -23,7 +23,7 @@
  *      half — unique ids, a gate on every type-specific subfield, no gate on
  *      the shared ones — but only a real save proves the round-trip.
  *   2. Changing a row's `type` DISCARDS that row's type-specific values, by
- *      the same mechanism. That is correct behaviour (a parent-relationship rule's
+ *      the same mechanism. That is correct behavior (a parent-relationship rule's
  *      claim is meaningless on a date-window rule) but it is silent, so the
  *      `type` select says so in its own description.
  *

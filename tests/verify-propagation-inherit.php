@@ -125,8 +125,16 @@ $check('merge: a term-less parent leaves the child alone',
 $check('replace: a term-less parent still delivers its removals',
     $t([6, 8], [], 'replace', [8]) === [6]);
 
+// --- A relationship this handler has no graph for is skipped (FW-61 03). ------
+// Neither entry point may touch WordPress for such a row: no `get_post` shim
+// exists here, so a call that reached one would fatal.
+$unknown = ['relationship' => 'acf', 'taxonomy' => 'category'];
+$check('an unknown relationship applies nothing', $handler->apply_to_post(1, $unknown) === false);
+$check('an unknown relationship declares no fan-out', $handler->fan_out(1, $unknown) === []);
+$check('a row with no relationship applies nothing', $handler->apply_to_post(1, ['taxonomy' => 'category']) === false);
+
 // --- Report. ----------------------------------------------------------------
-$total = 23;
+$total = 26;
 if ($fail) {
     fwrite(STDERR, "\nPROPAGATION-INHERIT FAIL — " . count($fail) . "/$total assertions failed:\n");
     foreach ($fail as $f) { fwrite(STDERR, "  \xE2\x9C\x97 $f\n"); }
