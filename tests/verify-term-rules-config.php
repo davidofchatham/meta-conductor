@@ -126,7 +126,7 @@ use BWS\MetaConductor\Admin\WireframeBootstrap;
 use BWS\MetaConductor\Admin\Config\ConfigHelpers;
 use BWS\MetaConductor\Admin\Config\TermRulesConfig;
 use BWS\MetaConductor\Admin\Config\WireframeConfig;
-use BWS\MetaConductor\Handlers\HierarchicalHandler;
+use BWS\MetaConductor\Handlers\TermsFromTermHierarchyHandler;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 use Wireframe\Framework\Conditions;
 
@@ -259,14 +259,14 @@ $check('claim default is the builder\'s', ($claim['default'] ?? null) === $expec
 $behaviour_opts = array_keys($by_id['inheritance_behavior']['args']['options']);
 $check('the hierarchy outcomes offered are exactly the ones the handler maps',
     $behaviour_opts === array_keys((new ReflectionClassConstant(
-        HierarchicalHandler::class, 'BEHAVIOR_MAP'
+        TermsFromTermHierarchyHandler::class, 'BEHAVIOR_MAP'
     ))->getValue()));
 
 // Every offered outcome must produce a distinct, non-fallback row-title phrase.
 $phrases = [];
 foreach ($behaviour_opts as $outcome) {
     $phrases[] = WireframeBootstrap::snapshot_term_rule_labels([$KIND => [[
-        'type' => 'hierarchical_rules', 'taxonomy' => 'category',
+        'type' => 'terms_from_term_hierarchy', 'taxonomy' => 'category',
         'inheritance_behavior' => $outcome,
     ]]])[$KIND][0]['row_title'];
 }
@@ -330,7 +330,7 @@ $expected_visible = [
         'filter_taxonomies', 'filter_terms', 'start_date', 'end_date',
         'target_term_id', 'row_title',
     ],
-    'hierarchical_rules' => [
+    'terms_from_term_hierarchy' => [
         'type', 'enabled', 'taxonomy', 'hierarchical_taxonomy_note',
         'post_types', 'post_status',
         'inheritance_behavior', 'inheritance_depth', 'row_title',
@@ -402,7 +402,7 @@ $check('the type-keyed save projection is gone (#66)',
 // list: same rows, same order, still typed, `row_title` baked on.
 $snapshotted = WireframeBootstrap::snapshot_term_rule_labels([
     $KIND => [
-        ['type' => 'hierarchical_rules', 'taxonomy' => 'category'],
+        ['type' => 'terms_from_term_hierarchy', 'taxonomy' => 'category'],
         ['type' => 'propagation_rules', 'enabled' => false, 'taxonomy' => 'category'],
     ],
 ]);
@@ -410,7 +410,7 @@ $check('a rule-tab save payload carries the kind list and no type-keyed copy',
     array_keys($snapshotted) === [$KIND]);
 $check('the snapshot keeps every row, in order, still typed',
     array_column($snapshotted[$KIND], 'type')
-        === ['hierarchical_rules', 'propagation_rules']);
+        === ['terms_from_term_hierarchy', 'propagation_rules']);
 // FW-56: a row naming several taxonomies is ONE row with ONE title that names
 // them all — "Categories, Tags", not the first.
 $listed = WireframeBootstrap::snapshot_term_rule_labels([
@@ -490,7 +490,7 @@ $repair = new ReflectionMethod(WireframeBootstrap::class, 'repair_term_rows');
 $r = fn(array $rows) => $repair->invoke(null, $rows);
 
 $stored = [
-    ['type' => 'hierarchical_rules', 'enabled' => true, 'taxonomy' => 'category',
+    ['type' => 'terms_from_term_hierarchy', 'enabled' => true, 'taxonomy' => 'category',
      'hierarchy_direction' => 'parent_to_child', 'expansion_behavior' => 'merge'],
     ['type' => 'related_rules', 'trigger_term_id' => '12', 'target_term_id' => 9],
     ['type' => 'related_post_terms_rules', 'acf_field_name' => 'event:ref',

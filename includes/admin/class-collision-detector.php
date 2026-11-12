@@ -63,9 +63,9 @@
 namespace BWS\MetaConductor\Admin;
 
 use BWS\MetaConductor\Admin\Config\ConfigHelpers;
-use BWS\MetaConductor\Handlers\HierarchicalHandler;
+use BWS\MetaConductor\Handlers\TermsFromTermHierarchyHandler;
 use BWS\MetaConductor\RuleTypes\HierarchicalLevelRestrictionRules;
-use BWS\MetaConductor\RuleTypes\HierarchicalRules;
+use BWS\MetaConductor\RuleTypes\TermsFromTermHierarchyRules;
 use BWS\MetaConductor\RuleTypes\Registry;
 use BWS\MetaConductor\RuleTypes\RelatedRules;
 use BWS\MetaConductor\RuleTypes\TermCountRules;
@@ -291,7 +291,7 @@ class CollisionDetector {
      * @return array{0:string,1:array,2:array}
      */
     private static function diagnose(array $a, array $b): array {
-        $pair = self::as_pair($a, $b, HierarchicalRules::class, HierarchicalLevelRestrictionRules::class);
+        $pair = self::as_pair($a, $b, TermsFromTermHierarchyRules::class, HierarchicalLevelRestrictionRules::class);
 
         if ($pair !== null) {
             [$adds, $restricts] = $pair;
@@ -309,7 +309,7 @@ class CollisionDetector {
         // back on every pass. A child-to-parent rule is not this: with per-level on
         // the kept ancestors fill one term per depth, and with it off the cap keeps
         // the deepest term, so that pair gets the generic order warning below.
-        $count_pair = self::as_pair($a, $b, HierarchicalRules::class, TermCountRules::class);
+        $count_pair = self::as_pair($a, $b, TermsFromTermHierarchyRules::class, TermCountRules::class);
         if ($count_pair !== null && self::adds_descendants($count_pair[0]['row'])) {
             return ['count_vs_descendants', $count_pair[0], $count_pair[1]];
         }
@@ -353,7 +353,7 @@ class CollisionDetector {
     /**
      * The hierarchy rule's outcome — delegated, never re-derived.
      *
-     * `HierarchicalHandler::behavior_key()` is the single answer to "what does
+     * `TermsFromTermHierarchyHandler::behavior_key()` is the single answer to "what does
      * this row actually do", legacy `hierarchy_direction`/`expansion_behavior`
      * pair included, and it is already what the row-title snapshot reads. A
      * second switch here is the drift architecture.md invariant 17 warns about, and it
@@ -367,7 +367,7 @@ class CollisionDetector {
      *                applies nothing.
      */
     private static function inheritance_behavior(array $row): string {
-        return HierarchicalHandler::behavior_key($row);
+        return TermsFromTermHierarchyHandler::behavior_key($row);
     }
 
     private static function adds_ancestors(array $row): bool {

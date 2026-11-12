@@ -32,7 +32,7 @@ interface RuleStorage {
      * read path.
      *
      * @since 0.2.0
-     * @param string $type Rule type (hierarchical_rules, propagation_rules, etc.)
+     * @param string $type Rule type (terms_from_term_hierarchy, propagation_rules, etc.)
      * @param array  $filters Optional filters to apply:
      *                        - 'enabled' (bool): Filter by enabled status
      *                        - 'taxonomy' (string): Filter by taxonomy
@@ -42,7 +42,7 @@ interface RuleStorage {
      *
      * @example
      * $storage = StorageFactory::get_instance();
-     * $rules = $storage->get_rules('hierarchical_rules', [
+     * $rules = $storage->get_rules('terms_from_term_hierarchy', [
      *     'enabled' => true,
      *     'taxonomy' => 'category'
      * ]);
@@ -99,7 +99,7 @@ interface RuleStorage {
      * @return array|null Rule data array or null if not found
      *
      * @example
-     * $rule = $storage->get_rule('hierarchical_rules', 0);
+     * $rule = $storage->get_rule('terms_from_term_hierarchy', 0);
      */
     public function get_rule(string $type, int $rule_id): ?array;
 

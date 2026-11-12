@@ -80,7 +80,7 @@ function mcae_choice( $kind, $pos ) {
 
 function mcae_hier_row( $enabled = true ) {
 	return array(
-		'type'                 => 'hierarchical_rules',
+		'type'                 => 'terms_from_term_hierarchy',
 		'enabled'              => $enabled,
 		'taxonomy'             => 'mc_topic',
 		'post_types'           => array( 'mc_item' ),

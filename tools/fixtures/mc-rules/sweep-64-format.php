@@ -177,7 +177,7 @@ function mc64_rename_back( $post_id, $title, $slug ) {
 }
 
 $subject = mc64_subject();
-$HIER    = 'hierarchical_rules';
+$HIER    = 'terms_from_term_hierarchy';
 
 switch ( $step ) {
 

@@ -96,7 +96,7 @@ $storage_over = static function (array $option): OptionRuleStorage {
 // projection must still canonicalize.
 
 $settings = [
-    'hierarchical_rules' => [
+    'terms_from_term_hierarchy' => [
         ['name' => 'H1', 'taxonomy' => 'category', 'enabled' => true],
         ['name' => 'H2', 'taxonomy' => 'category', 'enabled' => false],
     ],
@@ -142,7 +142,7 @@ $settings = [
 ];
 
 $all_types = [
-    'hierarchical_rules',
+    'terms_from_term_hierarchy',
     'propagation_rules',
     'related_rules',
     'time_based_rules',
@@ -189,9 +189,9 @@ $check('a pre-0.8.0 option reads as no rules',
     $storage_over($settings)->get_kind_rules(OptionRuleStorage::KIND_TERM) === []);
 $check('a stored kind list is read as it stands, legacy arrays beside it ignored',
     array_column($storage_over([
-        'hierarchical_rules'           => [['taxonomy' => 'post_tag', 'name' => 'ghost']],
+        'terms_from_term_hierarchy'    => [['taxonomy' => 'post_tag', 'name' => 'ghost']],
         OptionRuleStorage::KIND_TERM   => [
-            ['type' => 'hierarchical_rules', 'taxonomy' => 'category', 'name' => 'second'],
+            ['type' => 'terms_from_term_hierarchy', 'taxonomy' => 'category', 'name' => 'second'],
             ['type' => 'propagation_rules',  'taxonomy' => 'category', 'name' => 'first'],
         ],
     ])->get_kind_rules(OptionRuleStorage::KIND_TERM), 'name') === ['second', 'first']);
@@ -241,7 +241,7 @@ $check('the term kind reports its migrated types — all seven as of term_count_
         'related_post_terms_rules',
         'time_based_rules',
         'related_rules',
-        'hierarchical_rules',
+        'terms_from_term_hierarchy',
         'hierarchical_level_restriction_rules',
         'term_count_rules',
     ]);
@@ -301,8 +301,8 @@ foreach (OptionRuleStorage::all_types() as $type) {
         && $row['filter_terms'] === [5]);
 }
 $check('canonical: a slug list passes through, an empty target reads as 0',
-    $canon(['type' => 'hierarchical_rules', 'post_types' => ['page', 'post'], 'target_term_id' => []])
-        === ['type' => 'hierarchical_rules', 'post_types' => ['page', 'post'], 'target_term_id' => 0, 'id' => 0]);
+    $canon(['type' => 'terms_from_term_hierarchy', 'post_types' => ['page', 'post'], 'target_term_id' => []])
+        === ['type' => 'terms_from_term_hierarchy', 'post_types' => ['page', 'post'], 'target_term_id' => 0, 'id' => 0]);
 $check('canonical: an absent field stays absent — empty means all, read `?? []`',
     !array_key_exists('post_types', $canon(['type' => 'propagation_rules'])));
 
@@ -310,7 +310,7 @@ $check('canonical: an absent field stays absent — empty means all, read `?? []
 // `get_rule()` takes. H2 in the term list sits at kind
 // position 7 but must still report id 1; the sole title_slug rule must be 0.
 $check('id is the per-type index, not the kind-list position',
-    array_column($of_type($projected, 'hierarchical_rules'), 'id') === [0, 1]
+    array_column($of_type($projected, 'terms_from_term_hierarchy'), 'id') === [0, 1]
     && array_column($of_type($projected, 'related_rules'), 'id') === [0, 1]
     && $of_type($projected, 'hierarchical_level_restriction_rules')[0]['id'] === 0
     && $of_type($projected, 'title_slug_rules')[0]['id'] === 0);
@@ -318,16 +318,16 @@ $check('id is the per-type index, not the kind-list position',
 // An `id` already on the row is left alone — it is the caller's, not ours.
 $check('a row carrying its own id keeps it',
     OptionRuleStorage::project_kind_rules([
-        ['type' => 'hierarchical_rules', 'id' => 7],
+        ['type' => 'terms_from_term_hierarchy', 'id' => 7],
     ])[0]['id'] === 7);
 
 // Rows are read in AUTHORED order. Nothing may regroup them by type: order is
 // the composition semantics a dispatcher pass executes in (architecture.md invariant 17).
 $interleaved = $storage_over([
     OptionRuleStorage::KIND_TERM => [
-        ['type' => 'hierarchical_rules', 'name' => 'a'],
+        ['type' => 'terms_from_term_hierarchy', 'name' => 'a'],
         ['type' => 'propagation_rules',  'name' => 'b'],
-        ['type' => 'hierarchical_rules', 'name' => 'c'],
+        ['type' => 'terms_from_term_hierarchy', 'name' => 'c'],
     ],
     OptionRuleStorage::KIND_FORMAT => [],
 ]);
@@ -335,11 +335,11 @@ $check('the kind read preserves interleaved authored order',
     array_column($interleaved->get_kind_rules(OptionRuleStorage::KIND_TERM), 'name')
         === ['a', 'b', 'c']);
 $check('a type read is that list filtered, still in authored order',
-    array_column($interleaved->get_rules('hierarchical_rules'), 'name') === ['a', 'c']);
+    array_column($interleaved->get_rules('terms_from_term_hierarchy'), 'name') === ['a', 'c']);
 $check('a type read numbers ids within its own type',
-    array_column($interleaved->get_rules('hierarchical_rules'), 'id') === [0, 1]);
+    array_column($interleaved->get_rules('terms_from_term_hierarchy'), 'id') === [0, 1]);
 $check('a caller-supplied type filter cannot widen a type read',
-    $interleaved->get_rules('propagation_rules', ['type' => 'hierarchical_rules'])
+    $interleaved->get_rules('propagation_rules', ['type' => 'terms_from_term_hierarchy'])
         === $interleaved->get_rules('propagation_rules'));
 $check('there is no post_type read filter — post-type gating is should_process_post() (#72)',
     $interleaved->get_kind_rules(OptionRuleStorage::KIND_TERM, ['post_type' => 'page'])
@@ -352,9 +352,9 @@ $check('there is no post_type read filter — post-type gating is should_process
 
 $seed = static fn(): array => [
     OptionRuleStorage::KIND_TERM => [
-        ['type' => 'hierarchical_rules', 'name' => 'h0', 'enabled' => true],
+        ['type' => 'terms_from_term_hierarchy', 'name' => 'h0', 'enabled' => true],
         ['type' => 'propagation_rules',  'name' => 'p0', 'enabled' => true],
-        ['type' => 'hierarchical_rules', 'name' => 'h1', 'enabled' => false],
+        ['type' => 'terms_from_term_hierarchy', 'name' => 'h1', 'enabled' => false],
     ],
     OptionRuleStorage::KIND_FORMAT => [
         ['type' => 'title_slug_rules', 'name' => 's0', 'enabled' => true],
@@ -364,10 +364,10 @@ $seed = static fn(): array => [
 // get_rule() indexes by the per-type id, across a cross-type list.
 $s = $storage_over($seed());
 $check('get_rule reads the type\'s Nth rule, not the list\'s Nth',
-    ($s->get_rule('hierarchical_rules', 1)['name'] ?? '') === 'h1');
+    ($s->get_rule('terms_from_term_hierarchy', 1)['name'] ?? '') === 'h1');
 $check('get_rule past the end of a type is null',
-    $s->get_rule('hierarchical_rules', 2) === null);
-$check('get_rule rejects a negative id', $s->get_rule('hierarchical_rules', -1) === null);
+    $s->get_rule('terms_from_term_hierarchy', 2) === null);
+$check('get_rule rejects a negative id', $s->get_rule('terms_from_term_hierarchy', -1) === null);
 // =============================================================================
 // ACF FIELD IDENTITY (#25) — the stored value carries the field KEY.
 //

@@ -24,7 +24,7 @@ if (!is_array($opt)) {
 
 // 1. Pre-#66 type-keyed arrays still present (the pre-0.8.0 guard notice's trigger).
 $legacy_keys = [
-    'hierarchical_rules', 'propagation_rules', 'related_rules', 'time_based_rules',
+    'terms_from_term_hierarchy', 'propagation_rules', 'related_rules', 'time_based_rules',
     'related_post_terms_rules', 'hierarchical_level_restriction_rules', 'title_slug_rules',
 ];
 foreach ($legacy_keys as $k) {
@@ -55,7 +55,7 @@ foreach ((array) ($opt['term_rules'] ?? []) as $i => $row) {
         continue;
     }
 
-    if ($type === 'hierarchical_rules') {
+    if ($type === 'terms_from_term_hierarchy') {
         foreach (['hierarchy_direction', 'expansion_behavior'] as $k) {
             if (isset($row[$k])) {
                 $findings[] = "$at: legacy key '$k'";

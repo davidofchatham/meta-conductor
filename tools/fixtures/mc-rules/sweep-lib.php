@@ -7,7 +7,7 @@
  * re-seed. Load at the top of a sweep eval:
  *
  *   require_once '<mount>/tools/fixtures/mc-rules/sweep-lib.php';
- *   mc_isolate( 'hierarchical_rules' );
+ *   mc_isolate( 'terms_from_term_hierarchy' );
  *   wp_set_object_terms( $id, array( $harbor ), 'mc_topic' );
  *   mc_assert( '§1a', mc_terms( $id ), array( 13, 14, 15, 16 ) );
  *   mc_restore();
@@ -196,7 +196,7 @@ if ( ! function_exists( 'mc_isolate' ) ) {
 	 * REPAIRS any rule the previous scenario edited (mode, triggers, etc.).
 	 *
 	 * @param string|string[] $keep_types One or more rule-type keys to keep
-	 *                                     (e.g. 'hierarchical_rules'). Others emptied.
+	 *                                     (e.g. 'terms_from_term_hierarchy'). Others emptied.
 	 * @return array The rule types that were kept.
 	 */
 	function mc_isolate( $keep_types ) {

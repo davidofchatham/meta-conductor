@@ -54,7 +54,7 @@ $expected = [
         'related_post_terms_rules',
         'time_based_rules',
         'related_rules',
-        'hierarchical_rules',
+        'terms_from_term_hierarchy',
         'hierarchical_level_restriction_rules',
         'term_count_rules',
     ],
@@ -130,7 +130,7 @@ foreach ($all as $key => $d) {
 }
 
 // The runtime question the dispatchers ask before running a row (ticket 10).
-$check('a registered type is known', Registry::known('hierarchical_rules'));
+$check('a registered type is known', Registry::known('terms_from_term_hierarchy'));
 $check('a type with no descriptor is not known — the pass skips it', !Registry::known('nope_rules'));
 $check('an untyped row is not known', !Registry::known(''));
 

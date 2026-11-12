@@ -1,13 +1,13 @@
 <?php
 /**
- * Descriptor for `hierarchical_rules` rows.
+ * Descriptor for `terms_from_term_hierarchy` rows.
  *
  * @since 0.10.0
  */
 
 namespace BWS\MetaConductor\RuleTypes;
 
-use BWS\MetaConductor\Handlers\HierarchicalHandler;
+use BWS\MetaConductor\Handlers\TermsFromTermHierarchyHandler;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 
 // Prevent direct access
@@ -16,13 +16,13 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Named after the storage key `hierarchical_rules`, not a domain name — FW-14 renamed `label()` only;
- * FW-63 renames the id and the class.
+ * The id and class read like the label. The old stored string `hierarchical_rules`
+ * is rewritten by Storage\RuleTypeIdMigration.
  */
-final class HierarchicalRules extends RuleType {
+final class TermsFromTermHierarchyRules extends RuleType {
 
     public function type(): string {
-        return 'hierarchical_rules';
+        return 'terms_from_term_hierarchy';
     }
 
     public function kind(): string {
@@ -34,7 +34,7 @@ final class HierarchicalRules extends RuleType {
     }
 
     public function handler_class(): string {
-        return HierarchicalHandler::class;
+        return TermsFromTermHierarchyHandler::class;
     }
 
     public function target_key(array $rule): ?string {
@@ -47,7 +47,7 @@ final class HierarchicalRules extends RuleType {
      *   e.g. "Inherit Categories: ancestors (all levels)"
      *        "Pages: Inherit Shakers: ancestors and descendants (one level)"
      *
-     * The outcome phrase is derived through HierarchicalHandler::behavior_key()
+     * The outcome phrase is derived through TermsFromTermHierarchyHandler::behavior_key()
      * rather than read off the row, so a legacy row storing only the old
      * direction/expansion pair still gets the title its behavior deserves
      * (#16).
@@ -61,7 +61,7 @@ final class HierarchicalRules extends RuleType {
             'both_always'        => __('ancestors and descendants', 'meta-conductor'),
         ];
 
-        $key     = HierarchicalHandler::behavior_key($row);
+        $key     = TermsFromTermHierarchyHandler::behavior_key($row);
         $outcome = $outcomes[$key] ?? __('nothing', 'meta-conductor');
 
         $depth = (($row['inheritance_depth'] ?? 'all') === 'immediate')
@@ -94,14 +94,14 @@ final class HierarchicalRules extends RuleType {
      * outcomes, not mechanisms, so they are collapsed into ONE selector,
      * `inheritance_behavior`, whose five options ARE the five useful
      * outcomes. The handler maps it back to the pair it already implements
-     * (`HierarchicalHandler::resolve_behavior`), so no expansion code changed.
+     * (`TermsFromTermHierarchyHandler::resolve_behavior`), so no expansion code changed.
      *
      * A legacy row carrying only the old pair still reads correctly at
      * runtime (`resolve_behavior()` falls back to it). The admin-load rewrite
      * that once converted such rows was deleted with FW-39: no stored row
      * still carries the pair.
      *
-     * Taken now because the schema window is free — hierarchical rules are
+     * Taken now because the schema window is free — the term-hierarchy rule type is
      * test-site only (a rule type not in real use needs no migration) — and it closes once
      * they are not.
      *

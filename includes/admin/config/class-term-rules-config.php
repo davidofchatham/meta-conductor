@@ -40,9 +40,8 @@
  * select's option keys), and a stored row must render with its own values,
  * never config defaults — which is why no row may be left in a legacy shape.
  *
- * The stored `type` value is the LEGACY TYPE KEY VERBATIM
- * (`hierarchical_rules`, not `hierarchical`) — rule-type renaming stays
- * deferred (FW-63), and reusing the key is what lets every handler's
+ * The stored `type` value is the descriptor's id VERBATIM
+ * (`terms_from_term_hierarchy`) — that is what lets every handler's
  * `get_enabled_rules()` filter on `get_rule_type()` with no mapping table.
  * The author-facing labels are each descriptor's `label()`; the stored values
  * never change with them.

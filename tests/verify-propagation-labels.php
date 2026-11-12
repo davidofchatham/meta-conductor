@@ -5,7 +5,7 @@
  * Exercises WireframeBootstrap::snapshot_term_rule_labels() end-to-end with
  * stubbed WP, WITHOUT booting WordPress. Catches what H1/H2 cannot:
  *   - cross-namespace FQN resolution (the Config\ConfigHelpers and
- *     Handlers\HierarchicalHandler calls the autoload harness can't see — it
+ *     Handlers\TermsFromTermHierarchyHandler calls the autoload harness can't see — it
  *     checks class_exists, not call sites)
  *   - dispatch on each row's `type`, which is what one repeater made possible
  *     and what a wrong `type` value would silently break
@@ -61,7 +61,7 @@ if (!function_exists('get_taxonomy')) {
     }
 }
 
-// The real autoloader: HierarchicalHandler::behavior_key() is part of the
+// The real autoloader: TermsFromTermHierarchyHandler::behavior_key() is part of the
 // hierarchical title, and loading that class pulls its base + traits.
 require dirname(__DIR__) . '/vendor/autoload.php';
 require dirname(__DIR__) . '/autoload.php';
@@ -121,7 +121,7 @@ $check('claim suffix = deferring',  str_contains($t, '(deferring)'));
 // --- Hierarchical: the #16 outcome selector reaches the title. --------------
 $check('hierarchical: outcome + depth',
     $title([
-        'type'                 => 'hierarchical_rules',
+        'type'                 => 'terms_from_term_hierarchy',
         'enabled'              => true,
         'taxonomy'             => 'category',
         'inheritance_behavior' => 'both_always',
@@ -130,7 +130,7 @@ $check('hierarchical: outcome + depth',
 
 $check('hierarchical: default depth reads all levels',
     str_contains($title([
-        'type'                 => 'hierarchical_rules',
+        'type'                 => 'terms_from_term_hierarchy',
         'taxonomy'             => 'breaker',
         'inheritance_behavior' => 'descendants_smart',
     ]), 'descendants when none picked (all levels)'));
@@ -139,7 +139,7 @@ $check('hierarchical: default depth reads all levels',
 // still name the outcome that pair produces, not "(nothing)".
 $check('hierarchical: legacy pair maps to an outcome',
     str_contains($title([
-        'type'               => 'hierarchical_rules',
+        'type'               => 'terms_from_term_hierarchy',
         'taxonomy'           => 'category',
         'hierarchy_direction' => 'both',
         'expansion_behavior' => 'never',
@@ -147,7 +147,7 @@ $check('hierarchical: legacy pair maps to an outcome',
 
 $check('hierarchical: disabled prefix applies',
     str_starts_with($title([
-        'type'                 => 'hierarchical_rules',
+        'type'                 => 'terms_from_term_hierarchy',
         'enabled'              => false,
         'taxonomy'             => 'category',
         'inheritance_behavior' => 'ancestors',

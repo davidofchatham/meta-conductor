@@ -1,6 +1,6 @@
 <?php
 /**
- * §1d regression guard — HierarchicalHandler double-save in ONE request.
+ * §1d regression guard — TermsFromTermHierarchyHandler double-save in ONE request.
  *
  * Proves the removed `$processed[post:tax]` dedup map (commit 03ee8b4, 0.6.2)
  * no longer silently skips a second legitimate edit of the same post+taxonomy
@@ -33,7 +33,7 @@ require_once __DIR__ . '/sweep-lib.php';
 
 use BWS\MetaConductor\Core\TermDispatcher;
 
-mc_isolate( 'hierarchical_rules' );
+mc_isolate( 'terms_from_term_hierarchy' );
 $id = mc_pid( 'item-solo-a' );
 mc_reset_subject( $id );
 

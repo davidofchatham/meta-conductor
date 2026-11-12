@@ -50,7 +50,7 @@ Status (L1)          — second root: related/time-based targets live here so
 
 ---
 
-## 1. hierarchical_rules — HierarchicalHandler
+## 1. terms_from_term_hierarchy — TermsFromTermHierarchyHandler
 
 | Aspect | Need |
 |---|---|
@@ -213,7 +213,7 @@ Two constraints that shape EVERY per-handler sweep — not §1-specific:
    is a silent no-op; give each user-edit scenario its **own eval** (one WP-CLI
    call = one request = fresh dedup), or a single-eval multi-edit sweep reports
    artifacts (e.g. "removal did nothing"), not real behavior.
-   **`HierarchicalHandler` no longer has this map** — it was removed (commit
+   **`TermsFromTermHierarchyHandler` no longer has this map** — it was removed (commit
    `03ee8b4`) because it silently skipped legitimate double-saves. Re-entrant
    recursion is still blocked by the separate `$processing` flag, and `apply_rule`
    recomputes from current terms + `_bws_auto_terms` fresh each call (idempotent),
@@ -801,7 +801,7 @@ Surviving keys per row:
 |---|---|
 | `propagation_rules` | type, enabled, taxonomy, post_types, hierarchical_post_type_note, post_status, conflict_handling, row_title |
 | `time_based_rules` | type, enabled, post_types, post_status, filter_taxonomies, filter_terms, start_date, end_date, target_term_id, row_title |
-| `hierarchical_rules` | type, enabled, taxonomy, hierarchical_taxonomy_note, post_types, post_status, inheritance_behavior, inheritance_depth, row_title |
+| `terms_from_term_hierarchy` | type, enabled, taxonomy, hierarchical_taxonomy_note, post_types, post_status, inheritance_behavior, inheritance_depth, row_title |
 | `hierarchical_level_restriction_rules` | type, enabled, taxonomy, hierarchical_taxonomy_note, post_types, post_status, restriction_mode, include_ancestors, row_title |
 
 (The two `*_note` keys are `html` subfields; Wireframe stores them as `null`.
@@ -1035,7 +1035,7 @@ rule skip a post outside it, then fire once the post matched — this sweep is
 that proof, not new handler code.
 
 **§67c the standard shape** ✅ `UnifiedHandlerBase::should_process_post()`
-gates the post being WRITTEN. Live subject: `HierarchicalHandler`, draft
+gates the post being WRITTEN. Live subject: `TermsFromTermHierarchyHandler`, draft
 `item-solo-a`. Rule `post_status: [publish]` + assign Harbor → gated OUT, only
 Harbor lands (no ancestor expansion). Same edit, rule `post_status: [draft]` →
 gated IN, full ancestor chain expands. `HierarchicalLevelRestrictionHandler`,

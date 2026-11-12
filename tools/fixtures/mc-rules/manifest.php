@@ -172,7 +172,7 @@ return array(
 		// expansion_behavior pair in 0.8.0 (#16). The handler still reads the
 		// legacy pair when the outcome key is absent, but a fixture is a
 		// statement about the CURRENT schema, so it seeds the new key.
-		'hierarchical_rules' => array(
+		'terms_from_term_hierarchy' => array(
 			array(
 				'enabled'              => true,
 				'taxonomy'             => 'mc_topic',

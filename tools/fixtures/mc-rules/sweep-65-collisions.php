@@ -161,7 +161,7 @@ switch ( $step ) {
 		$a(
 			'§65b #51 names the hierarchy rule and the restriction rule',
 			array( $ancestors[0]['a']['type'], $ancestors[0]['b']['type'] ),
-			array( 'hierarchical_rules', 'hierarchical_level_restriction_rules' )
+			array( 'terms_from_term_hierarchy', 'hierarchical_level_restriction_rules' )
 		);
 		$a( '§65b #51 names the shared taxonomy', $ancestors[0]['target'], 'MC Topics' );
 		$msg = CollisionDetector::message( $ancestors[0] );

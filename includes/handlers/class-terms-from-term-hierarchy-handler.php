@@ -1,6 +1,6 @@
 <?php
 /**
- * Hierarchical Handler
+ * Terms-from-term-hierarchy handler
  *
  * Applies parent/ancestor terms when children are selected (child_to_parent),
  * child terms when parent is selected (parent_to_child), or both.
@@ -22,7 +22,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-class HierarchicalHandler extends UnifiedHandlerBase {
+class TermsFromTermHierarchyHandler extends UnifiedHandlerBase {
 
     private const AUTO_TERMS_META = '_bws_auto_terms';
 

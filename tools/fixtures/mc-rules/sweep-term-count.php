@@ -297,7 +297,7 @@ switch ( $step ) {
 		mc_write_ordered_rules(
 			array(
 				array(
-					'type'                 => 'hierarchical_rules',
+					'type'                 => 'terms_from_term_hierarchy',
 					'enabled'              => true,
 					'taxonomy'             => 'mc_topic',
 					'post_types'           => array( 'mc_item' ),
@@ -344,7 +344,7 @@ switch ( $step ) {
 						'per_level'  => $per_level,
 					),
 					array(
-						'type'                 => 'hierarchical_rules',
+						'type'                 => 'terms_from_term_hierarchy',
 						'enabled'              => true,
 						'taxonomy'             => 'mc_topic',
 						'post_types'           => array( 'mc_item' ),

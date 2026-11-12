@@ -54,7 +54,7 @@ abstract class UnifiedHandlerBase {
      * the one place it lives (FW-39 ticket 12). Every handler is named by
      * exactly one descriptor (H16).
      *
-     * @return string Rule type key (e.g., 'hierarchical_rules')
+     * @return string Rule type key (e.g., 'terms_from_term_hierarchy')
      */
     final protected function get_rule_type(): string {
         return Registry::for_handler(static::class)->type();

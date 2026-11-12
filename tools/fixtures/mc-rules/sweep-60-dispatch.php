@@ -52,7 +52,7 @@ use BWS\MetaConductor\Storage\StorageFactory;
 
 $step = $args[0] ?? 'order';
 
-$HIER = 'hierarchical_rules';
+$HIER = 'terms_from_term_hierarchy';
 $LR   = 'hierarchical_level_restriction_rules';
 
 /**

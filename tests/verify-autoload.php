@@ -69,7 +69,7 @@ $classes = [
     'BWS\\MetaConductor\\Storage\\StorageFactory',
     // Handlers\
     'BWS\\MetaConductor\\Handlers\\UnifiedHandlerBase',
-    'BWS\\MetaConductor\\Handlers\\HierarchicalHandler',
+    'BWS\\MetaConductor\\Handlers\\TermsFromTermHierarchyHandler',
     'BWS\\MetaConductor\\Handlers\\PropagationHandler',
     'BWS\\MetaConductor\\Handlers\\RelatedHandler',
     'BWS\\MetaConductor\\Handlers\\TimeBasedHandler',
@@ -87,7 +87,7 @@ $classes = [
     'BWS\\MetaConductor\\RuleTypes\\RelatedPostTermsRules',
     'BWS\\MetaConductor\\RuleTypes\\TimeBasedRules',
     'BWS\\MetaConductor\\RuleTypes\\RelatedRules',
-    'BWS\\MetaConductor\\RuleTypes\\HierarchicalRules',
+    'BWS\\MetaConductor\\RuleTypes\\TermsFromTermHierarchyRules',
     'BWS\\MetaConductor\\RuleTypes\\HierarchicalLevelRestrictionRules',
     'BWS\\MetaConductor\\RuleTypes\\TermCountRules',
     'BWS\\MetaConductor\\RuleTypes\\TitleSlugRules',

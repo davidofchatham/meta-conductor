@@ -76,7 +76,7 @@ function mc67_author( array $rows ) {
 
 function mc67_hierarchical_row() {
 	return array(
-		'type'                 => 'hierarchical_rules',
+		'type'                 => 'terms_from_term_hierarchy',
 		'enabled'              => true,
 		'taxonomy'             => 'mc_topic',
 		'post_types'           => array( 'mc_item' ),

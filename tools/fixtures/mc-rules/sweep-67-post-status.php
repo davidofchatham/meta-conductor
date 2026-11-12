@@ -13,7 +13,7 @@
  * Two enforcement shapes exist, and this sweep covers both:
  *
  *   §67c  The standard shape — `UnifiedHandlerBase::should_process_post()`
- *         gates the post being WRITTEN. `HierarchicalHandler` is the live
+ *         gates the post being WRITTEN. `TermsFromTermHierarchyHandler` is the live
  *         subject; `HierarchicalLevelRestrictionHandler`, `PropagationHandler`,
  *         `TimeBasedHandler` and `RelatedHandler` call the identical base
  *         method at the top of their own `apply_to_post()` (grep-confirmed,
@@ -87,7 +87,7 @@ switch ( $step ) {
 		// Gate excludes the subject's own status: expect the write skipped —
 		// only Harbor lands, no ancestor expansion.
 		mc67ps_author( array( array(
-			'type'                 => 'hierarchical_rules',
+			'type'                 => 'terms_from_term_hierarchy',
 			'enabled'              => true,
 			'taxonomy'             => 'mc_topic',
 			'post_types'           => array( 'mc_item' ),
@@ -103,7 +103,7 @@ switch ( $step ) {
 		// Same edit, gate now includes the subject's status: expect the
 		// applier to run and expand ancestors.
 		mc67ps_author( array( array(
-			'type'                 => 'hierarchical_rules',
+			'type'                 => 'terms_from_term_hierarchy',
 			'enabled'              => true,
 			'taxonomy'             => 'mc_topic',
 			'post_types'           => array( 'mc_item' ),

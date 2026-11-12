@@ -47,14 +47,14 @@ try {
 	$check( 'the sweep runs as a user who may see the notice', current_user_can( 'manage_options' ) );
 
 	$check( '§guard-a legacy rows with no kind list raise the notice', $notice_for( array(
-		'hierarchical_rules' => array( array( 'taxonomy' => 'category', 'enabled' => true ) ),
-		'time_based_rules'   => array(),
+		'terms_from_term_hierarchy' => array( array( 'taxonomy' => 'category', 'enabled' => true ) ),
+		'time_based_rules'          => array(),
 	) ) );
 
 	$check( '§guard-b empty legacy arrays with no kind list stay quiet', ! $notice_for( array(
-		'hierarchical_rules' => array(),
-		'time_based_rules'   => array(),
-		'title_slug_rules'   => array(),
+		'terms_from_term_hierarchy' => array(),
+		'time_based_rules'          => array(),
+		'title_slug_rules'          => array(),
 	) ) );
 
 	$check( '§guard-c the current fixture stays quiet', ! $notice_for( is_array( $snapshot ) ? $snapshot : array() ) );
