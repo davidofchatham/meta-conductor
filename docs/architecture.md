@@ -336,7 +336,7 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
 
     **A provocation names entities; the pass decides their fate (#61).** Not
     every entry point is one of the dispatcher's own hooks — bulk apply and
-    `time_based`'s daily expiry sweep are ordinary callers. Both mark entities
+    `terms_from_date_window`'s daily expiry sweep are ordinary callers. Both mark entities
     dirty and drain; neither applies a rule. The sweep is the instructive one,
     because it used to do the opposite: it removed its own rule's target term
     from each post it found, which is one rule executed alone, outside any pass,
@@ -509,7 +509,7 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
     - **The detector resolves each rule's effect target, not one field name.**
       The obvious predicate — shared `taxonomy` plus overlapping post types —
       reads four of the six term types and is *blind* to the other two:
-      `time_based_rules` and `related_rules` have no `taxonomy` subfield at all
+      `terms_from_date_window` and `terms_from_trigger_term` have no `taxonomy` subfield at all
       (H11's expected-visible map is the proof) and name their target by
       `target_term_id`. So the target key is a taxonomy for the four that
       declare one, a **term** for the two term-pairing types, and the
@@ -614,7 +614,7 @@ Boot path: [class-wireframe-bootstrap.php](../includes/admin/class-wireframe-boo
 
 ### The ordered rule repeaters
 
-**One repeater per effect kind**, each bound to that kind's persisted list — `term_rules` (#57, #58) and `format_rules` (#59). No tab holds a per-type section any more. Each row carries a `type` select — storing the **legacy type key verbatim** (`hierarchical_rules`, not `hierarchical`), so `get_enabled_rules()` filters on `get_rule_type()` with no mapping table — and every type-specific subfield is `conditions`-gated on it. Restrict stopped being a tab because a level-restriction rule writes terms like every other rule in the list; Personalize went because it described rule types that do not exist yet.
+**One repeater per effect kind**, each bound to that kind's persisted list — `term_rules` (#57, #58) and `format_rules` (#59). No tab holds a per-type section any more. Each row carries a `type` select — storing the **registry id verbatim** (`terms_from_term_hierarchy`), so `get_enabled_rules()` filters on `get_rule_type()` with no mapping table — and every type-specific subfield is `conditions`-gated on it. Restrict stopped being a tab because a level-restriction rule writes terms like every other rule in the list; Personalize went because it described rule types that do not exist yet.
 
 Two Wireframe constraints drive the shape, both still true of the vendored 1.1.0: there is **no cross-repeater ordering primitive** (so an ordered list spanning rule types must be one repeater), and there is **no flexible content** (so that repeater has one fixed subfield superset, gated per type). Sanitization and value resolution are per top-level field, conditions resolve against a flat scope that inside a repeater is the row alone, and each page has its own `option_key`.
 
@@ -730,7 +730,7 @@ Invariants asserted by H10 (`tests/verify-kind-lists.php`):
 
 ### Field effects ride the `$data` seam
 
-**The format pass stays post-write only; a Set a field from a pattern rule (`field_transformation_rules`) returns its value in the seam's data array and the dispatcher writes it.** The array gains two maps: `fields[<name>]`, the computed value keyed by the field's **name** (tokens name fields by name), and `field_keys[<name>]`, the ACF **field key** the rule stores and the value is written by. `FormatDispatcher::write()` persists the difference through `update_field($key, …)` *before* the single row update, so the field's hidden reference row is maintained and neither `acf/save_post` nor `save_post` fires. A value equal to what the field holds is not written, and an all-empty result writes `''`. A **row rule** (a repeater subfield across every row) adds a third map, `rows[<repeater key>][<1-based row>][<subfield key>] = {name, meta, label, value}`, written through `update_sub_field([repeater key, row, subfield key], …)` under the same rules (slashed, unchanged cells skipped, write queue stood down); each row's tokens come from `RowTokenSource` — `field()` is that row's direct scalar siblings only, `terms()`/`published()` are the post's. The handler registers nothing and writes nothing — H13 holds its `apply_to_data()` to no write primitive (`update_field` included) and `write_fields()` to a by-key write.
+**The format pass stays post-write only; a Set a field from a pattern rule (`field_from_pattern`) returns its value in the seam's data array and the dispatcher writes it.** The array gains two maps: `fields[<name>]`, the computed value keyed by the field's **name** (tokens name fields by name), and `field_keys[<name>]`, the ACF **field key** the rule stores and the value is written by. `FormatDispatcher::write()` persists the difference through `update_field($key, …)` *before* the single row update, so the field's hidden reference row is maintained and neither `acf/save_post` nor `save_post` fires. A value equal to what the field holds is not written, and an all-empty result writes `''`. A **row rule** (a repeater subfield across every row) adds a third map, `rows[<repeater key>][<1-based row>][<subfield key>] = {name, meta, label, value}`, written through `update_sub_field([repeater key, row, subfield key], …)` under the same rules (slashed, unchanged cells skipped, write queue stood down); each row's tokens come from `RowTokenSource` — `field()` is that row's direct scalar siblings only, `terms()`/`published()` are the post's. The handler registers nothing and writes nothing — H13 holds its `apply_to_data()` to no write primitive (`update_field` included) and `write_fields()` to a by-key write.
 
 - **Slash the value.** `update_field()` unslashes on the way to `update_metadata()`, so an unslashed `a` stores as `ab`; the dispatcher passes `wp_slash()`ed values, as it does for the row update.
 - **The ACF write queue is stood down for the write** (`meta_conductor_acf_reapply_enabled` returns false inside `write_fields()`). Otherwise the pass's own `update_field()` would record the post and queue a second, idempotent pass at shutdown.

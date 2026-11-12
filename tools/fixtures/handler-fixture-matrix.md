@@ -640,7 +640,7 @@ this is date-independent.)
 
 - **§6g the collision on the SAVE path** ⚠ *known collision, warned not resolved
   — [#69](https://github.com/davidofchatham/meta-conductor/issues/69).* The
-  sharper of the two. `apply_time_based_rule()` ends with
+  sharper of the two. `apply_date_window_rule()` ends with
   `elseif (!$in_date_range && $has_target_term) { remove }`, evaluated per rule
   in array order against a freshly-read `$has_target_term`. So an out-of-range
   rule removes the target term whoever applied it — including a rule earlier in

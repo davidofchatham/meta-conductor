@@ -429,7 +429,7 @@ if (isset($descriptors['terms_from_date_window'])) {
                 $sweep_method
             );
         }
-        foreach (['remove_terms_from_post', 'apply_terms_to_post', 'apply_time_based_rule'] as $effect) {
+        foreach (['remove_terms_from_post', 'apply_terms_to_post', 'apply_date_window_rule'] as $effect) {
             if (preg_match('/\b' . $effect . '\s*\(/', $body)) {
                 $errors[] = sprintf(
                     '%s() calls %s() — the sweep selects posts; what happens to them is the pass\'s job, or one rule runs outside any pass and out of authored order (#61).',

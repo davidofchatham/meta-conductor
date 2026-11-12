@@ -106,6 +106,27 @@ class OptionRuleStorage implements RuleStorage {
     }
 
     /**
+     * The top-level keys a pre-0.8.0 option kept its rules under.
+     *
+     * Frozen: these are the type ids as they stood then, NOT the registry's
+     * current ids (FW-63 renamed seven of them). Never derive this list from
+     * the registry.
+     *
+     * @since 0.11.0
+     */
+    const PRE_08_TYPE_KEYS = [
+        'hierarchical_rules',
+        'propagation_rules',
+        'related_rules',
+        'time_based_rules',
+        'related_post_terms_rules',
+        'hierarchical_level_restriction_rules',
+        'term_count_rules',
+        'title_slug_rules',
+        'field_transformation_rules',
+    ];
+
+    /**
      * Does a stored option still hold pre-0.8.0 rule ROWS and no kind list?
      *
      * The migration off the type-keyed arrays was deleted after 0.9.x, so such
@@ -121,7 +142,7 @@ class OptionRuleStorage implements RuleStorage {
             return false;
         }
 
-        foreach (self::all_types() as $type) {
+        foreach (self::PRE_08_TYPE_KEYS as $type) {
             if (!empty($stored[$type]) && is_array($stored[$type])) {
                 return true;
             }

@@ -333,7 +333,7 @@ A rule-type name is composed from the axes: **Verb effect from basis**, with not
 
 #### FW-63 — Rule-type ids that read like their labels
 
-Stored type strings, descriptor classes and handler classes still carry the old names (`time_based`, `TimeBasedRules`, `PropagationHandler`), so work on a rule keeps turning up names that can't be recognized without context. Rename each internal id to its label minus the leading verb, in snake_case (`terms_from_date_window`); a *Restrict* type keeps its verb. FW-14 fixed the labels and the id table.
+Stored type strings, descriptor classes and handler classes carried the old names (`time_based`, `TimeBasedRules`, `PropagationHandler`), so work on a rule kept turning up names that couldn't be recognized without context. The fix renamed each internal id to its label minus the leading verb, in snake_case (`terms_from_date_window`); a *Restrict* type keeps its verb. FW-14 fixed the labels and the id table.
 
 - **Detail home:** `.scratch/fw-63-rule-type-ids/spec.md` (user stories, implementation and testing decisions). The id table, the labels and the grammar: FW-14, [CONTEXT.md](../CONTEXT.md) → *Rule type*.
 - **Progress:** Built 2026-11-12 on `feature/rule-type-ids`. Design settled 2026-11-11; refined in the 2026-11-12 grilling session (the settled points are in **Scope**). The stored-row rewrite is `Storage\RuleTypeIdMigration`, run from `check_version()` and deleted one minor release after it ships.
@@ -360,7 +360,7 @@ Per-rule claim overrides (stored `conflict_handling`) default to `merge` regardl
 
 A date-window rule's filter (`filter_taxonomies` / `filter_terms`) gates only the apply. Removal outside the window ignores it, so an in-range post that stops matching the filter keeps the target term until the window closes, then loses it whether or not it ever matched. That fits neither consistent reading. If the filter scopes **jurisdiction**, the rule should never touch a non-matching post, and the out-of-range removal reaches too far. If it is a **condition**, an in-range non-matching post should lose the term, and the rule should remove it.
 
-- **Detail home:** none yet. Code: `TermsFromDateWindowHandler::apply_time_based_rule()` (the apply and remove branches) and `expired_rule_posts()` (the cron selection, which ignores the filter too). Ownership model: [architecture.md](architecture.md) invariant 19, [CONTEXT.md](../CONTEXT.md) → *Claim*.
+- **Detail home:** none yet. Code: `TermsFromDateWindowHandler::apply_date_window_rule()` (the apply and remove branches) and `expired_rule_posts()` (the cron selection, which ignores the filter too). Ownership model: [architecture.md](architecture.md) invariant 19, [CONTEXT.md](../CONTEXT.md) → *Claim*.
 - **Progress:** Not started. Found in the 2026-09-24 architecture review. The current behavior is sweep-asserted (matrix §6c/§6d), so either answer changes a sweep expectation, and changes behavior if a live site runs a filtered date-window rule.
 - **Blocked by:** `decision:jurisdiction or condition` • **Interacts with:** FW-3, FW-24
 

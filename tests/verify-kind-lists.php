@@ -168,28 +168,47 @@ foreach (OptionRuleStorage::all_types() as $type) {
 // 1. THE PRE-0.8.0 GUARD — legacy ROWS with no kind list, and nothing else.
 // =============================================================================
 
+// A pre-0.8.0 option keyed its arrays by the ids of THAT era, not today's
+// (FW-63 renamed seven). Hand-written on purpose: the guard must not follow
+// the registry.
+$pre08_ids = [
+    'terms_from_term_hierarchy' => 'hierarchical_rules',
+    'terms_from_trigger_term'   => 'related_rules',
+    'terms_from_date_window'    => 'time_based_rules',
+    'restrict_terms_by_level'   => 'hierarchical_level_restriction_rules',
+    'restrict_term_count'       => 'term_count_rules',
+    'title_slug_from_pattern'   => 'title_slug_rules',
+    'field_from_pattern'        => 'field_transformation_rules',
+];
+$pre08 = [];
+foreach ($settings as $key => $value) {
+    $pre08[$pre08_ids[$key] ?? $key] = $value;
+}
+
 $check('legacy rows and no kind lists trip the guard',
-    OptionRuleStorage::holds_pre_08_rows($settings) === true);
+    OptionRuleStorage::holds_pre_08_rows($pre08) === true);
 $check('one legacy row is enough',
-    OptionRuleStorage::holds_pre_08_rows(['title_slug_from_pattern' => [['name' => 'S1']]]) === true);
+    OptionRuleStorage::holds_pre_08_rows(['title_slug_rules' => [['name' => 'S1']]]) === true);
+$check('today\'s ids are not a pre-0.8.0 shape',
+    OptionRuleStorage::holds_pre_08_rows(['title_slug_from_pattern' => [['name' => 'S1']]]) === false);
 $check('empty legacy arrays (a 0.7.x site with no rules) do not',
-    OptionRuleStorage::holds_pre_08_rows(array_fill_keys($all_types, [])) === false);
+    OptionRuleStorage::holds_pre_08_rows(array_fill_keys(OptionRuleStorage::PRE_08_TYPE_KEYS, [])) === false);
 $check('a present kind list means the site already crossed 0.8.0',
-    OptionRuleStorage::holds_pre_08_rows($settings + $lists) === false);
+    OptionRuleStorage::holds_pre_08_rows($pre08 + $lists) === false);
 $check('a fresh install (empty option) does not',
     OptionRuleStorage::holds_pre_08_rows([]) === false);
 $check('non-rule globals and garbage buckets do not',
     OptionRuleStorage::holds_pre_08_rows([
         'conflict_handling_overrides' => [['taxonomy' => 'category', 'mode' => 'replace']],
-        'terms_from_trigger_term'               => 'not-an-array',
+        'related_rules'               => 'not-an-array',
     ]) === false);
 
 // Storage no longer upgrades on read: that is WHY the guard exists.
 $check('a pre-0.8.0 option reads as no rules',
-    $storage_over($settings)->get_kind_rules(OptionRuleStorage::KIND_TERM) === []);
+    $storage_over($pre08)->get_kind_rules(OptionRuleStorage::KIND_TERM) === []);
 $check('a stored kind list is read as it stands, legacy arrays beside it ignored',
     array_column($storage_over([
-        'terms_from_term_hierarchy'    => [['taxonomy' => 'post_tag', 'name' => 'ghost']],
+        'hierarchical_rules'           => [['taxonomy' => 'post_tag', 'name' => 'ghost']],
         OptionRuleStorage::KIND_TERM   => [
             ['type' => 'terms_from_term_hierarchy', 'taxonomy' => 'category', 'name' => 'second'],
             ['type' => 'propagation_rules',  'taxonomy' => 'category', 'name' => 'first'],
