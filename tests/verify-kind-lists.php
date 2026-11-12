@@ -133,7 +133,7 @@ $settings = [
     'title_slug_from_pattern' => [
         ['name' => 'S1', 'enabled' => true, 'post_type' => 'event', 'title_pattern' => '{term:sport}'],
     ],
-    'field_transformation_rules' => [
+    'field_from_pattern' => [
         ['name' => 'F1', 'enabled' => true, 'post_types' => ['event'], 'target_field' => 'field_x', 'pattern' => '{term:sport}'],
     ],
     // Non-rule globals: never rows, never a guard trigger.
@@ -150,7 +150,7 @@ $all_types = [
     'restrict_terms_by_level',
     'restrict_term_count',
     'title_slug_from_pattern',
-    'field_transformation_rules',
+    'field_from_pattern',
 ];
 
 // The same rules in the kind-list shape, KIND_TYPES order — what a 0.8.0+ site
@@ -247,7 +247,7 @@ $check('the term kind reports its migrated types — all seven as of restrict_te
     ]);
 $check('the format kind reports its migrated type (#59)',
     OptionRuleStorage::migrated_types_for_kind(OptionRuleStorage::KIND_FORMAT)
-        === ['title_slug_from_pattern', 'field_transformation_rules']);
+        === ['title_slug_from_pattern', 'field_from_pattern']);
 
 // =============================================================================
 // 4. THE READ — projection, normalization, and the per-type `id`.

@@ -11,7 +11,7 @@
 
 namespace BWS\MetaConductor\Admin\Config;
 
-use BWS\MetaConductor\RuleTypes\FieldTransformationRules;
+use BWS\MetaConductor\RuleTypes\FieldFromPatternRules;
 use BWS\MetaConductor\RuleTypes\Registry;
 
 if (!defined('ABSPATH')) {
@@ -539,7 +539,7 @@ class ConfigHelpers {
      *
      * Writable DIRECT subfields of top-level repeaters follow the post-level
      * fields, one entry each, keyed `row|<repeater key>|<subfield key>` so the
-     * single select carries the pair (see `FieldTransformationRules::ROW_PREFIX`).
+     * single select carries the pair (see `FieldFromPatternRules::ROW_PREFIX`).
      *
      * Empty (placeholder only) when ACF is unavailable. Like the relationship
      * list, nothing is cached before ACF is confirmed loaded.
@@ -572,7 +572,7 @@ class ConfigHelpers {
                         foreach ((array) acf_get_fields($field) as $sub) {
                             $sub_key = (string) ($sub['key'] ?? '');
                             if ($sub_key !== '' && in_array($sub['type'] ?? '', self::COMPUTED_TARGET_TYPES, true)) {
-                                $rows_cache[FieldTransformationRules::ROW_PREFIX . $key . '|' . $sub_key]
+                                $rows_cache[FieldFromPatternRules::ROW_PREFIX . $key . '|' . $sub_key]
                                     = sprintf('%1$s › %2$s (%3$s)', $field['label'] ?? $field['name'], $sub['label'] ?? $sub['name'], $sub['name'] ?? '');
                             }
                         }

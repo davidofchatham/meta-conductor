@@ -167,7 +167,7 @@ $subfields = $field['args']['subfields'];
 
 // --- The repeater is bound to the persisted kind list. ----------------------
 
-$check('the format kind has its migrated types (#59)', $TYPES === ['title_slug_from_pattern', 'field_transformation_rules']);
+$check('the format kind has its migrated types (#59)', $TYPES === ['title_slug_from_pattern', 'field_from_pattern']);
 $check('repeater binds the format kind list', $field['id'] === $KIND);
 $check('repeater is sortable (order is authored)', !empty($field['args']['sortable']));
 $check('row title template resolves the snapshot', $field['args']['title_template'] === '{row_title}');
@@ -225,7 +225,7 @@ $check('post_type is a single-value select, gated to title & slug',
     && ($by_id['post_type']['conditions']['value'] ?? null) === ['title_slug_from_pattern']);
 $check('post_types is a checkboxes list, gated to computed field',
     ($by_id['post_types']['type'] ?? '') === 'checkboxes'
-    && ($by_id['post_types']['conditions']['value'] ?? null) === ['field_transformation_rules']);
+    && ($by_id['post_types']['conditions']['value'] ?? null) === ['field_from_pattern']);
 $check('the computed field scope drops attachment and has no placeholder row',
     array_keys($by_id['post_types']['args']['options']) === ['post', 'page', 'mc_item']);
 $check('the computed field scope says none checked does nothing',
@@ -281,7 +281,7 @@ $expected_visible = [
         'title_pattern', 'slug_pattern', 'slug_mode',
         'slug_escalation', 'slug_escalation_tokens', 'escalation_placement', 'flat_urls', 'row_title',
     ],
-    'field_transformation_rules' => [
+    'field_from_pattern' => [
         'type', 'enabled', 'name', 'post_types',
         'target_field', 'pattern', 'output', 'row_title',
     ],
@@ -320,7 +320,7 @@ $check('every key the title/slug handler reads survives a save',
 // for the same reason. `target_field` is stored by ACF FIELD KEY.
 $visible_field = [];
 foreach ($subfields as $s) {
-    if (Conditions::evaluate($s['conditions'] ?? null, ['type' => 'field_transformation_rules'])) {
+    if (Conditions::evaluate($s['conditions'] ?? null, ['type' => 'field_from_pattern'])) {
         $visible_field[] = $s['id'];
     }
 }
@@ -410,18 +410,18 @@ $check('an unresolvable post type falls back to its slug',
         === 'X (gone)');
 // The Computed field row names the field it writes and the post type.
 $check('a computed field row title names its target field and post type',
-    $title(['type' => 'field_transformation_rules', 'name' => 'Display line', 'post_types' => ['mc_item'], 'target_field' => 'field_a'])
+    $title(['type' => 'field_from_pattern', 'name' => 'Display line', 'post_types' => ['mc_item'], 'target_field' => 'field_a'])
         === 'Display line — Display name (MC Items)');
 $check('a computed field row whose key no longer resolves shows no field',
-    $title(['type' => 'field_transformation_rules', 'name' => 'Display line', 'post_types' => ['mc_item'], 'target_field' => 'field_gone'])
+    $title(['type' => 'field_from_pattern', 'name' => 'Display line', 'post_types' => ['mc_item'], 'target_field' => 'field_gone'])
         === 'Display line (MC Items)');
 $check('a computed field row targeting a repeater subfield names repeater and subfield',
-    $title(['type' => 'field_transformation_rules', 'name' => 'Line', 'post_types' => ['mc_item'], 'target_field' => 'row|field_d|field_d_line'])
+    $title(['type' => 'field_from_pattern', 'name' => 'Line', 'post_types' => ['mc_item'], 'target_field' => 'row|field_d|field_d_line'])
         === 'Line — Roster › Line (MC Items)');
 $check('an unnamed computed field row is named rather than left blank',
-    str_starts_with($title(['type' => 'field_transformation_rules', 'post_types' => ['mc_item']]), 'Untitled computed field rule'));
+    str_starts_with($title(['type' => 'field_from_pattern', 'post_types' => ['mc_item']]), 'Untitled computed field rule'));
 $check('a computed field row naming several post types lists them all',
-    $title(['type' => 'field_transformation_rules', 'name' => 'Display line', 'post_types' => ['mc_item', 'page'], 'target_field' => 'field_a'])
+    $title(['type' => 'field_from_pattern', 'name' => 'Display line', 'post_types' => ['mc_item', 'page'], 'target_field' => 'field_a'])
         === 'Display line — Display name (MC Items, Pages)');
 // The uniform marker the term list gained in #57 — the whole reason the live
 // {name} template was replaced by a snapshot.

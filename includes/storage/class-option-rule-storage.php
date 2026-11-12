@@ -58,7 +58,7 @@ class OptionRuleStorage implements RuleStorage {
      * persisted kind list: the repeater renders every row in the key it is
      * bound to and Wireframe DROPS any subfield the config does not declare
      * (`RepeaterField::sanitize`), so rendering it would silently gut it on the
-     * next save. That split is what lets the next type (`field_transformation`)
+     * next save. That split is what lets the next type (`field_from_pattern`)
      * be declared — and therefore read — a change before its subfields exist.
      *
      * Empty ⇒ no repeater is bound to that kind's list yet, so the config

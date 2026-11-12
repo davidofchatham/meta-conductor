@@ -224,7 +224,7 @@ $check('an unknown row does not widen a known row\'s reach',
 
 // The Computed field rule (FW-4): reach is its `post_types` and nothing else, and
 // it owns no `post_status` gate, so statuses stay the default set.
-$cf = ['type' => 'field_transformation_rules', 'enabled' => true, 'name' => 'Display', 'post_types' => ['book'], 'target_field' => 'field_x', 'pattern' => '{meta:a}'];
+$cf = ['type' => 'field_from_pattern', 'enabled' => true, 'name' => 'Display', 'post_types' => ['book'], 'target_field' => 'field_x', 'pattern' => '{meta:a}'];
 $check('a Computed field rule reaches exactly its post type', $types([$cf]) === ['book']);
 $check('two Computed field rules reach the union of their post types',
     $types([$cf, ['post_types' => ['page']] + $cf]) === ['book', 'page']);
@@ -287,7 +287,7 @@ $check('a stale stored position is replaced by the real one',
     === 'Format rules: #1 X');
 $check('an untitled row is labeled by its type',
     in_array('Format rules: #1 title_slug_from_pattern', ApplyPage::choice_options([], [['type' => 'title_slug_from_pattern']]), true));
-$cf_titled = ['type' => 'field_transformation_rules', 'row_title' => '#2 Display — Display name (Books)', 'post_types' => ['book']];
+$cf_titled = ['type' => 'field_from_pattern', 'row_title' => '#2 Display — Display name (Books)', 'post_types' => ['book']];
 $check('a Computed field rule is offered in the format group with its own row title',
     in_array('Format rules: #2 Display — Display name (Books)', ApplyPage::choice_options([], [$formats[0], $cf_titled]), true));
 $check('and its value decodes back to its own row',

@@ -5,7 +5,7 @@
  * ticket #59).
  *
  * The `term_rules` collapse's smaller twin: `title_slug` and, since FW-4, the
- * Computed field rule (`field_transformation_rules`) are the members of the
+ * Computed field rule (`field_from_pattern`) are the members of the
  * `format_rules` kind. The second type was a row type added to the existing
  * list, not a tab restructured around a second section.
  *
@@ -31,7 +31,7 @@
  * it, including the post-type scope: `title_slug_from_pattern` owns a SCALAR
  * `post_type` select (the format pass is first-match-wins per rule type, so
  * the value is a lookup key into a table keyed by post type), and
- * `field_transformation_rules` owns a `post_types` checkboxes list (its rules
+ * `field_from_pattern` owns a `post_types` checkboxes list (its rules
  * compose in list order, so a scope is what it needs). The two are different
  * questions, which is why they are two subfields and not one shared one.
  *

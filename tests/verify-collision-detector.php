@@ -586,7 +586,7 @@ $check('a blank format row collides with nothing',
 // --- 10b. The Computed field rule: one ACF field is the target (FW-4). -------
 
 $cf = fn(array $over = []) => $over + [
-    'type' => 'field_transformation_rules', 'enabled' => true, 'post_types' => ['mc_item'],
+    'type' => 'field_from_pattern', 'enabled' => true, 'post_types' => ['mc_item'],
     'target_field' => 'field_mc_a', 'pattern' => '{meta:first}', 'row_title' => 'Display',
 ];
 
@@ -622,7 +622,7 @@ $check('an unresolvable field key is named by the key, not dropped',
 // The self-reference advisory rides the row title (the collapsed row is what the
 // author scans): it appears when the pattern reads the rule's own target and goes
 // when the pattern is fixed.
-$self  = Registry::get('field_transformation_rules');
+$self  = Registry::get('field_from_pattern');
 $bad   = $cf(['pattern' => '{meta:display_name} {meta:last}']);
 $bad_d = $cf(['pattern' => '{date_year:display_name}']);
 $ok    = $cf(['pattern' => '{meta:first} {meta:last}']);
@@ -636,7 +636,7 @@ $check('and drops it once the pattern is fixed', !str_contains($self->row_title(
 // --- 10c. Repeater-row targets: one subfield across every row (FW-4 06). ----
 
 $rr = fn(array $over = []) => $over + [
-    'type' => 'field_transformation_rules', 'enabled' => true, 'post_types' => ['mc_item'],
+    'type' => 'field_from_pattern', 'enabled' => true, 'post_types' => ['mc_item'],
     'target_field' => 'row|field_mc_r|field_mc_rl', 'pattern' => '{meta:pos}', 'row_title' => 'Roster line',
 ];
 

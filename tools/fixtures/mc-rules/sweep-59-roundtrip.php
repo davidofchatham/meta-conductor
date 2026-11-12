@@ -52,7 +52,7 @@ $rows     = $settings[OptionRuleStorage::KIND_FORMAT] ?? [];
 
 $note('format_rules is populated', !empty($rows));
 // The format list holds title/slug rules and, since FW-4, Computed field rules.
-$format_types = ['title_slug_from_pattern', 'field_transformation_rules'];
+$format_types = ['title_slug_from_pattern', 'field_from_pattern'];
 $note('every format row is a known format rule type',
     array_diff(array_column($rows, 'type'), $format_types) === []);
 $note('the legacy title_slug_from_pattern array is gone from storage (#66)',

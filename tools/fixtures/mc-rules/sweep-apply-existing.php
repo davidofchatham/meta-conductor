@@ -218,7 +218,7 @@ function mcae_title_row( $suffix, $enabled = true ) {
 /** A Computed field row over mc_item writing the fixture's text target. */
 function mcae_field_row( array $over = array() ) {
 	return array_merge( array(
-		'type'         => 'field_transformation_rules',
+		'type'         => 'field_from_pattern',
 		'enabled'      => true,
 		'name'         => 'Sweep apply-existing display',
 		'post_types'   => array( 'mc_item' ),

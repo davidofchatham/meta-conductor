@@ -67,7 +67,7 @@ const MCF_LINE   = 'field_mc_cf_roster_line';
 /** One Computed field row. */
 function mcf_rule( array $over = array() ) {
 	return array_merge( array(
-		'type'         => 'field_transformation_rules',
+		'type'         => 'field_from_pattern',
 		'enabled'      => true,
 		'name'         => 'Sweep computed display',
 		'post_types'   => array( 'mc_item' ),
@@ -80,7 +80,7 @@ function mcf_rule( array $over = array() ) {
 /** One Computed field row targeting `line` in every roster row. */
 function mcf_row_rule( array $over = array() ) {
 	return array_merge( array(
-		'type'            => 'field_transformation_rules',
+		'type'            => 'field_from_pattern',
 		'enabled'         => true,
 		'name'            => 'Sweep roster line',
 		'post_types'      => array( 'mc_item' ),
@@ -152,7 +152,7 @@ function mcf_count_line_writes( callable $fn ) {
 /** Make `$rows` the ONLY rule on the site. */
 function mcf_setup( array $rows ) {
 	mc_isolate( array() );
-	mc_write_rule_types( array( 'field_transformation_rules' => $rows ) );
+	mc_write_rule_types( array( 'field_from_pattern' => $rows ) );
 }
 
 /**

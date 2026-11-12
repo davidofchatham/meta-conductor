@@ -60,7 +60,7 @@ $expected = [
     ],
     OptionRuleStorage::KIND_FORMAT => [
         'title_slug_from_pattern',
-        'field_transformation_rules',
+        'field_from_pattern',
     ],
 ];
 $expected_flat = array_merge(...array_values($expected));
@@ -119,7 +119,7 @@ foreach ($all as $key => $d) {
 // without ACF (this harness) it is unavailable, every other type is not.
 foreach ($all as $key => $d) {
     $check("$key: availability follows ACF only for the Computed field rule",
-        $d->available() === ($key === 'field_transformation_rules' ? function_exists('acf_get_field') : true));
+        $d->available() === ($key === 'field_from_pattern' ? function_exists('acf_get_field') : true));
 }
 
 // The format pass's first-match gate is a descriptor fact (FW-4 ticket 04):

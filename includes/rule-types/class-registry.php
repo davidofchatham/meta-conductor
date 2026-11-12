@@ -37,7 +37,7 @@ final class Registry {
         RestrictTermsByLevelRules::class,
         RestrictTermCountRules::class,
         TitleSlugFromPatternRules::class,
-        FieldTransformationRules::class,
+        FieldFromPatternRules::class,
     ];
 
     /**

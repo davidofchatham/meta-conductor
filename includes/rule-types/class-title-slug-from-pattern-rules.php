@@ -105,7 +105,7 @@ final class TitleSlugFromPatternRules extends RuleType {
      * Title & slug patterns — the mechanics of this one transformation.
      *
      * Every field here is gated: they are read only by `TitleSlugFromPatternHandler`, and
-     * offering them on a future `field_transformation` row would store junk
+     * offering them on a future `field_from_pattern` row would store junk
      * that reads as a working setting.
      *
      * @return array[]

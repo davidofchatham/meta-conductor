@@ -28,7 +28,7 @@ if (!defined('ABSPATH')) exit;
  * (`RowTokenSource`), read from stored meta with any cell an earlier rule set in
  * this pass laid over it.
  */
-class FieldTransformationHandler extends UnifiedHandlerBase {
+class FieldFromPatternHandler extends UnifiedHandlerBase {
 
     protected function validate_rule_internal($rule): bool {
         return !empty($rule['enabled']);

@@ -61,7 +61,7 @@ $valid_types = array(
 	'restrict_terms_by_level',
 	'restrict_term_count',
 	'title_slug_from_pattern',
-	'field_transformation_rules',
+	'field_from_pattern',
 );
 
 // ── composes_on: family-standard two-key shape.
