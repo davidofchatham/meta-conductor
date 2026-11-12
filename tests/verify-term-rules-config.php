@@ -325,7 +325,7 @@ $expected_visible = [
         'type', 'enabled', 'taxonomy', 'hierarchical_post_type_note',
         'post_types', 'post_status', 'conflict_handling', 'row_title',
     ],
-    'time_based_rules' => [
+    'terms_from_date_window' => [
         'type', 'enabled', 'post_types', 'post_status',
         'filter_taxonomies', 'filter_terms', 'start_date', 'end_date',
         'target_term_id', 'row_title',

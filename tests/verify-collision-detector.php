@@ -150,7 +150,7 @@ $check('the ACF-reference type keys on its taxonomy too',
 // The gap the #65 comment names: neither term-pairing type HAS a taxonomy
 // subfield, so keying on `taxonomy` would resolve nothing for either.
 $check('a date-window rule keys on its target TERM, not a taxonomy',
-    $desc('time_based_rules')->target_key(['target_term_id' => 21]) === 'term|21');
+    $desc('terms_from_date_window')->target_key(['target_term_id' => 21]) === 'term|21');
 $check('a related-term rule keys on its target term',
     $desc('terms_from_trigger_term')->target_key(['target_term_id' => 22]) === 'term|22');
 $check('the FormTokenField [N] shape, projected, resolves to the same key',
@@ -163,7 +163,7 @@ $check('a format rule keys on the fields it writes',
 $check('a row with no taxonomy picked resolves nothing',
     $desc('terms_from_term_hierarchy')->target_key([]) === null);
 $check('a row with no target term picked resolves nothing',
-    $desc('time_based_rules')->target_key(['target_term_id' => 0]) === null);
+    $desc('terms_from_date_window')->target_key(['target_term_id' => 0]) === null);
 $check('untyped rows take no part in the scan',
     $scan($KIND_TERM, [
         ['type' => '', 'taxonomy' => 'mc_topic'],
@@ -409,10 +409,10 @@ $check('a disabled count rule does not warn',
 // (future) both target topic-archived, both scoped to mc_item.
 
 $s69 = [
-    ['type' => 'time_based_rules', 'enabled' => true, 'post_types' => ['mc_item'],
+    ['type' => 'terms_from_date_window', 'enabled' => true, 'post_types' => ['mc_item'],
      'start_date' => '2020-01-01', 'end_date' => '2020-12-31', 'target_term_id' => 21,
      'row_title' => 'Archive window (expired)'],
-    ['type' => 'time_based_rules', 'enabled' => true, 'post_types' => ['mc_item'],
+    ['type' => 'terms_from_date_window', 'enabled' => true, 'post_types' => ['mc_item'],
      'start_date' => '2099-01-01', 'end_date' => '2099-12-31', 'target_term_id' => 21,
      'row_title' => 'Archive window (future)'],
 ];
@@ -482,7 +482,7 @@ $check('a date rule and a bidirectional related rule over one term cancel',
 $s_nested = [
     ['type' => 'hierarchical_level_restriction_rules', 'enabled' => true, 'taxonomy' => 'mc_topic',
      'post_types' => ['mc_item'], 'restriction_mode' => 'deepest_only', 'row_title' => 'Deepest level'],
-    ['type' => 'time_based_rules', 'enabled' => true, 'post_types' => ['mc_item'],
+    ['type' => 'terms_from_date_window', 'enabled' => true, 'post_types' => ['mc_item'],
      'target_term_id' => 21, 'row_title' => 'Archive window'],
 ];
 $check('a taxonomy-wide rule is not paired with a term rule inside it (deferred)',
@@ -508,11 +508,11 @@ $check('a half-authored row is unfinished, not colliding',
 // the positions are what the author reorders, so they must survive a row that
 // took no part in the scan.
 $s_three = [
-    ['type' => 'time_based_rules', 'enabled' => false, 'post_types' => ['mc_item'],
+    ['type' => 'terms_from_date_window', 'enabled' => false, 'post_types' => ['mc_item'],
      'target_term_id' => 21, 'row_title' => 'off'],
     $s69[0],
     $s69[1],
-    ['type' => 'time_based_rules', 'enabled' => true, 'post_types' => ['mc_item'],
+    ['type' => 'terms_from_date_window', 'enabled' => true, 'post_types' => ['mc_item'],
      'target_term_id' => 21, 'row_title' => 'third'],
 ];
 $check('every contending pair is reported once',

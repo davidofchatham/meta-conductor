@@ -109,7 +109,7 @@ function mc61_cron_rows( $consumer_first = false ) {
 	// The sweep's selection basis: expired, so its target term is what the
 	// sweep queries for and what its pass then removes.
 	$expired = array(
-		'type'           => 'time_based_rules',
+		'type'           => 'terms_from_date_window',
 		'enabled'        => true,
 		'post_types'     => array( 'mc_item' ),
 		'start_date'     => gmdate( 'Y-m-d', strtotime( $today . ' -30 days' ) ),
@@ -119,7 +119,7 @@ function mc61_cron_rows( $consumer_first = false ) {
 
 	// The PRODUCER: in range, so the pass applies Featured.
 	$producer = array(
-		'type'           => 'time_based_rules',
+		'type'           => 'terms_from_date_window',
 		'enabled'        => true,
 		'post_types'     => array( 'mc_item' ),
 		'start_date'     => gmdate( 'Y-m-d', strtotime( $today . ' -1 day' ) ),
@@ -269,7 +269,7 @@ switch ( $step ) {
 		wp_update_post( array( 'ID' => $a, 'post_status' => 'draft' ) );
 		mc61_dispatcher()->drain();
 
-		mc_isolate( 'time_based_rules' );
+		mc_isolate( 'terms_from_date_window' );
 
 		// The publish transition, and NO explicit drain: the save path's own
 		// drain (wp_after_insert_post p999) is what must run the pass, or an

@@ -1,6 +1,6 @@
 <?php
 /**
- * Descriptor for `time_based_rules` rows.
+ * Descriptor for `terms_from_date_window` rows.
  *
  * @since 0.10.0
  */
@@ -8,7 +8,7 @@
 namespace BWS\MetaConductor\RuleTypes;
 
 use BWS\MetaConductor\Admin\Config\ConfigHelpers;
-use BWS\MetaConductor\Handlers\TimeBasedHandler;
+use BWS\MetaConductor\Handlers\TermsFromDateWindowHandler;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 
 // Prevent direct access
@@ -17,13 +17,13 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Named after the storage key `time_based_rules`, not a domain name — FW-14 renamed `label()` only;
+ * Named after the storage key `terms_from_date_window`, not a domain name — FW-14 renamed `label()` only;
  * FW-63 renames the id and the class.
  */
-final class TimeBasedRules extends RuleType {
+final class TermsFromDateWindowRules extends RuleType {
 
     public function type(): string {
-        return 'time_based_rules';
+        return 'terms_from_date_window';
     }
 
     public function kind(): string {
@@ -35,7 +35,7 @@ final class TimeBasedRules extends RuleType {
     }
 
     public function handler_class(): string {
-        return TimeBasedHandler::class;
+        return TermsFromDateWindowHandler::class;
     }
 
     public function target_key(array $rule): ?string {

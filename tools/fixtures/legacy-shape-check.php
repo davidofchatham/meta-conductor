@@ -24,7 +24,7 @@ if (!is_array($opt)) {
 
 // 1. Pre-#66 type-keyed arrays still present (the pre-0.8.0 guard notice's trigger).
 $legacy_keys = [
-    'terms_from_term_hierarchy', 'propagation_rules', 'terms_from_trigger_term', 'time_based_rules',
+    'terms_from_term_hierarchy', 'propagation_rules', 'terms_from_trigger_term', 'terms_from_date_window',
     'related_post_terms_rules', 'hierarchical_level_restriction_rules', 'title_slug_rules',
 ];
 foreach ($legacy_keys as $k) {
@@ -66,7 +66,7 @@ foreach ((array) ($opt['term_rules'] ?? []) as $i => $row) {
         }
     }
 
-    if ($type === 'terms_from_trigger_term' || $type === 'time_based_rules') {
+    if ($type === 'terms_from_trigger_term' || $type === 'terms_from_date_window') {
         foreach (['trigger_term_id', 'target_term_id'] as $k) {
             if (isset($row[$k]) && !is_array($row[$k])) {
                 $findings[] = "$at: scalar '$k' (" . var_export($row[$k], true) . ')';

@@ -249,7 +249,7 @@ if ( ! $mc_a7_solo || ! $mc_a7_arch || ! $mc_a7_feat || ! class_exists( '\\BWS\\
 	$mc_a7_set_rules = function ( array $rules ) use ( $mc_a7_opt ) {
 		$settings = get_option( $mc_a7_opt, array() );
 		$settings[ \BWS\MetaConductor\Storage\OptionRuleStorage::KIND_TERM ] = array_map(
-			static fn( array $rule ): array => array( 'type' => 'time_based_rules' ) + $rule,
+			static fn( array $rule ): array => array( 'type' => 'terms_from_date_window' ) + $rule,
 			$rules
 		);
 		update_option( $mc_a7_opt, $settings );
@@ -280,7 +280,7 @@ if ( ! $mc_a7_solo || ! $mc_a7_arch || ! $mc_a7_feat || ! class_exists( '\\BWS\\
 	$mc_a7_isolated[ $mc_a7_kind ] = array_values( array_filter(
 		(array) ( $mc_a7_snapshot[ $mc_a7_kind ] ?? array() ),
 		static function ( $row ) {
-			return is_array( $row ) && 'time_based_rules' === ( $row['type'] ?? '' );
+			return is_array( $row ) && 'terms_from_date_window' === ( $row['type'] ?? '' );
 		}
 	) );
 	$mc_a7_isolated[ \BWS\MetaConductor\Storage\OptionRuleStorage::KIND_FORMAT ] = array();
@@ -290,7 +290,7 @@ if ( ! $mc_a7_solo || ! $mc_a7_arch || ! $mc_a7_feat || ! class_exists( '\\BWS\\
 	// Find the seeded expired-Archived rule by its shape, not its index.
 	$mc_a7_expired = null;
 	foreach ( (array) ( $mc_a7_snapshot[ $mc_a7_kind ] ?? array() ) as $mc_a7_rule ) {
-		if ( ! is_array( $mc_a7_rule ) || 'time_based_rules' !== ( $mc_a7_rule['type'] ?? '' ) ) {
+		if ( ! is_array( $mc_a7_rule ) || 'terms_from_date_window' !== ( $mc_a7_rule['type'] ?? '' ) ) {
 			continue;
 		}
 		// Raw stored row: the target is the FormTokenField's `[N]` shape.

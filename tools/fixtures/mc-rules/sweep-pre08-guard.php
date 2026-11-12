@@ -48,12 +48,12 @@ try {
 
 	$check( '§guard-a legacy rows with no kind list raise the notice', $notice_for( array(
 		'terms_from_term_hierarchy' => array( array( 'taxonomy' => 'category', 'enabled' => true ) ),
-		'time_based_rules'          => array(),
+		'terms_from_date_window'          => array(),
 	) ) );
 
 	$check( '§guard-b empty legacy arrays with no kind list stay quiet', ! $notice_for( array(
 		'terms_from_term_hierarchy' => array(),
-		'time_based_rules'          => array(),
+		'terms_from_date_window'          => array(),
 		'title_slug_rules'          => array(),
 	) ) );
 

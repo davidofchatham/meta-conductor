@@ -15,7 +15,7 @@
  *   §67c  The standard shape — `UnifiedHandlerBase::should_process_post()`
  *         gates the post being WRITTEN. `TermsFromTermHierarchyHandler` is the live
  *         subject; `HierarchicalLevelRestrictionHandler`, `PropagationHandler`,
- *         `TimeBasedHandler` and `TermsFromTriggerTermHandler` call the identical base
+ *         `TermsFromDateWindowHandler` and `TermsFromTriggerTermHandler` call the identical base
  *         method at the top of their own `apply_to_post()` (grep-confirmed,
  *         same call shape, same early return) — one live scenario stands for
  *         all five rather than repeating an identical code path four more

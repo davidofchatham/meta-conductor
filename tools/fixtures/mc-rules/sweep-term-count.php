@@ -459,7 +459,7 @@ switch ( $step ) {
 		mc_write_ordered_rules(
 			array(
 				array(
-					'type'           => 'time_based_rules',
+					'type'           => 'terms_from_date_window',
 					'enabled'        => true,
 					'post_types'     => array( 'mc_item' ),
 					'start_date'     => gmdate( 'Y-m-d', strtotime( '-30 days' ) ),

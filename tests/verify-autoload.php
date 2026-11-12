@@ -72,7 +72,7 @@ $classes = [
     'BWS\\MetaConductor\\Handlers\\TermsFromTermHierarchyHandler',
     'BWS\\MetaConductor\\Handlers\\PropagationHandler',
     'BWS\\MetaConductor\\Handlers\\TermsFromTriggerTermHandler',
-    'BWS\\MetaConductor\\Handlers\\TimeBasedHandler',
+    'BWS\\MetaConductor\\Handlers\\TermsFromDateWindowHandler',
     'BWS\\MetaConductor\\Handlers\\RelatedPostTermsHandler',
     'BWS\\MetaConductor\\Handlers\\HierarchicalLevelRestrictionHandler',
     'BWS\\MetaConductor\\Handlers\\TermCountHandler',
@@ -85,7 +85,7 @@ $classes = [
     'BWS\\MetaConductor\\RuleTypes\\Labels',
     'BWS\\MetaConductor\\RuleTypes\\PropagationRules',
     'BWS\\MetaConductor\\RuleTypes\\RelatedPostTermsRules',
-    'BWS\\MetaConductor\\RuleTypes\\TimeBasedRules',
+    'BWS\\MetaConductor\\RuleTypes\\TermsFromDateWindowRules',
     'BWS\\MetaConductor\\RuleTypes\\TermsFromTriggerTermRules',
     'BWS\\MetaConductor\\RuleTypes\\TermsFromTermHierarchyRules',
     'BWS\\MetaConductor\\RuleTypes\\HierarchicalLevelRestrictionRules',
@@ -114,7 +114,7 @@ $classes = [
     // Admin\Config\
     'BWS\\MetaConductor\\Admin\\Config\\ConfigHelpers',
     'BWS\\MetaConductor\\Admin\\Config\\GeneralConfig',
-    // The ordered term-rule list. Propagation/TimeBased/Hierarchical/
+    // The ordered term-rule list. Propagation/TermsFromDateWindow/Hierarchical/
     // LevelRestriction/Personalize config classes were deleted in 0.8.0 (#57)
     // when their sections collapsed into this one; Related and
     // RelatedPostTerms followed in #58.

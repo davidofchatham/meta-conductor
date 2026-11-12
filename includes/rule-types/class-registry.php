@@ -31,7 +31,7 @@ final class Registry {
     private const DESCRIPTORS = [
         PropagationRules::class,
         RelatedPostTermsRules::class,
-        TimeBasedRules::class,
+        TermsFromDateWindowRules::class,
         TermsFromTriggerTermRules::class,
         TermsFromTermHierarchyRules::class,
         HierarchicalLevelRestrictionRules::class,

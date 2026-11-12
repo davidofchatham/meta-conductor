@@ -13,7 +13,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-class TimeBasedHandler extends UnifiedHandlerBase {
+class TermsFromDateWindowHandler extends UnifiedHandlerBase {
 
     /**
      * Pure applier: no hooks (#61).

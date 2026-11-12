@@ -116,7 +116,7 @@ Status (L1)          — second root: related/time-based targets live here so
 | Scenarios | Term on grandparent → appears on all descendants incl. draft; remove from parent → removed from child except independently-held; create/save new child under parent → inherits; replace vs merge conflict modes. |
 | Shared reuse | None. **The empty-post_types ⇒ all-hierarchical default is the single biggest shared-site foot-gun in the plugin — never seed a propagation rule with empty post_types on this testbed.** |
 
-## 6. time_based_rules — TimeBasedHandler
+## 6. terms_from_date_window — TermsFromDateWindowHandler
 
 | Aspect | Need |
 |---|---|
@@ -609,7 +609,7 @@ this is date-independent.)
 
 - **§6e-bis cron cleanup, provenance-neutral** ✅ **this is what A7 asserts.**
   `verify.php` A7 drives the apply through the handler and then fires the event:
-  isolate `time_based_rules`, synthesize a rule set holding ONLY the seeded
+  isolate `terms_from_date_window`, synthesize a rule set holding ONLY the seeded
   expired-Archived rule with its window slid in-range, save `item-solo-a` so the
   handler applies Archived, assert that landed, append Featured by hand as a
   negative control, write the expiry back, fire, assert Archived went and
@@ -800,7 +800,7 @@ Surviving keys per row:
 | type | keys that persisted |
 |---|---|
 | `propagation_rules` | type, enabled, taxonomy, post_types, hierarchical_post_type_note, post_status, conflict_handling, row_title |
-| `time_based_rules` | type, enabled, post_types, post_status, filter_taxonomies, filter_terms, start_date, end_date, target_term_id, row_title |
+| `terms_from_date_window` | type, enabled, post_types, post_status, filter_taxonomies, filter_terms, start_date, end_date, target_term_id, row_title |
 | `terms_from_term_hierarchy` | type, enabled, taxonomy, hierarchical_taxonomy_note, post_types, post_status, inheritance_behavior, inheritance_depth, row_title |
 | `hierarchical_level_restriction_rules` | type, enabled, taxonomy, hierarchical_taxonomy_note, post_types, post_status, restriction_mode, include_ancestors, row_title |
 
@@ -1039,7 +1039,7 @@ gates the post being WRITTEN. Live subject: `TermsFromTermHierarchyHandler`, dra
 `item-solo-a`. Rule `post_status: [publish]` + assign Harbor → gated OUT, only
 Harbor lands (no ancestor expansion). Same edit, rule `post_status: [draft]` →
 gated IN, full ancestor chain expands. `HierarchicalLevelRestrictionHandler`,
-`PropagationHandler`, `TimeBasedHandler` and `TermsFromTriggerTermHandler` call the
+`PropagationHandler`, `TermsFromDateWindowHandler` and `TermsFromTriggerTermHandler` call the
 identical base method at the top of their own `apply_to_post()`
 (grep-confirmed: same call shape, same early return) — one live scenario
 stands for all five rather than repeating an identical code path four more

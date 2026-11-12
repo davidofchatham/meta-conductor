@@ -182,8 +182,8 @@ switch ( $step ) {
 			$found,
 			function ( $f ) {
 				return 'shared_term_cancels' === $f['code']
-					&& 'time_based_rules' === $f['a']['type']
-					&& 'time_based_rules' === $f['b']['type'];
+					&& 'terms_from_date_window' === $f['a']['type']
+					&& 'terms_from_date_window' === $f['b']['type'];
 			}
 		) );
 		$a( '§65b #69 pair is flagged', count( $cancels ), 1 );
@@ -253,7 +253,7 @@ switch ( $step ) {
 		// windows over one term, neither currently open.
 		$today   = current_time( 'Y-m-d' );
 		$expired = array(
-			'type'           => 'time_based_rules',
+			'type'           => 'terms_from_date_window',
 			'enabled'        => true,
 			'post_types'     => array( 'mc_item' ),
 			'start_date'     => gmdate( 'Y-m-d', strtotime( $today . ' -30 days' ) ),
@@ -262,7 +262,7 @@ switch ( $step ) {
 			'row_title'      => 'Archive window (expired)',
 		);
 		$future = array(
-			'type'           => 'time_based_rules',
+			'type'           => 'terms_from_date_window',
 			'enabled'        => true,
 			'post_types'     => array( 'mc_item' ),
 			'start_date'     => gmdate( 'Y-m-d', strtotime( $today . ' +10 days' ) ),
@@ -340,7 +340,7 @@ switch ( $step ) {
 		$in_flight = array(
 			OptionRuleStorage::KIND_TERM => array(
 				array(
-					'type'            => 'time_based_rules',
+					'type'            => 'terms_from_date_window',
 					'enabled'         => true,
 					'post_types'      => array( 'mc_item' => true ),
 					'target_term_id'  => array( mc_tid( 'topic-featured' ) ),
@@ -348,7 +348,7 @@ switch ( $step ) {
 					'end_date'        => '2020-12-31',
 				),
 				array(
-					'type'            => 'time_based_rules',
+					'type'            => 'terms_from_date_window',
 					'enabled'         => true,
 					'post_types'      => array( 'mc_item' => true ),
 					'target_term_id'  => array( mc_tid( 'topic-featured' ) ),

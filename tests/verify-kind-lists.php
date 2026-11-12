@@ -108,7 +108,7 @@ $settings = [
         ['name' => 'R1', 'enabled' => true, 'trigger_term_id' => '12', 'target_term_id' => [34]],
         ['name' => 'R2', 'enabled' => true, 'trigger_term_id' => [5, 5, 0, 7], 'target_term_id' => '9'],
     ],
-    'time_based_rules' => [
+    'terms_from_date_window' => [
         ['name' => 'T1', 'enabled' => true, 'target_term_id' => ['21'], 'schedule_type' => 'daily'],
     ],
     'related_post_terms_rules' => [
@@ -145,7 +145,7 @@ $all_types = [
     'terms_from_term_hierarchy',
     'propagation_rules',
     'terms_from_trigger_term',
-    'time_based_rules',
+    'terms_from_date_window',
     'related_post_terms_rules',
     'hierarchical_level_restriction_rules',
     'term_count_rules',
@@ -239,7 +239,7 @@ $check('the term kind reports its migrated types — all seven as of term_count_
     OptionRuleStorage::migrated_types_for_kind(OptionRuleStorage::KIND_TERM) === [
         'propagation_rules',
         'related_post_terms_rules',
-        'time_based_rules',
+        'terms_from_date_window',
         'terms_from_trigger_term',
         'terms_from_term_hierarchy',
         'hierarchical_level_restriction_rules',
@@ -276,7 +276,7 @@ $check('the read normalizes: related term ids are canonicalized',
     && $of_type($projected, 'terms_from_trigger_term')[1]['trigger_term_id'] === [5, 7]
     && $of_type($projected, 'terms_from_trigger_term')[1]['target_term_id'] === 9);
 $check('the read normalizes: time_based single-term array collapses to int',
-    $of_type($projected, 'time_based_rules')[0]['target_term_id'] === 21);
+    $of_type($projected, 'terms_from_date_window')[0]['target_term_id'] === 21);
 
 // FW-29: the projection is the GUARANTEED canonical shape — consumers never
 // re-decode, so every form/legacy shape must land here, for every type.

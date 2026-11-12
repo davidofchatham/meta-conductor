@@ -20,8 +20,8 @@ if (!defined('ABSPATH')) {
  * admin and runtime both read, and names its handler class. Constructing one
  * does nothing.
  *
- * Subclasses are named after the STORAGE key (`TimeBasedRules` for
- * `time_based_rules`), not after the domain concept. The name is a mirror of
+ * Subclasses are named after the STORAGE key (`TermsFromDateWindowRules` for
+ * `terms_from_date_window`), not after the domain concept. The name is a mirror of
  * the key and must not be renamed on its own; renaming a rule type for
  * authors (FW-14) edits `label()` only, and the ids follow in FW-63. A label
  * is the type's name and nothing else (CONTEXT.md → Rule type).

@@ -395,7 +395,7 @@ foreach ($handler_files as $type => $handler_file) {
 $sweep_hook   = 'bws_taxonomy_manager_cleanup';
 $sweep_method = 'cleanup_expired_rules';
 
-if (isset($descriptors['time_based_rules'])) {
+if (isset($descriptors['terms_from_date_window'])) {
     $manager_file = $root . '/includes/class-taxonomy-manager.php';
     if (!is_file($manager_file)) {
         $errors[] = 'includes/class-taxonomy-manager.php missing — cannot verify the time-based sweep is registered.';
@@ -404,20 +404,20 @@ if (isset($descriptors['time_based_rules'])) {
         $strip_comments((string) file_get_contents($manager_file))
     )) {
         $errors[] = sprintf(
-            'The %s sweep is not registered in TaxonomyManager — a converted TimeBasedHandler registers nothing itself, so the daily expiry sweep would run nowhere.',
+            'The %s sweep is not registered in TaxonomyManager — a converted TermsFromDateWindowHandler registers nothing itself, so the daily expiry sweep would run nowhere.',
             $sweep_hook
         );
     }
 
-    $tb_file = $root . '/includes/handlers/class-time-based-handler.php';
+    $tb_file = $root . '/includes/handlers/class-terms-from-date-window-handler.php';
     if (!is_file($tb_file)) {
-        $errors[] = 'class-time-based-handler.php missing.';
+        $errors[] = 'class-terms-from-date-window-handler.php missing.';
     } elseif (!preg_match(
         '/function\s+' . preg_quote($sweep_method, '/') . '\s*\([^)]*\)\s*\{(.*?)\n    \}/s',
         $strip_comments((string) file_get_contents($tb_file)),
         $swm
     )) {
-        $errors[] = sprintf('%s() not found on TimeBasedHandler.', $sweep_method);
+        $errors[] = sprintf('%s() not found on TermsFromDateWindowHandler.', $sweep_method);
     } else {
         $body = $swm[1];
         if (!preg_match('/->mark_dirty\(/', $body)) {

@@ -14,7 +14,7 @@
  * that lost its type would fall through to the "(no rule type chosen)" title
  * rather than this schema, and that is worth failing on.
  *
- * Run:  php tests/verify-time-based-labels.php
+ * Run:  php tests/verify-terms-from-date-window-labels.php
  *
  * @package Meta_Conductor
  */
@@ -64,7 +64,7 @@ $KIND = OptionRuleStorage::KIND_TERM;
 $fail = [];
 $check = function (string $name, bool $cond) use (&$fail) { if (!$cond) { $fail[] = $name; } };
 $title = function (array $rule) use ($KIND) {
-    $rule['type'] = 'time_based_rules';
+    $rule['type'] = 'terms_from_date_window';
     $out = WireframeBootstrap::snapshot_term_rule_labels([$KIND => [$rule]]);
     // Row titles LEAD with the list position since the #65 UX follow-up;
     // asserted there, stripped here — these cases are about the schema.

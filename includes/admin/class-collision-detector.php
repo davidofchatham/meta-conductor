@@ -12,7 +12,7 @@
  *
  * The acceptance criteria say *shared taxonomy plus overlapping post types*,
  * and four of the six term types can be read that way. Two cannot:
- * `time_based_rules` and `terms_from_trigger_term` have **no `taxonomy` subfield at all**
+ * `terms_from_date_window` and `terms_from_trigger_term` have **no `taxonomy` subfield at all**
  * (H11's expected-visible map is the proof) — they are **term-pairing** types
  * that identify their write target by `target_term_id` alone. So the detector
  * resolves each rule's **effect target** rather than reading one field name:

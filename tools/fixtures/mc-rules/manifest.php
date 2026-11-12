@@ -276,7 +276,7 @@ return array(
 		// lands, and this is the ready-made fixture for its detector. Do NOT give
 		// [2] a different target to make §6 read cleanly — the duplication IS the
 		// case, and verify.php A7 already works around it deliberately.
-		'time_based_rules' => array(
+		'terms_from_date_window' => array(
 			array(
 				'enabled'           => true,
 				'post_types'        => array( 'mc_item' ),
