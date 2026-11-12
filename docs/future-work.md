@@ -105,8 +105,8 @@ Copy a field value across a relationship, the way FW-61's merged rule copies ter
 Merge `propagation_rules` ("From parent post — cascade terms to children") and `related_post_terms_rules` ("From referenced post (ACF) — copy terms across a relationship field") into one term rule with a **relationship** option: `parent` or `acf`. In both, a post takes terms from a related post; only the relationship differs. Name settled in FW-14 (2026-11-11): **Set terms from a related post**, id `terms_from_related_post` (FW-63's scheme).
 
 - **Axes:** basis **relationship** (`post_parent`, or an ACF relationship / post-object field), effect target **terms**, claim as today (`conflict_handling`).
-- **Detail home:** none yet; this row carries the design settled in the 2026-11-11 grilling session.
-- **Progress:** Not started. Design settled 2026-11-11.
+- **Detail home:** `.scratch/fw-61-terms-from-related-post/spec.md` (spec, 2026-11-12). It supersedes this row where they differ: one `conflict_handling` claim replaces `keep_in_sync`; ACF rows gain the taxonomy mirror fields; status gate stays per relationship; the module's contract is entity-neutral and post-only.
+- **Progress:** Not started. Design settled 2026-11-11, extended in a second grilling session 2026-11-12; spec written and ticketed (8 tickets, `.scratch/fw-61-terms-from-related-post/issues/`).
 - **Design:**
   - **Relationship module.** The relationship graph (holder, direction, dependents, sources, the reverse-lookup tiers and their memos) and the sever capture move out of `RelatedPostTermsHandler` into a per-rule relationship module with a `parent` and an `acf` implementation. `CollisionDetector` and `RuleChoice` read direction from it instead of re-deriving it. FW-11's reverse index would live behind it, and FW-5's field effect reads it too.
   - **ACF optional.** The parent relationship always works, as propagation does today on a site without ACF. The ACF relationship is offered only while ACF is active; a stored ACF-relationship row survives ACF being off, as in FW-5.
