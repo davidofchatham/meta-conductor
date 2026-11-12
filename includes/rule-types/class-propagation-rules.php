@@ -8,6 +8,7 @@
 namespace BWS\MetaConductor\RuleTypes;
 
 use BWS\MetaConductor\Handlers\PropagationHandler;
+use BWS\MetaConductor\Relationships\ParentRelationship;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 
 // Prevent direct access
@@ -59,6 +60,22 @@ final class PropagationRules extends RuleType {
 
     public function reads_shared_fields(): array {
         return ['taxonomy', 'post_types', 'hierarchical_post_type_note', 'conflict_handling'];
+    }
+
+    /**
+     * The post types this row writes: its \`post_types\`, as the parent
+     * relationship reports them.
+     */
+    public function written_post_types(array $rule): array {
+        return (new ParentRelationship())->written_post_types($rule);
+    }
+
+    /**
+     * \`post_status\` gates the written post (and the parent with it), not a
+     * source: the base default, stated through the relationship.
+     */
+    public function status_gates_source(): bool {
+        return (new ParentRelationship())->status_gates_source([]);
     }
 
     /**

@@ -9,6 +9,8 @@
 
 namespace BWS\MetaConductor\Handlers;
 
+use BWS\MetaConductor\Relationships\ParentRelationship;
+
 // Prevent direct access
 if (!defined('ABSPATH')) {
     exit;
@@ -65,20 +67,6 @@ if (!defined('ABSPATH')) {
 class PropagationHandler extends UnifiedHandlerBase {
 
     /**
-     * Post statuses a fan-out considers a child at all.
-     *
-     * The reach the recursive descendant walk had before #62, kept verbatim so
-     * the conversion does not quietly widen or narrow which posts propagation
-     * touches. It is NOT the rule's own `post_status` gate: that is applied by
-     * `should_process_post()` inside the child's own apply, where a status the
-     * rule excludes stops the write rather than the enqueue. Enqueuing one post
-     * too many costs a no-op pass; missing one loses the propagation.
-     *
-     * @var string[]
-     */
-    private const CHILD_STATUSES = ['publish', 'draft', 'private'];
-
-    /**
      * Terms removed from an object THIS REQUEST, keyed `"object_id:taxonomy"`.
      *
      * Written by `capture_removed_terms()` (the capture hook), read by the
@@ -95,15 +83,16 @@ class PropagationHandler extends UnifiedHandlerBase {
     private array $captured_removals = array();
 
     /**
-     * Immediate children by `"post_id|post_types"`, for the request.
-     *
-     * The fan-out is asked once per RULE per pass, so two propagation rules
-     * over the same post types would otherwise run the same `post_parent` query
-     * twice per entity, on every entity in a chain.
-     *
-     * @var array<string,int[]>
+     * The parent graph (FW-61 ticket 02): the immediate-children query and
+     * its per-request memo. This handler keeps the lost-terms capture, the
+     * claim and the writes.
      */
-    private array $child_cache = array();
+    private ParentRelationship $relationship;
+
+    public function __construct() {
+        $this->relationship = new ParentRelationship();
+        parent::__construct();
+    }
 
     /**
      * Capture only — no apply hooks (#62).
@@ -142,15 +131,16 @@ class PropagationHandler extends UnifiedHandlerBase {
      * @return bool Whether this post's terms actually changed.
      */
     public function apply_to_post(int $post_id, array $rule): bool {
-        if (!$this->should_process_post($post_id, $rule)) {
+        $post = get_post($post_id);
+        if (!$post || !$this->relationship->is_eligible_dependent($post, $rule)) {
             return false;
         }
 
-        $post = get_post($post_id);
-        if (!$post || (int) $post->post_parent <= 0) {
+        $sources = $this->relationship->sources_of($post_id, $rule);
+        if (empty($sources)) {
             return false;
         }
-        $parent_id = (int) $post->post_parent;
+        $parent_id = (int) $sources[0];
 
         // Gate on the PARENT as well as the child. In stock WP a post_parent is
         // always the same post type as the child (the editor's parent dropdown
@@ -159,7 +149,8 @@ class PropagationHandler extends UnifiedHandlerBase {
         // post_parent (programmatic / non-stock) — if that ever becomes real,
         // decide whether propagation scopes the source (parent), the target
         // (child), or both. (0.6.0 review, carried through #62.)
-        if (!$this->should_process_post($parent_id, $rule)) {
+        $parent = get_post($parent_id);
+        if (!$parent || !$this->relationship->is_eligible_source($parent, $rule)) {
             return false;
         }
 
@@ -239,34 +230,12 @@ class PropagationHandler extends UnifiedHandlerBase {
         if ((string) ($rule['taxonomy'] ?? '') === '') {
             return array();
         }
-        if (!$this->should_process_post($post_id, $rule)) {
+        $post = get_post($post_id);
+        if (!$post || !$this->relationship->is_eligible_source($post, $rule)) {
             return array();
         }
 
-        $post_types = $this->resolve_child_post_types($rule);
-        if (empty($post_types)) {
-            return array();
-        }
-
-        // Memoized per (post, post-type set) for the request: a pass asks once
-        // per RULE, and two propagation rules scoped to the same post types
-        // declare the same children. The children of one post do not change
-        // within a request — nothing here writes `post_parent`.
-        $key = $post_id . '|' . implode(',', $post_types);
-        if (isset($this->child_cache[$key])) {
-            return $this->child_cache[$key];
-        }
-
-        $children = get_posts(array(
-            'post_type'      => $post_types,
-            'post_parent'    => $post_id,
-            'post_status'    => self::CHILD_STATUSES,
-            'numberposts'    => -1,
-            'fields'         => 'ids',
-            'suppress_filters' => false,
-        ));
-
-        return $this->child_cache[$key] = array_map('intval', (array) $children);
+        return $this->relationship->dependents_of($post_id, $rule);
     }
 
     /**
@@ -457,28 +426,6 @@ class PropagationHandler extends UnifiedHandlerBase {
         ));
 
         return array_map('absint', $term_ids);
-    }
-
-    /**
-     * Resolve the rule's `post_types` checkboxes to a concrete slug list for
-     * the child query.
-     *
-     * The post-type GATE (should_process_post) treats empty as "all" and never
-     * needs concrete slugs; the fan-out does — get_posts needs real post types
-     * to query by post_parent. So empty `post_types` ⇒ every HIERARCHICAL
-     * public post type (propagation only acts on parent/child trees; V5).
-     *
-     * @param array $rule Rule config.
-     * @return string[] Post-type slugs to query for children.
-     */
-    private function resolve_child_post_types($rule): array {
-        $slugs = $rule['post_types'] ?? [];
-
-        if (empty($slugs)) {
-            $slugs = array_values(get_post_types(['public' => true, 'hierarchical' => true]));
-        }
-
-        return $slugs;
     }
 
     /**

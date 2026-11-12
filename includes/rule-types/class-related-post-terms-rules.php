@@ -9,6 +9,7 @@ namespace BWS\MetaConductor\RuleTypes;
 
 use BWS\MetaConductor\Admin\Config\ConfigHelpers;
 use BWS\MetaConductor\Handlers\RelatedPostTermsHandler;
+use BWS\MetaConductor\Relationships\AcfRelationship;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 
 // Prevent direct access
@@ -49,12 +50,7 @@ final class RelatedPostTermsRules extends RuleType {
      * `dependent_post_type()` reports it.
      */
     public function written_post_types(array $rule): array {
-        if ((string) ($rule['holder_role'] ?? 'target') === 'source') {
-            return [];
-        }
-        $post_type = trim((string) ($rule['post_type'] ?? ''));
-
-        return $post_type === '' ? [] : [$post_type];
+        return (new AcfRelationship())->written_post_types($rule);
     }
 
     /**
@@ -63,7 +59,7 @@ final class RelatedPostTermsRules extends RuleType {
      * source from a run.
      */
     public function status_gates_source(): bool {
-        return true;
+        return (new AcfRelationship())->status_gates_source([]);
     }
 
     /**
