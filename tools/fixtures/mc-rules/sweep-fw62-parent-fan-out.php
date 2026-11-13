@@ -104,11 +104,43 @@ function mcfo_batch() {
 	return $result;
 }
 
+/**
+ * The bulk steps (E) run the rule over EVERY mc_section, fixture posts included,
+ * so their title, slug and meta are saved first and put back after.
+ */
+function mcfo_snapshot() {
+	global $wpdb;
+	$snap = array();
+	foreach ( $wpdb->get_col( "SELECT ID FROM {$wpdb->posts} WHERE post_type = 'mc_section'" ) as $id ) {
+		$snap[ $id ] = array(
+			'row'  => $wpdb->get_row( $wpdb->prepare( "SELECT post_title, post_name FROM {$wpdb->posts} WHERE ID = %d", $id ), ARRAY_A ),
+			'meta' => $wpdb->get_results( $wpdb->prepare( "SELECT meta_key, meta_value FROM {$wpdb->postmeta} WHERE post_id = %d", $id ), ARRAY_A ),
+		);
+	}
+	return $snap;
+}
+
+function mcfo_snapshot_restore( $snap ) {
+	global $wpdb;
+	foreach ( $snap as $id => $state ) {
+		if ( ! get_post( $id ) ) {
+			continue;
+		}
+		$wpdb->update( $wpdb->posts, $state['row'], array( 'ID' => $id ) );
+		$wpdb->delete( $wpdb->postmeta, array( 'post_id' => $id ) );
+		foreach ( $state['meta'] as $m ) {
+			$wpdb->insert( $wpdb->postmeta, array( 'post_id' => $id, 'meta_key' => $m['meta_key'], 'meta_value' => $m['meta_value'] ) );
+		}
+		clean_post_cache( $id );
+	}
+}
+
 mc_isolate( array() );
 mcfo_author();
 
 $ids  = array();
 $pass = true;
+$snap = mcfo_snapshot();
 
 try {
 	// --- A. fresh tree ------------------------------------------------------
@@ -189,6 +221,7 @@ try {
 	foreach ( array_reverse( $ids ) as $id ) {
 		wp_delete_post( $id, true );
 	}
+	mcfo_snapshot_restore( $snap );
 	mc_restore();
 }
 
