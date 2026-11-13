@@ -41,6 +41,15 @@ Two properties are derived from basis rather than declared per rule type:
 
 _Avoid_: condition, relation (the retired name of the *relationship* kind), link (reads as an `<a href>`), reference (ACF's word for the hidden `_name` → field-key row, not a relationship).
 
+**Relationship**:
+The edge a rule traverses when its **basis** includes a relationship: a **source** (the end whose values are read), a **dependent** (the end that is written) and the entity kind of each end. One edge answers both "who feeds this entity" and "who does this entity feed", which is what lets a rule's **reach** be declared from the source side and reconciled from the dependent side. Each kind fixes the entity kind of each end; the contract carries no kind until a second one is implemented. The kinds:
+
+- **Parent** — an entity and its parent: a post and its `post_parent`, or a term and its parent term. *Natural.* Implemented for posts only, as the `parent` relationship of *Set terms from a related post*; the hierarchy rule's term ancestry still walks its own traversal.
+- **ACF field** — an entity and the entities an ACF relationship or post-object field names; the field can sit on a post, a term or a user, and either end can hold it. *Authored.* Implemented for posts only, as the `acf` relationship of *Set terms from a related post*.
+- **Assignment** — a post and the terms it holds. **Draft, not implemented.** It names the traversal *Set terms from a trigger term* does today, so that rule has a place to land if it moves onto the relationship module.
+
+_Avoid_: link, relation, reference (see **Basis**).
+
 **Effect target**:
 What a rule writes, as *(entity, target)* — today "terms in taxonomy T on post P"; later a field, a title, a body class, or who may edit a post (an access gate, evaluated per request and never stored). A target is **set-valued** (terms) or **scalar** (a field, a title). Set-valued targets can compose — several rules contributing to one set is meaningful. Scalar targets cannot: two rules writing one scalar can only be last-writer-wins, so they are always a **collision**.
 
@@ -179,6 +188,7 @@ The residual real collision is a post carrying *both* keys — or two typed-boun
 
 ### Flagged ambiguities
 
+- **relationship the basis kind vs *Relationship* the edge**: **basis** lists *relationship* as one kind of input; **Relationship** is the edge such a rule traverses, with its source, dependent and kinds. A rule has a relationship basis; it follows a Relationship.
 - **status**: reserved for WordPress `post_status` and the future "change post status" action effect. Never use it for a phase or a term.
 - **offset vs fallback duration**: both are durations but distinct. *Offset* shifts an action's window from a boundary; *fallback duration* derives a missing boundary. Not interchangeable.
 - **phase vs action**: a phase is the coarse exclusive band; an action is a finer effect *within* a phase. "about-to-end" is a *during*-phase action, not a fourth phase.

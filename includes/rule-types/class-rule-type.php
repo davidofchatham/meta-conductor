@@ -227,7 +227,7 @@ abstract class RuleType {
      *
      * When true, the rule's status gate must not narrow the posts a run
      * writes (`RuleChoice::reach_statuses()`). Takes the row because a type
-     * with several relationships answers per row (FW-61).
+     * with several relationships answers per row.
      *
      * @param array $rule Projected row.
      * @return bool

@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Set terms from a related post (FW-61): a post takes terms from a post it is
+ * Set terms from a related post: a post takes terms from a post it is
  * related to, by a `relationship` the row names. `parent` is the post's
  * `post_parent` (what propagation did); `acf` is a post an ACF relationship or
  * post-object field names (what Related Post Terms did).

@@ -17,8 +17,8 @@ if (!defined('ABSPATH')) exit;
  * rows of other types and rows already on a new id come back unchanged. Both
  * persisted kind lists (`term_rules`, `format_rules`) are walked. MAP is a
  * plain old-id → new-id table; a merge changes row shape, not just the id, so
- * FW-61's is a separate step with its own flag, RelatedPostMergeMigration, run
- * directly after this one.
+ * the related-post merge is a separate step with its own flag,
+ * RelatedPostMergeMigration, run directly after this one.
  *
  * Runs after SlugEscalationMigration, which still matches the old
  * `title_slug_rules` string.

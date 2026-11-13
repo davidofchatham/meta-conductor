@@ -23,6 +23,7 @@ WordPress core (posts, terms, users, comments)
 Key boundaries (the rules that matter, regardless of class names):
 
 - **Handlers call WordPress core directly** for posts and terms. The shared primitives are `TermOperations` (apply / remove / membership, and `compute_end_state()` as the only encoding of merge / replace / skip) and `AcfBridge` (ACF taxonomy-field read / write). The old `Core\Entity` wrapper was never adopted by the dispatcher-era handlers and is deleted.
+- **A rule whose basis is a relationship asks the relationship module who feeds whom** (`Relationships\Relationship`), and never walks the graph itself. See *The relationship module* below.
 - **Handlers never call `get_option()` directly** — they read/write through the storage layer (`Storage\StorageFactory`), which is also the canonical-shape adapter (see below).
 - **One `wp_options` key** (`bws_meta_conductor_settings`) holds every rule type, each an array of rule rows, plus a few global keys (per-taxonomy conflict overrides, manual-processing toggle).
 - **One handler base**: `UnifiedHandlerBase` (typed PHP 8.1 helpers, storage-backed), composing the `TermOperations` and `AcfBridge` traits. All 7 handlers extend it; the legacy `HandlerBase` was deleted in 0.6.0 when the last handler migrated.
@@ -86,8 +87,8 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
    its runtime "name" — `acf/update_value`'s `$field['name']` AND Admin Columns
    v7's `AC\Column\Context::get_meta_key()` — is the BARE subfield (`sub`, prefix
    stripped). Matching a stored qualified name against either by `===` silently
-   misses. `related_post_terms` matches by name and is verified for TOP-LEVEL
-   relationship fields only; `ConfigHelpers::acf_relationship_field_options()`
+   misses. The `acf` relationship of `terms_from_related_post` matches by name and
+   is verified for TOP-LEVEL relationship fields only; `ConfigHelpers::acf_relationship_field_options()`
    lists top-level fields only (`acf_get_fields($group_key)` doesn't recurse
    Group/Repeater/Flex), so the picker can't offer a nested field and the config
    UI warns as much. Any nested-field support must match by field KEY or reconcile
@@ -140,15 +141,16 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
     `$update===false` path, which fires at auto-draft creation before
     parent/terms exist and is skipped at the real update save — so a new child
     never inherited until the parent was re-saved. Since **#62** the child is
-    reconciled by its own full ordered pass (invariant #17): propagation's
-    applier PULLS from the parent and writes only the post it was handed, and
+    reconciled by its own full ordered pass (invariant #17): the `parent`
+    relationship's applier PULLS from the parent and writes only the post it was
+    handed, and
     the parent's fan-out is what marks the child dirty. `conflict_handling`
     still defines the ongoing semantics — replace = always-sync, skip =
     inherit-once, merge = additive — and the direction is no longer symmetric
     because there is only one: every post reads its own parent. The
     `$processing` reentrancy guard is GONE with the hooks; the pass lock is the
     only guard, and a second one silences the author's own chain.
-    (propagation; was SPEC §V12/B3)
+    (the `parent` relationship of `terms_from_related_post`; was SPEC §V12/B3)
 
 11. **A base-class flip must port EVERY base method the handler still calls, not
     just the obvious primitives.** Re-parenting a handler (e.g. `HandlerBase →
@@ -172,8 +174,8 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
     `get_field_objects($post_id)` enumerates from stored ACF meta and returns
     FALSE for a post with no saved values — so a field that is *attached* (via
     field-group location rules) but *empty* is invisible. A handler that needs to
-    POPULATE such a field for the first time (propagation writing a child that has
-    no ACF value yet) hits a chicken-and-egg: no value → not discovered → never
+    POPULATE such a field for the first time (a `terms_from_related_post` row
+    writing a dependent that has no ACF value yet) hits a chicken-and-egg: no value → not discovered → never
     written. Use `acf_get_field_groups(['post_id' => $id])` + `acf_get_fields()`
     (the same engine the ACF admin uses; value-independent, respects location
     rules; recurse `sub_fields` for nested fields) — see
@@ -274,7 +276,7 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
     it silently never drained. With a dirty-entity queue the natural key is the
     post to RECOMPUTE — the applier asks with exactly that — and the entities
     reach a pass through `drain_captures()` rather than through somebody else's
-    save (see `RelatedPostTermsHandler`).
+    save (see `TermsFromRelatedPostHandler`).
 
 16. **Anything that writes ACF fields in bulk must stand the queue down.** The
     queue cannot tell a user edit from a bulk rewrite; both are `update_field()`.
@@ -332,7 +334,7 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
       without nesting, and why a genuine cycle terminates on the first entity's
       held lock.
 
-    A converted handler may keep an allow-listed **capture** hook — one that only snapshots pre-write state into a request-scoped queue, because the state it reads does not survive the write (#12). Capture is not execution; the captured value is consumed by the applier during a pass. The allow-list is each descriptor's `capture_hooks()`; `propagation_rules` declares one (#62, see the cross-entity bullet below) and `related_post_terms_rules` three (#63). H13 checks both halves — that the hook is registered, and that its callback writes nothing.
+    A converted handler may keep an allow-listed **capture** hook — one that only snapshots pre-write state into a request-scoped queue, because the state it reads does not survive the write (#12). Capture is not execution; the captured value is consumed by the applier during a pass. The allow-list is each descriptor's `capture_hooks()`; `terms_from_related_post` declares the union of its two relationships' hooks: the term-removal capture of the `parent` relationship (#62, see the cross-entity bullet below) and the two ACF update filters plus post deletion of the `acf` relationship (#63). H13 checks both halves — that the hook is registered, and that its callback writes nothing.
 
     **A provocation names entities; the pass decides their fate (#61).** Not
     every entry point is one of the dispatcher's own hooks — bulk apply and
@@ -364,12 +366,13 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
     nothing else, so an entity written from inside another entity's pass is
     reconciled by ONE rule, out of authored order, with the rest of the list
     then running against it from whatever hooks fire. That is exactly #35:
-    propagation walked its descendants and wrote them, the child's
+    the rule that is now the `parent` relationship walked its descendants and
+    wrote them, the child's
     `set_object_terms` woke hierarchical on its own hook, and the child gained
     an expansion level nobody had authored. The split that dissolves it:
 
     - The applier INVERTS to a pull. `apply_to_post(P, rule)` reconciles P by
-      READING the entities the rule points at — for propagation, P's parent.
+      READING the entities the rule points at — for a `parent` row, P's parent.
       Every post that needs reconciling therefore arrives as the subject of its
       own full ordered pass.
     - The handler separately DECLARES its reach through `fan_out(int, array):
@@ -383,21 +386,22 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
       the termination argument; returning the whole subtree would re-enqueue the
       same posts from every ancestor for the same result.
 
-    This also kills the propagation-before-hierarchical instantiation-order
+    This also kills the parent-rule-before-hierarchical instantiation-order
     dependency, which existed only because `TaxonomyManager` happened to
     construct the two handlers in that sequence. Both orders are now authorable
     and produce different, documented results (fixture matrix §62c/§62d).
 
     **The unit of execution is a rule ROW, and for a multi-row type that is a
-    behaviour change, not a refactor (#63).** `related_post_terms` was the last
-    conversion and the one where this bites: it ran *every* rule it owned from
+    behavior change, not a refactor (#63).** The ACF rule type (now the `acf`
+    relationship of `terms_from_related_post`) was the last conversion and the one
+    where this bites: it ran *every* rule it owned from
     each of its own hooks, so however many rows it held it occupied ONE slot in
     the order and two of its rows straddling another type's rule was
     inexpressible — the failure mode of type-level ordering (see *Rejected* under this invariant).
     Splitting it per row is what makes the position of each row mean something,
     and it necessarily changes what two rows in one taxonomy do: they used to
-    union into a single write and they now compose by order, so a keep-in-sync
-    (*owning*) row ordered last replaces what an earlier one wrote. One rule's
+    union into a single write and they now compose by order, so an *owning*
+    row ordered last replaces what an earlier one wrote. One rule's
     own multiple sources still union — that is the rule resolving its
     jurisdiction, not two rules contending. A conversion that preserved the
     union would have had to keep the type as one slot, which is the thing being
@@ -412,13 +416,13 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
     under one row would license an unrelated row to empty-replace the taxonomy
     over what an earlier row had just legitimately written.
 
-    **A capture can name an entity no fan-out can reach, and needs its own way into the queue (#63).** A fan-out is asked while passing over a post and names entities reachable *from* it. A sever capture exists precisely because the relationship that made the far entity reachable is what the write destroyed — or because the post holding it was deleted — so there is nothing left to declare from. The handler therefore hands those entities over through `UnifiedHandlerBase::drain_captures()`, which `TermDispatcher::drain()` asks once per drain, before the loop, of every handler whose descriptor `drains_captures()`. That flag is declared, not inferred from `capture_hooks()`: propagation's capture is consumed by an applier the queue was going to run anyway, so having no override is correct there and a silent dead end for a sever. H13 holds the flag and the override in step. Asked rather than pushed: a capture callback that marked dirty itself would be reaching into the dispatcher, and "a capture records and applies nothing" would stop being a property H13 can read off the callback body. Consuming rather than repeating: a handler that returned the same IDs on every call would refill the queue faster than the drain empties it. The visible payoff is that a bare `update_field()` sever — no `save_post`, no `acf/save_post` — now reconciles, which was a documented dead end before (invariant #15's note, fixture matrix §4).
+    **A capture can name an entity no fan-out can reach, and needs its own way into the queue (#63).** A fan-out is asked while passing over a post and names entities reachable *from* it. A sever capture exists precisely because the relationship that made the far entity reachable is what the write destroyed — or because the post holding it was deleted — so there is nothing left to declare from. The handler therefore hands those entities over through `UnifiedHandlerBase::drain_captures()`, which `TermDispatcher::drain()` asks once per drain, before the loop, of every handler whose descriptor `drains_captures()`. That flag is declared, not inferred from `capture_hooks()`: the `parent` relationship's capture is consumed by an applier the queue was going to run anyway, so having no override is correct there and a silent dead end for a sever. H13 holds the flag and the override in step. Asked rather than pushed: a capture callback that marked dirty itself would be reaching into the dispatcher, and "a capture records and applies nothing" would stop being a property H13 can read off the callback body. Consuming rather than repeating: a handler that returned the same IDs on every call would refill the queue faster than the drain empties it. The visible payoff is that a bare `update_field()` sever — no `save_post`, no `acf/save_post` — now reconciles, which was a documented dead end before (invariant #15's note, fixture matrix §4).
 
     **The one thing live state cannot answer is a removal, and that is what a
     capture hook is for.** A term the parent HELD and then lost is, on the
     child, indistinguishable from a term the child holds independently — no
     provenance is recorded anywhere — yet under `merge` the two must be treated
-    differently. So propagation captures the removal as it happens
+    differently. So a `parent` row captures the removal as it happens
     (`deleted_term_relationships`, the only hook that sees a
     `wp_remove_object_terms`) into a request-scoped map, and each child's
     applier subtracts what its parent lost. The capture is filtered to terms the
@@ -494,7 +498,7 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
       `post_title`. The idempotency meta is now written from the *resolved base*
       rather than the submitted title, which is what makes a re-pass over an
       unchanged post record the same pair back instead of compounding.
-    - **Rejected: partitioning by page or kind so that order never matters.** The claim that effect kind partitions cleanly ("nothing in the term group reads a title, so title/slug is a terminal sink") is false in both directions. `title_slug` reads terms and meta; the Set a field from a pattern rule reads terms through the same token engine; `user_based` WRITES terms (a *deferring* claim for the preset, *owning* for the lock); a planned `acf_relationship_rules` would write `post_parent`, which propagation reads, and planned status mirroring `post_status`, which several rules use as a filter gate. These are **producer→consumer** edges — asymmetric, derivable — as against invariant 19's **collision** edges, which are symmetric and need an author. Collisions need the same effect target, hence the same kind; producer→consumer edges cross kinds. That is why order is authored within a kind and derived between kinds, and why a page boundary carries no semantics.
+    - **Rejected: partitioning by page or kind so that order never matters.** The claim that effect kind partitions cleanly ("nothing in the term group reads a title, so title/slug is a terminal sink") is false in both directions. `title_slug` reads terms and meta; the Set a field from a pattern rule reads terms through the same token engine; `user_based` WRITES terms (a *deferring* claim for the preset, *owning* for the lock); a planned `acf_relationship_rules` would write `post_parent`, which the `parent` relationship reads, and planned status mirroring `post_status`, which several rules use as a filter gate. These are **producer→consumer** edges — asymmetric, derivable — as against invariant 19's **collision** edges, which are symmetric and need an author. Collisions need the same effect target, hence the same kind; producer→consumer edges cross kinds. That is why order is authored within a kind and derived between kinds, and why a page boundary carries no semantics.
     - **The kind graph must stay acyclic.** It is today. A rule that set terms *from* a title would close a cycle no ordering resolves; that must be a hard warning, not a silent pick.
 
 19. **A collision is DETECTED and named, never resolved (#65).** Two rules contend
@@ -600,6 +604,25 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
 
 20. **Read-time hooks are a descriptor fact, and they only read (FW-51).** A rule type can serve visitors, not just write posts: `title_slug` with `flat_urls` rewrites a hierarchical type's permalink (`post_type_link`), resolves its flat path (`request`) and refuses a redirect back to the nested form (`wp_redirect`). Those filters are declared by the descriptor's `runtime_hooks()` (`hook => [method, priority, args]`), registered by `TaxonomyManager::init_handlers()` next to the dispatchers, and implemented on the handler — which still registers nothing itself. They are deliberately not `capture_hooks()`, which is for pre-write snapshots a pass consumes. H13 group 16 fails on a write primitive in any callback, on a listed method the handler does not declare, and on a registry that is never attached. The `request` callback picks the post for a path's last segment (published first, then lowest ID, then any status) and 301s a nested path only when its ancestor chain equals the post's real one; a stale chain, a feed, or a draft's nested URL falls through to core untouched. The third read-time hook is a `wp_redirect` veto (`veto_nested_redirect`, priority 99): a same-host redirect from a flat URL to the same published post's own nested URL (`FlatSlug::is_own_nested_form()`) returns false, which core's `wp_redirect()` and redirect plugins read as not redirected. It exists because a rule recorded before the toggle (`/base/child/` → `/base/parent/child/`) fires at `init`, before `request` can resolve the now-live flat URL, and loops with the nested → flat 301. It names no plugin, so it needs none; browsers that cached the old 301 can still bounce until cleared. Turning `flat_urls` off needs no cleanup: the permalink is derived, so URLs revert to nested. `sweep-flat-urls.php` covers it. The write half is per-type uniqueness: a flat type's slug is a segment straight under the base, so `TitleSlugFromPatternHandler::make_unique_slug()` runs the ladder and then `Tokens\FlatSlug::number()` (lookup per TYPE, no `post_parent`) instead of `wp_unique_post_slug()`; a non-flat type still takes core's. `FlatSlug` refuses core's own bad hierarchical slugs (the rewrite's feed names, `embed`, `^(page)?\d+$`) plus `page` and `attachment`, and a reserved BASE skips the ladder (it is not a collision a parent or a date explains). Pinned by `tests/verify-flat-slug.php`, swept by `sweep-flat-slugs.php`.
 
+## The relationship module
+
+A relationship-basis rule needs two answers about the graph it follows: the **sources** of a dependent (who feeds it) and the **dependents** of a source (who it feeds, which is its declared reach). `Relationships\Relationship` answers both over post IDs, under one rule row, and `TermsFromRelatedPostHandler` calls it. The module never writes: the claim, the mirror read and write, the term write, the no-change short-circuit, the zero-source gate and the dispatcher entry points stay in the handler (invariants 2 and 17).
+
+The contract is `sources_of()`, `dependents_of()`, `is_eligible_source()`, `is_eligible_dependent()`, `written_post_types()` and `status_gates_source()`, each taking the row. The handler picks the implementation from the row's `relationship` value (`relationship_for()`); an unknown or absent value applies nothing and declares no fan-out, before WordPress is touched.
+
+| Relationship | Graph | Status gate | Owns |
+|---|---|---|---|
+| `parent` | a post and its `post_parent` | the written post AND the parent are gated by the row's `post_status` | the memoized immediate-children query; no sever capture |
+| `acf` | a post and the posts an ACF relationship or post-object field names | the source only; a gated-out source still counts as a resolved source, so an owning dependent is emptied rather than skipped as unmanaged | holder and direction (push or pull), the reverse-lookup tiers and their request-lifetime memos, the field-to-target-types memo, the sever capture with its drain channel and rule-keyed record |
+
+- **Entity-neutral in shape, post-only in fact.** Each implementation fixes the entity kind of each end, and both ends are posts for both. The contract has no kind method, no kind parameter and no term or user code, because the dispatcher can only run a pass on a post and an abstraction written before a second kind exists would be a guess. CONTEXT.md → *Relationship* names the kinds a later implementation would add.
+- **Rule-row-aware descriptor methods.** `RuleType::written_post_types()` and `status_gates_source()` take the row and the merged descriptor delegates to the module, so `CollisionDetector` and the Apply dropdown read direction and written types from the descriptor and never re-derive holder and direction. `post_types` scopes the RECEIVING post for both relationships; a parent is gated only on being a valid source.
+- **Removal differs by relationship, on purpose.** On `parent`, a term the parent lost this request is withdrawn from the dependent whatever the claim (the lost-terms capture on `deleted_term_relationships`). On `acf`, Contributing is add-only and Owning is how an author gets removal; a source cut from an `acf` row is the sever capture's job, and only Owning acts on it. Making the two agree is FW-66.
+- **ACF taxonomy mirror fields on both.** A source's terms are its native terms plus any ACF taxonomy field attached to it for that taxonomy. The dependent's native terms and each attached field are written to the same claim end state, each against its own current value, because the two stores can legitimately differ. Fields are found by location rule, not by saved value (invariant 12), so an attached-but-empty field still receives its first write.
+- **A second config gate dimension.** A subfield, or a shared note via `RuleType::shared_field_when()`, may declare a `when`; `ConfigHelpers::gate()` turns it into a clause beside the type gate, so the ACF-only controls show on `relationship = acf` without a hand-written type list. A deliberate flip from `acf` to `parent` drops the ACF-only settings on save, the same trade changing `type` already makes (see *The ordered rule repeaters*).
+- **Rejected: a kind parameter on the contract now.** It would be written against one kind. **Rejected: folding the merge into `RuleTypeIdMigration`.** Sites had already run that migration with its flag set, so a new step under the flag would never run there, and a merge changes row shape where that migration only renames an id. `RelatedPostMergeMigration` has its own flag and runs directly after it; it is deleted one minor release after it ships.
+- **Not on the module yet.** The hierarchy rule's term ancestry and the trigger-term rule's assignment traversal keep their own traversal (FW-65).
+
 ## Settings UI — WP Wireframe
 
 The settings UI is a React app provided by `tdrayson/wp-wireframe`. Config classes live under [includes/admin/config/](../includes/admin/config/), each exposing a `section()` method; the top-level composer assembles **three tabs** from them:
@@ -703,11 +726,11 @@ The storage interface (`RuleStorage`) declares only what has callers — `get_ki
 
 ### A row names several taxonomies (FW-56)
 
-A row of a type that reads the shared `taxonomy` field (`reads_shared_fields()` lists it: term count, propagation, hierarchical, hierarchical level restriction, related post terms) may hold a **list** of taxonomies. `project_kind_rules()` expands it on read into one scalar row per taxonomy, adjacent and in the list's order, so no handler, descriptor or the collision detector ever sees an array — the rule behaves exactly as if the row were repeated once per taxonomy (sweep `sweep-fw56-multi-taxonomy.php` pins that equivalence). The alternative, an array through every handler (`recompute_dependent`, `capture_removed_dependents`, `process_severed`, the label snapshots), cost far more for no gain.
+A row of a type that reads the shared `taxonomy` field (`reads_shared_fields()` lists it: term count, terms from a related post, hierarchical, hierarchical level restriction) may hold a **list** of taxonomies. `project_kind_rules()` expands it on read into one scalar row per taxonomy, adjacent and in the list's order, so no handler, descriptor or the collision detector ever sees an array — the rule behaves exactly as if the row were repeated once per taxonomy (sweep `sweep-fw56-multi-taxonomy.php` pins that equivalence). The alternative, an array through every handler (`recompute_dependent`, `capture_removed_dependents`, `process_severed`, the label snapshots), cost far more for no gain.
 
 What the expansion keeps and what it adds:
 
-- Siblings share the stored row's `id`, so `get_rule()` finds a row by `id`, not by its place in the type's slice, and the rows after a list keep their ids. Nothing in the runtime keys on `id`, and `RelatedPostTermsHandler::sever_key()` is content-derived and includes `taxonomy`, so it stays distinct per taxonomy.
+- Siblings share the stored row's `id`, so `get_rule()` finds a row by `id`, not by its place in the type's slice, and the rows after a list keep their ids. Nothing in the runtime keys on `id`, and `TermsFromRelatedPostHandler::sever_key()` is content-derived and includes `taxonomy`, so it stays distinct per taxonomy.
 - Each sibling carries `stored_taxonomies`, the stored list. `RuleChoice::fingerprint()` puts `taxonomy` back from it, so every expansion fingerprints as the stored row it came from; `OptionRuleStorage::is_expansion_sibling()` lets `CollisionDetector` name a finding by the row's place in the repeater rather than its place in the expansion.
 - Two reads exist. `get_kind_rules()` is expanded and what every runtime reader wants. `get_stored_kind_rules()` is one row per stored row with `taxonomy` the list, and is what *names* a stored row: the Apply page's choice (stored position, stored fingerprint, one dropdown entry per stored row, a run passing all of its expansions), and the row-title snapshot (`project_kind_rules($rows, false)`), which titles the row once, naming every taxonomy.
 - Siblings of one row never collide with each other: they differ in `taxonomy`, so their `taxonomy|<slug>` target keys differ.
