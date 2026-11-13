@@ -213,7 +213,7 @@ final class FieldFromPatternRules extends RuleType {
                 'id'          => 'pattern',
                 'type'        => 'text',
                 'label'       => __('Pattern', 'meta-conductor'),
-                'description' => __('Built from the same tokens as a title & slug pattern, such as {meta:first_name}, {term:taxonomy} or {date_year:field}. If every token is empty the field is cleared.', 'meta-conductor'),
+                'description' => __('Built from the same tokens as a title & slug pattern, such as {meta:first_name}, {term:taxonomy} or {date_year:field}. To read another post, use a parent or refs token; see Available tokens above for what they read and when they update. If every token is empty the field is cleared.', 'meta-conductor'),
                 'required'    => true,
                 'columns'     => 12,
                 'args'        => [
