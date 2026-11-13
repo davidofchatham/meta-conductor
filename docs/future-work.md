@@ -266,8 +266,8 @@ Let a user matched by a rule edit and delete other people's posts that hold one 
 Tokens that read another post's value through a relationship, so a field-from-pattern or title/slug rule can compose from a related post: `{parent:meta:address}` from the parent post, `{refs:venue:meta:season}` from the first post an ACF Relationship or Post Object field names. The receiving post pulls the value; it is rendered through `Tokens\TokenEngine` like any token, so only scalars are useful. FW-5 is the rule for raw copies.
 
 - **Axes:** as the host rule (FW-4, title/slug); basis widens to **relationship**.
-- **Detail home:** none; this row carries the design settled in the 2026-11-13 grilling session. Split out of FW-5 in the 2026-11-11 one.
-- **Progress:** Built on the FW-62 integration branch, unreleased. Shipped: the relation prefixes in `Tokens\TokenEngine` (`{parent:<inner>}`, `{refs:<field>:<inner>}`, the prefix-only `{slug}`, one hop, `TokenSourceInterface::related()` delegating to the relationship module), the parent fan-out in the format pass (`FormatDispatcher::fan_out()`, invariant 18), the help text in the shared token reference and both pattern descriptions, readme and CHANGELOG. The spec is not lifted into `docs/design-history/` yet, so the grilling-session note above stays until it is. FW-5's blocker clears when this row closes.
+- **Detail home:** [design-history/cross-post-tokens.md](design-history/cross-post-tokens.md) (design settled in the 2026-11-13 grilling session; split out of FW-5 in the 2026-11-11 one).
+- **Progress:** Built on the FW-62 integration branch, unreleased. Shipped: the relation prefixes in `Tokens\TokenEngine` (`{parent:<inner>}`, `{refs:<field>:<inner>}`, the prefix-only `{slug}`, one hop, `TokenSourceInterface::related()` delegating to the relationship module), the parent fan-out in the format pass (`FormatDispatcher::fan_out()`, invariant 18), the help text in the shared token reference and both pattern descriptions, readme and CHANGELOG. Spec lifted into design history. FW-5's blocker clears when this row closes.
 - **Design:**
   - **Tokens.** `{parent:<inner>}` reads the post's parent. `{refs:<field>:<inner>}` reads the first related post, in the field's own order, that holds a non-empty value. The field is the second segment and is positional; `refs` is forward only (the receiving post holds the field), and its name matches the `refs` token in the dynamic-tags plugin. `<inner>` is any token the engine already resolves (`meta:`, `term:`, `terms:`, `pub_*`, `mod_*`) plus a new bare `{slug}`, which is meaningful only behind a prefix and resolves empty on the post's own pass.
   - **Engine.** The engine owns the parse and delegates `<inner>` to a source for the related post, so `TokenSourceInterface` gains one related-source read and sources still only fetch. Reads are stored values (meta and terms from the database), not the `$data` overlay of a pass in flight. One hop only: a nested relation prefix resolves empty. A missing source resolves empty through the engine's normal gap handling. New token kinds land in `Tokens\` with H17 golden rows added deliberately.
@@ -293,7 +293,7 @@ On a `parent` row of `terms_from_related_post`, a term the parent lost this requ
 Decide whether a `{parent:…}` or `{refs:…}` token may read a draft, pending, private or trashed source, or only a published one (otherwise resolving empty). A private source's field value landing in a public receiver's title or slug is a quiet leak, and a gate makes the receiver's slug flip when its source publishes.
 
 - **Axes:** as FW-62.
-- **Detail home:** FW-62's row, grilling session 2026-11-13.
+- **Detail home:** [design-history/cross-post-tokens.md](design-history/cross-post-tokens.md), grilling session 2026-11-13.
 - **Progress:** Not started. FW-62 v1 ships without a gate, matching `{parent:slug}`, which reads the parent whatever its status; the help text says so. One exception shipped: `refs` skips a trashed related post, while `{parent:…}` does not, so a gate would also settle that asymmetry.
 - **Open:** whether to gate at all, and if so per rule (a `post_status` list as the term rules carry) or one fixed behavior. Add only if the leak is hit.
 - **Blocked by:** `row:FW-62` • **Interacts with:** FW-62
@@ -303,7 +303,7 @@ Decide whether a `{parent:…}` or `{refs:…}` token may read a draft, pending,
 Make a source edit reach receivers that name it through an ACF field, and offer the reverse direction (the source holds the field and the receivers are the posts it points at). Both need the "who points at this post" lookup, which is FW-11's unindexed `meta_query` on every eligible save unless the field has a reverse or bidirectional partner.
 
 - **Axes:** as FW-62; basis **relationship** (authored).
-- **Detail home:** FW-62's row, grilling session 2026-11-13.
+- **Detail home:** [design-history/cross-post-tokens.md](design-history/cross-post-tokens.md), grilling session 2026-11-13.
 - **Progress:** Not started. FW-62 v1 makes `refs` forward only and pull-only, and states the staleness in its help text.
 - **Open:** whether to ship before FW-11 using the field's reverse partner where one exists, or wait for the index. A token carries no relationship row, so fan-out would scan the format rules for `refs` tokens and build the holder and direction from the token.
 - **Blocked by:** `row:FW-62` • **Interacts with:** FW-5, FW-11, FW-62
@@ -313,7 +313,7 @@ Make a source edit reach receivers that name it through an ACF field, and offer 
 Resolve `{parent:…}` and `{refs:…}` inside a subfield pattern (field-from-pattern writing one subfield across a repeater's rows) against the owning post's related post. Today `RowTokenSource` answers empty for both.
 
 - **Axes:** as FW-4; basis widens to **relationship**.
-- **Detail home:** FW-62's row, grilling session 2026-11-13.
+- **Detail home:** [design-history/cross-post-tokens.md](design-history/cross-post-tokens.md), grilling session 2026-11-13.
 - **Progress:** Not started. FW-62 v1 resolves both prefixes empty in a row pattern, the precedent `parent:slug` set.
 - **Blocked by:** `row:FW-62` • **Interacts with:** FW-4, FW-62
 

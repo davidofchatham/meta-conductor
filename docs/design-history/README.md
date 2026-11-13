@@ -32,3 +32,4 @@ A file here is **not** an ADR. An ADR states a decision and its consequences in 
 | [term-count-limit.md](term-count-limit.md) | `term_count_rules` — count cap split out of level restriction, newest-wins via request-lifetime delta capture | 2026-11-05 |
 | [rule-type-ids.md](rule-type-ids.md) | The seven rule-type ids renamed to their labels minus the verb, `RuleTypeIdMigration` (FW-63) | 2026-11-12 |
 | [related-post-terms-merge.md](related-post-terms-merge.md) | Parent propagation and ACF related-post terms merged into `terms_from_related_post`, the relationship module, mirror fields on ACF rows (FW-61) | 2026-11-13 |
+| [cross-post-tokens.md](cross-post-tokens.md) | `{parent:…}` / `{refs:…}` cross-post tokens, prefix-only `{slug}`, format-pass parent fan-out (FW-62) | 2026-11-13 |
