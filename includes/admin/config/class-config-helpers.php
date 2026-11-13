@@ -77,7 +77,8 @@ class ConfigHelpers {
             [$tok('{pub_month}'), __('March', 'meta-conductor'), '03'],
             [$tok('{pub_day}', '{pub_hour}', '{pub_minute}'), __('Same numeric pattern as above', 'meta-conductor'), ''],
             [$tok('{mod_year}', '{mod_month}', '{mod_day}', '{mod_hour}', '{mod_minute}'), __('Same as the {pub_*} tokens, from the modified date', 'meta-conductor'), ''],
-            [$tok('{parent:slug}'), __('Immediate parent\'s slug; empty with no parent', 'meta-conductor'), __('Same', 'meta-conductor')],
+            [$tok('{parent:inner}'), __('The inner token read from the parent post, such as {parent:meta:address} or {parent:slug}; empty with no parent', 'meta-conductor'), __('Same', 'meta-conductor')],
+            [$tok('{refs:field:inner}'), __('The inner token read from the first post the ACF field names that has a value, such as {refs:venue:meta:season}', 'meta-conductor'), __('Same', 'meta-conductor')],
             [$tok('{term:taxonomy}'), __('First term name (alpha)', 'meta-conductor'), __('First term slug', 'meta-conductor')],
             [$tok('{terms:taxonomy}'), __('All term names, comma-joined', 'meta-conductor'), __('All slugs, hyphen-joined', 'meta-conductor')],
         ];
@@ -90,13 +91,26 @@ class ConfigHelpers {
             $html .= '<tr><td>' . $row[0] . '</td><td>' . esc_html($row[1]) . '</td><td>' . esc_html($row[2]) . '</td></tr>';
         }
 
+        // The html field's content is passed through raw, so the bare slug token
+        // is safe here (it is not a description: don't #4b).
+        $notes = [
+            __('The inner token of a parent or refs token is a meta, term, terms, pub_ or mod_ token, or slug (the related post\'s own slug). A bare {slug} on its own is empty.', 'meta-conductor'),
+            __('One hop only: a parent or refs token inside another resolves empty. Values are read as stored on the related post, whatever its status, so a draft or private source reads like a published one.', 'meta-conductor'),
+            __('A refs token names the ACF field by its name alone, and takes the first related post, in the field\'s own order, that has a value (a post that is deleted or in the trash is skipped; if that post holds a list rather than a single value, the token is empty and later posts are not tried). Use a field name no other field group shares, since two groups with the same bare name are ambiguous; write a field inside an ACF Group by its group-qualified name.', 'meta-conductor'),
+            __('Editing a parent updates its children (and theirs) automatically. Editing a post that a refs token reads does not: the receiving post updates when it is saved, or when you run Apply to Existing Posts, and a bulk run can leave one stale until a second run.', 'meta-conductor'),
+            __('A pattern on a repeater subfield resolves both parent and refs tokens empty.', 'meta-conductor'),
+        ];
+        $html_notes = '<ul style="margin:8px 0 0 18px;list-style:disc;font-size:12px;">'
+            . implode('', array_map(static fn(string $n): string => '<li>' . esc_html($n) . '</li>', $notes))
+            . '</ul>';
+
         return [
             'id'      => 'token_reference',
             'type'    => 'html',
             'columns' => 12,
             'args'    => [
                 'variant' => 'info',
-                'content' => $html . '</tbody></table></details>',
+                'content' => $html . '</tbody></table>' . $html_notes . '</details>',
             ],
         ];
     }
