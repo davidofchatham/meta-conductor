@@ -17,6 +17,13 @@ A named family of rules with shared structure and a dedicated handler (e.g. Temp
 
 A rule type is named **Verb effect from basis**, so its name follows from its axes: *Set terms from a trigger term*, *Set title and slug from a pattern*, *Set a field from a related post*. **Set** is the verb for any rule that writes a value, whatever its **claim** — a rule that adds, replaces or fills only blanks all "set", which is why the verb is not "add". **Restrict** is the verb for the *restricting* claim, which writes nothing and so has no "from": *Restrict how many terms a post holds*. The name stands alone; it carries no description after it.
 
+Rejected alternatives for the naming scheme:
+- *The effect as a rule option* ("Set from a related post" with terms | field). Rules are grouped, ordered and evaluated per effect kind, and a type lives in exactly one persisted kind list. A cross-kind rule could not be ordered against the other rules writing its field, and terms (set-valued) and a field (scalar) differ in what a claim means.
+- *One type for title/slug and Computed field.* Already rejected at build: [field-transformation.md](docs/design-history/field-transformation.md) story 22.
+- *"Add" as the verb.* Wrong for owning and deferring rules, which remove or fill only blanks.
+- *"Link" or "reference" as the relationship noun.* "Link" reads as an `<a href>`; "reference" is ACF's word for the hidden `_name` → field-key row.
+- *"Term tree" and "paired term".* Unclear on their own; the domain word is *hierarchy*, and the UI's own word for a trigger-term rule is *trigger term*.
+
 **Handler**:
 The code that processes all rules of one rule type against entities.
 

@@ -100,26 +100,6 @@ Copy a field value across a relationship, the way FW-61's merged rule copies ter
 - **Open:** repeater-subfield *targets* (writing one subfield across a repeater's rows, as FW-4 can) are undecided for v1.
 - **Blocked by:** — • **Interacts with:** FW-4, FW-7, FW-11, FW-14, FW-46, FW-62, FW-63
 
-#### FW-66 — Unify removal across relationships
-
-On a `parent` row of `terms_from_related_post`, a term the parent lost this request is withdrawn from the dependent whatever the claim (the lost-terms capture on `deleted_term_relationships`). On an `acf` row, *Contributing* only adds and never removes; *Owning* is how an author gets removal. Make the two agree: ACF *Contributing* withdraws a term a source lost, through a per-source lost-terms capture and the several-source rule that a term lost by one source and still held by another must stay.
-
-- **Axes:** basis **relationship** (both edges), effect target **terms**, claim **contributing**.
-- **Detail home:** [architecture.md](architecture.md) → *The relationship module* (removal differs by relationship, on purpose). The claim help text states the difference to authors today.
-- **Progress:** Not started. Cut from FW-61 so the merge changed the claim control and nothing about what an existing row removes.
-- **Open:** which way the two agree. Bringing ACF up to parent changes live ACF rows (a *Contributing* row starts removing); bringing parent down to ACF stops a parent row withdrawing a lost term. The several-source rule is new on any path: a parent has one source, an ACF dependent can have several, so a term one source lost and another still holds has to stay. The capture shape is also open, since an ACF source is any post a field names rather than one hook on a known parent.
-- **Blocked by:** — • **Interacts with:** FW-11, FW-25, FW-65
-
-#### FW-62 — Cross-post tokens for pattern rules
-
-Tokens that read another post's field through a relationship, such as `{parent:meta:address}` and `{related:<acf_field>:meta:season}`, so a field-from-pattern or title/slug rule can compose from a related post. The receiving post pulls the value; it is rendered through `Tokens\TokenEngine` like any token, so only scalars are useful. FW-5 is the rule for raw copies.
-
-- **Axes:** as the host rule (FW-4, title/slug); basis widens to **relationship**.
-- **Detail home:** none. Split out of FW-5 in the 2026-11-11 grilling session.
-- **Progress:** Not started. `{parent:slug}` already exists (FW-51) and is the precedent.
-- **Open:** resolve through FW-61's relationship module (parent, ACF holder/direction), so a source edit reaches its receivers through the format-pass `fan_out()` FW-5 adds. New token kinds land in `Tokens\` and add H17 golden rows deliberately. Several related sources need a rule: the first like FW-5, or a join.
-- **Blocked by:** — • **Interacts with:** FW-4, FW-5, FW-49, FW-63
-
 #### FW-6 — `body_class_rules`: Document classes from terms/fields
 
 Let an editor declare the `body_class` branching that themes routinely hand-roll (`is-event`, `season-2026`, `status-cancelled`). The rule declares a source — taxonomy, term, or field value — and a class template; the handler hooks `body_class` and probably `post_class`, rendering through `Tokens\TokenEngine` under `OutputPolicy::slug()`.
@@ -149,27 +129,6 @@ Preset terms in a taxonomy when a targeted user (role or ID) starts a new post. 
 - **Progress:** Not started. Storage settled: Options, type `terms_from_acting_user` within `term_rules` (named `user_based_rules` until 2026-11-12). Reassessed 2026-11-02 against UBT 1.0.3: the preset needs no editor JS, REST route or ACF load filter, because the dispatcher writes it at the auto-draft insert and every editor reads stored state. UBT's merge layer and `priority` are not ported; user-specific rows sit above role rows, so "override" is deferring plus list order. A pass with no matching user stands down and never removes. UBT retires when this ships, for sites with only unlocked rules; migration is manual re-entry, with a field-mapping table in the readme upgrade note.
 - **Open:** a testbed sweep must confirm, before build, that the dispatcher fires on an auto-draft and that categories are vacant at that stage. A direct REST or programmatic create has no auto-draft stage and gets no preset; a `wp_insert_post` capture is the upgrade path if that matters. The Apply page does nothing for this type.
 - **Blocked by:** — • **Interacts with:** FW-25, FW-54, FW-55, FW-63
-- **Phase:** 6b
-
-#### FW-54 — `terms_from_acting_user` lock and editor surface
-
-Lock a targeted user's taxonomy to the rule's exact terms, with the editor UI that makes the lock honest: locked controls in the Classic, Block, ACF and ACFE editors, validation, and a display-time preset. Absorbs UBT's lock variant and its open tickets 10 (a locked field is not locked on screen) and 11 (a rule edit does not reach existing posts).
-
-- **Axes:** basis **ambient**, effect target **terms**, claim *owning* — the rule's terms are the value, forced on every write ([CONTEXT.md](../CONTEXT.md) → *restricting-the-editor is not a separate claim*). Not a second type (settled 2026-11-12): a *Lock* claim option on FW-8's `terms_from_acting_user` row, which also lifts that row's fixed `auto-draft` gate. The verb is *Set* whatever the claim, so a preset and a lock cannot carry different names.
-- **Detail home:** `.scratch/plans/ubt-merger.md` → *Lock and editor surface*.
-- **Progress:** Not started. Lock is not live, so its schema is free. Server enforcement is an owning applier, replacing UBT's `force_locked_value` and `reassert_locked_terms`. The UI is lock-only work in UBT (about 225 JS lines, 55 CSS lines, the Gutenberg route class, ACF `prepare_field` and `validate_value`). Design it against ticket 10's renderer matrix rather than porting verbatim. The display-time preset is editor-only, and the Apply page works for it because it has no status gate.
-- **Open:** lock mechanism per renderer; the native tag box's delete buttons reappearing; a single-choice field showing one term of a two-term rule.
-- **Blocked by:** `row:FW-8` • **Interacts with:** FW-25, FW-55
-
-#### FW-55 — `terms_from_acting_user` term-granted edit access
-
-Let a user matched by a rule edit and delete other people's posts that hold one of the rule's terms, without an Editor role. The post is treated as the user's own, so their role is the ceiling. Additive, so nothing is locked out. Replaces the retired deny-only FW-53.
-
-- **Axes:** basis **ambient**. An **access** grant through `map_meta_cap` on `edit_post` / `delete_post` — evaluated per request, nothing stored, so no claim and no place in the pass order.
-- **Detail home:** `.scratch/plans/ubt-merger.md` → *Edit access*.
-- **Progress:** Not started. Settled 2026-11-03: a default-off subfield on a `terms_from_acting_user` row, reusing the row's user match and terms, independent of the preset. The name mismatch is accepted (2026-11-12): a row with the preset off and only the grant on is still labeled "Set terms from the acting user". A separate type would need a persisted kind list that access grants do not have (don't #6) and would duplicate the user match; revisit only if grant-only rows turn out to be common, since splitting a type that is not yet built costs nothing. The grant maps to the post type's own-post caps, so the role is the ceiling (publish included when the role has it). Any term on the post counts, whoever set it; the readme warns that a rule which tags posts also grants access to them. The row must name at least one post type. Matching is any-of, descendants covered. Read-only from `runtime_hooks()`, so no retention guard: removing your term from a post ends your access to it.
-- **Open:** granted drafts and pending posts are probably absent from the list table for a user without `edit_others_posts` (inferred from `WP_Query`, not run); confirm on the testbed, then add a `pre_get_posts` widening in the first cut. Granted published posts already list. REST follows the `edit_post` meta cap (core checks the primitive only on author and sticky changes). Quick edit and bulk edit are unchecked.
-- **Blocked by:** `row:FW-8` • **Interacts with:** FW-6, FW-8, FW-54
 - **Phase:** 6b
 
 #### FW-9 — Status mirroring for ACF-reference rules
@@ -281,6 +240,47 @@ Separate `title_slug_rules` into a title type and a slug type in `format_rules`,
 
 ---
 
+#### FW-54 — `terms_from_acting_user` lock and editor surface
+
+Lock a targeted user's taxonomy to the rule's exact terms, with the editor UI that makes the lock honest: locked controls in the Classic, Block, ACF and ACFE editors, validation, and a display-time preset. Absorbs UBT's lock variant and its open tickets 10 (a locked field is not locked on screen) and 11 (a rule edit does not reach existing posts).
+
+- **Axes:** basis **ambient**, effect target **terms**, claim *owning* — the rule's terms are the value, forced on every write ([CONTEXT.md](../CONTEXT.md) → *restricting-the-editor is not a separate claim*). Not a second type (settled 2026-11-12): a *Lock* claim option on FW-8's `terms_from_acting_user` row, which also lifts that row's fixed `auto-draft` gate. The verb is *Set* whatever the claim, so a preset and a lock cannot carry different names.
+- **Detail home:** `.scratch/plans/ubt-merger.md` → *Lock and editor surface*.
+- **Progress:** Not started. Lock is not live, so its schema is free. Server enforcement is an owning applier, replacing UBT's `force_locked_value` and `reassert_locked_terms`. The UI is lock-only work in UBT (about 225 JS lines, 55 CSS lines, the Gutenberg route class, ACF `prepare_field` and `validate_value`). Design it against ticket 10's renderer matrix rather than porting verbatim. The display-time preset is editor-only, and the Apply page works for it because it has no status gate.
+- **Open:** lock mechanism per renderer; the native tag box's delete buttons reappearing; a single-choice field showing one term of a two-term rule.
+- **Blocked by:** `row:FW-8` • **Interacts with:** FW-25, FW-55
+
+#### FW-55 — `terms_from_acting_user` term-granted edit access
+
+Let a user matched by a rule edit and delete other people's posts that hold one of the rule's terms, without an Editor role. The post is treated as the user's own, so their role is the ceiling. Additive, so nothing is locked out. Replaces the retired deny-only FW-53.
+
+- **Axes:** basis **ambient**. An **access** grant through `map_meta_cap` on `edit_post` / `delete_post` — evaluated per request, nothing stored, so no claim and no place in the pass order.
+- **Detail home:** `.scratch/plans/ubt-merger.md` → *Edit access*.
+- **Progress:** Not started. Settled 2026-11-03: a default-off subfield on a `terms_from_acting_user` row, reusing the row's user match and terms, independent of the preset. The name mismatch is accepted (2026-11-12): a row with the preset off and only the grant on is still labeled "Set terms from the acting user". A separate type would need a persisted kind list that access grants do not have (don't #6) and would duplicate the user match; revisit only if grant-only rows turn out to be common, since splitting a type that is not yet built costs nothing. The grant maps to the post type's own-post caps, so the role is the ceiling (publish included when the role has it). Any term on the post counts, whoever set it; the readme warns that a rule which tags posts also grants access to them. The row must name at least one post type. Matching is any-of, descendants covered. Read-only from `runtime_hooks()`, so no retention guard: removing your term from a post ends your access to it.
+- **Open:** granted drafts and pending posts are probably absent from the list table for a user without `edit_others_posts` (inferred from `WP_Query`, not run); confirm on the testbed, then add a `pre_get_posts` widening in the first cut. Granted published posts already list. REST follows the `edit_post` meta cap (core checks the primitive only on author and sticky changes). Quick edit and bulk edit are unchecked.
+- **Blocked by:** `row:FW-8` • **Interacts with:** FW-6, FW-8, FW-54
+- **Phase:** 6b
+
+#### FW-62 — Cross-post tokens for pattern rules
+
+Tokens that read another post's field through a relationship, such as `{parent:meta:address}` and `{related:<acf_field>:meta:season}`, so a field-from-pattern or title/slug rule can compose from a related post. The receiving post pulls the value; it is rendered through `Tokens\TokenEngine` like any token, so only scalars are useful. FW-5 is the rule for raw copies.
+
+- **Axes:** as the host rule (FW-4, title/slug); basis widens to **relationship**.
+- **Detail home:** none. Split out of FW-5 in the 2026-11-11 grilling session.
+- **Progress:** Not started. `{parent:slug}` already exists (FW-51) and is the precedent.
+- **Open:** resolve through FW-61's relationship module (parent, ACF holder/direction), so a source edit reaches its receivers through the format-pass `fan_out()` FW-5 adds. New token kinds land in `Tokens\` and add H17 golden rows deliberately. Several related sources need a rule: the first like FW-5, or a join.
+- **Blocked by:** — • **Interacts with:** FW-4, FW-5, FW-49, FW-63
+
+#### FW-66 — Unify removal across relationships
+
+On a `parent` row of `terms_from_related_post`, a term the parent lost this request is withdrawn from the dependent whatever the claim (the lost-terms capture on `deleted_term_relationships`). On an `acf` row, *Contributing* only adds and never removes; *Owning* is how an author gets removal. Make the two agree: ACF *Contributing* withdraws a term a source lost, through a per-source lost-terms capture and the several-source rule that a term lost by one source and still held by another must stay.
+
+- **Axes:** basis **relationship** (both edges), effect target **terms**, claim **contributing**.
+- **Detail home:** [architecture.md](architecture.md) → *The relationship module* (removal differs by relationship, on purpose). The claim help text states the difference to authors today.
+- **Progress:** Not started. Cut from FW-61 so the merge changed the claim control and nothing about what an existing row removes.
+- **Open:** which way the two agree. Bringing ACF up to parent changes live ACF rows (a *Contributing* row starts removing); bringing parent down to ACF stops a parent row withdrawing a lost term. The several-source rule is new on any path: a parent has one source, an ACF dependent can have several, so a term one source lost and another still holds has to stay. The capture shape is also open, since an ACF source is any post a field names rather than one hook on a known parent.
+- **Blocked by:** — • **Interacts with:** FW-11, FW-25, FW-65
+
 ## Correctness, Consistency, Architecture
 
 Nothing new for an author. Code or behavior that works but is wrong-shaped: an inconsistency between two surfaces, a dead surface, a seam in the wrong place, or a cost paid on every save. Most of the refactor rows are candidates the 2026-09-24 architecture review (`.scratch/plans/architecture-review-2026-09-24.html`) left out of FW-39.
@@ -293,38 +293,6 @@ A pull rule with NEITHER an explicit reverse field NOR a detectable ACF bidirect
 - **Progress:** Not started. Mitigated in the UI: the config warns the admin to set a reverse or bidirectional field. A code fix — a reverse index maintained on relationship-field save, or a registry built at rule-save time mapping related-post → holders — would remove the warning. Deliberately kept out of #63 even though that ticket rewrote the handler: the fix is its own design decision with its own invalidation questions, and riding it along would have widened the largest ticket in the phase with work that had no dependency on the ordering model.
 - **Open:** the reverse-lookup-resolution cluster is best decided in one sitting — this and FW-19's key-based field matching both touch how the "other end" is resolved. #25 already made the field key each row's stored identity. FW-10's *multiple taxonomies per rule* (now FW-56) was part of this cluster until its shared-resolution payoff turned out to be already memoized.
 - **Blocked by:** — • **Interacts with:** FW-10
-
-#### FW-14 — Rule-type renaming on the domain axes
-
-A rule-type name is composed from the axes: **Verb effect from basis**, with nothing after it. That keeps one string from conflating **basis**, **effect target** and **claim**, as the old names did when `hierarchical` (term graph) and `propagation` (post graph) read as near-synonyms, and so did `related` (term↔term) and `related_post_terms` (post↔post). *Set* is the verb for any rule that writes a value, whatever its claim; *Restrict* is the verb for the restricting claim, which writes nothing and so has no "from".
-
-- **Detail home:** none; this row carries it. Axis definitions and the grammar: [CONTEXT.md](../CONTEXT.md) → *Rule type*.
-- **Progress:** Built 2026-11-11. Design settled in the 2026-11-11 grilling session. This row changed UI vocabulary only; the internal ids follow in FW-63. Since FW-39, each rule type's descriptor `label()` is the single rename site.
-- **Labels** (the id is FW-63's, minted by FW-61 and FW-5 for their own types):
-
-  | Type today | Label | Id (FW-63) |
-  |---|---|---|
-  | `hierarchical` | Set terms from the term hierarchy | `terms_from_term_hierarchy` |
-  | `related` | Set terms from a trigger term | `terms_from_trigger_term` |
-  | `time_based` | Set terms from a date window | `terms_from_date_window` |
-  | `propagation` + `related_post_terms` (FW-61) | Set terms from a related post | `terms_from_related_post` |
-  | FW-5 | Set a field from a related post | `field_from_related_post` |
-  | FW-8 | Set terms from the acting user | `terms_from_acting_user` |
-  | `field_transformation` | Set a field from a pattern | `field_from_pattern` |
-  | `title_slug` | Set title and slug from a pattern | `title_slug_from_pattern` |
-  | `term_count` | Restrict how many terms a post holds | `restrict_term_count` |
-  | `hierarchical_level_restriction` | Restrict terms by tree level | `restrict_terms_by_level` |
-
-- **Scope:** `label()` on seven descriptors. `propagation` and `related_post_terms` keep their labels until FW-61 sets the merged one, so FW-14 and FW-61 release together with no tag between them. A label is just the name: the text after the dash goes, since `label()` feeds only the `type` select. Update the tracked docs that cite an old UI name (readme.txt, README.md, architecture.md, the FW rows), which retires "Computed field", "Date window", "Related term" and "Hierarchy" as UI names. Add a CHANGELOG entry, and fix any test that asserts a type label. Left alone: collapsed row titles (generated from the rule's contents), CHANGELOG history, design-history, fixtures, code comments, test names, tab names.
-- **Rejected:**
-  - *The effect as a rule option* ("Set from a related post" with terms | field). Rules are grouped, ordered and evaluated per effect kind, and a type lives in exactly one persisted kind list (don't #6). A cross-kind rule could not be ordered against the other rules writing its field, and terms (set-valued) and a field (scalar) differ in what a claim means.
-  - *One type for title/slug and Computed field.* Already rejected at build: [field-transformation.md](design-history/field-transformation.md) story 22.
-  - *"Add" as the verb.* Wrong for owning and deferring rules, which remove or fill only blanks.
-  - *"Link" or "reference" as the relationship noun.* "Link" reads as an `<a href>`; "reference" is ACF's word for the hidden `_name` → field-key row.
-  - *"Term tree" and "paired term".* Unclear on their own; the domain word is *hierarchy*, and the UI's own word for `related` is *trigger term*.
-- **Before closing:** move the **Rejected** list into [CONTEXT.md](../CONTEXT.md) → *Rule type*, leaving a one-line pointer here.
-- **Blocked by:** — (`code:the Effect axis carries only term values` cleared 2026-11-11: FW-4 shipped field values, and title values already ran through format rules; body classes, FW-6, remain unbuilt but are a rendered sink and do not reshape the term or field names) • **Interacts with:** FW-4, FW-5, FW-6, FW-61, FW-63
-- **Phase:** before FW-63 and FW-61, so every later piece of work starts on the new names
 
 #### FW-24 — Claim option propagation
 
@@ -482,7 +450,6 @@ The Apply page asks for a rule, but a run applies every enabled rule to each pos
   - **Button state.** Preview and Apply stay enabled during a run while Continue and Start over are the ones that apply, and the reverse once the scope changes. Wireframe 1.1.0 offers only a global disable while any button is busy; there is no per-button `disabled` and no way for the response to set one. An upstream ask for state-driven buttons, next to the shared result region, for the maintainer to file. A script disabling by button position was rejected as fragile. Interim: Apply during a run returns a "press Continue or Start over" card instead of silently resuming.
 - **Blocked by:** — • **Interacts with:** FW-23, FW-31, FW-33, FW-56, FW-58
 
-
 #### FW-58 — Rule-declared reach narrowing for Apply
 
 Apply's reach is every post of the written post types in the default statuses, deliberately conservative, so a rule that can only change some of them still passes all of them. Let a rule type declare a narrower reach, defaulting to none.
@@ -494,7 +461,6 @@ Apply's reach is every post of the written post types in the default statuses, d
   - **First type.** The `parent` relationship of `terms_from_related_post`: `post_parent > 0`, with the parent gate staying in the applier. Every other type stays conservative until it has a safe narrowing; the `acf` relationship is a candidate (dependents holding the reverse field).
   - **Safety.** A narrowing that leaves out a post the pass would have changed under-applies silently, so it must be provably a superset. Pin it with a sweep that compares narrowed and conservative runs on the fixture.
 - **Blocked by:** — • **Interacts with:** FW-57
-
 
 #### FW-59 — Flag identical rules
 
@@ -610,6 +576,18 @@ Wireframe has no JS-side field-type *extension* API: a custom type declared via 
   - **Gap B — the `action` field has no repeater-row context.** Filed as [wp-wireframe#39](https://github.com/tdrayson/wp-wireframe/issues/39) (2026-09-23): an optional request `context` carrying both row identity and action continuation — the latter is what would retire FW-33. FW-16 ships without it; the in-row entry point it would enable is FW-31.
 - **Blocked by:** — • **Interacts with:** FW-16, FW-26, FW-31, FW-33, FW-45, FW-59
 
+#### FW-27 — PHPUnit harness, starting with the snapshot label helpers
+
+The repo's gates are plain-PHP `tests/verify-*.php` scripts run on bare host PHP, deliberately carrying no dev dependency. `WireframeBootstrap`'s `snapshot_*_labels` methods are the best first PHPUnit candidates in the codebase: static, pure `array → array`, hooked on `wp-wireframe/save/payload`, and load-bearing — they are what makes a collapsed repeater row readable instead of "Row 1".
+
+- **Detail home:** none. Carved out of #53 §7, from the PR #19 review; the issue that framed it was #68.
+- **Progress:** Not started. Partial coverage exists today from `verify-config-helpers.php` and `verify-propagation-labels.php`, but both assert on source strings and mappings rather than exercising the transform over real payload shapes.
+- **Open:**
+  - **The gap that matters** is the malformed or partially-populated payload. A condition-hidden subfield is *dropped* from the save payload server-side, so an absent subfield is the normal case, not an edge case — happy-path assertions do not catch a helper that fatals or silently blanks a title when one is missing.
+  - **Three decisions before any code:** whether PHPUnit runs in CI (there is no test workflow today — only `claude.yml`, `claude-code-review.yml`, `release.yml`) or stays a local gate like H1–H14; whether WP calls are stubbed or a WP test bootstrap is pulled in (the former keeps the suite runnable on bare host PHP like the existing harnesses, the latter is a far heavier dependency); and whether the plain-PHP harnesses stay — they should, since several are *source-inspection* checks that PHPUnit fits poorly.
+  - **Scope when it lands:** `require-dev` on PHPUnit plus a `/tests export-ignore` check so nothing new reaches the ZIP. Note the helpers are no longer uniform — four of the five now read the unified repeater's rows, while `snapshot_claim_override_labels` still reads the General tab's per-taxonomy default; fixtures must reflect that split rather than assume one shape.
+- **Blocked by:** — • **Interacts with:** FW-20
+
 #### FW-45 — Assess Wireframe 1.1 features
 
 Wireframe 1.1.0 added features nothing here uses yet. Weigh each against a real need; one that is chosen splits into its own row.
@@ -622,18 +600,6 @@ Wireframe 1.1.0 added features nothing here uses yet. Weigh each against a real 
   - **`header_actions`** — would the collision check or diagnostics read better as a header button?
   - **`download` payloads and table CSV export** — e.g. a collision report or diagnostics export.
 - **Blocked by:** — • **Interacts with:** FW-16, FW-23
-
-#### FW-27 — PHPUnit harness, starting with the snapshot label helpers
-
-The repo's gates are plain-PHP `tests/verify-*.php` scripts run on bare host PHP, deliberately carrying no dev dependency. `WireframeBootstrap`'s `snapshot_*_labels` methods are the best first PHPUnit candidates in the codebase: static, pure `array → array`, hooked on `wp-wireframe/save/payload`, and load-bearing — they are what makes a collapsed repeater row readable instead of "Row 1".
-
-- **Detail home:** none. Carved out of #53 §7, from the PR #19 review; the issue that framed it was #68.
-- **Progress:** Not started. Partial coverage exists today from `verify-config-helpers.php` and `verify-propagation-labels.php`, but both assert on source strings and mappings rather than exercising the transform over real payload shapes.
-- **Open:**
-  - **The gap that matters** is the malformed or partially-populated payload. A condition-hidden subfield is *dropped* from the save payload server-side, so an absent subfield is the normal case, not an edge case — happy-path assertions do not catch a helper that fatals or silently blanks a title when one is missing.
-  - **Three decisions before any code:** whether PHPUnit runs in CI (there is no test workflow today — only `claude.yml`, `claude-code-review.yml`, `release.yml`) or stays a local gate like H1–H14; whether WP calls are stubbed or a WP test bootstrap is pulled in (the former keeps the suite runnable on bare host PHP like the existing harnesses, the latter is a far heavier dependency); and whether the plain-PHP harnesses stay — they should, since several are *source-inspection* checks that PHPUnit fits poorly.
-  - **Scope when it lands:** `require-dev` on PHPUnit plus a `/tests export-ignore` check so nothing new reaches the ZIP. Note the helpers are no longer uniform — four of the five now read the unified repeater's rows, while `snapshot_claim_override_labels` still reads the General tab's per-taxonomy default; fixtures must reflect that split rather than assume one shape.
-- **Blocked by:** — • **Interacts with:** FW-20
 
 #### FW-64 — Retire the `bws_taxonomy_manager*` prefix
 
@@ -654,6 +620,7 @@ Shipped or cut items retire here, densely — a closed item is read in bulk and 
 |---|---|---|
 | FW-2 | Cross-type parent/child propagation | **Retired 2026-11-11.** It fought WP's type-scoped parent UI, and nothing is left to build: FW-61's merged term rule gates a parent relationship only on the receiving post's type, so it already tolerates a cross-type parent if FW-1 ever creates one, and the "terms across types" case is the ACF relationship. |
 | FW-4 | `field_transformation_rules`: Computed Field Output | **Merged in [#80](https://github.com/davidofchatham/meta-conductor/pull/80)** (2026-10-22, Phase 6a). A *Computed field* row in `format_rules` writes a pattern into an ACF field by key — post-level, or one subfield across every row of a repeater from that row's siblings — through `FormatDispatcher::write_fields()` on the `$data` seam, with `text()` / `html()` output policies. It composes by list order with title/slug rules and joins the collision check, the preview and *Apply to Existing Posts*. No pre-write phase was reintroduced ([architecture.md → Field effects ride the `$data` seam](architecture.md#field-effects-ride-the-data-seam)). Spec: [design-history/field-transformation.md](design-history/field-transformation.md). Left out of v1: FW-46, FW-47, FW-49; format transforms stay in site PHP. |
+| FW-14 | Rule-type renaming on the domain axes | **Merged in [#87](https://github.com/davidofchatham/meta-conductor/pull/87)** (2026-11-11); released in 0.11.0 with FW-61 and FW-63. A rule-type name is **Verb effect from basis** with nothing after it, so one string no longer conflates basis, effect target and claim: *Set* is the verb for any rule that writes a value, *Restrict* for the restricting claim, which writes nothing and has no "from". Each descriptor's `label()` is the single rename site, and the text after the old dash is gone. UI vocabulary only; the stored ids followed in FW-63, and FW-61 and FW-5 mint their own types on final ids. The grammar and the rejected alternatives live in [CONTEXT.md](../CONTEXT.md) → *Rule type*. Label table: CHANGELOG 0.11.0. |
 | FW-16 | Apply rules to existing posts | **Merged in [#75](https://github.com/davidofchatham/meta-conductor/pull/75)** (2026-09-24, Phase 7). Added the *Apply to Existing Posts* page: a bulk run is a full ordered pass over the chosen rule's reach, and a disabled rule can run once. Data Conversion and `includes/support/` were deleted. Spec: [design-history/apply-existing.md](design-history/apply-existing.md). Deferred parts are still open as FW-31 (in-row buttons), FW-32 (term dry run) and FW-33 (background runs); Copy / Map return as rule types through FW-4. |
 | FW-18 | Text-domain string sweep | **Shipped in 0.7.0** (Phase 2b rename sweep, [#48](https://github.com/davidofchatham/meta-conductor/pull/48)) — the row survived the 2026-09-11 migration describing work already done. Every `__()` / `_e()` / `_x()` / `_n()` call site now passes `'meta-conductor'`; `'bws-meta-manager'` survives only as the Composer package name in `vendor/`. The *conversion* subsystem's identifiers (JS object, cron / AJAX / transient names) were never part of this row — they were the 2b remainder, closed by deletion with the Data Conversion page in FW-16. |
 | FW-29 | `trigger_term_id`'s `int[]` invariant is declared but not enforced | **Settled by FW-39's storage PR** (`rule-type-descriptor/01`, branch `claude/storage-projection-39`): yes, `normalize_rule_shape()` is the guaranteed boundary. Checkbox gates arrive as slug lists, `target_term_id` as `int`, `trigger_term_id` / `filter_terms` as `int[]`; every consumer re-decode and re-cast is deleted, checkbox decoding moved out of `ConfigHelpers` into storage, and H10 asserts the shape for every rule type. |
