@@ -294,7 +294,7 @@ Decide whether a `{parent:…}` or `{refs:…}` token may read a draft, pending,
 
 - **Axes:** as FW-62.
 - **Detail home:** FW-62's row, grilling session 2026-11-13.
-- **Progress:** Not started. FW-62 v1 ships without a gate, matching `{parent:slug}`, which reads the parent whatever its status; the help text says so.
+- **Progress:** Not started. FW-62 v1 ships without a gate, matching `{parent:slug}`, which reads the parent whatever its status; the help text says so. One exception shipped: `refs` skips a trashed related post, while `{parent:…}` does not, so a gate would also settle that asymmetry.
 - **Open:** whether to gate at all, and if so per rule (a `post_status` list as the term rules carry) or one fixed behavior. Add only if the leak is hit.
 - **Blocked by:** `row:FW-62` • **Interacts with:** FW-62
 
