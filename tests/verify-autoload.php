@@ -104,6 +104,8 @@ $classes = [
     'BWS\\MetaConductor\\Storage\\SlugEscalationMigration',
     // Storage\ rule-type id rewrite (FW-63 01) — delete with the class.
     'BWS\\MetaConductor\\Storage\\RuleTypeIdMigration',
+    // Storage\ related-post merge rewrite (FW-61 05) — delete with the class.
+    'BWS\\MetaConductor\\Storage\\RelatedPostMergeMigration',
     // Admin\
     'BWS\\MetaConductor\\Admin\\Diagnostics',
     'BWS\\MetaConductor\\Admin\\WireframeBootstrap',
