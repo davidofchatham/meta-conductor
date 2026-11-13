@@ -4,7 +4,7 @@ Tags: taxonomy, meta, acf, automation, hierarchical
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 0.11.0
+Stable tag: 0.11.1
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -92,6 +92,9 @@ Full detail, including the two post-status corrections and the storage migration
 See CHANGELOG.md in the plugin directory for the full release log.
 
 == Upgrade Notice ==
+
+= 0.11.1 =
+Fixes the 0.11.0 upgrade showing "unknown rule type" on the first admin load. The rule-type conversion now runs on every request, before the rules tab loads.
 
 = 0.11.0 =
 Rule types are renamed and their stored ids convert automatically on the first admin load. Parent-post and ACF-reference rules merge into Set terms from a related post. ACF rules now also read and write ACF taxonomy fields, so a field left empty on purpose gets filled: review your ACF rules before updating. Level restriction loses One term per level; the new Restrict how many terms a post holds rule replaces it.

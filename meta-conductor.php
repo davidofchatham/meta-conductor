@@ -3,7 +3,7 @@
  * Plugin Name: Meta Conductor
  * Plugin URI: https://github.com/davidofchatham/meta-conductor
  * Description: Unified meta and taxonomy management with hierarchical inheritance, entity relationships, and intelligent automation
- * Version: 0.11.0
+ * Version: 0.11.1
  * Author: David Mitchell (Bridge Web Solutions) and Claude AI
  * License: GPL-2.0-or-later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('META_CONDUCTOR_VERSION', '0.11.0');
+define('META_CONDUCTOR_VERSION', '0.11.1');
 define('META_CONDUCTOR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('META_CONDUCTOR_PLUGIN_URL', plugin_dir_url(__FILE__));
 
@@ -309,9 +309,13 @@ if (!function_exists('bws_meta_manager_init')) {
 	// Create uninstall.php file with the uninstall function
 	
 	/**
-	 * Check version on admin init
+	 * Check version on `init` priority 5, BEFORE WireframeBootstrap::boot()
+	 * (priority 10) and on every request type. On `admin_init` the boot-time
+	 * title repair re-snapshotted `row_title` from the still-old rule-type ids
+	 * (baking "unknown rule type" into storage) before the id migration ran,
+	 * and front-end, cron and REST requests skipped the migration entirely.
 	 */
-	add_action('admin_init', 'bws_taxonomy_manager_check_version');
+	add_action('init', 'bws_taxonomy_manager_check_version', 5);
 	
 	/**
 	 * Show admin notice after activation

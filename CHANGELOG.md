@@ -5,6 +5,12 @@ All notable changes to Meta Conductor are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.1] — 2026-11-13
+
+### Fixed
+
+- **Upgrading to 0.11.0 showed "unknown rule type" on the first admin load.** The rule-type id conversion ran on `admin_init`, after the rules tab had already rebuilt each row's saved title from the old ids, so the first load after upgrading showed the old ids as unknown types and a refresh cleared it. The conversion now runs on `init`, before the rules tab loads, and on every request type, so front-end, cron and REST requests no longer wait for someone to open wp-admin. No rule was changed or lost, but until the conversion ran, a rule still on an old id was skipped, and its title stayed wrong until the next admin load.
+
 ## [0.11.0] — 2026-11-13
 
 ### Highlights
