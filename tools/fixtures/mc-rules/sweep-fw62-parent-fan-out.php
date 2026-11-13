@@ -59,6 +59,7 @@ function mcfo_rule( $title_pattern = '{default_title} - {parent:slug}' ) {
 		'post_type'     => 'mc_section',
 		'title_pattern' => $title_pattern,
 		'slug_pattern'  => '{meta:fw62_code}',
+		'slug_mode'     => 'replace', // default is prefix: code-defaultslug
 	);
 }
 
