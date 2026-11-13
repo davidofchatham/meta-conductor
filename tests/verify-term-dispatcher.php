@@ -981,6 +981,17 @@ if (isset($fsrc)) {
                 || !preg_match('/TokenEngine::tokens\(/', $reads) || !preg_match('/[\'"]parent:[\'"]/', $reads)) {
                 $errors[] = 'parent_token_post_types() does not find {parent:…} rules through reads_parent(), which must scan TokenEngine::tokens() for the `parent:` prefix — a hand-parsed pattern drifts from the grammar render() uses.';
             }
+            // The pattern-bearing keys belong to the rule-type descriptors, not here.
+            if ($reads !== null && (!preg_match('/->pattern_keys\(\)/', $reads) || preg_match('/[\'"](?:title_pattern|slug_pattern|slug_escalation|pattern)[\'"]/', $reads))) {
+                $errors[] = 'reads_parent() must ask the descriptor pattern_keys() which row keys hold patterns, not hard-code them — a new pattern field would silently skip the fan-out (FW-62 03).';
+            }
+            foreach (['title-slug-from-pattern' => ['title_pattern', 'slug_pattern', 'slug_escalation'], 'field-from-pattern' => ['pattern']] as $slug => $keys) {
+                $dsrc = (string) @file_get_contents(dirname(__DIR__) . "/includes/rule-types/class-{$slug}-rules.php");
+                if (!preg_match('/function\s+pattern_keys\s*\(\s*\)\s*:\s*array\s*\{\s*return\s*\[([^\]]*)\]/', $dsrc, $pk)
+                    || preg_split('/\s*,\s*/', str_replace(["'", '"'], '', trim($pk[1]))) !== $keys) {
+                    $errors[] = "class-{$slug}-rules.php must declare pattern_keys() returning [" . implode(', ', $keys) . '] — the format dispatcher reads {parent:…} from exactly these row keys.';
+                }
+            }
             if (!preg_match('/\$this->ordered_rules\(/', $scan)) {
                 $errors[] = 'parent_token_post_types() does not read the ENABLED rules through ordered_rules() — a disabled {parent:…} row would make every parent pay the child lookup.';
             }

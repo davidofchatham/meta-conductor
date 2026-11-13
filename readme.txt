@@ -46,7 +46,7 @@ Title, slug and field patterns can read a value from a related post.
 * One hop only: a prefix inside another prefix resolves empty.
 * `refs` takes the ACF field's name only. Give the field a name no other field group uses, since two groups sharing a bare name are ambiguous, and write a field inside an ACF Group by its group-qualified name.
 * A pattern on a repeater subfield resolves both prefixes empty.
-* No status gate applies: a draft or private related post is read like a published one. Values are read as stored on the related post.
+* No status gate applies: a draft or private related post is read like a published one, so its value can appear in a public title, slug or field. Do not point a token at a value you want kept private. Values are read as stored on the related post.
 * Editing a parent updates its children, and their children, automatically. Editing a post a `refs` token reads does not update the posts that read it: they refresh when saved or when you run *Apply to Existing Posts*, and a bulk run can leave one stale until a second run.
 
 == Upgrade Notes ==

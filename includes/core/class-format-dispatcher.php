@@ -254,7 +254,7 @@ class FormatDispatcher {
         $found = false;
         foreach ($rows as $rule) {
             $type = (string) ($rule['type'] ?? '');
-            if (!Registry::known($type) || !self::owns($type) || !$this->reads_parent($rule)) {
+            if (!Registry::known($type) || !self::owns($type) || !$this->reads_parent($type, $rule)) {
                 continue;
             }
             $written = Registry::get($type)->written_post_types($rule);
@@ -272,11 +272,12 @@ class FormatDispatcher {
     /**
      * Whether any pattern of this row has a `{parent:…}` token.
      *
-     * @param array $rule One format row.
+     * @param string $type Registered rule type of the row.
+     * @param array  $rule One format row.
      * @return bool
      */
-    private function reads_parent(array $rule): bool {
-        foreach (['title_pattern', 'slug_pattern', 'slug_escalation', 'pattern'] as $key) {
+    private function reads_parent(string $type, array $rule): bool {
+        foreach (Registry::get($type)->pattern_keys() as $key) {
             foreach (TokenEngine::tokens((string) ($rule[$key] ?? '')) as $token) {
                 if (str_starts_with($token, 'parent:')) {
                     return true;

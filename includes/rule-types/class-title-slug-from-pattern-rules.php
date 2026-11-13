@@ -52,6 +52,10 @@ final class TitleSlugFromPatternRules extends RuleType {
         return trim((string) ($rule['post_type'] ?? '')) === '' ? null : 'fields|title_slug';
     }
 
+    public function pattern_keys(): array {
+        return ['title_pattern', 'slug_pattern', 'slug_escalation'];
+    }
+
     /** A lookup table keyed by post type: the first matching rule is the only one that runs. */
     public function first_match_wins(): bool {
         return true;

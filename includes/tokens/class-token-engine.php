@@ -185,10 +185,10 @@ final class TokenEngine {
     /**
      * One token's raw value from a source. `parent:<inner>` and
      * `refs:<field>:<inner>` resolve `<inner>` against the related post's source,
-     * one hop: inside it (`$related`) a relation prefix is empty, and so is a bare
+     * one hop: inside it (`$inside_prefix`) a relation prefix is empty, and so is a bare
      * `slug` outside it.
      */
-    private static function value(string $token, TokenSourceInterface $source, OutputPolicy $policy, bool $related): string {
+    private static function value(string $token, TokenSourceInterface $source, OutputPolicy $policy, bool $inside_prefix): string {
         [$kind, $arg] = self::split($token);
         $date_part    = self::date_part_of($token);
 
@@ -196,10 +196,10 @@ final class TokenEngine {
             $date_part !== null && $arg === null              => self::date_part(
                 str_starts_with($kind, 'mod_') ? $source->modified() : $source->published(), $date_part, $policy),
             $date_part !== null                               => self::date_field($source->field($arg), $date_part, $policy),
-            $kind === 'slug' && $arg === null                 => $related ? $source->slug() : '',
+            $kind === 'slug' && $arg === null                 => $inside_prefix ? $source->slug() : '',
             $arg === null                                     => '',
-            $kind === 'parent'                                => $related ? '' : self::through($source, 'parent', '', $arg, $policy),
-            $kind === 'refs'                                  => $related ? '' : self::through_refs($source, $arg, $policy),
+            $kind === 'parent'                                => $inside_prefix ? '' : self::through($source, 'parent', '', $arg, $policy),
+            $kind === 'refs'                                  => $inside_prefix ? '' : self::through_refs($source, $arg, $policy),
             $kind === 'meta'                                  => self::scalar($source->field($arg)),
             $kind === 'term'                                  => self::terms($source, $arg, $policy, true),
             $kind === 'terms'                                 => self::terms($source, $arg, $policy, false),

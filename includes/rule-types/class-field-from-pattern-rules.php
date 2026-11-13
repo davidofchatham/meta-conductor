@@ -47,6 +47,10 @@ final class FieldFromPatternRules extends RuleType {
         return function_exists('acf_get_field') && function_exists('update_field');
     }
 
+    public function pattern_keys(): array {
+        return ['pattern'];
+    }
+
     /**
      * Prefix of a `target_field` value that names a repeater subfield. One select
      * offers both kinds of target, so the option key carries the pair

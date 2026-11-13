@@ -5,6 +5,7 @@ namespace BWS\MetaConductor\Tokens;
 if (!defined('ABSPATH')) exit;
 
 use BWS\MetaConductor\Relationships\AcfRelationship;
+use BWS\MetaConductor\Relationships\ParentRelationship;
 
 /**
  * Token values for one post.
@@ -67,19 +68,20 @@ final class PostTokenSource implements TokenSourceInterface {
     }
 
     /**
-     * `parent` follows `post_parent` from the seam's data (as `{parent:slug}`
-     * always has) to a source over the parent's stored row. `refs` reads the ACF
-     * field `$field` on this post through `AcfRelationship`, so a token and a term
-     * rule agree on what "related" means, and answers with the related posts as one
+     * Both relations read through the relationship module (`ParentRelationship`,
+     * `AcfRelationship`), so a token and a term rule agree on what "related" means.
+     * `parent` answers with a source over the parent's stored row; `refs` reads the
+     * ACF field `$field` on this post and answers with the related posts as one
      * first-non-empty source. Both read the STORED related post, never an overlay.
      */
     public function related(string $relation, string $field = ''): ?TokenSourceInterface {
         if ($relation === 'refs') {
             return $this->refs($field);
         }
-        $parent = $relation === 'parent' ? (int) ($this->data['post_parent'] ?? 0) : 0;
-        $post   = $parent > 0 ? get_post($parent) : null;
-        return $post ? new self($parent, (array) $post) : null;
+        if ($relation !== 'parent' || $this->post_id <= 0) return null;
+        $ids  = (new ParentRelationship())->sources_of($this->post_id, []);
+        $post = $ids ? get_post($ids[0]) : null;
+        return $post ? new self($ids[0], (array) $post) : null;
     }
 
     /** The related posts' sources in the field's order; a post that is gone or trashed is not one. */

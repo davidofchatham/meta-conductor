@@ -491,8 +491,8 @@ $check('a repeater row resolves both relation prefixes empty',
 
 use BWS\MetaConductor\Tokens\FirstOfTokenSource;
 
-$stone  = new FakeTokenSource(['city' => 'Kingston', 'addr' => '', 'rows' => [1]], ['region' => [['North', 'north']]], null, null, 'stone-hall');
-$venue  = new FakeTokenSource(['addr' => '9 Quay St', 'city' => '', 'when' => '20180704'], ['region' => []], new \DateTimeImmutable('2021-06-07 08:09:00', $ny), null, 'quay-room');
+$stone  = new FakeTokenSource(['city' => 'Kingston', 'addr' => '', 'rows' => [1], 'tags' => ['a', 'b']], ['region' => [['North', 'north']]], null, null, 'stone-hall');
+$venue  = new FakeTokenSource(['addr' => '9 Quay St', 'city' => '', 'when' => '20180704', 'tags' => 'solo'], ['region' => []], new \DateTimeImmutable('2021-06-07 08:09:00', $ny), null, 'quay-room');
 $refs   = new FirstOfTokenSource([$stone, $venue]);
 $rsrc   = new FakeTokenSource(['a' => 'Alpha'], [], null, null, '', ['refs:venue' => $refs, 'refs:one' => $venue, 'refs:parent' => $venue]);
 $r      = static fn(string $p, ?TokenSourceInterface $s = null) => TokenEngine::render($p, $s ?? $rsrc, $title);
@@ -511,6 +511,7 @@ $check('refs: a field with no inner token, or no field, resolves empty',
     $r('{refs:venue}') === '' && $r('{refs}') === '' && $r('{refs::meta:addr}') === '' && $r('{refs:venue:}') === '');
 $check('refs: nothing holds the value resolves empty', $r('{refs:venue:meta:missing}') === '' && $r('{refs:one:meta:city}') === '');
 $check('refs: a non-scalar value resolves empty', $r('{refs:venue:meta:rows}') === '' && $r('{meta:a} {refs:venue:meta:rows}') === 'Alpha');
+$check('refs: a non-scalar value is no value, so a later post that holds one wins', $r('{refs:venue:meta:tags}') === 'solo' && $r('{refs:one:meta:tags}') === 'solo');
 $check('refs: a nested prefix resolves empty, either way round',
     $r('{refs:venue:refs:venue:meta:addr}') === '' && $r('{refs:venue:parent:meta:addr}') === '' && $r('{parent:refs:venue:meta:addr}') === ''
     && $r('{meta:a} {refs:venue:refs:venue:slug}') === 'Alpha');
@@ -529,11 +530,18 @@ $GLOBALS['site_tz']   = 'America/New_York';
 $GLOBALS['mc_slugs']  = [7 => 'harbor-light'];
 $GLOBALS['mc_status'] = [];
 function get_post(int $id) {
+    if ($id === 1) {
+        return (object) ['ID' => 1, 'post_parent' => $GLOBALS['mc_parent'] ?? 0];
+    }
     return isset($GLOBALS['mc_slugs'][$id])
         ? (object) ['ID' => $id, 'post_name' => $GLOBALS['mc_slugs'][$id], 'post_date' => '2019-03-04 05:06:00', 'post_modified' => '0000-00-00 00:00:00', 'post_status' => $GLOBALS['mc_status'][$id] ?? 'publish']
         : null;
 }
-$pt = static fn(array $d) => new \BWS\MetaConductor\Tokens\PostTokenSource(1, $d);
+// `parent` reads the stored post_parent of post 1 through ParentRelationship; the data's post_parent seeds the stub row.
+$pt = static function (array $d) {
+    $GLOBALS['mc_parent'] = (int) ($d['post_parent'] ?? 0);
+    return new \BWS\MetaConductor\Tokens\PostTokenSource(1, $d);
+};
 $check('post source: modified reads post_modified in site time',
     $pt(['post_modified' => '2027-11-09 13:05:00'])->modified()?->format('Y-m-d H:i e') === '2027-11-09 13:05 America/New_York');
 $check('post source: absent, empty and zero modified are null',

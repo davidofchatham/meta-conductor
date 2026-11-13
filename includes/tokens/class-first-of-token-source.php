@@ -22,7 +22,8 @@ final class FirstOfTokenSource implements TokenSourceInterface {
     public function field(string $key): mixed {
         foreach ($this->members as $member) {
             $value = $member->field($key);
-            if ($value !== '' && $value !== null && $value !== false && $value !== []) return $value;
+            // A non-scalar (a nested array or object) is no value: it would win here and then resolve empty.
+            if (is_scalar($value) && $value !== '' && $value !== false) return $value;
         }
         return '';
     }
