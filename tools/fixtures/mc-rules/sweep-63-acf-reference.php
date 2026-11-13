@@ -218,9 +218,9 @@ function mc63_rule_b() {
  * @return int[] [subject, tier-1 holder, tier-2 holder]
  */
 function mc63_stage( array $rows ) {
-	$subject = mc_pid( 'item-solo-a' );
-	$holder  = mc_pid( 'section-holder' );
-	$bidi    = mc_pid( 'section-bidi' );
+	$subject = mc_pid_strict( 'item-solo-a' );
+	$holder  = mc_pid_strict( 'section-holder' );
+	$bidi    = mc_pid_strict( 'section-bidi' );
 	if ( ! $subject || ! $holder || ! $bidi ) {
 		WP_CLI::error( 'Fixture posts missing — seed mc-rules first.' );
 	}
@@ -243,9 +243,9 @@ function mc63_stage( array $rows ) {
 	// Relationships, written while nothing is live. Both holders keep their
 	// seeded dependents and gain the subject, so nothing else in the fixture
 	// loses a source.
-	update_field( 'mc_related_items', array( mc_pid( 'item-alpha' ), mc_pid( 'item-beta' ), $subject ), $holder );
+	update_field( 'mc_related_items', array( mc_pid_strict( 'item-alpha' ), mc_pid_strict( 'item-beta' ), $subject ), $holder );
 	update_field( 'mc_parent_section', array( $holder ), $subject );
-	update_field( 'mc_bidi_items', array( mc_pid( 'item-bidi' ), $subject ), $bidi );
+	update_field( 'mc_bidi_items', array( mc_pid_strict( 'item-bidi' ), $subject ), $bidi );
 
 	// Distinct source term sets — Coastal from the tier-1 holder, West from the
 	// tier-2 one. Row B keys on Coastal.
@@ -312,7 +312,7 @@ switch ( $step ) {
 	// ---- §63c: the sever itself, in its own request ------------------------
 	case 'sever-b':
 		WP_CLI::log( '§63c — dependent-end sever with a consumer rule after it' );
-		$subject = mc_pid( 'item-solo-a' );
+		$subject = mc_pid_strict( 'item-solo-a' );
 
 		// The #43 end: the DEPENDENT drops its own source. acf/update_value
 		// captures it; the save marks the post; the drain runs the pass.
@@ -340,7 +340,7 @@ switch ( $step ) {
 	// ---- §63d: the bare write, in its own request. Arm only. ---------------
 	case 'bare-b':
 		WP_CLI::log( '§63d — bare update_field() sever, NO post save' );
-		$subject = mc_pid( 'item-solo-a' );
+		$subject = mc_pid_strict( 'item-solo-a' );
 
 		// No do_action('acf/save_post'), no wp_update_post, no explicit drain.
 		// The capture fires on acf/update_value; AcfWriteQueue::flush marks the
@@ -354,7 +354,7 @@ switch ( $step ) {
 	// ---- §63e: the later request ------------------------------------------
 	case 'bare-c':
 		WP_CLI::log( '§63e — assert the shutdown drain applied the bare sever' );
-		$subject = mc_pid( 'item-solo-a' );
+		$subject = mc_pid_strict( 'item-solo-a' );
 		$check( '§63e subject after bare-update_field sever', mc63_slugs( $subject ), array() );
 		$check( '§63e reverse field really is empty', (array) get_field( 'mc_parent_section', $subject ), array() );
 		break;
@@ -461,7 +461,7 @@ switch ( $step ) {
 
 	case 'identity-b':
 		WP_CLI::log( '§63h — the legacy row, passed in a request that never names the field' );
-		$subject = mc_pid( 'item-solo-a' );
+		$subject = mc_pid_strict( 'item-solo-a' );
 
 		// Before anything resolves the field: the bare name belongs to the decoy.
 		$resolved = acf_get_field( 'mc_related_items' );
@@ -506,7 +506,7 @@ switch ( $step ) {
 	// ---- §63g: cut A's link only. C must write, S must stay out. ----------
 	case 'cross-b':
 		WP_CLI::log( '§63g — cut the tier-1 link (row A only) and re-pass' );
-		$subject = mc_pid( 'item-solo-a' );
+		$subject = mc_pid_strict( 'item-solo-a' );
 
 		// Dependent-end sever of the TIER 1 pair. It leaves BOTH A and S
 		// resolving nothing — A because its explicit reverse field is this one,
@@ -526,18 +526,18 @@ switch ( $step ) {
 		break;
 
 	case 'restore':
-		$subject = mc_pid( 'item-solo-a' );
-		$holder  = mc_pid( 'section-holder' );
-		$bidi    = mc_pid( 'section-bidi' );
+		$subject = mc_pid_strict( 'item-solo-a' );
+		$holder  = mc_pid_strict( 'section-holder' );
+		$bidi    = mc_pid_strict( 'section-bidi' );
 
 		// Rules first, then the graph, then the subjects — the same order the
 		// #61/#62 restores use: clearing terms while rules are live lets a
 		// handler repopulate them.
 		mc63_silence();
 
-		update_field( 'mc_related_items', array( mc_pid( 'item-alpha' ), mc_pid( 'item-beta' ) ), $holder );
-		update_field( 'mc_bidi_items', array( mc_pid( 'item-bidi' ) ), $bidi );
-		update_field( 'mc_parent_section', array( $holder ), mc_pid( 'item-alpha' ) );
+		update_field( 'mc_related_items', array( mc_pid_strict( 'item-alpha' ), mc_pid_strict( 'item-beta' ) ), $holder );
+		update_field( 'mc_bidi_items', array( mc_pid_strict( 'item-bidi' ) ), $bidi );
+		update_field( 'mc_parent_section', array( $holder ), mc_pid_strict( 'item-alpha' ) );
 		update_field( 'mc_parent_section', array(), $subject );
 
 		mc_reset_subject( $subject );

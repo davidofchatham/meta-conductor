@@ -54,6 +54,7 @@ $log = function ( $msg ) {
 };
 
 require_once $mc_base . '/lookup.php';
+require_once $mc_base . '/resolve.php';
 
 // ---------------------------------------------------------------------------
 // 0. Compose pin — core-structures must satisfy `composes_on`. Sibling-repo
@@ -247,63 +248,8 @@ $log( 'post→term assignments applied' );
 // 5b. Post fields (ACF). Relationship/post_object values in the manifest are
 // arrays of fixture slugs — resolved to IDs here.
 // ---------------------------------------------------------------------------
-$mc_field_keys = array(
-	'mc_item'    => array(
-		'mc_topics'         => 'field_mc_topics_item',
-		'mc_event_date'     => 'field_mc_event_date',
-		'mc_parent_section' => 'field_mc_parent_section',
-		'mc_bidi_sections'  => 'field_mc_bidi_sections',
-	),
-	'mc_section' => array(
-		'mc_related_items' => 'field_mc_related_items',
-		'mc_primary_item'  => 'field_mc_primary_item',
-		'mc_topics'        => 'field_mc_topics_section',
-		'mc_bidi_items'    => 'field_mc_bidi_items',
-	),
-);
-// Relationship/post_object fields: manifest values are arrays of fixture slugs.
-$mc_ref_fields = array( 'mc_related_items', 'mc_primary_item', 'mc_parent_section', 'mc_bidi_items', 'mc_bidi_sections' );
-// Taxonomy ACF fields: values are {TERM:slug} tokens resolved to term IDs.
-// These fields have save_terms=1, so update_field() ALSO writes native terms —
-// seeding an independent term here (not via post_terms) keeps the ACF mirror and
-// the native store in agreement, matching a real editor save. A native-only seed
-// leaves the ACF field empty, and propagation's ACF-merge write (which merges
-// against the empty ACF value) then clobbers the native-only term. (§5 sweep B1)
-$mc_tax_fields = array( 'mc_topics' );
-
-foreach ( $mc_manifest['post_fields'] as $mc_slug => $mc_fields ) {
-	if ( ! isset( $mc_post_ids[ $mc_slug ] ) ) {
-		continue;
-	}
-	$mc_pid   = $mc_post_ids[ $mc_slug ];
-	$mc_ptype = get_post_type( $mc_pid );
-	foreach ( $mc_fields as $mc_name => $mc_value ) {
-		if ( in_array( $mc_name, $mc_ref_fields, true ) ) {
-			$mc_value = array_values( array_filter( array_map(
-				function ( $ref ) use ( $mc_post_ids ) {
-					return $mc_post_ids[ $ref ] ?? 0;
-				},
-				(array) $mc_value
-			) ) );
-		} elseif ( in_array( $mc_name, $mc_tax_fields, true ) ) {
-			$mc_value = array_values( array_filter( array_map(
-				function ( $ref ) use ( $mc_term_ids ) {
-					if ( is_string( $ref ) && preg_match( '/^\{TERM:([a-z0-9\-]+)\}$/', $ref, $m ) ) {
-						return $mc_term_ids[ $m[1] ] ?? 0;
-					}
-					return is_numeric( $ref ) ? (int) $ref : 0;
-				},
-				(array) $mc_value
-			) ) );
-		}
-		$mc_key = $mc_field_keys[ $mc_ptype ][ $mc_name ] ?? null;
-		if ( $mc_have_acf && $mc_key ) {
-			update_field( $mc_key, $mc_value, $mc_pid );
-		} elseif ( ! is_array( $mc_value ) ) {
-			update_post_meta( $mc_pid, $mc_name, $mc_value );
-		}
-	}
-}
+// The loop lives in resolve.php so mc_restore() writes post data the same way.
+mc_write_post_fields( $mc_manifest, $mc_post_ids, $mc_term_ids );
 $log( 'post fields applied' );
 
 // ---------------------------------------------------------------------------
@@ -313,7 +259,6 @@ $mc_owned_types = $mc_manifest['defines']['post_types'];
 
 // Token resolution is shared with sweep-lib.php's mc_restore() so seed-time and
 // restore-time rules can never diverge. resolve.php exposes mc_resolve_rule_tokens.
-require_once $mc_base . '/resolve.php';
 
 $mc_rules_out = array();
 foreach ( $mc_manifest['mc_rules'] as $mc_type => $mc_rules ) {

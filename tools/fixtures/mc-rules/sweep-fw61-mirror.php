@@ -143,15 +143,15 @@ function mcm_rule( $claim, array $extra = array() ) {
 
 /** Wire holder → subject with no rule live; leave both stores of both posts empty. */
 function mcm_stage_graph() {
-	$subject = mc_pid( 'item-solo-a' );
-	$holder  = mc_pid( 'section-holder' );
+	$subject = mc_pid_strict( 'item-solo-a' );
+	$holder  = mc_pid_strict( 'section-holder' );
 	if ( ! $subject || ! $holder ) {
 		WP_CLI::error( 'Fixture posts missing — seed mc-rules first.' );
 	}
 	mcm_silence();
 	mcm_clear( $subject );
 	mcm_clear( $holder );
-	update_field( 'mc_related_items', array( mc_pid( 'item-alpha' ), mc_pid( 'item-beta' ), $subject ), $holder );
+	update_field( 'mc_related_items', array( mc_pid_strict( 'item-alpha' ), mc_pid_strict( 'item-beta' ), $subject ), $holder );
 	update_field( 'mc_parent_section', array( $holder ), $subject );
 	mcm_dispatcher()->drain();
 	return array( $subject, $holder );
@@ -252,7 +252,7 @@ switch ( $step ) {
 
 	case 'sever-b':
 		WP_CLI::log( 'sever-b — Owning sever empties the mirror store too' );
-		$subject = mc_pid( 'item-solo-a' );
+		$subject = mc_pid_strict( 'item-solo-a' );
 		update_field( 'mc_parent_section', array(), $subject );
 		do_action( 'acf/save_post', $subject );
 		wp_update_post( array( 'ID' => $subject ) );

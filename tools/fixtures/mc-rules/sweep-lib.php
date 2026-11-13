@@ -18,10 +18,11 @@
  *   - Handler dedup is per-REQUEST. mc_isolate/mc_restore do not change that:
  *     two user-edits of the same post+taxonomy in ONE eval still collapse to
  *     one. Keep one user-edit per wp-cli eval.
- *   - mc_restore() rewrites RULES + resets the subjects you name. It does NOT
- *     recreate deleted/renamed posts — after a delete-holder (§4c) or a
- *     title_slug rename (§7) sweep, run the full seed.php instead (restore the
- *     post_name first for title_slug — see the matrix restore-gotcha note).
+ *   - mc_restore() rewrites RULES + the manifest's relationship fields and resets
+ *     the subjects you name. It does NOT recreate deleted/renamed posts —
+ *     after a delete-holder (§4c) or a title_slug rename (§7) sweep, run the full
+ *     seed.php instead (restore the post_name first for title_slug — see the
+ *     matrix restore-gotcha note).
  */
 
 if ( ! defined( 'WP_CLI' ) || ! WP_CLI ) {
@@ -219,9 +220,10 @@ if ( ! function_exists( 'mc_isolate' ) ) {
 
 if ( ! function_exists( 'mc_restore' ) ) {
 	/**
-	 * Restore ALL rule baselines from the manifest (token-resolved) and,
-	 * optionally, reset the term/ACF state of named subjects — WITHOUT a full
-	 * re-seed (no post upserts, no rewrite flush).
+	 * Restore ALL rule baselines from the manifest (token-resolved), re-apply the
+	 * manifest's relationship fields, and optionally reset the term state of
+	 * named subjects — WITHOUT a full re-seed (no post upserts, no rewrite
+	 * flush).
 	 *
 	 * Use this between scenarios and at sweep end for the common case. Fall back
 	 * to seed.php only when posts were deleted or renamed (see the header note).
@@ -237,13 +239,43 @@ if ( ! function_exists( 'mc_restore' ) ) {
 		$manifest = mc_sweep_manifest();
 		$resolved = mc_resolved_rules( $manifest );
 
+		$post_ids = array();
+		foreach ( array_keys( $manifest['posts'] ) as $slug ) {
+			$id = mc_pid( $slug );
+			if ( $id ) {
+				$post_ids[ $slug ] = $id;
+			}
+		}
+		// Fail before touching the rules: an error after the clear leaves the site with none.
+		$problems = mc_check_post_field_refs( $manifest, $post_ids );
+		if ( $problems ) {
+			WP_CLI::error( 'mc_restore: fixture posts not found by post_name: ' . implode( ', ', $problems ) . ' — seed them, or if title_slug renamed one, restore its post_name first (matrix §7); never seed over a renamed post. Rules untouched.' );
+		}
+
+		// Rules OFF, then the relationship fields, then rules ON: a field write with
+		// rules live lets a handler repopulate terms. The drain empties anything the
+		// writes queued while nothing could act on it.
+		mc_write_rule_types( array_fill_keys( array_keys( $manifest['mc_rules'] ), array() ) );
+
+		// Relationship fields only, and only on manifest posts: a field a sweep set
+		// on a post the manifest never gives one (e.g. item-solo-a's
+		// mc_parent_section) is the sweep's own to clear.
+		mc_write_post_fields( $manifest, $post_ids, mc_fixture_term_ids( $manifest ), true );
+
+		$dispatcher = class_exists( '\\BWS\\MetaConductor\\Core\\TermDispatcher' )
+			? \BWS\MetaConductor\Core\TermDispatcher::instance()
+			: null;
+		if ( $dispatcher ) {
+			$dispatcher->drain();
+		}
+
 		mc_write_rule_types( $resolved );
 
 		foreach ( $reset_post_ids as $pid ) {
 			mc_reset_subject( (int) $pid );
 		}
 
-		WP_CLI::log( '[sweep] rules restored'
+		WP_CLI::log( '[sweep] rules + relationship fields restored'
 			. ( $reset_post_ids ? ' + reset ' . count( $reset_post_ids ) . ' subject(s)' : '' ) );
 	}
 }
@@ -283,6 +315,23 @@ if ( ! function_exists( 'mc_pid' ) ) {
 		require_once __DIR__ . '/lookup.php';
 		$def = $manifest['posts'][ $fixture_slug ];
 		return mc_fixture_find_post( $def['post_name'], $def['post_type'] );
+	}
+}
+
+if ( ! function_exists( 'mc_pid_strict' ) ) {
+	/**
+	 * mc_pid() that errors on a miss. Use it for any ID headed into update_field():
+	 * a 0 there is stored as '0' in a relationship field and nothing notices.
+	 *
+	 * @param string $fixture_slug Manifest posts[] key.
+	 * @return int Post ID (never 0).
+	 */
+	function mc_pid_strict( $fixture_slug ) {
+		$id = mc_pid( $fixture_slug );
+		if ( ! $id ) {
+			WP_CLI::error( "fixture post '{$fixture_slug}' not found by post_name — seed it, or if title_slug renamed it, restore the post_name first (matrix §7); never seed over a renamed post." );
+		}
+		return $id;
 	}
 }
 

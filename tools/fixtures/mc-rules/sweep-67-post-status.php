@@ -68,7 +68,7 @@ switch ( $step ) {
 
 	// -------------------------------------------------------------- §67c
 	case 'standard':
-		$solo   = mc_pid( 'item-solo-a' );
+		$solo   = mc_pid_strict( 'item-solo-a' );
 		$harbor = mc_tid( 'topic-harbor' );
 
 		mc67ps_author( array() );
@@ -125,8 +125,8 @@ switch ( $step ) {
 
 	// -------------------------------------------------------------- §67d
 	case 'source-gate':
-		$holder  = mc_pid( 'section-holder' );
-		$solo    = mc_pid( 'item-solo-a' );
+		$holder  = mc_pid_strict( 'section-holder' );
+		$solo    = mc_pid_strict( 'item-solo-a' );
 		$coastal = mc_tid( 'topic-coastal' );
 
 		mc67ps_author( array() );
@@ -172,8 +172,8 @@ switch ( $step ) {
 
 	// ----------------------------------------------------------- restore
 	case 'restore':
-		$solo   = mc_pid( 'item-solo-a' );
-		$holder = mc_pid( 'section-holder' );
+		$solo   = mc_pid_strict( 'item-solo-a' );
+		$holder = mc_pid_strict( 'section-holder' );
 
 		mc67ps_author( array() );
 		wp_update_post( array( 'ID' => $solo, 'post_status' => 'publish' ) );
@@ -187,14 +187,9 @@ switch ( $step ) {
 		mc_restore( array( $solo, $holder ) );
 		mc67ps_dispatcher()->drain();
 
-		// mc_restore() rewrites RULES and resets named subjects' TERMS — it
-		// does not touch POST FIELDS, and §67d emptied section-holder's
-		// mc_related_items relationship. That is post data, not rule data,
-		// so only a full seed.php repairs it (same as the §63 restore gotcha
-		// in the matrix: this step, like that one, is not self-sufficient).
-		require __DIR__ . '/seed.php';
-
-		WP_CLI::log( '[sweep] #67 post-status: subjects reset, fixture rules + section-holder relationship repaired via seed.php' );
+		// mc_restore() also re-applies the manifest's relationship fields, which
+		// repairs the mc_related_items §67d emptied on section-holder.
+		WP_CLI::log( '[sweep] #67 post-status: subjects reset, fixture rules + section-holder relationship restored' );
 		break;
 
 	default:

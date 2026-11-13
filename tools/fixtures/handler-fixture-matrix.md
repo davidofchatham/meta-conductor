@@ -1062,10 +1062,11 @@ actually landed. Documented gap, not silently fixed here (a new format-config
 subfield is feature work, out of scope for a gate-verification ticket) —
 candidate for docs/future-work.md if it should happen later.
 
-**Restore gotcha (new).** `mc_restore()` rewrites RULES and resets named
-subjects' TERMS — it does not touch POST FIELDS, and §67d's step empties
-`section-holder`'s `mc_related_items` relationship. That is post data, so only
-a full `seed.php` repairs it, same shape as the §63 restore gotcha.
+**Restore gotcha (fixed).** §67d's step empties `section-holder`'s
+`mc_related_items` relationship. `mc_restore()` now re-applies the manifest's
+relationship fields (never the taxonomy or scalar fields), so it repairs that
+itself. It still leaves a field a sweep set on a post the manifest gives none
+(e.g. `item-solo-a`'s `mc_parent_section`); that sweep clears it.
 
 ## Cross-blueprint traps
 
