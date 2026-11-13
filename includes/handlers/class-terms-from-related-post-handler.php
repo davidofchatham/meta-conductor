@@ -32,7 +32,8 @@ if (!defined('ABSPATH')) {
  * (`replace`) is the only claim that withdraws a gone source's terms, and an
  * empty source set is not an instruction to empty the target unless a sever was
  * captured against this very row. ACF taxonomy mirror fields are read and
- * written for `parent` rows only; FW-61 06 brings them to `acf`.
+ * written for both relationships (FW-61 06): `terms_of()` reads native ∪
+ * mirror, `update_acf_fields_for_post()` writes each attached field.
  *
  * The parent relationship is propagation, inverted to PULL (#62).
  *
@@ -193,7 +194,7 @@ class TermsFromRelatedPostHandler extends UnifiedHandlerBase {
      * Apply ONE propagation rule to ONE post: reconcile this post against its
      * parent's terms. Writes this post and nothing else.
      *
-     * Reads the parent through `get_post_terms()` (native ∪ ACF), subtracts
+     * Reads the parent through `terms_of()` (native ∪ ACF), subtracts
      * what the parent LOST this request, computes the end state for the rule's
      * claim through the shared `compute_end_state()`, and writes only when that
      * differs from what the post already holds.
@@ -246,7 +247,7 @@ class TermsFromRelatedPostHandler extends UnifiedHandlerBase {
         $conflict_handling = $rule['conflict_handling'] ?? 'merge';
 
         $removed = $this->parent_removals($parent_id, $taxonomy);
-        $source  = array_diff($this->get_post_terms($parent_id, $taxonomy), $removed);
+        $source  = array_diff($this->terms_of(array($parent_id), $taxonomy), $removed);
 
         $before = $this->terms_fingerprint($post_id, $taxonomy);
 
@@ -384,35 +385,26 @@ class TermsFromRelatedPostHandler extends UnifiedHandlerBase {
                 || in_array(get_post_status($id), $statuses, true)
         ));
 
-        return $this->write_acf_terms($post_id, $taxonomy, $this->native_terms_of($passing, $taxonomy), $claim);
+        return $this->write_acf_terms($post_id, $taxonomy, $this->terms_of($passing, $taxonomy), $claim);
     }
 
     /**
-     * The union of the given posts' native terms in one taxonomy, in ONE
-     * query (`wp_get_object_terms` takes an int[] of objects).
-     *
-     * @param int[]  $post_ids
-     * @param string $taxonomy
-     * @return int[]
-     */
-    private function native_terms_of(array $post_ids, string $taxonomy): array {
-        if (empty($post_ids)) {
-            return array();
-        }
-        $terms = wp_get_object_terms($post_ids, $taxonomy, array('fields' => 'ids'));
-
-        return is_wp_error($terms) ? array() : $this->normalize_term_ids((array) $terms);
-    }
-
-    /**
-     * Write one `acf` row's computed set through the shared claim semantics.
+     * Write one `acf` row's computed set through the shared claim semantics, to
+     * the native store AND each attached ACF taxonomy field (FW-61 06).
      *
      * `compute_end_state()` is the claim's one encoding, so an empty
      * authoritative set still empties the taxonomy under Owning (`replace` of
      * nothing) and leaves it alone under Contributing (`merge` of nothing).
      * `apply_terms_to_post()` is not the write path: it early-returns on an
      * empty term list, so it cannot express that. The claim encoding is shared;
-     * the guard is not. (#38 cluster 2, don't 6d.)
+     * the guard is not. (#38 cluster 2, don't 6d.) That is what the
+     * `$authoritative` flag on `target_term_ids()` means: the parent path's
+     * "an empty source says nothing" guard does not apply here, because the
+     * zero-source gate in `apply_acf_to_post()` already decided this row manages
+     * the post.
+     *
+     * The mirror write goes first, as on the parent path: with the field's Save
+     * Terms on it syncs the native store, so the native side is computed after.
      *
      * @param int    $post_id  Dependent post.
      * @param string $taxonomy Taxonomy.
@@ -421,13 +413,17 @@ class TermsFromRelatedPostHandler extends UnifiedHandlerBase {
      * @return bool Whether the post's terms actually changed.
      */
     private function write_acf_terms(int $post_id, string $taxonomy, array $terms, string $claim): bool {
+        $before   = $this->terms_fingerprint($post_id, $taxonomy);
+        $mirrored = $this->update_acf_fields_for_post($post_id, $taxonomy, $terms, $claim, array(), true);
+
         $current = $this->current_term_ids($post_id, $taxonomy);
-        $final   = $this->compute_end_state($current, $terms, $claim);
+        $final   = $this->target_term_ids($current, $terms, $claim, array(), true);
 
         // No-change short-circuit: a pass runs every row whether or not this
-        // one's trigger fired. Both sides are sorted, so === is a set test.
+        // one's trigger fired. Both sides are sorted, so === is a set test. A
+        // mirror write that synced the native store is still a change.
         if ($final === $current) {
-            return false;
+            return $mirrored || $this->terms_fingerprint($post_id, $taxonomy) !== $before;
         }
 
         $result = wp_set_object_terms($post_id, $final, $taxonomy);
@@ -439,7 +435,7 @@ class TermsFromRelatedPostHandler extends UnifiedHandlerBase {
                 sprintf('ACF-ref write FAILED post %d tax %s: %s', $post_id, $taxonomy, $result->get_error_message()),
                 array('terms' => $final)
             );
-            return false;
+            return $mirrored;
         }
 
         $this->debug_log(
@@ -535,7 +531,7 @@ class TermsFromRelatedPostHandler extends UnifiedHandlerBase {
      * The intersection with "not currently on the parent" is what keeps the
      * capture from over-subtracting, and it settles two cases at once:
      *
-     *  - The #45 case. `get_post_terms()` reads native ∪ ACF, and within one
+     *  - The #45 case. `terms_of()` reads native ∪ ACF, and within one
      *    request the parent's ACF mirror lags its native store (the mirror's
      *    own write has not fired yet), so the union re-reads a just-removed
      *    term as still present. It is absent NATIVELY, so it stays in this set
@@ -614,9 +610,11 @@ class TermsFromRelatedPostHandler extends UnifiedHandlerBase {
      * @param int[]  $source            Parent's terms, removals already excluded.
      * @param string $conflict_handling merge|replace|skip.
      * @param int[]  $removed           Terms the parent lost this request.
+     * @param bool   $authoritative     The source set IS the instruction, empty or not (`acf`
+     *                                  rows: the zero-source gate has already run).
      * @return int[] Sorted target term IDs.
      */
-    private function target_term_ids(array $current, array $source, string $conflict_handling, array $removed): array {
+    private function target_term_ids(array $current, array $source, string $conflict_handling, array $removed, bool $authoritative = false): array {
         // A SOURCE WITH NOTHING IN IT IS NOT AN INSTRUCTION TO EMPTY THE TARGET.
         // Both pre-#62 push paths returned early on `empty($parent_terms)`, and
         // that early return was load-bearing under the `replace` claim: a parent
@@ -626,7 +624,7 @@ class TermsFromRelatedPostHandler extends UnifiedHandlerBase {
         // The parent's REMOVALS still apply, because those are a statement about
         // specific terms rather than about the source set, and that is the case
         // the old code reached through its separate removal walk.
-        if (empty($source)) {
+        if (empty($source) && !$authoritative) {
             return empty($removed)
                 ? $this->normalize_term_ids($current)
                 : array_values(array_diff($this->normalize_term_ids($current), $this->normalize_term_ids($removed)));
@@ -681,7 +679,7 @@ class TermsFromRelatedPostHandler extends UnifiedHandlerBase {
     }
 
     /**
-     * Get post terms as the UNION of the native taxonomy and any ACF taxonomy
+     * Get the terms of one or more posts as the UNION of the native taxonomy and any ACF taxonomy
      * field(s) for $taxonomy.
      *
      * Propagation treats "the source's terms" as one merged set and mirrors it
@@ -695,15 +693,19 @@ class TermsFromRelatedPostHandler extends UnifiedHandlerBase {
      * If a "keep native and ACF separate" model is ever needed, this method and
      * the two writers must track native→native / ACF→ACF as distinct channels.
      *
-     * @param int    $post_id
+     * @param int[]  $post_ids Posts; the native read is ONE query for all of them.
      * @param string $taxonomy
      * @return int[]
      */
-    private function get_post_terms($post_id, $taxonomy) {
+    private function terms_of(array $post_ids, string $taxonomy): array {
+        if (empty($post_ids)) {
+            return array();
+        }
+
         $terms = array();
 
-        // Get native taxonomy terms
-        $native_terms = wp_get_object_terms($post_id, $taxonomy, array('fields' => 'ids'));
+        // Native terms (`wp_get_object_terms` takes an int[] of objects).
+        $native_terms = wp_get_object_terms($post_ids, $taxonomy, array('fields' => 'ids'));
         if (!is_wp_error($native_terms)) {
             $terms = array_merge($terms, (array) $native_terms);
         }
@@ -712,9 +714,10 @@ class TermsFromRelatedPostHandler extends UnifiedHandlerBase {
         // get_field_objects, which returns FALSE for a post with no saved ACF
         // values) so an ACF-only source whose field is attached-but-empty still
         // reads correctly. (0.6.0 ACF B-sweep.)
-        foreach ($this->get_acf_taxonomy_fields($post_id, $taxonomy) as $field) {
-            $acf_terms = $this->get_acf_taxonomy_value($post_id, $field['name'], $taxonomy);
-            $terms = array_merge($terms, $acf_terms);
+        foreach ($post_ids as $post_id) {
+            foreach ($this->get_acf_taxonomy_fields((int) $post_id, $taxonomy) as $field) {
+                $terms = array_merge($terms, $this->get_acf_taxonomy_value((int) $post_id, $field['name'], $taxonomy));
+            }
         }
 
         return $this->normalize_term_ids($terms);
@@ -726,15 +729,19 @@ class TermsFromRelatedPostHandler extends UnifiedHandlerBase {
      * Same end state as the native write — the shared `compute_end_state()`
      * plus the parent's removals — computed against the FIELD's current value
      * rather than the native one, because the two stores can legitimately
-     * differ (see get_post_terms()).
+     * differ (see terms_of()).
      *
      * @param int    $post_id
      * @param string $taxonomy
      * @param int[]  $source            Parent's terms, removals already excluded.
      * @param string $conflict_handling merge|replace|skip.
      * @param int[]  $removed           Terms the parent lost this request.
+     * @param bool   $authoritative     See target_term_ids().
+     * @return bool Whether any field's value was written.
      */
-    private function update_acf_fields_for_post($post_id, $taxonomy, $source, $conflict_handling, $removed = array()) {
+    private function update_acf_fields_for_post($post_id, $taxonomy, $source, $conflict_handling, $removed = array(), bool $authoritative = false): bool {
+        $wrote = false;
+
         // Value-independent field discovery: get_field_objects() returns FALSE for
         // a post with no saved ACF values, so a never-populated child could never
         // get its first ACF write. get_acf_taxonomy_fields resolves by location
@@ -745,11 +752,14 @@ class TermsFromRelatedPostHandler extends UnifiedHandlerBase {
             $current_terms = $this->normalize_term_ids(
                 $this->get_acf_taxonomy_value($post_id, $field['name'], $taxonomy)
             );
-            $new_terms = $this->target_term_ids($current_terms, $source, $conflict_handling, $removed);
+            $new_terms = $this->target_term_ids($current_terms, $source, $conflict_handling, $removed, $authoritative);
 
             if ($new_terms !== $current_terms) {
                 $this->set_acf_taxonomy_value($post_id, $field['key'], $new_terms);
+                $wrote = true;
             }
         }
+
+        return $wrote;
     }
 }
