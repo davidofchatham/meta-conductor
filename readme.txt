@@ -4,7 +4,7 @@ Tags: taxonomy, meta, acf, automation, hierarchical
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 0.10.0
+Stable tag: 0.11.0
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -37,11 +37,11 @@ Rules are authored as two ordered lists — one for rules that write terms, one 
 
 == Upgrade Notes ==
 
-= Unreleased =
+= 0.11.0 =
 
-**Rule types have new names in the *Rule type* dropdown.** *Hierarchy* is now *Set terms from the term hierarchy*, *Related term* is *Set terms from a trigger term*, *Date window* is *Set terms from a date window*, *Term count limit* is *Restrict how many terms a post holds*, *Level restriction* is *Restrict terms by tree level*, *Title & slug pattern* is *Set title and slug from a pattern*, and *Computed field* is *Set a field from a pattern*. Only the names changed; your rules behave exactly as before.
+**Rule types have new names in the *Rule type* dropdown.** *Hierarchy* is now *Set terms from the term hierarchy*, *Related term* is *Set terms from a trigger term*, *Date window* is *Set terms from a date window*, *Level restriction* is *Restrict terms by tree level*, *Title & slug pattern* is *Set title and slug from a pattern*, and *Computed field* is *Set a field from a pattern*. Only the names changed; your rules behave exactly as before.
 
-**Stored rule type ids are renamed, and your existing rules are converted on update.** Each type's internal id now reads like its label and no longer ends in `_rules` (`hierarchical_rules` is now `terms_from_term_hierarchy`, `time_based_rules` is `terms_from_date_window`, and so on for the seven types above). The first admin page load after updating rewrites each stored rule's type once; its order and every other setting are untouched. Until that load runs, the old rules read as an unknown type and are skipped. An Apply run in progress on one of those types starts over once.
+**Stored rule type ids are renamed, and your existing rules are converted on update.** Each type's internal id now reads like its label and no longer ends in `_rules` (`hierarchical_rules` is now `terms_from_term_hierarchy`, `time_based_rules` is `terms_from_date_window`, and so on for the six types above). The first admin page load after updating rewrites each stored rule's type once; its order and every other setting are untouched. Until that load runs, the old rules read as an unknown type and are skipped. An Apply run in progress on one of those types starts over once.
 
 **The parent-post and ACF-reference term rules are now one: *Set terms from a related post*.** A *Relationship* option picks *Parent post* or *ACF field*; the ACF choice is offered only while ACF is active, and a stored ACF row simply runs nothing while it is off. The first admin page load after updating rewrites each stored *From parent post* and *From referenced post (ACF)* rule once, in place and in the same order. Until that load runs, those rules read as an unknown type and are skipped. An Apply run in progress on one of them starts over once.
 
@@ -92,6 +92,9 @@ Full detail, including the two post-status corrections and the storage migration
 See CHANGELOG.md in the plugin directory for the full release log.
 
 == Upgrade Notice ==
+
+= 0.11.0 =
+Rule types are renamed and their stored ids convert automatically on the first admin load. Parent-post and ACF-reference rules merge into Set terms from a related post. ACF rules now also read and write ACF taxonomy fields, so a field left empty on purpose gets filled: review your ACF rules before updating. Level restriction loses One term per level; the new Restrict how many terms a post holds rule replaces it.
 
 = 0.10.0 =
 Old collision settings convert automatically; a rule with the toggle on and no date field now adds the year before -2 numbering. Sites older than 0.8.0 must install 0.9.x first.

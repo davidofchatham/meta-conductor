@@ -5,57 +5,59 @@ All notable changes to Meta Conductor are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.11.0] — 2026-11-13
+
+### Highlights
+
+- A new *Restrict how many terms a post holds* rule caps the terms a post keeps in a taxonomy, on flat and hierarchical taxonomies. *(Added)*
+- *Set terms from a related post* merges the parent-post and ACF-reference rules into one rule type with a *Relationship* option. *(Added)*
+- One rule can name several taxonomies. *(Added)*
+- Rule types are renamed *Verb effect from basis*, and their stored ids convert automatically on upgrade. *(Changed)*
+- **ACF rules now read and write ACF taxonomy fields, so a field left empty on purpose gets filled. Review ACF rules before updating.** *(Changed)*
 
 ### Added
 
-- **Term count limit rule.** A new term rule type, *Restrict how many terms a post holds* (named *Term count limit* while it was built), for "at most N terms in this taxonomy". It works on flat and hierarchical taxonomies.
-  - Settings: a maximum (default 1) and *Apply the cap to each level* (default on), which counts each tree depth separately on a hierarchical taxonomy and makes no difference on a flat one. Post types and statuses scope it like every other rule. There is no *Keep ancestor terms* switch; a cap is a hard cap, so to keep ancestors place a hierarchy inheritance rule after it.
-  - **Which terms survive an over-cap post:** the terms the editor just added in that save, where the plugin can tell; otherwise the deepest terms, then the lowest term ID. A term another rule adds earlier in the same pass does not count as the editor's edit. Nothing is stored to remember it, so bulk apply, the daily cron, a save that touched no terms and a field-only ACF write use the deepest-then-lowest-ID order, and a re-run never reshuffles survivors.
+- **Restrict how many terms a post holds.** A new term rule type for "at most N terms in this taxonomy", on flat and hierarchical taxonomies.
+  - Settings: a maximum (default 1) and *Apply the cap to each level* (default on), which counts each tree depth separately on a hierarchical taxonomy and makes no difference on a flat one. Post types and statuses scope it like every other rule. A cap is a hard cap; to keep ancestors, place a hierarchy inheritance rule after it.
+  - **Which terms survive an over-cap post:** the terms the editor just added in that save, where the plugin can tell; otherwise the deepest terms, then the lowest term ID. Bulk apply, the daily cron, a save that touched no terms and a field-only ACF write use the deepest-then-lowest-ID order, so a re-run never reshuffles survivors.
   - An ACF taxonomy field on the post is pruned first, then the native terms.
-  - **Collision warnings:** a count rule is warned about against another count rule, a level restriction rule or a hierarchy inheritance rule on the same taxonomy and post types, as order-sensitive. With a parent-to-child or both-direction inheritance rule the warning says the two want opposite results, because the cap removes terms the other rule adds back on every pass.
+  - **Collision warnings:** against another count rule, a level restriction rule or a hierarchy inheritance rule on the same taxonomy and post types, as order-sensitive. With a parent-to-child or both-direction inheritance rule the warning says the two want opposite results, because the cap removes terms the other rule adds back on every pass.
 
-- **Set terms from a related post.** One term rule replaces *From parent post* (propagation) and *From referenced post (ACF)* (Related Post Terms): a post takes terms from a related post, and a *Relationship* option picks the edge. The rule type's id is `terms_from_related_post`.
+- **Set terms from a related post.** One term rule replaces *From parent post* and *From referenced post (ACF)*: a post takes terms from a related post, and a *Relationship* option picks the edge.
   - **Relationship** is *Parent post* (a post takes terms from its `post_parent`, and a parent's change reaches its children) or *ACF field* (a post takes terms across an ACF relationship or post-object field, with the holder, direction and reverse-field settings *From referenced post (ACF)* had).
   - *ACF field* is offered only while ACF is active. A stored ACF row survives ACF being off: it runs nothing and shows a *requires ACF* notice.
-  - *Post types* scopes the post that receives terms, for both relationships. It is optional on *ACF field*; empty means no extra narrowing. A parent is judged only on being a valid source, not on the rule's post types, which matters only for a parent of another post type (stock WordPress never makes one).
-  - *Deferring* (fill only a post that holds no terms yet) is now offered on ACF rows, as it already was on parent rows.
+  - *Post types* scopes the post that receives terms, for both relationships. It is optional on *ACF field*; empty means no extra narrowing.
 
-- **One rule can name several taxonomies.** On the four rule types that scope by a taxonomy (Restrict how many terms a post holds, Set terms from a related post, Set terms from the term hierarchy and Restrict terms by tree level), the *Taxonomies* field is now a multi-select, so applying the same rule across several taxonomies no longer means keeping a near-identical row per taxonomy.
+- **One rule can name several taxonomies.** On the four rule types that scope by a taxonomy (Restrict how many terms a post holds, Set terms from a related post, Set terms from the term hierarchy and Restrict terms by tree level), the *Taxonomies* field is now a multi-select, so one rule no longer needs a near-identical row per taxonomy.
   - A row naming several behaves exactly as if it were repeated once per taxonomy, in the order listed; the rule list, its numbering and the collapsed row title (*Categories, Tags, +2 more* past three) still show it as one row.
   - Collision warnings name the row by its place in the list and the taxonomy that clashes. The Apply to Existing Posts dropdown offers it once, and a run covers every taxonomy it names.
   - At least one taxonomy is still required; an empty selection is rejected on save.
 
 ### Changed
 
-- **Rule types are renamed in the *Rule type* dropdown, and the explanation after the dash is gone.** Each name now reads *Verb effect from basis*: *Set* for a rule that writes a value, *Restrict* for one that only removes. No stored rule changes, and rules behave as before.
+- **Rule types are renamed in the *Rule type* dropdown, and the explanation after the dash is gone.** Each name now reads *Verb effect from basis*: *Set* for a rule that writes a value, *Restrict* for one that only removes. Rules behave as before.
   - *Hierarchy* → *Set terms from the term hierarchy*
   - *Related term* → *Set terms from a trigger term*
   - *Date window* → *Set terms from a date window*
-  - *Term count limit* → *Restrict how many terms a post holds*
   - *Level restriction* → *Restrict terms by tree level*
   - *Title & slug pattern* → *Set title and slug from a pattern*
   - *Computed field* → *Set a field from a pattern*
-  - *From parent post* and *From referenced post (ACF)* → *Set terms from a related post* (one rule type, see *Added*).
-- **Rule type ids are renamed to match their labels, and stored rules are converted once on upgrade.** Each id is its label minus the leading verb, with no `_rules` suffix: `hierarchical_rules` → `terms_from_term_hierarchy`, `related_rules` → `terms_from_trigger_term`, `time_based_rules` → `terms_from_date_window`, `term_count_rules` → `restrict_term_count`, `hierarchical_level_restriction_rules` → `restrict_terms_by_level`, `title_slug_rules` → `title_slug_from_pattern`, `field_transformation_rules` → `field_from_pattern`.
+- **Rule type ids are renamed to match their labels, and stored rules are converted once on upgrade.** Each id is its label minus the leading verb, with no `_rules` suffix: `hierarchical_rules` → `terms_from_term_hierarchy`, `related_rules` → `terms_from_trigger_term`, `time_based_rules` → `terms_from_date_window`, `hierarchical_level_restriction_rules` → `restrict_terms_by_level`, `title_slug_rules` → `title_slug_from_pattern`, `field_transformation_rules` → `field_from_pattern`.
   - The upgrade rewrites each stored rule's type string in place, in both rule lists. Row order and every other setting are unchanged, and a second run changes nothing. No rule needs re-saving.
+  - Stored *From parent post* and *From referenced post (ACF)* rows are converted the same way, to `terms_from_related_post` (*Parent post* and *ACF field*), with the field reference kept whole.
   - A row whose type is not a registered id reads as an unknown type and is skipped; no older id is accepted at read time.
-  - Descriptor and handler classes were renamed to match (`TimeBasedHandler` is now `TermsFromDateWindowHandler`, and so on).
-  - An Apply run in progress on a renamed type starts over once, because its stored identity includes the row's type.
-- **A single claim control replaces *Keep in sync* on ACF rows, and two stored settings change meaning once.** *Keep in sync* is removed. Parent and ACF rows now share the *Claim on terms* control (*Owning*, *Contributing*, *Deferring*); ACF rows gain *Deferring* with it.
+  - An Apply run in progress on a converted type, or on a rule type whose rows now store a taxonomy list, starts over once, because its stored identity includes the row's type and taxonomy.
+- **A single claim control replaces *Keep in sync* on ACF rows, and two stored settings change meaning once.** *Keep in sync* is removed. Parent and ACF rows now share the *Claim on terms* control (*Owning*, *Contributing*, *Deferring*); ACF rows gain *Deferring*, which fills only a post that holds no terms yet.
   - **Upgrade mapping:** *Keep in sync* on becomes *Owning* (`replace`), off becomes *Contributing* (`merge`). A row set up either way behaves as before; nothing needs re-saving.
   - **Removal still differs by relationship, and the help text says so.** On a parent row, a term the parent lost in that request is withdrawn whatever the claim. On an ACF row, *Contributing* only adds and never removes; *Owning* is how an ACF author gets removal.
 - **ACF rows now read and write ACF taxonomy fields, not only native terms. This changes live ACF rows.** A source's terms are its native terms plus any ACF taxonomy field attached to it for that taxonomy, and the receiving post's native terms and each attached ACF taxonomy field are written to the same end state, each against its own current value. An ACF taxonomy field that is attached but empty now receives its first write. A site whose ACF rows used to leave such a field untouched will see it filled on the next pass of each affected post; check those fields before updating.
-- **Stored *From parent post* and *From referenced post (ACF)* rows are rewritten once on upgrade.** Each is converted in place to `terms_from_related_post` (`propagation_rules` rows get *Parent post*, `related_post_terms_rules` rows get *ACF field*, with *Keep in sync* mapped as above and the field reference kept whole). Row order and every other setting are unchanged, and a second run changes nothing. No rule needs re-saving.
-  - A row still on an old type string reads as an unknown type and is skipped; no older id is accepted at read time.
-  - An Apply run in progress on either old type starts over once, because its stored identity includes the row's type.
-  - Descriptor and handler classes were merged to match (`PropagationHandler` and `RelatedPostTermsHandler` are now `TermsFromRelatedPostHandler`).
 - **A stored single `taxonomy` is rewritten as a one-element list the first time the rules tab loads in the admin.** The new multi-select shows a stored single value as an empty selection and would drop it on the next save, so it is rewritten up front. Rules behave the same before and after; a rule set up from WP-CLI or a fixture with a single value still runs unchanged.
-- **An in-progress Apply run of a rule on one of those types starts over once.** Its stored identity includes the row's taxonomy, which is now a list.
-- **Level restriction offers only *Deepest only* and *Shallowest only*.** *One term per level* moved to the new Term count limit rule, where it no longer sits under a depth rule or needs a hierarchical taxonomy. The *Keep ancestor terms* text and the row title drop their *one term per level* wording. The type is not known to be in use on any live site, so there is no migration; a stored row still holding the old mode runs as *Deepest only*, the same as a row with no mode.
-- **Old *one term per level* kept the alphabetically last term; Term count limit does not.** Its tie-break is the deepest-then-lowest-ID order above.
+- **Level restriction offers only *Deepest only* and *Shallowest only*.** *One term per level* moved to *Restrict how many terms a post holds*, where it no longer sits under a depth rule or needs a hierarchical taxonomy; there it keeps the deepest-then-lowest-ID term, where the old mode kept the alphabetically last. The *Keep ancestor terms* text and the row title drop their *one term per level* wording. The type is not known to be in use on any live site, so there is no migration; a stored row still holding the old mode runs as *Deepest only*, the same as a row with no mode.
 - **Apply to Existing Posts result cards can be dismissed.** Each button keeps its own result card until that same button runs again, so a Preview card, the first batch's card and the latest batch's card piled up. Each card now has a close button; running that button again shows its new card.
 - **Apply no longer silently resumes a run in progress.** Pressing Apply while a run of the chosen rule is in progress used to ask for confirmation and then behave as Continue. It now says to press Continue, or Start over to restart, and shows how far the run got (posts processed, total, changed).
+
+### Fixed
+
 - **Apply to Existing Posts result cards are spaced apart.** Wireframe stacked them flush against each other and the buttons; they now have a gap.
 
 ### Removed
