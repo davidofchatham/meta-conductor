@@ -95,10 +95,10 @@ Copy a field value across a relationship, the way FW-61's merged rule copies ter
   - **Several sources.** A parent relationship has one. On an ACF relationship the first related post holding a value wins, in the field's own order; the config says only one source counts.
   - **Claim, per field.** *Owning*: the target equals the source, including empty, so a root post (`post_parent` 0) or an empty relationship clears it. *Contributing* (the default): the source value is written when there is one and never cleared. *Deferring*: only an empty target is filled. In group mode each member field is its own slot.
   - **Relationship changes.** The receiving post recomputes from stored state, and the claim decides what an old value does. A dependent dropped from a holder's push relationship reaches the queue through the sever capture FW-61 moves into the shared module.
-  - **Fan-out.** The format pass gains `fan_out()` after each rule, as the term pass has, so a source edit queues its receivers, and their own passes reach grandchildren. It declares far entities and never writes them. Invariant 18's "the format dispatcher owns no trigger" is amended to say so, and H13 pins it.
+  - **Fan-out.** FW-62 adds the format pass's `fan_out()` (after each rule, as the term pass has) for its parent tokens, with the invariant 18 amendment and the H13 pin. This rule widens it to the relationships it declares, so a source edit queues its receivers, and their own passes reach grandchildren.
   - **Collisions.** A scalar target always collides with any other rule writing it over overlapping post types: a field-from-pattern rule, another field copy, or any member of a group copy. `CollisionDetector` warns per field name and does not block; list order decides. A deferring rule contends at lower severity, as on the term side.
 - **Open:** repeater-subfield *targets* (writing one subfield across a repeater's rows, as FW-4 can) are undecided for v1.
-- **Blocked by:** — • **Interacts with:** FW-4, FW-7, FW-11, FW-14, FW-46, FW-62, FW-63
+- **Blocked by:** `row:FW-62` • **Interacts with:** FW-4, FW-7, FW-11, FW-14, FW-46, FW-62, FW-63
 
 #### FW-6 — `body_class_rules`: Document classes from terms/fields
 
@@ -263,13 +263,20 @@ Let a user matched by a rule edit and delete other people's posts that hold one 
 
 #### FW-62 — Cross-post tokens for pattern rules
 
-Tokens that read another post's field through a relationship, such as `{parent:meta:address}` and `{related:<acf_field>:meta:season}`, so a field-from-pattern or title/slug rule can compose from a related post. The receiving post pulls the value; it is rendered through `Tokens\TokenEngine` like any token, so only scalars are useful. FW-5 is the rule for raw copies.
+Tokens that read another post's value through a relationship, so a field-from-pattern or title/slug rule can compose from a related post: `{parent:meta:address}` from the parent post, `{refs:venue:meta:season}` from the first post an ACF Relationship or Post Object field names. The receiving post pulls the value; it is rendered through `Tokens\TokenEngine` like any token, so only scalars are useful. FW-5 is the rule for raw copies.
 
 - **Axes:** as the host rule (FW-4, title/slug); basis widens to **relationship**.
-- **Detail home:** none. Split out of FW-5 in the 2026-11-11 grilling session.
-- **Progress:** Not started. `{parent:slug}` already exists (FW-51) and is the precedent.
-- **Open:** resolve through FW-61's relationship module (parent, ACF holder/direction), so a source edit reaches its receivers through the format-pass `fan_out()` FW-5 adds. New token kinds land in `Tokens\` and add H17 golden rows deliberately. Several related sources need a rule: the first like FW-5, or a join.
-- **Blocked by:** — • **Interacts with:** FW-4, FW-5, FW-49, FW-63
+- **Detail home:** [design-history/cross-post-tokens.md](design-history/cross-post-tokens.md) (design settled in the 2026-11-13 grilling session; split out of FW-5 in the 2026-11-11 one).
+- **Progress:** Built on the FW-62 integration branch, unreleased. Shipped: the relation prefixes in `Tokens\TokenEngine` (`{parent:<inner>}`, `{refs:<field>:<inner>}`, the prefix-only `{slug}`, one hop, `TokenSourceInterface::related()` delegating to the relationship module), the parent fan-out in the format pass (`FormatDispatcher::fan_out()`, invariant 18), the help text in the shared token reference and both pattern descriptions, readme and CHANGELOG. Spec lifted into design history. FW-5's blocker clears when this row closes.
+- **Design:**
+  - **Tokens.** `{parent:<inner>}` reads the post's parent. `{refs:<field>:<inner>}` reads the first related post, in the field's own order, that holds a non-empty value. The field is the second segment and is positional; `refs` is forward only (the receiving post holds the field), and its name matches the `refs` token in the dynamic-tags plugin. `<inner>` is any token the engine already resolves (`meta:`, `term:`, `terms:`, `pub_*`, `mod_*`) plus a new bare `{slug}`, which is meaningful only behind a prefix and resolves empty on the post's own pass.
+  - **Engine.** The engine owns the parse and delegates `<inner>` to a source for the related post, so `TokenSourceInterface` gains one related-source read and sources still only fetch. Reads are stored values (meta and terms from the database), not the `$data` overlay of a pass in flight. One hop only: a nested relation prefix resolves empty. A missing source resolves empty through the engine's normal gap handling. New token kinds land in `Tokens\` with H17 golden rows added deliberately.
+  - **Fan-out, parent only.** The format pass gains `fan_out()` after each rule, as the term pass has. It acts only when an enabled rule uses a `{parent:…}` token (a scan with `TokenEngine::tokens()`, memoized per request), and queues the parent's children through `ParentRelationship::dependents_of()`, filtered to the post types those rules cover. The queue recurses to grandchildren. It declares far entities and never writes them. Invariant 18's "the format dispatcher owns no trigger" is amended to say so, and H13 pins it. FW-5 reuses this hook.
+  - **`refs` is pull-only in v1.** The receiver recomputes on its own save or on *Apply to Existing Posts*; a source edit does not reach it, and a bulk run can leave a receiver stale until a second run. The help text says so. Fan-out for it needs FW-11's reverse lookup (FW-68).
+  - **Repeater-row sources.** `RowTokenSource` (a subfield pattern) resolves both prefixes empty, as it does `parent:slug` today (FW-69).
+  - **No guards.** The hierarchy is acyclic and `refs` has no fan-out, so there is no cycle guard. A token that only reads a field adds no collision, so `CollisionDetector` is unchanged. Wireframe help text keeps bare `{slug}` out of any `description` (don't #4b); colon tokens are safe.
+- **Open:** nothing blocks v1. The deferred halves are FW-67 (source status gate), FW-68 (`refs` fan-out and reverse direction) and FW-69 (repeater-row sources).
+- **Blocked by:** — • **Interacts with:** FW-4, FW-5, FW-11, FW-49, FW-63, FW-67, FW-68, FW-69
 
 #### FW-66 — Unify removal across relationships
 
@@ -280,6 +287,35 @@ On a `parent` row of `terms_from_related_post`, a term the parent lost this requ
 - **Progress:** Not started. Cut from FW-61 so the merge changed the claim control and nothing about what an existing row removes.
 - **Open:** which way the two agree. Bringing ACF up to parent changes live ACF rows (a *Contributing* row starts removing); bringing parent down to ACF stops a parent row withdrawing a lost term. The several-source rule is new on any path: a parent has one source, an ACF dependent can have several, so a term one source lost and another still holds has to stay. The capture shape is also open, since an ACF source is any post a field names rather than one hook on a known parent.
 - **Blocked by:** — • **Interacts with:** FW-11, FW-25, FW-65
+
+#### FW-67 — Source status gate for cross-post tokens
+
+Decide whether a `{parent:…}` or `{refs:…}` token may read a draft, pending, private or trashed source, or only a published one (otherwise resolving empty). A private source's field value landing in a public receiver's title or slug is a quiet leak, and a gate makes the receiver's slug flip when its source publishes.
+
+- **Axes:** as FW-62.
+- **Detail home:** [design-history/cross-post-tokens.md](design-history/cross-post-tokens.md), grilling session 2026-11-13.
+- **Progress:** Not started. FW-62 v1 ships without a gate, matching `{parent:slug}`, which reads the parent whatever its status; the help text says so. One exception shipped: `refs` skips a trashed related post, while `{parent:…}` does not, so a gate would also settle that asymmetry.
+- **Open:** whether to gate at all, and if so per rule (a `post_status` list as the term rules carry) or one fixed behavior. Add only if the leak is hit.
+- **Blocked by:** `row:FW-62` • **Interacts with:** FW-62
+
+#### FW-68 — Fan-out and reverse direction for `refs` tokens
+
+Make a source edit reach receivers that name it through an ACF field, and offer the reverse direction (the source holds the field and the receivers are the posts it points at). Both need the "who points at this post" lookup, which is FW-11's unindexed `meta_query` on every eligible save unless the field has a reverse or bidirectional partner.
+
+- **Axes:** as FW-62; basis **relationship** (authored).
+- **Detail home:** [design-history/cross-post-tokens.md](design-history/cross-post-tokens.md), grilling session 2026-11-13.
+- **Progress:** Not started. FW-62 v1 makes `refs` forward only and pull-only, and states the staleness in its help text.
+- **Open:** whether to ship before FW-11 using the field's reverse partner where one exists, or wait for the index. A token carries no relationship row, so fan-out would scan the format rules for `refs` tokens and build the holder and direction from the token.
+- **Blocked by:** `row:FW-62` • **Interacts with:** FW-5, FW-11, FW-62
+
+#### FW-69 — Cross-post tokens in repeater-row patterns
+
+Resolve `{parent:…}` and `{refs:…}` inside a subfield pattern (field-from-pattern writing one subfield across a repeater's rows) against the owning post's related post. Today `RowTokenSource` answers empty for both.
+
+- **Axes:** as FW-4; basis widens to **relationship**.
+- **Detail home:** [design-history/cross-post-tokens.md](design-history/cross-post-tokens.md), grilling session 2026-11-13.
+- **Progress:** Not started. FW-62 v1 resolves both prefixes empty in a row pattern, the precedent `parent:slug` set.
+- **Blocked by:** `row:FW-62` • **Interacts with:** FW-4, FW-62
 
 ## Correctness, Consistency, Architecture
 

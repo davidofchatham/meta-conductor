@@ -18,6 +18,7 @@ Meta Conductor adds rule-driven automation to WordPress taxonomies and meta fiel
 * Set a post's terms from a related post: its parent, or the posts an ACF relationship field names
 * Generate titles and slugs from token patterns with collision avoidance
 * Store a composed value (a display name, a roster line) in an ACF field, or in one subfield of every row of a repeater, from the same token patterns
+* Read another post into a title, slug or field pattern: the parent post (`{parent:meta:address}`) or the first post an ACF relationship field names (`{refs:venue:meta:season}`)
 * Restrict which depths of a hierarchical taxonomy a post may carry
 * Cap how many terms a post may hold in a taxonomy
 
@@ -34,6 +35,19 @@ Rules are authored as two ordered lists — one for rules that write terms, one 
 * WordPress 6.5 or higher
 * PHP 8.1 or higher (strictly enforced — plugin deactivates on older PHP)
 * Advanced Custom Fields Pro is required for ACF-driven rules
+
+== Cross-post tokens ==
+
+Title, slug and field patterns can read a value from a related post.
+
+* `{parent:<inner>}` reads the post's parent, for example `{parent:meta:address}`, `{parent:term:category}` or `{parent:slug}`.
+* `{refs:<field>:<inner>}` reads the first post the ACF field names, in the field's own order, that has a value for the inner token, for example `{refs:venue:meta:season}`. A related post that is deleted or in the trash is skipped.
+* The inner token is any token that works on the post itself (`meta:`, `term:`, `terms:`, the date tokens), plus `{slug}`, the related post's own slug. `{slug}` means something only behind a prefix and is empty on its own.
+* One hop only: a prefix inside another prefix resolves empty.
+* `refs` takes the ACF field's name only. Give the field a name no other field group uses, since two groups sharing a bare name are ambiguous, and write a field inside an ACF Group by its group-qualified name.
+* A pattern on a repeater subfield resolves both prefixes empty.
+* No status gate applies: a draft or private related post is read like a published one, so its value can appear in a public title, slug or field. Do not point a token at a value you want kept private. Values are read as stored on the related post.
+* Editing a parent updates its children, and their children, automatically. Editing a post a `refs` token reads does not update the posts that read it: they refresh when saved or when you run *Apply to Existing Posts*, and a bulk run can leave one stale until a second run.
 
 == Upgrade Notes ==
 

@@ -5,7 +5,7 @@ namespace BWS\MetaConductor\Tokens;
 if (!defined('ABSPATH')) exit;
 
 /**
- * Renders `{meta:x} {term:tax} {pub_year} {mod_year} {parent:slug}`-style patterns: split into literal +
+ * Renders `{meta:x} {term:tax} {pub_year} {mod_year} {parent:meta:y} {refs:venue:meta:z}`-style patterns: split into literal +
  * token segments, resolve each token against a source, remove each empty token
  * together with the punctuation that only existed to join it, then trim what is
  * left. The removal rules are the ordered steps of bws-gb-dynamic-tags-extensions'
@@ -166,20 +166,7 @@ final class TokenEngine {
             return $policy->bound((string) $vars[$token]);
         }
 
-        [$kind, $arg] = self::split($token);
-        $date_part    = self::date_part_of($token);
-
-        $value = match (true) {
-            $date_part !== null && $arg === null              => self::date_part(
-                str_starts_with($kind, 'mod_') ? $source->modified() : $source->published(), $date_part, $policy),
-            $date_part !== null                               => self::date_field($source->field($arg), $date_part, $policy),
-            $arg === null                                     => '',
-            $kind === 'parent' && $arg === 'slug'             => $source->parent_slug(),
-            $kind === 'meta'                                  => self::scalar($source->field($arg)),
-            $kind === 'term'                                  => self::terms($source, $arg, $policy, true),
-            $kind === 'terms'                                 => self::terms($source, $arg, $policy, false),
-            default                                           => '',
-        };
+        $value = self::value($token, $source, $policy, false);
 
         if ($value === '') return '';
 
@@ -193,6 +180,43 @@ final class TokenEngine {
         }
 
         return $policy->sanitize($value);
+    }
+
+    /**
+     * One token's raw value from a source. `parent:<inner>` and
+     * `refs:<field>:<inner>` resolve `<inner>` against the related post's source,
+     * one hop: inside it (`$inside_prefix`) a relation prefix is empty, and so is a bare
+     * `slug` outside it.
+     */
+    private static function value(string $token, TokenSourceInterface $source, OutputPolicy $policy, bool $inside_prefix): string {
+        [$kind, $arg] = self::split($token);
+        $date_part    = self::date_part_of($token);
+
+        return match (true) {
+            $date_part !== null && $arg === null              => self::date_part(
+                str_starts_with($kind, 'mod_') ? $source->modified() : $source->published(), $date_part, $policy),
+            $date_part !== null                               => self::date_field($source->field($arg), $date_part, $policy),
+            $kind === 'slug' && $arg === null                 => $inside_prefix ? $source->slug() : '',
+            $arg === null                                     => '',
+            $kind === 'parent'                                => $inside_prefix ? '' : self::through($source, 'parent', '', $arg, $policy),
+            $kind === 'refs'                                  => $inside_prefix ? '' : self::through_refs($source, $arg, $policy),
+            $kind === 'meta'                                  => self::scalar($source->field($arg)),
+            $kind === 'term'                                  => self::terms($source, $arg, $policy, true),
+            $kind === 'terms'                                 => self::terms($source, $arg, $policy, false),
+            default                                           => '',
+        };
+    }
+
+    /** `<inner>` against the source's related post; empty when there is none. */
+    private static function through(TokenSourceInterface $source, string $relation, string $field, string $inner, OutputPolicy $policy): string {
+        $related = $source->related($relation, $field);
+        return $related === null ? '' : self::value($inner, $related, $policy, true);
+    }
+
+    /** `refs:<field>:<inner>`: the field is positional, so a field named like a token kind is no ambiguity. */
+    private static function through_refs(TokenSourceInterface $source, string $arg, OutputPolicy $policy): string {
+        [$field, $inner] = array_pad(explode(':', $arg, 2), 2, '');
+        return ($field === '' || $inner === '') ? '' : self::through($source, 'refs', $field, $inner, $policy);
     }
 
     /** @return array{0: string, 1: ?string} Token kind and its argument (null when bare). */

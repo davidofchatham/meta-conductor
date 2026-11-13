@@ -47,6 +47,10 @@ final class FieldFromPatternRules extends RuleType {
         return function_exists('acf_get_field') && function_exists('update_field');
     }
 
+    public function pattern_keys(): array {
+        return ['pattern'];
+    }
+
     /**
      * Prefix of a `target_field` value that names a repeater subfield. One select
      * offers both kinds of target, so the option key carries the pair
@@ -213,7 +217,7 @@ final class FieldFromPatternRules extends RuleType {
                 'id'          => 'pattern',
                 'type'        => 'text',
                 'label'       => __('Pattern', 'meta-conductor'),
-                'description' => __('Built from the same tokens as a title & slug pattern, such as {meta:first_name}, {term:taxonomy} or {date_year:field}. If every token is empty the field is cleared.', 'meta-conductor'),
+                'description' => __('Built from the same tokens as a title & slug pattern, such as {meta:first_name}, {term:taxonomy} or {date_year:field}. To read another post, use a parent or refs token; see Available tokens above for what they read and when they update. If every token is empty the field is cleared.', 'meta-conductor'),
                 'required'    => true,
                 'columns'     => 12,
                 'args'        => [

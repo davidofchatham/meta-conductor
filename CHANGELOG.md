@@ -5,6 +5,21 @@ All notable changes to Meta Conductor are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Highlights
+
+- Title, slug and field patterns can read another post: `{parent:...}` reads the parent post, `{refs:<field>:...}` reads the first post an ACF relationship or post-object field names. *(Added)*
+- A parent edit now updates its children's computed titles, slugs and fields. *(Added)*
+
+### Added
+
+- **Cross-post tokens.** A *Set title and slug from a pattern* or *Set a field from a pattern* rule can read a value off a related post.
+  - `{parent:<inner>}` reads the post's parent, such as `{parent:meta:address}` or `{parent:term:category}`. `{refs:<field>:<inner>}` reads the first related post, in the field's own order, that holds a value for the inner token, such as `{refs:venue:meta:season}`. The inner token is any token that works on the post itself (`meta:`, `term:`, `terms:`, the date tokens) plus `{slug}`, the related post's own slug, which means something only behind a prefix.
+  - One hop: a prefix inside another resolves empty. `refs` names the ACF field by its name alone, so use a field name no other group shares and write a field inside an ACF Group by its group-qualified name. A deleted or trashed related post is skipped. A pattern on a repeater subfield resolves both prefixes empty. No status gate applies: a draft or private source is read like a published one, so its value can appear in a public title, slug or field.
+  - `{parent:slug}` is unchanged for existing rules.
+- **Parent edits reach their children.** When a title, slug or field pattern reads `{parent:...}`, saving the parent (or changing its terms) re-runs the rule on its children, and their children in turn. A site with no `{parent:...}` pattern does no child lookup. `refs` does not fan out: a post that a `refs` token reads does not update the posts that read it, so they refresh when saved or through *Apply to Existing Posts*, and a bulk run can leave one stale until a second run.
+
 ## [0.11.1] — 2026-11-13
 
 ### Fixed

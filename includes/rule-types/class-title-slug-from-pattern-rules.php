@@ -52,6 +52,10 @@ final class TitleSlugFromPatternRules extends RuleType {
         return trim((string) ($rule['post_type'] ?? '')) === '' ? null : 'fields|title_slug';
     }
 
+    public function pattern_keys(): array {
+        return ['title_pattern', 'slug_pattern', 'slug_escalation'];
+    }
+
     /** A lookup table keyed by post type: the first matching rule is the only one that runs. */
     public function first_match_wins(): bool {
         return true;
@@ -135,7 +139,7 @@ final class TitleSlugFromPatternRules extends RuleType {
                 'id'          => 'title_pattern',
                 'type'        => 'text',
                 'label'       => __('Title pattern', 'meta-conductor'),
-                'description' => __('Optional. Leave blank to skip title modification. Use tokens like {meta:first_name}.', 'meta-conductor'),
+                'description' => __('Optional. Leave blank to skip title modification. Use tokens like {meta:first_name}. To read another post, use a parent or refs token; see Available tokens above for what they read and when they update.', 'meta-conductor'),
                 'columns'     => 12,
                 'args'        => [
                     'placeholder' => __('e.g. {meta:first_name} {meta:last_name}', 'meta-conductor'),

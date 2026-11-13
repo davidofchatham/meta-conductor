@@ -223,6 +223,19 @@ abstract class RuleType {
     }
 
     /**
+     * The row keys that hold a token pattern.
+     *
+     * Format kind only. The dispatcher scans these for `{parent:...}` tokens to
+     * decide whether a type's rows fan out to children, so a new pattern field
+     * is declared here and nowhere else.
+     *
+     * @return string[]
+     */
+    public function pattern_keys(): array {
+        return [];
+    }
+
+    /**
      * Whether `post_status` gates a SOURCE post rather than the post written.
      *
      * When true, the rule's status gate must not narrow the posts a run

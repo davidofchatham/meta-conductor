@@ -474,6 +474,10 @@ class TermDispatcher {
      * it earns another drain iteration, which recomputes to the same state and
      * writes nothing. `MAX_PASSES_PER_DRAIN` bounds it.
      *
+     * The format pass's declared children are marked after it (FW-62 03), so a
+     * child reconciles against what this entity's pass wrote, and a grandchild
+     * follows from the child's own pass.
+     *
      * @param int $post_id Entity to run both kinds over.
      * @return int Rules that changed the entity, across both kinds.
      */
@@ -482,6 +486,14 @@ class TermDispatcher {
 
         if ($this->format !== null) {
             $changed += $this->format->run_pass($post_id);
+
+            // The format pass DECLARES the children a `{parent:…}` rule reads
+            // this post through (FW-62 03); marking them is this dispatcher's,
+            // because it owns the one queue. After the pass, so a child that
+            // drains next reads the value this pass just wrote.
+            foreach ($this->format->fan_out($post_id) as $child_id) {
+                $this->mark_dirty($child_id);
+            }
         }
 
         return $changed;

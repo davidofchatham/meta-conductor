@@ -8,9 +8,11 @@
 namespace BWS\MetaConductor\Core;
 
 use BWS\MetaConductor\Handlers\UnifiedHandlerBase;
+use BWS\MetaConductor\Relationships\ParentRelationship;
 use BWS\MetaConductor\RuleTypes\Registry;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 use BWS\MetaConductor\Storage\StorageFactory;
+use BWS\MetaConductor\Tokens\TokenEngine;
 
 // Prevent direct access
 if (!defined('ABSPATH')) {
@@ -37,7 +39,11 @@ if (!defined('ABSPATH')) {
  * `TermDispatcher` marks entities and drains them; for each entity it runs its
  * own ordered pass and then calls `run_pass()` here. A second queue would have
  * to be kept in step with the first for the derived order to mean anything,
- * which is the coupling the single queue removes.
+ * which is the coupling the single queue removes. What this one does DECLARE is
+ * dependents (`fan_out()`, FW-62 03): a `{parent:…}` token makes a child's output
+ * a function of its parent, so after a parent's pass `TermDispatcher` marks the
+ * parent's children on that one queue, each for its own pass. Selected here,
+ * marked and run there; this class never writes the children.
  *
  * SHARING THE QUEUE WIDENS WHAT PROVOKES A FORMAT RULE, DELIBERATELY. Every
  * entity the drain reaches gets a format pass, and the drain reaches more than
@@ -122,6 +128,14 @@ class FormatDispatcher {
     private static ?self $instance = null;
 
     /**
+     * The `{parent:…}` scan, memoized: `{rows, types}`. See
+     * `parent_token_post_types()`.
+     *
+     * @var array{rows: array, types: ?array}|null
+     */
+    private ?array $parent_scan = null;
+
+    /**
      * Fingerprint of a disabled row passes run anyway; see `include_row()`.
      *
      * @var string|null
@@ -185,6 +199,93 @@ class FormatDispatcher {
         }
 
         return (string) $location;
+    }
+
+    // ---------------------------------------------------------------- fan-out
+
+    /**
+     * The entities this post's format pass reaches: its children, when an
+     * enabled format rule reads `{parent:…}` (FW-62 03).
+     *
+     * DECLARES, NEVER WRITES OR RUNS. `TermDispatcher::run_entity()` marks the
+     * ids on its one queue and each child gets its own full ordered pass, so a
+     * child is never reconciled by one rule out of authored order (the shape
+     * the term pass's `fan_out()` took in #62). Called after the pass whether
+     * or not it changed this post: the parent's own row is often unchanged
+     * while the field a child's pattern reads was just edited.
+     *
+     * ZERO-COST WITHOUT A `{parent:…}` RULE: `parent_token_post_types()` is
+     * null and this returns before any child lookup. With one, the lookup is
+     * the parent relationship's `dependents_of()`, filtered to the post types
+     * those rules cover. Grandchildren follow because each child's own pass
+     * calls this again; `drain()`'s per-entity bound ends the chain.
+     *
+     * @param int $post_id Entity just passed over.
+     * @return int[] Child ids to mark dirty.
+     */
+    public function fan_out(int $post_id): array {
+        $types = $this->parent_token_post_types();
+        if ($types === null || $post_id <= 0) {
+            return [];
+        }
+
+        return (new ParentRelationship())->dependents_of($post_id, ['post_types' => $types]);
+    }
+
+    /**
+     * The post types the enabled `{parent:…}` rules cover, or null when no
+     * enabled format rule reads one. `[]` means every post type.
+     *
+     * Found by scanning each rule's patterns for a token starting `parent:`
+     * through the engine's own parser. Memoized against the rows it scanned, so
+     * a drain parses each pattern once however many entities it reaches, and a
+     * rule edit mid-request (a sweep, a test) is seen.
+     *
+     * @return string[]|null
+     */
+    private function parent_token_post_types(): ?array {
+        $rows = $this->ordered_rules();
+        if ($this->parent_scan !== null && $this->parent_scan['rows'] === $rows) {
+            return $this->parent_scan['types'];
+        }
+
+        $types = [];
+        $all   = false;
+        $found = false;
+        foreach ($rows as $rule) {
+            $type = (string) ($rule['type'] ?? '');
+            if (!Registry::known($type) || !self::owns($type) || !$this->reads_parent($type, $rule)) {
+                continue;
+            }
+            $written = Registry::get($type)->written_post_types($rule);
+            // `['']` is a row that writes nothing: it covers no type.
+            $types = array_merge($types, array_filter($written, 'strlen'));
+            $all   = $all || $written === [];
+            $found = $found || $all || $types !== [];
+        }
+        $types             = !$found ? null : ($all ? [] : array_values(array_unique($types)));
+        $this->parent_scan = ['rows' => $rows, 'types' => $types];
+
+        return $types;
+    }
+
+    /**
+     * Whether any pattern of this row has a `{parent:…}` token.
+     *
+     * @param string $type Registered rule type of the row.
+     * @param array  $rule One format row.
+     * @return bool
+     */
+    private function reads_parent(string $type, array $rule): bool {
+        foreach (Registry::get($type)->pattern_keys() as $key) {
+            foreach (TokenEngine::tokens((string) ($rule[$key] ?? '')) as $token) {
+                if (str_starts_with($token, 'parent:')) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     // ------------------------------------------------------------------- pass

@@ -4,6 +4,9 @@ namespace BWS\MetaConductor\Tokens;
 
 if (!defined('ABSPATH')) exit;
 
+use BWS\MetaConductor\Relationships\AcfRelationship;
+use BWS\MetaConductor\Relationships\ParentRelationship;
+
 /**
  * Token values for one post.
  *
@@ -60,8 +63,36 @@ final class PostTokenSource implements TokenSourceInterface {
         return ($value === '' || str_starts_with($value, '0000')) ? null : new \DateTimeImmutable($value, wp_timezone());
     }
 
-    public function parent_slug(): string {
-        $parent = (int) ($this->data['post_parent'] ?? 0);
-        return $parent > 0 ? (string) get_post_field('post_name', $parent) : '';
+    public function slug(): string {
+        return (string) ($this->data['post_name'] ?? '');
+    }
+
+    /**
+     * Both relations read through the relationship module (`ParentRelationship`,
+     * `AcfRelationship`), so a token and a term rule agree on what "related" means.
+     * `parent` answers with a source over the parent's stored row; `refs` reads the
+     * ACF field `$field` on this post and answers with the related posts as one
+     * first-non-empty source. Both read the STORED related post, never an overlay.
+     */
+    public function related(string $relation, string $field = ''): ?TokenSourceInterface {
+        if ($relation === 'refs') {
+            return $this->refs($field);
+        }
+        if ($relation !== 'parent' || $this->post_id <= 0) return null;
+        $ids  = (new ParentRelationship())->sources_of($this->post_id, []);
+        $post = $ids ? get_post($ids[0]) : null;
+        return $post ? new self($ids[0], (array) $post) : null;
+    }
+
+    /** The related posts' sources in the field's order; a post that is gone or trashed is not one. */
+    private function refs(string $field): ?TokenSourceInterface {
+        if ($this->post_id <= 0 || $field === '') return null;
+        $ids = (new AcfRelationship())->sources_of($this->post_id, ['holder_role' => 'target', 'acf_field_name' => $field]);
+        $members = [];
+        foreach ($ids as $id) {
+            $post = get_post($id);
+            if ($post && $post->post_status !== 'trash') $members[] = new self($id, (array) $post);
+        }
+        return $members ? new FirstOfTokenSource($members) : null;
     }
 }
