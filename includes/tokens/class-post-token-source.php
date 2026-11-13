@@ -4,6 +4,8 @@ namespace BWS\MetaConductor\Tokens;
 
 if (!defined('ABSPATH')) exit;
 
+use BWS\MetaConductor\Relationships\AcfRelationship;
+
 /**
  * Token values for one post.
  *
@@ -66,11 +68,29 @@ final class PostTokenSource implements TokenSourceInterface {
 
     /**
      * `parent` follows `post_parent` from the seam's data (as `{parent:slug}`
-     * always has) to a source over the parent's stored row.
+     * always has) to a source over the parent's stored row. `refs` reads the ACF
+     * field `$field` on this post through `AcfRelationship`, so a token and a term
+     * rule agree on what "related" means, and answers with the related posts as one
+     * first-non-empty source. Both read the STORED related post, never an overlay.
      */
     public function related(string $relation, string $field = ''): ?TokenSourceInterface {
+        if ($relation === 'refs') {
+            return $this->refs($field);
+        }
         $parent = $relation === 'parent' ? (int) ($this->data['post_parent'] ?? 0) : 0;
         $post   = $parent > 0 ? get_post($parent) : null;
         return $post ? new self($parent, (array) $post) : null;
+    }
+
+    /** The related posts' sources in the field's order; a post that is gone or trashed is not one. */
+    private function refs(string $field): ?TokenSourceInterface {
+        if ($this->post_id <= 0 || $field === '') return null;
+        $ids = (new AcfRelationship())->sources_of($this->post_id, ['holder_role' => 'target', 'acf_field_name' => $field]);
+        $members = [];
+        foreach ($ids as $id) {
+            $post = get_post($id);
+            if ($post && $post->post_status !== 'trash') $members[] = new self($id, (array) $post);
+        }
+        return $members ? new FirstOfTokenSource($members) : null;
     }
 }

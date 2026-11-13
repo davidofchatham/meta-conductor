@@ -53,7 +53,7 @@ final class FakeTokenSource implements TokenSourceInterface {
         private ?\DateTimeInterface $published = null,
         private ?\DateTimeInterface $modified = null,
         private string $slug = '',
-        /** @var array<string,TokenSourceInterface> relation => the related post's source */
+        /** @var array<string,TokenSourceInterface> relation (or `relation:field`) => the related post's source */
         private array $related = [],
     ) {}
 
@@ -78,7 +78,7 @@ final class FakeTokenSource implements TokenSourceInterface {
     }
 
     public function related(string $relation, string $field = ''): ?TokenSourceInterface {
-        return $this->related[$relation] ?? null;
+        return $this->related[$field === '' ? $relation : "$relation:$field"] ?? null;
     }
 }
 
@@ -485,12 +485,52 @@ $check('field_names() skips relation tokens (they read another post)',
 $check('a repeater row resolves both relation prefixes empty',
     TokenEngine::render('{meta:first} {parent:meta:name} {parent:pub_year} {parent:slug}', $rowm, $title) === 'Ada');
 
+// --- {refs:<field>:<inner>} (FW-62 02). ---------------------------------------
+// The field is the positional second segment; the engine reads one `related('refs', $field)`
+// and the source answers with the first related post that holds a value.
+
+use BWS\MetaConductor\Tokens\FirstOfTokenSource;
+
+$stone  = new FakeTokenSource(['city' => 'Kingston', 'addr' => '', 'rows' => [1]], ['region' => [['North', 'north']]], null, null, 'stone-hall');
+$venue  = new FakeTokenSource(['addr' => '9 Quay St', 'city' => '', 'when' => '20180704'], ['region' => []], new \DateTimeImmutable('2021-06-07 08:09:00', $ny), null, 'quay-room');
+$refs   = new FirstOfTokenSource([$stone, $venue]);
+$rsrc   = new FakeTokenSource(['a' => 'Alpha'], [], null, null, '', ['refs:venue' => $refs, 'refs:one' => $venue, 'refs:parent' => $venue]);
+$r      = static fn(string $p, ?TokenSourceInterface $s = null) => TokenEngine::render($p, $s ?? $rsrc, $title);
+
+$check('refs: the field is positional, a field named like a kind still reads', $r('{refs:parent:meta:addr}') === '9 Quay St');
+$check('refs:meta reads the related post', $r('{refs:one:meta:addr}') === '9 Quay St');
+$check('refs: first related post holding a value wins', $r('{refs:venue:meta:city}') === 'Kingston');
+$check('refs: a first post without the value falls through to the next', $r('{refs:venue:meta:addr}') === '9 Quay St');
+$check('refs:term and refs:terms fall through the same way', $r('{refs:venue:term:region}') === 'North' && $r('{refs:venue:terms:region}') === 'North');
+$check('refs:slug is the first related post_name', $r('{refs:venue:slug}') === 'stone-hall' && $r('{refs:one:slug}') === 'quay-room');
+$check('refs: a date part reads the first related post with a date', $r('{refs:venue:pub_year}') === '2021');
+$check('refs: date_<part>:field reads a related field, falling through', $r('{refs:venue:date_year:when}') === '2018');
+$check('refs: an empty or missing field resolves empty, separator cleaned',
+    $r('{refs:none:meta:addr}') === '' && $r('{meta:a} / {refs:none:meta:addr}') === 'Alpha' && $r('{refs:none:slug} - {meta:a}') === 'Alpha');
+$check('refs: a field with no inner token, or no field, resolves empty',
+    $r('{refs:venue}') === '' && $r('{refs}') === '' && $r('{refs::meta:addr}') === '' && $r('{refs:venue:}') === '');
+$check('refs: nothing holds the value resolves empty', $r('{refs:venue:meta:missing}') === '' && $r('{refs:one:meta:city}') === '');
+$check('refs: a non-scalar value resolves empty', $r('{refs:venue:meta:rows}') === '' && $r('{meta:a} {refs:venue:meta:rows}') === 'Alpha');
+$check('refs: a nested prefix resolves empty, either way round',
+    $r('{refs:venue:refs:venue:meta:addr}') === '' && $r('{refs:venue:parent:meta:addr}') === '' && $r('{parent:refs:venue:meta:addr}') === ''
+    && $r('{meta:a} {refs:venue:refs:venue:slug}') === 'Alpha');
+$check('refs: a repeater row resolves empty', TokenEngine::render('{meta:first} {refs:venue:meta:addr}', $rowm, $title) === 'Ada');
+$check('refs: takes the guard and the slug policy like any token',
+    TokenEngine::render('{meta:a} {refs:venue:meta:addr}', $rsrc, $title, [], 'at 9 Quay St') === 'Alpha'
+    && $r('{refs:one:meta:addr}') === '9 Quay St' && TokenEngine::render('{refs:one:meta:addr}', $rsrc, $slugp) === '9 quay st');
+$check('tokens() sees refs, field_names() skips it',
+    TokenEngine::tokens('{refs:venue:meta:addr}') === ['refs:venue:meta:addr'] && TokenEngine::field_names('{refs:venue:meta:addr}') === []);
+$check('first-of: no members is empty everywhere',
+    (new FirstOfTokenSource([]))->field('x') === '' && (new FirstOfTokenSource([]))->terms('t') === []
+    && (new FirstOfTokenSource([]))->slug() === '' && (new FirstOfTokenSource([]))->related('parent') === null);
+
 // PostTokenSource reads them from the seam's data array, in site time.
 $GLOBALS['site_tz']   = 'America/New_York';
 $GLOBALS['mc_slugs']  = [7 => 'harbor-light'];
+$GLOBALS['mc_status'] = [];
 function get_post(int $id) {
     return isset($GLOBALS['mc_slugs'][$id])
-        ? (object) ['ID' => $id, 'post_name' => $GLOBALS['mc_slugs'][$id], 'post_date' => '2019-03-04 05:06:00', 'post_modified' => '0000-00-00 00:00:00']
+        ? (object) ['ID' => $id, 'post_name' => $GLOBALS['mc_slugs'][$id], 'post_date' => '2019-03-04 05:06:00', 'post_modified' => '0000-00-00 00:00:00', 'post_status' => $GLOBALS['mc_status'][$id] ?? 'publish']
         : null;
 }
 $pt = static fn(array $d) => new \BWS\MetaConductor\Tokens\PostTokenSource(1, $d);
@@ -506,6 +546,21 @@ $check('post source: no parent, a parent that is gone, or a relation it lacks, i
     $pt([])->related('parent') === null && $pt(['post_parent' => 0])->related('parent') === null
     && $pt(['post_parent' => 99])->related('parent') === null && $pt(['post_parent' => 7])->related('nope') === null);
 $check('post source: its own slug is the row post_name', $pt(['post_name' => 'mine'])->slug() === 'mine' && $pt([])->slug() === '');
+
+// `refs` reads the ACF field through AcfRelationship (the term rules' own read): related IDs in
+// the field's order, a post that is gone or trashed is skipped.
+$GLOBALS['mc_slugs'] += [11 => 'stone-hall', 12 => 'quay-room', 13 => 'in-the-bin'];
+$GLOBALS['mc_status'] = [13 => 'trash'];
+$GLOBALS['mc_acf']    = [1 => ['venue' => [11, 12], 'gone' => [99], 'one' => 12, 'bin' => [13, 12], 'objs' => [], 'blank' => '']];
+function get_field(string $name, int $id) { return $GLOBALS['mc_acf'][$id][$name] ?? false; }
+function acf_get_field($k) { return false; }
+$refs_slugs = static fn(string $f) => $pt([])->related('refs', $f)?->slug();
+$check('post source: refs follows the field in its own order, first slug wins', $refs_slugs('venue') === 'stone-hall');
+$check('post source: refs over a single Post Object value', $refs_slugs('one') === 'quay-room');
+$check('post source: refs skips a trashed post', $refs_slugs('bin') === 'quay-room');
+$check('post source: refs with an empty field, a deleted post, an unknown field or no field is no source',
+    $refs_slugs('blank') === null && $refs_slugs('gone') === null && $refs_slugs('nope') === null && $refs_slugs('') === null);
+$check('post source: refs over a post with no id is no source', (new \BWS\MetaConductor\Tokens\PostTokenSource(0, []))->related('refs', 'venue') === null);
 
 // --- Report. ----------------------------------------------------------------
 
