@@ -8,6 +8,8 @@ from core-structures vs MC-owned.
 Derived from the handler sources (branch `main`, 0.6.1). Trigger/priority
 matrix at the bottom. Companion skeleton: `tools/fixtures/mc-rules/`.
 
+Since FW-61, `propagation_rules` and `related_post_terms_rules` are one rule type, `terms_from_related_post`, with `relationship` = `parent` / `acf` (§5 / §4 below). The `§N … results` sections are dated records of what each sweep showed when it ran, so they keep the type names of that day.
+
 ## Global design decisions
 
 - **Isolation rule:** every seeded MC rule gates `post_types` to MC-owned
@@ -15,7 +17,7 @@ matrix at the bottom. Companion skeleton: `tools/fixtures/mc-rules/`.
   matrix pages (`save_post` fires), and MC rules scoped to shared types would
   rewrite their `department` terms and break the GBDTE matrices.
 - **MC-owned schema** (prefix `mc_`): CPTs `mc_item` (flat), `mc_section`
-  (hierarchical — propagation needs post_parent chains; core `page` is off
+  (hierarchical — the `parent` relationship needs post_parent chains; core `page` is off
   limits per the isolation rule); taxonomy `mc_topic` (hierarchical, 4 levels,
   registered on `mc_item` + `mc_section` + `staff`); ACF group `group_mc_fields`.
 - **Reused from core-structures:** site + env only (snapshot/restore, wp.sh,
@@ -89,32 +91,32 @@ Status (L1)          — second root: related/time-based targets live here so
 | Scenarios | Add trigger → target appears; remove last trigger → target removed (bidirectional); remove one of two triggers → target stays; trigger via ACF field. |
 | Shared reuse | Optional dept-as-trigger variant — deferred. |
 
-## 4. related_post_terms_rules — RelatedPostTermsHandler (ACF reference)
+## 4. terms_from_related_post, `relationship: acf` — TermsFromRelatedPostHandler (ACF reference)
 
 | Aspect | Need |
 |---|---|
 | Trigger | Widest surface: `acf/save_post` p30, `save_post` p25, `set_object_terms` p15, `acf/update_value` (relationship/post_object) p5 sever capture, `before_delete_post`/`deleted_post`. |
 | Schema | **ACF relationship field** on `mc_section` targeting `mc_item` (`mc_related_items`), + a **post_object** field variant (`mc_primary_item`), + a `reverse_acf_field_name` partner on `mc_item` (`mc_parent_section`) for reverse **tier 1** (explicit), + an ACF **native-bidirectional** pair (`mc_bidi_items` ⇄ `mc_bidi_sections`) for reverse **tier 2**. Tier 1 and tier 2 need SEPARATE rules — an explicit reverse short-circuits the bidi tier — so the bidi pair has its own posts (`section-bidi`/`item-bidi`) and its own taxonomy (`mc_flag`) to stay clear of every other subject. Shared taxonomy both ends: `mc_topic` (registered on both CPTs ✓). |
 | Data | Holder post (`mc_section`) + ≥2 related `mc_item`s; holder with terms (push), related with terms (pull); a second holder referencing the same related post (multi-holder union on pull-side severs). |
-| Rule config | `acf_field_name: "mc_section:mc_related_items"` (stored split), `holder_role` (source=push / target=pull), `taxonomy: mc_topic`, `keep_in_sync` (replace vs add-only), `post_status`, optional `reverse_acf_field_name`. |
-| Rules to seed | 2 seeded: push+keep_in_sync tier-1 (relationship field + explicit reverse), push+keep_in_sync tier-2 (native-bidi pair, `mc_flag`). Pull+add-only (post_object field) stays a sweep-time rule edit. |
+| Rule config | `acf_field_name: "mc_section:mc_related_items"` (stored split), `relationship: acf`, `holder_role` (source=push / target=pull), `taxonomy: mc_topic`, `conflict_handling` (`replace` Owning / `merge` Contributing / `skip` Deferring), `post_status`, optional `post_types` (scopes the receiving post), optional `reverse_acf_field_name`. |
+| Rules to seed | 2 seeded: push+Owning tier-1 (relationship field + explicit reverse), push+Owning tier-2 (native-bidi pair, `mc_flag`). Pull+Contributing (post_object field) stays a sweep-time rule edit. |
 | Mutates | `wp_set_object_terms` on the dependent side; empty-replace on sever orphan. Declarative — no tracking meta. |
-| Scenarios | Save holder → related inherit; edit relationship removing a post → sever (terms cleared if keep_in_sync + no other holder); **edit the DEPENDENT's reverse field removing its source → same sever, both tiers (#43)**; clear one of two sources → remaining source's terms survive; delete holder → orphan cleanup; add-only never removes; **bare `update_field()` with no post save → still applies (#42)**. |
-| Sweep | `sweep-related-post-terms-sever.php`, stepped (one step per eval — the #42 flush runs on `shutdown`). Note: an explicit `reverse_acf_field_name` makes the reverse field the source of truth for reverse resolution and the plugin does NOT write it, so a holder-end edit alone leaves it stale and strips nothing (step `s7`, fails by design). Consistent graphs — native bidi (`s8b`) or both sides edited (`s7b`) — strip as before. |
+| Scenarios | Save holder → related inherit; edit relationship removing a post → sever (terms cleared if Owning + no other holder); **edit the DEPENDENT's reverse field removing its source → same sever, both tiers (#43)**; clear one of two sources → remaining source's terms survive; delete holder → orphan cleanup; add-only never removes; **bare `update_field()` with no post save → still applies (#42)**. |
+| Sweep | `sweep-fw61-mirror.php` covers the ACF taxonomy mirror fields on an `acf` row (Owning / Contributing / Deferring against a source held in the mirror, natively or both). `sweep-related-post-terms-sever.php`, stepped (one step per eval — the #42 flush runs on `shutdown`). Note: an explicit `reverse_acf_field_name` makes the reverse field the source of truth for reverse resolution and the plugin does NOT write it, so a holder-end edit alone leaves it stale and strips nothing (step `s7`, fails by design). Consistent graphs — native bidi (`s8b`) or both sides edited (`s7b`) — strip as before. |
 | Shared reuse | Tempting to use `staff` as relationship target — writes would stay in `mc_topic`, invisible to GBDTE matrices. Deferred; own both ends first. |
 
-## 5. propagation_rules — PropagationHandler
+## 5. terms_from_related_post, `relationship: parent` — TermsFromRelatedPostHandler (was propagation_rules)
 
 | Aspect | Need |
 |---|---|
 | Trigger | `save_post` p15, `set_object_terms` p10, `acf/save_post` p25. |
 | Schema | **Hierarchical post type**: `mc_section` (public + hierarchical; empty `post_types` resolves to all hierarchical public types — which would include `page`! ⇒ rule MUST pin `post_types: ['mc_section']`). Taxonomy `mc_topic`; ACF taxonomy field participates (native+ACF union read, ACF write by key). |
 | Data | 3-level `mc_section` chain (grandparent → parent → child), statuses publish + one draft child (descendant statuses publish/draft/private included). Child holding an independent term (removal propagation must NOT strip it). |
-| Rule config | `taxonomy: mc_topic`, `post_types: ['mc_section']`, `conflict_handling` (merge / replace / skip). |
+| Rule config | `relationship: parent`, `taxonomy: mc_topic`, `post_types: ['mc_section']`, `conflict_handling` (merge / replace / skip). |
 | Rules to seed | 1 (merge). |
 | Mutates | Descendants' terms (down), new-child inherit on child save (up), ACF field on descendants. |
 | Scenarios | Term on grandparent → appears on all descendants incl. draft; remove from parent → removed from child except independently-held; create/save new child under parent → inherits; replace vs merge conflict modes. |
-| Shared reuse | None. **The empty-post_types ⇒ all-hierarchical default is the single biggest shared-site foot-gun in the plugin — never seed a propagation rule with empty post_types on this testbed.** |
+| Shared reuse | None. **The empty-post_types ⇒ all-hierarchical default is the single biggest shared-site foot-gun in the plugin — never seed a parent-relationship rule with empty post_types on this testbed.** |
 
 ## 6. terms_from_date_window — TermsFromDateWindowHandler
 
@@ -167,8 +169,7 @@ Status (L1)          — second root: related/time-based targets live here so
 | level_restriction | **p5** | — | p15 | |
 | hierarchical | p10 | — | — | |
 | related | p10 | — | p20 | |
-| propagation | p10 | p15 | p25 | |
-| related_post_terms | p15 | p25 | p30 | acf/update_value p5, before/deleted_post |
+| terms_from_related_post | — | — | — | triggers are the dispatcher's. Capture hooks only: `deleted_term_relationships` (parent); `acf/update_value` relationship + post_object, `before_delete_post` (acf) |
 | time_based | — | p20 | — | publish_post p10, cron daily |
 | title_slug | — | — | — | **none (#64)** — run by `FormatDispatcher` from the shared drain |
 
@@ -180,9 +181,9 @@ Two constraints that shape EVERY per-handler sweep — not §1-specific:
    at boot; emptying a rule *array* just makes that handler's loop no-op, but
    the hooks stay live. Two kinds of interference on `mc_item` + `mc_topic`:
 
-   - **Reference-based (the non-obvious one):** the `related_post_terms` holder
+   - **Reference-based (the non-obvious one):** the `acf` relationship's holder
      `section-holder` (`mc_related_items => [item-alpha, item-beta]`,
-     `keep_in_sync=true`, role `source`) **pushes its own terms onto both
+     Owning, role `source`) **pushes its own terms onto both
      referenced items on any term edit** — a hierarchical/level/related/time
      edit on `item-alpha`/`item-beta` gets clobbered to the holder's set
      (observed: Harbor expansion `[13,14,15,16]` overwritten to `[14,15]` by the

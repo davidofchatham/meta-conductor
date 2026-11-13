@@ -471,7 +471,7 @@ class OptionRuleStorage implements RuleStorage {
      *   - `taxonomy`, for the types that read it → string[] slug list, deduped
      *     (FW-56). `project_kind_rules()` then expands it to scalar rows.
      *   - Per-type fields → the type descriptor's `normalize()` (today only
-     *     `RelatedPostTermsRules`, which splits the combined ACF field values)
+     *     `TermsFromRelatedPostRules`, which splits the combined ACF field values on its `acf` rows)
      *
      * Read-only: nothing writes the projection back, so widening it needs no
      * migration. Admin code holding raw form values runs them through

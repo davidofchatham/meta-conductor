@@ -209,7 +209,8 @@ switch ( $step ) {
 	// -----------------------------------------------------------------------
 	case 'config':
 		$propagation = array(
-			'type'              => 'propagation_rules',
+			'type'              => 'terms_from_related_post',
+			'relationship'      => 'parent',
 			'enabled'           => true,
 			'taxonomy'          => 'mc_topic',
 			'post_types'        => array( 'mc_section' ),
@@ -396,7 +397,8 @@ switch ( $step ) {
 		// the save hook, and the section must come back with the button alone.
 		mc65_author( array(
 			array(
-				'type'       => 'propagation_rules',
+				'type'              => 'terms_from_related_post',
+				'relationship'      => 'parent',
 				'enabled'    => true,
 				'taxonomy'   => 'mc_topic',
 				'post_types' => array( 'mc_section' ),

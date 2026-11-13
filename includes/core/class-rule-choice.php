@@ -196,7 +196,7 @@ final class RuleChoice {
      * @return string[]
      */
     public static function reach_statuses(?array $row): array {
-        if ($row === null || Registry::get((string) ($row['type'] ?? ''))?->status_gates_source()) {
+        if ($row === null || Registry::get((string) ($row['type'] ?? ''))?->status_gates_source($row)) {
             return self::DEFAULT_STATUSES;
         }
 

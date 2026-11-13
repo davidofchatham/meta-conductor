@@ -29,8 +29,7 @@ final class Registry {
      * @var class-string<RuleType>[]
      */
     private const DESCRIPTORS = [
-        PropagationRules::class,
-        RelatedPostTermsRules::class,
+        TermsFromRelatedPostRules::class,
         TermsFromDateWindowRules::class,
         TermsFromTriggerTermRules::class,
         TermsFromTermHierarchyRules::class,

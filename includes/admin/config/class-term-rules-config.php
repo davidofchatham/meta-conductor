@@ -23,7 +23,7 @@
  *      half — unique ids, a gate on every type-specific subfield, no gate on
  *      the shared ones — but only a real save proves the round-trip.
  *   2. Changing a row's `type` DISCARDS that row's type-specific values, by
- *      the same mechanism. That is correct behaviour (a propagation rule's
+ *      the same mechanism. That is correct behavior (a parent-relationship rule's
  *      claim is meaningless on a date-window rule) but it is silent, so the
  *      `type` select says so in its own description.
  *
@@ -33,7 +33,8 @@
  * `OptionRuleStorage::migrated_types_for_kind()` so the set of types this
  * repeater offers and the set storage treats as authored cannot drift. Batch 1 (#57)
  * was the four types not live on any real site; #58 moved the two live ones
- * (`terms_from_trigger_term`, `related_post_terms_rules`) in, completing the collapse.
+ * (`terms_from_trigger_term` and the ACF-reference rule, now the `acf`
+ * relationship of `terms_from_related_post`) in, completing the collapse.
  * Their rows exist in real data, so two shapes are load-bearing: the ACF
  * field select's combined "post_type:field_name" value round-trips WHOLE
  * (the handler splits at read time; persisting the split would break the
@@ -99,13 +100,37 @@ class TermRulesConfig {
      * save (architecture.md → The ordered rule repeaters); H11's hand-written
      * `$expected_visible` is the independent check.
      *
+     * A reader may add a second condition (`shared_field_when()`): the types
+     * with none keep ONE `in` gate, and each type with one gets its own `all`
+     * clause, the lot joined by `any`. With no extras this is exactly the flat
+     * `type in [...]` gate it always was.
+     *
      * @param string $field Shared subfield id.
      */
     private static function readers(string $field): array {
-        return ConfigHelpers::type_gate(...array_values(array_filter(
-            self::types(),
-            static fn(string $type): bool => in_array($field, Registry::get($type)->reads_shared_fields(), true)
-        )));
+        $plain   = [];
+        $clauses = [];
+        foreach (self::types() as $type) {
+            $descriptor = Registry::get($type);
+            if (!in_array($field, $descriptor->reads_shared_fields(), true)) {
+                continue;
+            }
+            $when = $descriptor->shared_field_when($field);
+            if ($when) {
+                $clauses[] = ConfigHelpers::gate([$type], $when);
+            } else {
+                $plain[] = $type;
+            }
+        }
+
+        if (!$clauses) {
+            return ConfigHelpers::type_gate(...$plain);
+        }
+        if ($plain) {
+            array_unshift($clauses, ConfigHelpers::type_gate(...$plain));
+        }
+
+        return count($clauses) === 1 ? $clauses[0] : ['any' => $clauses];
     }
 
     /**
@@ -161,9 +186,10 @@ class TermRulesConfig {
      * The row's subfields: what every rule shares, then each descriptor's
      * own `subfields()` gated to its type, then the shared tail.
      *
-     * Propagation has no group of its own — every field it ever had is now a
-     * shared one, which is the clearest evidence the unification was real
-     * rather than a re-shuffle.
+     * The parent relationship has no group of its own — every field propagation
+     * ever had is a shared one, which is the clearest evidence the unification
+     * was real rather than a re-shuffle. The merged type owns only its
+     * `relationship` select.
      *
      * Order matters to the author, not to storage — `type` leads because
      * nothing else in the row means anything until it is picked.
@@ -232,7 +258,7 @@ class TermRulesConfig {
      *     `post_types`. Every other type reads it via should_process_post.
      *     The gate lists all five reader types, so nothing that reads the
      *     value can lose it on save.
-     *   - claim (`conflict_handling`) — propagation is the only type here
+     *   - claim (`conflict_handling`) — the related-post type is the only type here
      *     whose handler reads it. The others have a claim fixed in code,
      *     which #54 is where it gets stated.
      * All still come from the shared builders, and their ids and meanings
@@ -315,11 +341,10 @@ class TermRulesConfig {
                     'content' => '<p>' . esc_html__('Terms are copied within each chosen taxonomy, by ID — the same taxonomy on both ends of the relationship.', 'meta-conductor') . '</p>',
                 ],
             ],
-            // Gated (#58): the ACF-reference rule's post type is pinned by the
-            // relationship field it monitors — its handler never reads
-            // `post_types`, so offering the checkboxes there would store junk
-            // that reads as a working scope. Every type that DOES read the
-            // value is inside the gate, so nothing loses its scope on save.
+            // Gated to the types that read it: every type here since FW-61 04,
+            // where the ACF relationship took it as an optional narrowing of the
+            // receiving post (empty = no extra narrowing). Every type that
+            // reads the value is inside the gate, so nothing loses its scope.
             ConfigHelpers::post_types_field([
                 'conditions' => self::readers('post_types'),
             ]),
@@ -330,7 +355,7 @@ class TermRulesConfig {
                 'conditions' => self::readers('hierarchical_post_type_note'),
                 'args'       => [
                     'variant' => 'info',
-                    'content' => '<p>' . esc_html__('Propagation needs a parent/child relationship, so it only acts on hierarchical post types. Scoping this rule to a flat post type matches nothing.', 'meta-conductor') . '</p>',
+                    'content' => '<p>' . esc_html__('A parent relationship needs a parent/child tree, so it only acts on hierarchical post types. Scoping this rule to a flat post type matches nothing.', 'meta-conductor') . '</p>',
                 ],
             ],
             // The config half of #23: every type in this list now gets the
@@ -359,12 +384,12 @@ class TermRulesConfig {
             // behind the dropdowns and the row titles alike (#53 §6). The
             // builder deliberately does not force its `id`, because the two
             // existing surfaces store under different keys, so the id is
-            // supplied here. Gated to propagation: it is the only type in
+            // supplied here. Gated to the related-post type: it is the only type in
             // this batch whose handler reads `conflict_handling`; the others
             // have a claim fixed in code (#54 is where that gets stated).
             ConfigHelpers::claim_field('child', [
                 'id'          => 'conflict_handling',
-                'description' => __('What this rule does about terms a child post already has. Owning removes them on the next save or re-apply, not at edit time.', 'meta-conductor'),
+                'description' => __('What this rule does about terms the receiving post already has. Owning removes them on the next save or re-apply, not at edit time. Contributing only adds, except on a parent relationship, where it also withdraws a term the parent just lost.', 'meta-conductor'),
                 'conditions'  => self::readers('conflict_handling'),
             ]),
         ];

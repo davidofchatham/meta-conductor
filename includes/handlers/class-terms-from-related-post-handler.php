@@ -1,13 +1,16 @@
 <?php
 /**
- * BWS Taxonomy Manager Propagation Handler
- * Reconciles a post's terms against its PARENT's, and declares the descendants
- * a change reaches.
+ * Set terms from a related post — reconciles a post's terms against its
+ * related post's, and declares the posts a change reaches.
  *
  * @since 0.1.0
  */
 
 namespace BWS\MetaConductor\Handlers;
+
+use BWS\MetaConductor\Relationships\AcfRelationship;
+use BWS\MetaConductor\Relationships\ParentRelationship;
+use BWS\MetaConductor\Relationships\Relationship;
 
 // Prevent direct access
 if (!defined('ABSPATH')) {
@@ -15,7 +18,24 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Propagation, inverted to PULL (#62).
+ * Set terms from a related post (FW-61): one handler for every relationship a
+ * post can take terms across. The row's `relationship` picks the graph
+ * (`relationship_for()`); the claim, the mirror read and write, the lost-terms
+ * capture, the no-change short-circuit and the dispatcher entry points live
+ * here once. A row whose `relationship` has no implementation here is skipped,
+ * and so is an `acf` row while ACF is inactive (its stored value survives; it
+ * just runs nothing).
+ *
+ * The ACF relationship is Related Post Terms (#63): a pull applier recomputing
+ * the written post from the sources the row resolves, a declared fan-out, and a
+ * capture layer for the one thing live state cannot answer, a SEVER. Owning
+ * (`replace`) is the only claim that withdraws a gone source's terms, and an
+ * empty source set is not an instruction to empty the target unless a sever was
+ * captured against this very row. ACF taxonomy mirror fields are read and
+ * written for both relationships (FW-61 06): `terms_of()` reads native ∪
+ * mirror, `update_acf_fields_for_post()` writes each attached field.
+ *
+ * The parent relationship is propagation, inverted to PULL (#62).
  *
  * WHAT CHANGED AND WHY. Propagation is the first rule type whose effect is
  * genuinely about a second entity, and until 0.8.0 it acted on that directly:
@@ -58,25 +78,11 @@ if (!defined('ABSPATH')) {
  * applying nothing. Each child's applier subtracts what ITS parent lost. The
  * child's own resulting write fires the same hook for the child, so the
  * subtraction reaches the next level down through the same mechanism as
- * everything else. The hook is listed in `PropagationRules::capture_hooks()`;
+ * everything else. The hook is listed in `TermsFromRelatedPostRules::capture_hooks()`;
  * capture is not execution, so the dispatcher stays the sole caller of
  * `apply_to_post`.
  */
-class PropagationHandler extends UnifiedHandlerBase {
-
-    /**
-     * Post statuses a fan-out considers a child at all.
-     *
-     * The reach the recursive descendant walk had before #62, kept verbatim so
-     * the conversion does not quietly widen or narrow which posts propagation
-     * touches. It is NOT the rule's own `post_status` gate: that is applied by
-     * `should_process_post()` inside the child's own apply, where a status the
-     * rule excludes stops the write rather than the enqueue. Enqueuing one post
-     * too many costs a no-op pass; missing one loses the propagation.
-     *
-     * @var string[]
-     */
-    private const CHILD_STATUSES = ['publish', 'draft', 'private'];
+class TermsFromRelatedPostHandler extends UnifiedHandlerBase {
 
     /**
      * Terms removed from an object THIS REQUEST, keyed `"object_id:taxonomy"`.
@@ -95,15 +101,67 @@ class PropagationHandler extends UnifiedHandlerBase {
     private array $captured_removals = array();
 
     /**
-     * Immediate children by `"post_id|post_types"`, for the request.
-     *
-     * The fan-out is asked once per RULE per pass, so two propagation rules
-     * over the same post types would otherwise run the same `post_parent` query
-     * twice per entity, on every entity in a chain.
-     *
-     * @var array<string,int[]>
+     * The parent graph (FW-61 ticket 02): the immediate-children query and
+     * its per-request memo. This handler keeps the lost-terms capture, the
+     * claim and the writes.
      */
-    private array $child_cache = array();
+    private ParentRelationship $parent_relationship;
+
+    /**
+     * The ACF relationship graph and sever capture. This handler keeps the hook
+     * registration, the claim, the zero-source gate and the term write.
+     */
+    private AcfRelationship $acf_relationship;
+
+    /**
+     * Per-REQUEST memo of the enabled `acf` rows, for the CAPTURE path only: the
+     * applier is handed its rule by the pass and never reads the list.
+     *
+     * The `acf/update_value` capture fires once per relationship field saved
+     * site-wide, and each call would re-run get_enabled_rules over every rule.
+     * Rules are only mutated by the admin REST save, a separate request, so a
+     * request-lifetime memo is safe. (PR#24 round 8 #4)
+     *
+     * @var array<int,array>|null
+     */
+    private ?array $acf_rules_memo = null;
+
+    public function __construct() {
+        $this->parent_relationship = new ParentRelationship();
+        $this->acf_relationship    = new AcfRelationship();
+        parent::__construct();
+    }
+
+    /**
+     * The graph a row traverses, chosen by its `relationship`; null when this
+     * handler has no implementation for it (the row is skipped, never guessed
+     * at). Instances are held on the handler so their request memos live as
+     * long as the handler does.
+     */
+    private function relationship_for(array $rule): ?Relationship {
+        return match ((string) ($rule['relationship'] ?? '')) {
+            'parent' => $this->parent_relationship,
+            'acf'    => AcfRelationship::is_available() ? $this->acf_relationship : null,
+            default  => null,
+        };
+    }
+
+    /**
+     * The enabled `acf` rows, for the capture path (the parent's lost-terms
+     * capture never reads them).
+     *
+     * @return array[]
+     */
+    private function acf_rules(): array {
+        if ($this->acf_rules_memo === null) {
+            $this->acf_rules_memo = array_values(array_filter(
+                $this->get_enabled_rules(),
+                static fn(array $rule): bool => ($rule['relationship'] ?? '') === 'acf'
+            ));
+        }
+
+        return $this->acf_rules_memo;
+    }
 
     /**
      * Capture only — no apply hooks (#62).
@@ -116,17 +174,27 @@ class PropagationHandler extends UnifiedHandlerBase {
      * `deleted_term_relationships` stays, and ONLY because what it reads stops
      * existing after the write: it records the removal and applies nothing.
      * The descriptor's `capture_hooks()` is the allow-list that says so, and H13
-     * fails on any registration here that is not on it.
+     * fails on any registration here that is not on it. It is the union of the
+     * parent's capture and the ACF relationship's three (registered below).
      */
     protected function init_hooks() {
         add_action('deleted_term_relationships', array($this, 'capture_removed_terms'), 10, 3);
+
+        // The ACF relationship's captures. Each reads a relationship the write
+        // is about to destroy: the two update filters run at priority 5, before
+        // ACF replaces the value, and `before_delete_post` is the last moment a
+        // dying post's field can be read. They record a SEVER and apply
+        // nothing, and are inert without an `acf` row.
+        add_filter('acf/update_value/type=relationship', array($this, 'capture_removed_dependents'), 5, 3);
+        add_filter('acf/update_value/type=post_object', array($this, 'capture_removed_dependents'), 5, 3);
+        add_action('before_delete_post', array($this, 'capture_deleted_post'), 10, 1);
     }
 
     /**
      * Apply ONE propagation rule to ONE post: reconcile this post against its
      * parent's terms. Writes this post and nothing else.
      *
-     * Reads the parent through `get_post_terms()` (native ∪ ACF), subtracts
+     * Reads the parent through `terms_of()` (native ∪ ACF), subtracts
      * what the parent LOST this request, computes the end state for the rule's
      * claim through the shared `compute_end_state()`, and writes only when that
      * differs from what the post already holds.
@@ -138,19 +206,27 @@ class PropagationHandler extends UnifiedHandlerBase {
      * conversion is not the place to change what a claim means (that is #54).
      *
      * @param int   $post_id Post to reconcile.
-     * @param array $rule    One enabled propagation rule (canonical shape).
+     * @param array $rule    One enabled rule (canonical shape).
      * @return bool Whether this post's terms actually changed.
      */
     public function apply_to_post(int $post_id, array $rule): bool {
-        if (!$this->should_process_post($post_id, $rule)) {
+        $relationship = $this->relationship_for($rule);
+        if (!$relationship) {
+            return false;
+        }
+        if ($relationship === $this->acf_relationship) {
+            return $this->apply_acf_to_post($post_id, $rule);
+        }
+        $post = get_post($post_id);
+        if (!$post || !$relationship->is_eligible_dependent($post, $rule)) {
             return false;
         }
 
-        $post = get_post($post_id);
-        if (!$post || (int) $post->post_parent <= 0) {
+        $sources = $relationship->sources_of($post_id, $rule);
+        if (empty($sources)) {
             return false;
         }
-        $parent_id = (int) $post->post_parent;
+        $parent_id = (int) $sources[0];
 
         // Gate on the PARENT as well as the child. In stock WP a post_parent is
         // always the same post type as the child (the editor's parent dropdown
@@ -159,7 +235,8 @@ class PropagationHandler extends UnifiedHandlerBase {
         // post_parent (programmatic / non-stock) — if that ever becomes real,
         // decide whether propagation scopes the source (parent), the target
         // (child), or both. (0.6.0 review, carried through #62.)
-        if (!$this->should_process_post($parent_id, $rule)) {
+        $parent = get_post($parent_id);
+        if (!$parent || !$relationship->is_eligible_source($parent, $rule)) {
             return false;
         }
 
@@ -170,7 +247,7 @@ class PropagationHandler extends UnifiedHandlerBase {
         $conflict_handling = $rule['conflict_handling'] ?? 'merge';
 
         $removed = $this->parent_removals($parent_id, $taxonomy);
-        $source  = array_diff($this->get_post_terms($parent_id, $taxonomy), $removed);
+        $source  = array_diff($this->terms_of(array($parent_id), $taxonomy), $removed);
 
         $before = $this->terms_fingerprint($post_id, $taxonomy);
 
@@ -232,41 +309,180 @@ class PropagationHandler extends UnifiedHandlerBase {
      * apply.
      *
      * @param int   $post_id Post just passed over.
-     * @param array $rule    The propagation rule.
+     * @param array $rule    The rule.
      * @return int[] Immediate child post IDs.
      */
     public function fan_out(int $post_id, array $rule): array {
         if ((string) ($rule['taxonomy'] ?? '') === '') {
             return array();
         }
-        if (!$this->should_process_post($post_id, $rule)) {
+        $relationship = $this->relationship_for($rule);
+        if (!$relationship) {
+            return array();
+        }
+        $post = get_post($post_id);
+        if (!$post || !$relationship->is_eligible_source($post, $rule)) {
             return array();
         }
 
-        $post_types = $this->resolve_child_post_types($rule);
-        if (empty($post_types)) {
-            return array();
+        return $relationship->dependents_of($post_id, $rule);
+    }
+
+    // ---------------------------------------------------------------------
+    // The ACF relationship (#63)
+    // ---------------------------------------------------------------------
+
+    /**
+     * Apply ONE `acf` row to ONE post: recompute this post's terms in the row's
+     * taxonomy from the sources THAT ROW resolves for it. Writes this post and
+     * nothing else.
+     *
+     * WHY THIS DOES NOT CALL `should_process_post()`. `post_status` gates the
+     * SOURCE here (§V5): "only copy from published sources". Applying it to the
+     * dependent would silently stop a draft dependent being kept in step by a
+     * published source. The receiving post's gate is the relationship's own
+     * two-sided eligibility, which includes the row's optional `post_types`.
+     *
+     * THE ZERO-SOURCE SKIP IS THE DESTRUCTIVE-WRITE GATE (invariant #2, V13). A
+     * push row's dependent type is any, so type-match alone would make every
+     * post in the field's target types a managed dependent and empty it.
+     * Positive evidence that the row manages this post is a resolved source, or
+     * a captured sever, which is the same evidence one moment later.
+     *
+     * @param int   $post_id Post to recompute.
+     * @param array $rule    One enabled `acf` row (canonical shape).
+     * @return bool Whether this post's terms actually changed.
+     */
+    private function apply_acf_to_post(int $post_id, array $rule): bool {
+        $taxonomy = (string) ($rule['taxonomy'] ?? '');
+        if ($post_id <= 0 || $taxonomy === '') {
+            return false;
         }
 
-        // Memoized per (post, post-type set) for the request: a pass asks once
-        // per RULE, and two propagation rules scoped to the same post types
-        // declare the same children. The children of one post do not change
-        // within a request — nothing here writes `post_parent`.
-        $key = $post_id . '|' . implode(',', $post_types);
-        if (isset($this->child_cache[$key])) {
-            return $this->child_cache[$key];
+        $post = get_post($post_id);
+        if (!$post instanceof \WP_Post || !$this->acf_relationship->is_eligible_dependent($post, $rule)) {
+            return false;
         }
 
-        $children = get_posts(array(
-            'post_type'      => $post_types,
-            'post_parent'    => $post_id,
-            'post_status'    => self::CHILD_STATUSES,
-            'numberposts'    => -1,
-            'fields'         => 'ids',
-            'suppress_filters' => false,
+        $claim   = (string) ($rule['conflict_handling'] ?? 'merge');
+        $sources = $this->acf_relationship->sources_of($post_id, $rule);
+
+        // Only an Owning row withdraws a gone source's terms (PR#24 Bug 3), and
+        // only THIS row's own sever counts (`AcfRelationship::is_severed()`).
+        $orphaned = $claim === 'replace' && $this->acf_relationship->is_severed($post_id, $rule);
+
+        if (empty($sources) && !$orphaned) {
+            return false;
+        }
+
+        // A gated-out source still COUNTS as a resolved source above, its terms
+        // just don't contribute, so a dependent of a draft source is emptied
+        // under Owning rather than skipped as unmanaged.
+        $statuses = (array) ($rule['post_status'] ?? []);
+        $passing  = array_values(array_filter(
+            array_map('intval', $sources),
+            static fn(int $id): bool => empty($statuses)
+                || in_array(get_post_status($id), $statuses, true)
         ));
 
-        return $this->child_cache[$key] = array_map('intval', (array) $children);
+        return $this->write_acf_terms($post_id, $taxonomy, $this->terms_of($passing, $taxonomy), $claim);
+    }
+
+    /**
+     * Write one `acf` row's computed set through the shared claim semantics, to
+     * the native store AND each attached ACF taxonomy field (FW-61 06).
+     *
+     * `compute_end_state()` is the claim's one encoding, so an empty
+     * authoritative set still empties the taxonomy under Owning (`replace` of
+     * nothing) and leaves it alone under Contributing (`merge` of nothing).
+     * `apply_terms_to_post()` is not the write path: it early-returns on an
+     * empty term list, so it cannot express that. The claim encoding is shared;
+     * the guard is not. (#38 cluster 2, don't 6d.) That is what the
+     * `$authoritative` flag on `target_term_ids()` means: the parent path's
+     * "an empty source says nothing" guard does not apply here, because the
+     * zero-source gate in `apply_acf_to_post()` already decided this row manages
+     * the post.
+     *
+     * The mirror write goes first, as on the parent path: with the field's Save
+     * Terms on it syncs the native store, so the native side is computed after.
+     *
+     * @param int    $post_id  Dependent post.
+     * @param string $taxonomy Taxonomy.
+     * @param int[]  $terms    Authoritative term IDs for this row.
+     * @param string $claim    merge|replace|skip.
+     * @return bool Whether the post's terms actually changed.
+     */
+    private function write_acf_terms(int $post_id, string $taxonomy, array $terms, string $claim): bool {
+        $before   = $this->terms_fingerprint($post_id, $taxonomy);
+        $mirrored = $this->update_acf_fields_for_post($post_id, $taxonomy, $terms, $claim, array(), true);
+
+        $current = $this->current_term_ids($post_id, $taxonomy);
+        $final   = $this->target_term_ids($current, $terms, $claim, array(), true);
+
+        // No-change short-circuit: a pass runs every row whether or not this
+        // one's trigger fired. Both sides are sorted, so === is a set test. A
+        // mirror write that synced the native store is still a change.
+        if ($final === $current) {
+            return $mirrored || $this->terms_fingerprint($post_id, $taxonomy) !== $before;
+        }
+
+        $result = wp_set_object_terms($post_id, $final, $taxonomy);
+
+        // WP_Error when the taxonomy no longer exists. Don't log a success for a
+        // write that silently no-op'd. (PR#24 round 7 #2)
+        if (is_wp_error($result)) {
+            $this->debug_log(
+                sprintf('ACF-ref write FAILED post %d tax %s: %s', $post_id, $taxonomy, $result->get_error_message()),
+                array('terms' => $final)
+            );
+            return $mirrored;
+        }
+
+        $this->debug_log(
+            sprintf('ACF-ref write (%s) post %d tax %s', $claim, $post_id, $taxonomy),
+            array('before' => $current, 'after' => $final)
+        );
+
+        return true;
+    }
+
+    /**
+     * Entities whose CAPTURED state needs a pass. Consumed.
+     *
+     * The dispatcher calls this at drain start, so a severed dependent reaches
+     * a full ordered pass by the same route a saved post does. It is a separate
+     * channel from `fan_out()` because the entity a sever affects may be
+     * reachable from no post that gets one: the holder was deleted, or the link
+     * that named it is gone.
+     *
+     * @return int[] Entity IDs to mark dirty.
+     */
+    public function drain_captures(): array {
+        return $this->acf_relationship->drain_marks();
+    }
+
+    /**
+     * CAPTURE hook (not an apply): `acf/update_value` at priority 5, before the
+     * value is written. Records which dependents the removal orphans; the diff
+     * and the direction logic are `AcfRelationship::capture_removed_dependents()`.
+     *
+     * @param mixed $value   New field value (returned unchanged).
+     * @param int   $post_id Post being saved (a source or a holder).
+     * @param array $field   ACF field array.
+     * @return mixed
+     */
+    public function capture_removed_dependents($value, $post_id, $field) {
+        return $this->acf_relationship->capture_removed_dependents($this->acf_rules(), $value, $post_id, $field);
+    }
+
+    /**
+     * CAPTURE hook (not an apply): a post is about to be permanently deleted;
+     * record the dependents it feeds while its relationships are still readable.
+     *
+     * @param int $post_id Post being deleted.
+     */
+    public function capture_deleted_post($post_id): void {
+        $this->acf_relationship->capture_deleted_post($this->acf_rules(), $post_id);
     }
 
     /**
@@ -315,7 +531,7 @@ class PropagationHandler extends UnifiedHandlerBase {
      * The intersection with "not currently on the parent" is what keeps the
      * capture from over-subtracting, and it settles two cases at once:
      *
-     *  - The #45 case. `get_post_terms()` reads native ∪ ACF, and within one
+     *  - The #45 case. `terms_of()` reads native ∪ ACF, and within one
      *    request the parent's ACF mirror lags its native store (the mirror's
      *    own write has not fired yet), so the union re-reads a just-removed
      *    term as still present. It is absent NATIVELY, so it stays in this set
@@ -354,7 +570,8 @@ class PropagationHandler extends UnifiedHandlerBase {
             return false;
         }
         foreach ($this->get_enabled_rules() as $rule) {
-            if (($rule['taxonomy'] ?? '') === $taxonomy) {
+            // The lost-terms capture is the parent relationship's alone.
+            if (($rule['relationship'] ?? '') === 'parent' && ($rule['taxonomy'] ?? '') === $taxonomy) {
                 return true;
             }
         }
@@ -393,9 +610,11 @@ class PropagationHandler extends UnifiedHandlerBase {
      * @param int[]  $source            Parent's terms, removals already excluded.
      * @param string $conflict_handling merge|replace|skip.
      * @param int[]  $removed           Terms the parent lost this request.
+     * @param bool   $authoritative     The source set IS the instruction, empty or not (`acf`
+     *                                  rows: the zero-source gate has already run).
      * @return int[] Sorted target term IDs.
      */
-    private function target_term_ids(array $current, array $source, string $conflict_handling, array $removed): array {
+    private function target_term_ids(array $current, array $source, string $conflict_handling, array $removed, bool $authoritative = false): array {
         // A SOURCE WITH NOTHING IN IT IS NOT AN INSTRUCTION TO EMPTY THE TARGET.
         // Both pre-#62 push paths returned early on `empty($parent_terms)`, and
         // that early return was load-bearing under the `replace` claim: a parent
@@ -405,7 +624,7 @@ class PropagationHandler extends UnifiedHandlerBase {
         // The parent's REMOVALS still apply, because those are a statement about
         // specific terms rather than about the source set, and that is the case
         // the old code reached through its separate removal walk.
-        if (empty($source)) {
+        if (empty($source) && !$authoritative) {
             return empty($removed)
                 ? $this->normalize_term_ids($current)
                 : array_values(array_diff($this->normalize_term_ids($current), $this->normalize_term_ids($removed)));
@@ -460,29 +679,7 @@ class PropagationHandler extends UnifiedHandlerBase {
     }
 
     /**
-     * Resolve the rule's `post_types` checkboxes to a concrete slug list for
-     * the child query.
-     *
-     * The post-type GATE (should_process_post) treats empty as "all" and never
-     * needs concrete slugs; the fan-out does — get_posts needs real post types
-     * to query by post_parent. So empty `post_types` ⇒ every HIERARCHICAL
-     * public post type (propagation only acts on parent/child trees; V5).
-     *
-     * @param array $rule Rule config.
-     * @return string[] Post-type slugs to query for children.
-     */
-    private function resolve_child_post_types($rule): array {
-        $slugs = $rule['post_types'] ?? [];
-
-        if (empty($slugs)) {
-            $slugs = array_values(get_post_types(['public' => true, 'hierarchical' => true]));
-        }
-
-        return $slugs;
-    }
-
-    /**
-     * Get post terms as the UNION of the native taxonomy and any ACF taxonomy
+     * Get the terms of one or more posts as the UNION of the native taxonomy and any ACF taxonomy
      * field(s) for $taxonomy.
      *
      * Propagation treats "the source's terms" as one merged set and mirrors it
@@ -496,15 +693,19 @@ class PropagationHandler extends UnifiedHandlerBase {
      * If a "keep native and ACF separate" model is ever needed, this method and
      * the two writers must track native→native / ACF→ACF as distinct channels.
      *
-     * @param int    $post_id
+     * @param int[]  $post_ids Posts; the native read is ONE query for all of them.
      * @param string $taxonomy
      * @return int[]
      */
-    private function get_post_terms($post_id, $taxonomy) {
+    private function terms_of(array $post_ids, string $taxonomy): array {
+        if (empty($post_ids)) {
+            return array();
+        }
+
         $terms = array();
 
-        // Get native taxonomy terms
-        $native_terms = wp_get_object_terms($post_id, $taxonomy, array('fields' => 'ids'));
+        // Native terms (`wp_get_object_terms` takes an int[] of objects).
+        $native_terms = wp_get_object_terms($post_ids, $taxonomy, array('fields' => 'ids'));
         if (!is_wp_error($native_terms)) {
             $terms = array_merge($terms, (array) $native_terms);
         }
@@ -513,9 +714,10 @@ class PropagationHandler extends UnifiedHandlerBase {
         // get_field_objects, which returns FALSE for a post with no saved ACF
         // values) so an ACF-only source whose field is attached-but-empty still
         // reads correctly. (0.6.0 ACF B-sweep.)
-        foreach ($this->get_acf_taxonomy_fields($post_id, $taxonomy) as $field) {
-            $acf_terms = $this->get_acf_taxonomy_value($post_id, $field['name'], $taxonomy);
-            $terms = array_merge($terms, $acf_terms);
+        foreach ($post_ids as $post_id) {
+            foreach ($this->get_acf_taxonomy_fields((int) $post_id, $taxonomy) as $field) {
+                $terms = array_merge($terms, $this->get_acf_taxonomy_value((int) $post_id, $field['name'], $taxonomy));
+            }
         }
 
         return $this->normalize_term_ids($terms);
@@ -527,15 +729,19 @@ class PropagationHandler extends UnifiedHandlerBase {
      * Same end state as the native write — the shared `compute_end_state()`
      * plus the parent's removals — computed against the FIELD's current value
      * rather than the native one, because the two stores can legitimately
-     * differ (see get_post_terms()).
+     * differ (see terms_of()).
      *
      * @param int    $post_id
      * @param string $taxonomy
      * @param int[]  $source            Parent's terms, removals already excluded.
      * @param string $conflict_handling merge|replace|skip.
      * @param int[]  $removed           Terms the parent lost this request.
+     * @param bool   $authoritative     See target_term_ids().
+     * @return bool Whether any field's value was written.
      */
-    private function update_acf_fields_for_post($post_id, $taxonomy, $source, $conflict_handling, $removed = array()) {
+    private function update_acf_fields_for_post($post_id, $taxonomy, $source, $conflict_handling, $removed = array(), bool $authoritative = false): bool {
+        $wrote = false;
+
         // Value-independent field discovery: get_field_objects() returns FALSE for
         // a post with no saved ACF values, so a never-populated child could never
         // get its first ACF write. get_acf_taxonomy_fields resolves by location
@@ -546,11 +752,14 @@ class PropagationHandler extends UnifiedHandlerBase {
             $current_terms = $this->normalize_term_ids(
                 $this->get_acf_taxonomy_value($post_id, $field['name'], $taxonomy)
             );
-            $new_terms = $this->target_term_ids($current_terms, $source, $conflict_handling, $removed);
+            $new_terms = $this->target_term_ids($current_terms, $source, $conflict_handling, $removed, $authoritative);
 
             if ($new_terms !== $current_terms) {
                 $this->set_acf_taxonomy_value($post_id, $field['key'], $new_terms);
+                $wrote = true;
             }
         }
+
+        return $wrote;
     }
 }

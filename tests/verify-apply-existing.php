@@ -17,8 +17,8 @@
  *   3. The stale check: an edited, re-ordered, deleted or toggled row is
  *      refused — never resolved to a neighbour.
  *   4. Reach → statuses: `post_status` narrows for every type whose gate it
- *      is, NEVER for `related_post_terms` (don't 6e(b) — there it gates the
- *      source), and trash / auto-draft never make it into the set.
+ *      is, NEVER for a `terms_from_related_post` row whose relationship is `acf`
+ *      (don't 6e(b) — there it gates the source), and trash / auto-draft never make it into the set.
  *   5. The disabled-row override: the enabled rows plus exactly the included
  *      one, in authored order; with no override, today's enabled filter.
  *   6. The Apply page dropdown: every row of both kinds, grouped, each value
@@ -203,13 +203,17 @@ $check('trash and auto-draft are dropped from a narrowed set',
 $check('a gate of only trash reaches nothing, never the default set',
     $reach($h + ['post_status' => ['trash' => true]]) === []);
 
-foreach (['propagation_rules', 'terms_from_trigger_term', 'terms_from_date_window', 'restrict_terms_by_level'] as $type) {
+foreach (['terms_from_trigger_term', 'terms_from_date_window', 'restrict_terms_by_level'] as $type) {
     $check("$type narrows by post_status",
         $reach(['type' => $type, 'post_status' => ['publish' => true]]) === ['publish']);
 }
 
-$check('related_post_terms never narrows — post_status gates the source there',
-    $reach(['type' => 'related_post_terms_rules', 'post_status' => ['publish' => true]]) === $default);
+// The merged type answers per ROW (FW-61): a parent row gates the written post
+// and narrows; an ACF row gates the source and never does.
+$check('terms_from_related_post + parent narrows by post_status',
+    $reach(['type' => 'terms_from_related_post', 'relationship' => 'parent', 'post_status' => ['publish' => true]]) === ['publish']);
+$check('terms_from_related_post + acf never narrows — post_status gates the source there',
+    $reach(['type' => 'terms_from_related_post', 'relationship' => 'acf', 'post_status' => ['publish' => true]]) === $default);
 
 // Post types (ticket 10). null = every public type.
 $types = fn(array $rows) => RuleChoice::reach_post_types(OptionRuleStorage::project_kind_rules($rows));
@@ -304,7 +308,7 @@ $check('a row with no descriptor is marked in the dropdown',
 $multi_option = [
     $KIND_TERM => [
         ['type' => 'terms_from_term_hierarchy', 'row_title' => 'H1', 'taxonomy' => 'category', 'enabled' => true],
-        ['type' => 'propagation_rules', 'row_title' => 'P', 'taxonomy' => ['category', 'post_tag', 'sport'], 'enabled' => false],
+        ['type' => 'terms_from_related_post', 'row_title' => 'P', 'taxonomy' => ['category', 'post_tag', 'sport'], 'enabled' => false],
         ['type' => 'terms_from_term_hierarchy', 'row_title' => 'H2', 'taxonomy' => 'post_tag', 'enabled' => true],
     ],
     $KIND_FORMAT => [],

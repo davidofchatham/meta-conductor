@@ -13,6 +13,7 @@ namespace BWS\MetaConductor\Admin\Config;
 
 use BWS\MetaConductor\RuleTypes\FieldFromPatternRules;
 use BWS\MetaConductor\RuleTypes\Registry;
+use BWS\MetaConductor\Storage\OptionRuleStorage;
 
 if (!defined('ABSPATH')) {
     exit;
@@ -121,10 +122,39 @@ class ConfigHelpers {
     }
 
     /**
-     * Every type's own subfields, each gated to that type alone.
+     * `type_gate()` plus an optional second dimension: a `[field => value, …]`
+     * map, every pair of which must hold (`equals`). A type with several
+     * relationships gates a control on `relationship` this way, so no
+     * hand-written type list appears and a flip of that value drops the control
+     * on save exactly as a change of `type` does.
+     *
+     * With no `$when` this IS `type_gate()`, so a single-dimension gate keeps its
+     * flat `field`/`operator`/`value` shape.
+     *
+     * @param string[]             $types Stored type keys the subfield belongs to.
+     * @param array<string,string> $when  Extra value conditions.
+     */
+    public static function gate(array $types, array $when = []): array {
+        $gate = self::type_gate(...$types);
+        if (!$when) {
+            return $gate;
+        }
+
+        $rules = [$gate];
+        foreach ($when as $field => $value) {
+            $rules[] = ['field' => (string) $field, 'operator' => 'equals', 'value' => $value];
+        }
+
+        return ['all' => $rules];
+    }
+
+    /**
+     * Every type's own subfields, each gated to that type alone, and further to
+     * its `when` if the descriptor declared one.
      *
      * The gate is stamped here, not by the descriptor, so no subfield can be
-     * visible on a type that did not declare it (RuleType::subfields()).
+     * visible on a type that did not declare it (RuleType::subfields()). `when`
+     * is the descriptor's input and is stripped: Wireframe never sees it.
      *
      * @param string[] $types Stored type keys, in registry order.
      * @return array[]
@@ -133,7 +163,9 @@ class ConfigHelpers {
         $fields = [];
         foreach ($types as $type) {
             foreach (Registry::get($type)->subfields() as $field) {
-                $field['conditions'] = self::type_gate($type);
+                $when = (array) ($field['when'] ?? []);
+                unset($field['when']);
+                $field['conditions'] = self::gate([$type], $when);
                 $fields[]            = $field;
             }
         }
@@ -468,7 +500,7 @@ class ConfigHelpers {
         // placeholder for the rest of the request — even after ACF loads.
         // (PR#24 round 6 #2)
         if (!function_exists('acf_get_field_groups') || !function_exists('acf_get_fields')) {
-            return $placeholder_row;
+            return $placeholder_row + self::stored_acf_field_options();
         }
 
         $fields_cache = [];
@@ -518,6 +550,35 @@ class ConfigHelpers {
         }
 
         return $placeholder_row + $fields_cache;
+    }
+
+    /**
+     * With ACF off there is no field list, and a select drops a value that is
+     * not among its options on save. A stored ACF-relationship rule must survive
+     * ACF being switched off, so each stored field value is offered as itself;
+     * the author sees the raw value, the rule runs nothing, and the next save
+     * writes the same value back.
+     *
+     * @return array<string,string> stored combined value => label.
+     */
+    private static function stored_acf_field_options(): array {
+        // Raw on purpose (not don't 1's `get_rules()`): the select's option keys are
+        // the COMBINED values, and the projection would split them.
+        $stored = get_option(OptionRuleStorage::OPTION_NAME, []);
+        $rows   = is_array($stored) ? ($stored[OptionRuleStorage::KIND_TERM] ?? []) : [];
+        $out    = [];
+
+        foreach ((array) $rows as $row) {
+            foreach (['acf_field_name', 'reverse_acf_field_name'] as $key) {
+                $value = is_array($row) ? (string) ($row[$key] ?? '') : '';
+                if ($value !== '') {
+                    /* translators: %s: the stored ACF field value */
+                    $out[$value] = sprintf(__('%s (ACF inactive)', 'meta-conductor'), $value);
+                }
+            }
+        }
+
+        return $out;
     }
 
     /**

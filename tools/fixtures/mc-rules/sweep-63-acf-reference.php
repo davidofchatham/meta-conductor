@@ -1,6 +1,7 @@
 <?php
 /**
- * mc-rules — #63 behaviour sweep: related_post_terms as a per-rule applier.
+ * mc-rules — #63 behavior sweep: the ACF relationship of terms_from_related_post
+ * (once its own type, related_post_terms) as a per-rule applier.
  *
  * The last conversion, and the only one where the rule TYPE was previously one
  * slot in the order however many rows it held. Four things the static harness
@@ -23,6 +24,8 @@
  *   §63f    The PULL direction (holder_role=target) plus a tier-3 reverse
  *           lookup: editing the SOURCE re-syncs the holder, which is the
  *           declared fan-out doing what the old push write did.
+ *   §63i/j  FW-61 04: Deferring (`conflict_handling = skip`) fills only a post with no
+ *           terms yet, and the optional `post_types` scopes the receiving post.
  *   §63g    A sever licenses ONLY THE ROW WHOSE LINK WAS CUT to bypass the
  *           zero-source gate. The record is the one thing that lets a rule
  *           empty a post it resolves no source for, so a taxonomy-wide record
@@ -46,7 +49,7 @@
  *
  * WHY EVERY SEVER NEEDS ITS OWN EVAL, SEPARATE FROM THE STAGING ONE. The
  * capture path reads the rule set through a REQUEST-LIFETIME memo
- * (`RelatedPostTermsHandler::enabled_rules()`), which is correct on a live site
+ * (`TermsFromRelatedPostHandler::acf_rules()`), which is correct on a live site
  * — rules are only mutated by the admin REST save, a different request — and a
  * trap here: `mc63_stage()` writes relationship fields while the rules are
  * SILENCED, which populates that memo with the empty set, so a sever later in
@@ -69,6 +72,8 @@
  *   wp eval-file .../sweep-63-acf-reference.php identity-a   # §63h (stage)
  *   wp eval-file .../sweep-63-acf-reference.php identity-b   # §63h (legacy pass)
  *   wp eval-file .../sweep-63-acf-reference.php identity-key # §63h (keyed pass)
+ *   wp eval-file .../sweep-63-acf-reference.php defer        # §63i
+ *   wp eval-file .../sweep-63-acf-reference.php scope        # §63j
  *   wp eval-file .../sweep-63-acf-reference.php restore
  *
  * `restore` puts both holders' relationship fields back to their manifest
@@ -129,25 +134,27 @@ function mc63_slugs( $post_id, $taxonomy = 'mc_topic' ) {
 /** Row A — push from `mc-holder` over the TIER 1 explicit reverse field. */
 function mc63_rule_a() {
 	return array(
-		'type'                   => 'related_post_terms_rules',
+		'type'                   => 'terms_from_related_post',
+		'relationship'           => 'acf',
 		'enabled'                => true,
 		'acf_field_name'         => 'mc_section:mc_related_items:field_mc_related_items',
 		'reverse_acf_field_name' => 'mc_item:mc_parent_section:field_mc_parent_section',
 		'holder_role'            => 'source',
 		'taxonomy'               => 'mc_topic',
-		'keep_in_sync'           => true,
+		'conflict_handling'           => 'replace',
 	);
 }
 
 /** Row C — push from `mc-bidi-holder` over the TIER 2 native-bidi partner. */
 function mc63_rule_c() {
 	return array(
-		'type'           => 'related_post_terms_rules',
+		'type'           => 'terms_from_related_post',
+		'relationship'   => 'acf',
 		'enabled'        => true,
 		'acf_field_name' => 'mc_section:mc_bidi_items:field_mc_bidi_items',
 		'holder_role'    => 'source',
 		'taxonomy'       => 'mc_topic',
-		'keep_in_sync'   => true,
+		'conflict_handling'   => 'replace',
 	);
 }
 
@@ -172,12 +179,13 @@ function mc63_rule_c() {
  */
 function mc63_rule_s() {
 	return array(
-		'type'           => 'related_post_terms_rules',
+		'type'           => 'terms_from_related_post',
+		'relationship'   => 'acf',
 		'enabled'        => true,
 		'acf_field_name' => 'mc_item:mc_parent_section:field_mc_parent_section',
 		'holder_role'    => 'target',
 		'taxonomy'       => 'mc_topic',
-		'keep_in_sync'   => true,
+		'conflict_handling'   => 'replace',
 	);
 }
 
@@ -355,7 +363,8 @@ switch ( $step ) {
 	case 'pull':
 		WP_CLI::log( '§63f — holder_role=target (pull), tier-3 reverse lookup' );
 		$pull = array(
-			'type'           => 'related_post_terms_rules',
+			'type'              => 'terms_from_related_post',
+			'relationship'      => 'acf',
 			'enabled'        => true,
 			// The holder is the ITEM here, and the field it owns is the one
 			// that used to be row A's reverse. No reverse_acf_field_name and no
@@ -364,7 +373,7 @@ switch ( $step ) {
 			'acf_field_name' => 'mc_item:mc_parent_section:field_mc_parent_section',
 			'holder_role'    => 'target',
 			'taxonomy'       => 'mc_topic',
-			'keep_in_sync'   => true,
+			'conflict_handling'   => 'replace',
 		);
 		list( $subject, $holder ) = mc63_stage( array( $pull ) );
 		mc63_pass( $subject );
@@ -377,6 +386,51 @@ switch ( $step ) {
 		mc63_dispatcher()->drain();
 
 		$check( '§63f fan-out re-synced the holder', mc63_slugs( $subject ), array( 'west' ) );
+		break;
+
+	// ---- §63i: Deferring on an ACF row (FW-61 04) --------------------------
+	//
+	// `skip` is the claim ACF rows gained: it writes only into a post that holds
+	// NO terms in the taxonomy yet. Row A pushes the holder's terms to the subject.
+	case 'defer':
+		WP_CLI::log( '§63i — Deferring (skip) on a push row' );
+		$defer                      = mc63_rule_a();
+		$defer['conflict_handling'] = 'skip';
+		list( $subject, $holder ) = mc63_stage( array( $defer ) );
+		mc63_pass( $subject );
+		$check( '§63i empty subject is filled', mc63_slugs( $subject ), array( 'coastal' ) );
+
+		// The holder's terms change; the subject now HOLDS a term, so Deferring
+		// leaves it alone (Owning would have replaced it with {west}).
+		wp_set_object_terms( $holder, array( mc_tid( 'topic-west' ) ), 'mc_topic' );
+		mc63_dispatcher()->drain();
+		$check( '§63i occupied subject is left alone', mc63_slugs( $subject ), array( 'coastal' ) );
+
+		// Emptied, it is fillable again.
+		wp_set_object_terms( $subject, array(), 'mc_topic' );
+		mc63_pass( $subject );
+		$check( '§63i emptied subject is filled again', mc63_slugs( $subject ), array( 'west' ) );
+		break;
+
+	// ---- §63j: post_types scopes the receiving post (FW-61 04) -------------
+	case 'scope':
+		WP_CLI::log( '§63j — post_types narrows the receiving post of a push row' );
+		$scoped                = mc63_rule_a();
+		$scoped['post_types']  = array( 'mc_section' );
+		list( $subject ) = mc63_stage( array( $scoped ) );
+		mc63_pass( $subject );
+		$check( '§63j mc_item subject is outside post_types, untouched', mc63_slugs( $subject ), array() );
+
+		$scoped['post_types'] = array( 'mc_item' );
+		mc63_author( array( $scoped ) );
+		mc63_pass( $subject );
+		$check( '§63j mc_item subject inside post_types, filled', mc63_slugs( $subject ), array( 'coastal' ) );
+
+		$scoped['post_types'] = array();
+		mc63_author( array( $scoped ) );
+		wp_set_object_terms( $subject, array(), 'mc_topic' );
+		mc63_pass( $subject );
+		$check( '§63j empty post_types is no extra narrowing', mc63_slugs( $subject ), array( 'coastal' ) );
 		break;
 
 	// ---- §63h: field identity — the KEY decides, not the bare name --------
@@ -502,7 +556,7 @@ switch ( $step ) {
 		break;
 
 	default:
-		WP_CLI::error( "Unknown step '{$step}' — use order | order-swap | sever-a | sever-b | bare-a | bare-b | bare-c | pull | cross-a | cross-b | restore." );
+		WP_CLI::error( "Unknown step '{$step}' — use order | order-swap | sever-a | sever-b | bare-a | bare-b | bare-c | pull | defer | scope | cross-a | cross-b | restore." );
 }
 
 if ( 'restore' !== $step && 'bare-b' !== $step ) {

@@ -5,7 +5,7 @@
  * Locks the merge/replace/skip decision matrix WITHOUT booting WordPress.
  *
  * WHAT MOVED (#62/#38 cluster 2). This harness used to exercise
- * `PropagationHandler::write_would_change_terms()`, a per-mode switch that
+ * `TermsFromRelatedPostHandler::write_would_change_terms()`, a per-mode switch that
  * re-encoded `apply_terms_to_post()`'s semantics so propagation could decide
  * whether a write was worth making. Two coupled switches, no shared source. The
  * semantics now live once, in `TermOperations::compute_end_state()`, which BOTH
@@ -47,9 +47,9 @@ if (!function_exists('wp_get_object_terms')) {
 require dirname(__DIR__) . '/vendor/autoload.php';
 require dirname(__DIR__) . '/autoload.php';
 
-use BWS\MetaConductor\Handlers\PropagationHandler;
+use BWS\MetaConductor\Handlers\TermsFromRelatedPostHandler;
 
-$handler = new PropagationHandler();
+$handler = new TermsFromRelatedPostHandler();
 
 // Protected trait/handler methods. No setAccessible() call: it is a no-op since
 // PHP 8.1 and deprecated in 8.5, and ReflectionMethod::invoke() already ignores
@@ -125,8 +125,26 @@ $check('merge: a term-less parent leaves the child alone',
 $check('replace: a term-less parent still delivers its removals',
     $t([6, 8], [], 'replace', [8]) === [6]);
 
+// --- A relationship this handler has no graph for is skipped (FW-61 03). ------
+// Neither entry point may touch WordPress for such a row: no `get_post` shim
+// exists here, so a call that reached one would fatal.
+$unknown = ['relationship' => 'wibble', 'taxonomy' => 'category'];
+$check('an unknown relationship applies nothing', $handler->apply_to_post(1, $unknown) === false);
+$check('an unknown relationship declares no fan-out', $handler->fan_out(1, $unknown) === []);
+$check('a row with no relationship applies nothing', $handler->apply_to_post(1, ['taxonomy' => 'category']) === false);
+
+// --- An `acf` row runs nothing while ACF is inactive (FW-61 04). -------------
+// This harness has no ACF, so the row must be skipped before any WordPress call,
+// exactly like an unknown relationship; its stored value is never touched.
+if (!function_exists('acf_get_field')) {
+    $acf_row = ['relationship' => 'acf', 'taxonomy' => 'category', 'acf_field_name' => 'f', 'holder_role' => 'source'];
+    $check('an acf row applies nothing with ACF inactive', $handler->apply_to_post(1, $acf_row) === false);
+    $check('an acf row declares no fan-out with ACF inactive', $handler->fan_out(1, $acf_row) === []);
+}
+$check('the handler drains no captures when none were recorded', $handler->drain_captures() === []);
+
 // --- Report. ----------------------------------------------------------------
-$total = 23;
+$total = 29;
 if ($fail) {
     fwrite(STDERR, "\nPROPAGATION-INHERIT FAIL — " . count($fail) . "/$total assertions failed:\n");
     foreach ($fail as $f) { fwrite(STDERR, "  \xE2\x9C\x97 $f\n"); }

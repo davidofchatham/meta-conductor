@@ -339,7 +339,7 @@ foreach ( $mc_manifest['mc_rules'] as $mc_type => $mc_rules ) {
 		} elseif ( isset( $mc_rule['post_type'] ) ) {
 			$mc_scope[] = $mc_rule['post_type']; // title_slug: single scalar
 		} elseif ( isset( $mc_rule['acf_field_name'] ) && false !== strpos( $mc_rule['acf_field_name'], ':' ) ) {
-			// related_post_terms has no post_types field — the holder post type
+			// An ACF-relationship row may carry no post_types — the holder post type
 			// is the "post_type:field" prefix (storage splits it at read time).
 			$mc_scope[] = strtok( $mc_rule['acf_field_name'], ':' );
 		}

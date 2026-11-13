@@ -144,8 +144,9 @@ foreach (Registry::all() as $type => $descriptor) {
 
 $check('a taxonomy-declaring type keys on its taxonomy',
     $desc('terms_from_term_hierarchy')->target_key(['taxonomy' => 'mc_topic']) === 'taxonomy|mc_topic');
-$check('the ACF-reference type keys on its taxonomy too',
-    $desc('related_post_terms_rules')->target_key(['taxonomy' => 'mc_topic']) === 'taxonomy|mc_topic');
+$check('the related-post type keys on its taxonomy, whichever the relationship',
+    $desc('terms_from_related_post')->target_key(['relationship' => 'acf', 'taxonomy' => 'mc_topic']) === 'taxonomy|mc_topic'
+    && $desc('terms_from_related_post')->target_key(['relationship' => 'parent', 'taxonomy' => 'mc_topic']) === 'taxonomy|mc_topic');
 
 // The gap the #65 comment names: neither term-pairing type HAS a taxonomy
 // subfield, so keying on `taxonomy` would resolve nothing for either.
@@ -197,14 +198,17 @@ $check('the `any` sentinel means every post type, not a type called any',
 $check('a format rule reads its scalar post_type',
     $desc('title_slug_from_pattern')->written_post_types(['post_type' => 'mc_item']) === ['mc_item']);
 
-// The ACF-reference rule writes its DEPENDENT end, and a push rule does not
-// constrain that end's type — so "all", exactly as dependent_post_type() reads.
-$check('a push ACF-reference rule writes every post type',
-    $desc('related_post_terms_rules')->written_post_types(
-        ['post_type' => 'mc_section', 'holder_role' => 'source']) === []);
-$check('a pull ACF-reference rule writes the holder type',
-    $desc('related_post_terms_rules')->written_post_types(
-        ['post_type' => 'mc_section', 'holder_role' => 'target']) === ['mc_section']);
+// The ACF relationship writes its DEPENDENT end, and a push rule does not
+// constrain that end's type beyond its optional `post_types` — so "all" without
+// one, exactly as dependent_post_type() reads.
+$acf_row = ['relationship' => 'acf', 'post_type' => 'mc_section'];
+$check('a push ACF-relationship rule writes every post type',
+    $desc('terms_from_related_post')->written_post_types($acf_row + ['holder_role' => 'source']) === []);
+$check('a push ACF-relationship rule scoped by post_types writes those',
+    $desc('terms_from_related_post')->written_post_types(
+        $acf_row + ['holder_role' => 'source', 'post_types' => ['mc_item']]) === ['mc_item']);
+$check('a pull ACF-relationship rule writes the holder type',
+    $desc('terms_from_related_post')->written_post_types($acf_row + ['holder_role' => 'target']) === ['mc_section']);
 
 $check('empty on either side overlaps',
     CollisionDetector::post_types_overlap([], ['mc_item'])
@@ -339,7 +343,7 @@ $check('#51: a disjoint taxonomy clears the warning', $scan($KIND_TERM, $s51_oth
 // --- 5. #39 — propagation vs level restriction, one taxonomy. ---------------
 
 $s39 = [
-    ['type' => 'propagation_rules', 'enabled' => true, 'taxonomy' => 'mc_topic',
+    ['type' => 'terms_from_related_post', 'relationship' => 'parent', 'enabled' => true, 'taxonomy' => 'mc_topic',
      'post_types' => ['mc_section'], 'conflict_handling' => 'merge', 'row_title' => 'Cascade Topics'],
     ['type' => 'restrict_terms_by_level', 'enabled' => true, 'taxonomy' => 'mc_topic',
      'post_types' => ['mc_section'], 'restriction_mode' => 'deepest_only', 'row_title' => 'Deepest level'],
@@ -699,12 +703,12 @@ $check('a non-array row is skipped rather than fatal',
 // --- FW-56: a taxonomy list is one stored row, however many rows it expands to.
 
 $fw56 = $scan($KIND_TERM, [
-    ['type' => 'propagation_rules', 'taxonomy' => ['mc_a', 'mc_b']],
+    ['type' => 'terms_from_related_post', 'taxonomy' => ['mc_a', 'mc_b']],
     ['type' => 'terms_from_term_hierarchy', 'taxonomy' => 'mc_c'],
-    ['type' => 'propagation_rules', 'taxonomy' => 'mc_b'],
+    ['type' => 'terms_from_related_post', 'taxonomy' => 'mc_b'],
 ]);
 $check('FW-56: one stored row\'s own expansions never collide with each other',
-    $scan($KIND_TERM, [['type' => 'propagation_rules', 'taxonomy' => ['mc_a', 'mc_b']]]) === []);
+    $scan($KIND_TERM, [['type' => 'terms_from_related_post', 'taxonomy' => ['mc_a', 'mc_b']]]) === []);
 $check('FW-56: a rule collides with one taxonomy of a list, and names the list row by its stored position',
     count($fw56) === 1 && $pairs($fw56) === [[0, 2]] && $fw56[0]['target'] === 'mc_b');
 

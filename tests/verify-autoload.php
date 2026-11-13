@@ -70,10 +70,9 @@ $classes = [
     // Handlers\
     'BWS\\MetaConductor\\Handlers\\UnifiedHandlerBase',
     'BWS\\MetaConductor\\Handlers\\TermsFromTermHierarchyHandler',
-    'BWS\\MetaConductor\\Handlers\\PropagationHandler',
+    'BWS\\MetaConductor\\Handlers\\TermsFromRelatedPostHandler',
     'BWS\\MetaConductor\\Handlers\\TermsFromTriggerTermHandler',
     'BWS\\MetaConductor\\Handlers\\TermsFromDateWindowHandler',
-    'BWS\\MetaConductor\\Handlers\\RelatedPostTermsHandler',
     'BWS\\MetaConductor\\Handlers\\RestrictTermsByLevelHandler',
     'BWS\\MetaConductor\\Handlers\\RestrictTermCountHandler',
     'BWS\\MetaConductor\\Handlers\\TitleSlugFromPatternHandler',
@@ -83,8 +82,7 @@ $classes = [
     'BWS\\MetaConductor\\RuleTypes\\RuleType',
     'BWS\\MetaConductor\\RuleTypes\\Registry',
     'BWS\\MetaConductor\\RuleTypes\\Labels',
-    'BWS\\MetaConductor\\RuleTypes\\PropagationRules',
-    'BWS\\MetaConductor\\RuleTypes\\RelatedPostTermsRules',
+    'BWS\\MetaConductor\\RuleTypes\\TermsFromRelatedPostRules',
     'BWS\\MetaConductor\\RuleTypes\\TermsFromDateWindowRules',
     'BWS\\MetaConductor\\RuleTypes\\TermsFromTriggerTermRules',
     'BWS\\MetaConductor\\RuleTypes\\TermsFromTermHierarchyRules',
@@ -99,10 +97,15 @@ $classes = [
     'BWS\\MetaConductor\\Tokens\\OutputPolicy',
     'BWS\\MetaConductor\\Tokens\\SlugLadder',
     'BWS\\MetaConductor\\Tokens\\FlatSlug',
+    // Relationships\ (FW-61 02) — the graph both flavors of terms-from-related-post read.
+    'BWS\\MetaConductor\\Relationships\\ParentRelationship',
+    'BWS\\MetaConductor\\Relationships\\AcfRelationship',
     // Storage\ upgrade routine (FW-51 03) — delete with the class.
     'BWS\\MetaConductor\\Storage\\SlugEscalationMigration',
     // Storage\ rule-type id rewrite (FW-63 01) — delete with the class.
     'BWS\\MetaConductor\\Storage\\RuleTypeIdMigration',
+    // Storage\ related-post merge rewrite (FW-61 05) — delete with the class.
+    'BWS\\MetaConductor\\Storage\\RelatedPostMergeMigration',
     // Admin\
     'BWS\\MetaConductor\\Admin\\Diagnostics',
     'BWS\\MetaConductor\\Admin\\WireframeBootstrap',
@@ -116,8 +119,8 @@ $classes = [
     'BWS\\MetaConductor\\Admin\\Config\\GeneralConfig',
     // The ordered term-rule list. Propagation/TermsFromDateWindow/Hierarchical/
     // LevelRestriction/Personalize config classes were deleted in 0.8.0 (#57)
-    // when their sections collapsed into this one; Related and
-    // RelatedPostTerms followed in #58.
+    // when their sections collapsed into this one; Related and the
+    // ACF-reference rule followed in #58 (now the `acf` relationship, FW-61).
     'BWS\\MetaConductor\\Admin\\Config\\TermRulesConfig',
     'BWS\\MetaConductor\\Admin\\Config\\FormatRulesConfig',
     'BWS\\MetaConductor\\Admin\\Config\\WireframeConfig',
@@ -126,6 +129,7 @@ $classes = [
 $interfaces = [
     'BWS\\MetaConductor\\Storage\\RuleStorage',
     'BWS\\MetaConductor\\Tokens\\TokenSourceInterface',
+    'BWS\\MetaConductor\\Relationships\\Relationship',
 ];
 
 // Handler traits composed into UnifiedHandlerBase (0.6.3). class_exists() does

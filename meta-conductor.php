@@ -178,6 +178,7 @@ if (!function_exists('bws_meta_manager_init')) {
 		delete_option('bws_meta_conductor_version');
 		delete_option('bws_mc_slug_escalation_schema');
 		delete_option('bws_mc_rule_type_id_schema');
+		delete_option('bws_mc_related_post_merge_schema');
 		delete_option('bws_title_slug_rule_status');
 		delete_option('bws_taxonomy_manager_settings'); // legacy
 		delete_option('bws_taxonomy_manager_version');  // legacy
@@ -227,9 +228,17 @@ if (!function_exists('bws_meta_manager_init')) {
 		// FW-63: the seven old rule-type ids become the ids that read like their
 		// labels. Same gating and PHP-floor reasoning as above. MUST run after the
 		// escalation rewrite, which still matches the old `title_slug_rules` string.
-		// Both migrations are deleted one minor release after they ship, the
+		// The migrations are deleted one minor release after they ship, the
 		// escalation one first (each with its class, harness and flag option).
 		if (version_compare(PHP_VERSION, '8.1', '>=') && \BWS\MetaConductor\Storage\RuleTypeIdMigration::run()) {
+			\BWS\MetaConductor\Storage\StorageFactory::get_instance()->clear_cache();
+		}
+
+		// FW-61: `propagation_rules` and `related_post_terms_rules` rows become
+		// `terms_from_related_post` (relationship parent / acf). Same gating and
+		// PHP-floor reasoning; runs directly after the id rewrite, and is deleted
+		// one minor release after it ships (class, harness, flag option).
+		if (version_compare(PHP_VERSION, '8.1', '>=') && \BWS\MetaConductor\Storage\RelatedPostMergeMigration::run()) {
 			\BWS\MetaConductor\Storage\StorageFactory::get_instance()->clear_cache();
 		}
 

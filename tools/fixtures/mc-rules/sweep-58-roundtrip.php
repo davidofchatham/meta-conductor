@@ -6,7 +6,7 @@
  *
  *   1. Simulates the admin-load storage sequence (stored-rule repair) the
  *      way WireframeBootstrap::boot runs it, then asserts the persisted `term_rules` list carries the
- *      related + related_post_terms rows in admin-renderable shape —
+ *      related + ACF-relationship rows in admin-renderable shape —
  *      combined "post_type:field" acf_field_name, array term ids, row_title.
  *
  *   2. Runs every persisted row through Wireframe's REAL
@@ -50,9 +50,16 @@ foreach ($rows as $row) {
 
 $note('term_rules carries all 11 fixture term-kind rows', count($rows) === 11);
 $note('2 related rows present',  count($by_type['terms_from_trigger_term'] ?? []) === 2);
-$note('2 acf-reference rows present', count($by_type['related_post_terms_rules'] ?? []) === 2);
+// One merged type carries both relationships (FW-61): the parent row and the two
+// ACF rows share `terms_from_related_post`.
+$acf_rows = array_values(array_filter(
+    $by_type['terms_from_related_post'] ?? [],
+    static fn($r) => ($r['relationship'] ?? '') === 'acf'
+));
+$note('1 parent row and 2 acf-relationship rows present',
+    count($by_type['terms_from_related_post'] ?? []) === 3 && count($acf_rows) === 2);
 
-foreach ($by_type['related_post_terms_rules'] ?? [] as $i => $r) {
+foreach ($acf_rows as $i => $r) {
     $note("acf row $i keeps the COMBINED post_type:field value",
         str_contains((string) ($r['acf_field_name'] ?? ''), ':'));
     $note("acf row $i is in migrated shape (taxonomy present, no source_taxonomy)",
@@ -80,8 +87,13 @@ $must_survive = [
     'terms_from_trigger_term'            => ['type', 'enabled', 'trigger_type', 'trigger_term_id',
                                    'trigger_taxonomy', 'target_term_id', 'bidirectional',
                                    'post_types', 'post_status'],
-    'related_post_terms_rules' => ['type', 'enabled', 'acf_field_name', 'holder_role',
-                                   'reverse_acf_field_name', 'taxonomy', 'keep_in_sync', 'post_status'],
+    // FW-61: the merged type, per relationship. `relationship` is its own
+    // subfield; the rest are the shared frame it reads, and the ACF-only
+    // controls survive on an `acf` row alone.
+    'terms_from_related_post/parent' => ['type', 'enabled', 'relationship', 'taxonomy', 'post_types',
+                                         'post_status', 'conflict_handling'],
+    'terms_from_related_post/acf'    => ['type', 'enabled', 'relationship', 'acf_field_name', 'holder_role',
+                                         'reverse_acf_field_name', 'taxonomy', 'conflict_handling', 'post_status'],
     // Baseline is max 2 / per level OFF — both non-default, so a gate that
     // dropped a field would show here instead of reading back as its default.
     'restrict_term_count'      => ['type', 'enabled', 'taxonomy', 'post_types', 'post_status',
@@ -90,6 +102,9 @@ $must_survive = [
 
 foreach ($rows as $i => $row) {
     $type = $row['type'] ?? '';
+    if ($type === 'terms_from_related_post') {
+        $type .= '/' . ($row['relationship'] ?? '');
+    }
     if (!isset($must_survive[$type])) {
         continue;
     }
@@ -122,9 +137,23 @@ foreach ($sanitized as $row) {
 }
 $note('the sanitized list still carries both live types row-for-row',
     count($sanitized_types['terms_from_trigger_term'] ?? []) === 2
-    && count($sanitized_types['related_post_terms_rules'] ?? []) === 2);
+    && count($sanitized_types['terms_from_related_post'] ?? []) === 3);
 $note('the sanitized list keeps every row, in order',
     array_column($sanitized, 'type') === array_column($rows, 'type'));
+
+// The one DELIBERATE drop (FW-61 04): flip an ACF row to `parent` and the ACF-only
+// settings go, exactly as changing `type` clears the old type's. Nothing the parent
+// branch reads may go with them.
+if ($acf_rows) {
+    $flipped = RepeaterField::sanitize([array_merge($acf_rows[0], ['relationship' => 'parent'])], $field['args'])[0] ?? [];
+    foreach (['acf_field_name', 'holder_role', 'reverse_acf_field_name'] as $gone) {
+        $note("flip acf→parent drops '$gone'", !array_key_exists($gone, $flipped));
+    }
+    foreach (['type', 'enabled', 'relationship', 'taxonomy', 'conflict_handling', 'post_status'] as $kept) {
+        $note("flip acf→parent keeps '$kept'",
+            array_key_exists($kept, $flipped) || !array_key_exists($kept, $acf_rows[0]));
+    }
+}
 
 // Level restriction: both modes and "keep ancestors" round-trip the real save
 // path. The persisted fixture row carries only one mode, so synthesize one row

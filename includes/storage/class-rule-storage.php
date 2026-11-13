@@ -32,7 +32,7 @@ interface RuleStorage {
      * read path.
      *
      * @since 0.2.0
-     * @param string $type Rule type (terms_from_term_hierarchy, propagation_rules, etc.)
+     * @param string $type Rule type (terms_from_term_hierarchy, terms_from_related_post, etc.)
      * @param array  $filters Optional filters to apply:
      *                        - 'enabled' (bool): Filter by enabled status
      *                        - 'taxonomy' (string): Filter by taxonomy

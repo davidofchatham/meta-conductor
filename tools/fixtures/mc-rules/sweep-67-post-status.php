@@ -14,7 +14,7 @@
  *
  *   §67c  The standard shape — `UnifiedHandlerBase::should_process_post()`
  *         gates the post being WRITTEN. `TermsFromTermHierarchyHandler` is the live
- *         subject; `RestrictTermsByLevelHandler`, `PropagationHandler`,
+ *         subject; `RestrictTermsByLevelHandler`, `TermsFromRelatedPostHandler`,
  *         `TermsFromDateWindowHandler` and `TermsFromTriggerTermHandler` call the identical base
  *         method at the top of their own `apply_to_post()` (grep-confirmed,
  *         same call shape, same early return) — one live scenario stands for
@@ -145,12 +145,13 @@ switch ( $step ) {
 		};
 
 		mc67ps_author( array( array(
-			'type'                 => 'related_post_terms_rules',
+			'type'                 => 'terms_from_related_post',
+			'relationship'                 => 'acf',
 			'enabled'              => true,
 			'acf_field_name'       => 'mc_section:mc_related_items:field_mc_related_items',
 			'holder_role'          => 'source',
 			'taxonomy'             => 'mc_topic',
-			'keep_in_sync'         => true,
+			'conflict_handling'         => 'replace',
 			'post_status'          => array( 'publish' ),
 		) ) );
 		update_field( 'field_mc_related_items', array( $solo ), $holder );

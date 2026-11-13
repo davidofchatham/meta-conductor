@@ -14,8 +14,8 @@ Rule-based automation for WordPress taxonomies, meta fields, post titles/slugs, 
 
 Meta Conductor adds rule-driven automation to WordPress taxonomies and meta fields:
 
-* Auto-set terms based on hierarchy, related posts (ACF), related terms, or date windows
-* Cascade terms from parent post to children
+* Auto-set terms based on hierarchy, related terms, or date windows
+* Set a post's terms from a related post: its parent, or the posts an ACF relationship field names
 * Generate titles and slugs from token patterns with collision avoidance
 * Store a composed value (a display name, a roster line) in an ACF field, or in one subfield of every row of a repeater, from the same token patterns
 * Restrict which depths of a hierarchical taxonomy a post may carry
@@ -43,11 +43,17 @@ Rules are authored as two ordered lists — one for rules that write terms, one 
 
 **Stored rule type ids are renamed, and your existing rules are converted on update.** Each type's internal id now reads like its label and no longer ends in `_rules` (`hierarchical_rules` is now `terms_from_term_hierarchy`, `time_based_rules` is `terms_from_date_window`, and so on for the seven types above). The first admin page load after updating rewrites each stored rule's type once; its order and every other setting are untouched. Until that load runs, the old rules read as an unknown type and are skipped. An Apply run in progress on one of those types starts over once.
 
+**The parent-post and ACF-reference term rules are now one: *Set terms from a related post*.** A *Relationship* option picks *Parent post* or *ACF field*; the ACF choice is offered only while ACF is active, and a stored ACF row simply runs nothing while it is off. The first admin page load after updating rewrites each stored *From parent post* and *From referenced post (ACF)* rule once, in place and in the same order. Until that load runs, those rules read as an unknown type and are skipped. An Apply run in progress on one of them starts over once.
+
+**ACF rules lose *Keep in sync* and gain the same *Claim on terms* control as parent rules.** Your existing setting converts automatically: *Keep in sync* on becomes *Owning*, off becomes *Contributing*, so each rule behaves as before. *Deferring* (fill only a post with no terms yet) is now available on ACF rules too. A *Contributing* ACF rule still only adds terms; *Owning* is how an ACF rule removes a term its source lost.
+
+**ACF rules now also read and write ACF taxonomy fields.** Until now they handled native terms only. An ACF taxonomy field attached to a post for the rule's taxonomy is now read as part of the source's terms and written along with the native terms, including a field that is attached but still empty. **If such a field has been left empty or out of step on purpose, review your ACF rules before updating:** the next pass of each affected post fills it.
+
 **New: *Restrict how many terms a post holds* rule.** It caps how many terms a post may hold in a taxonomy, on flat and hierarchical taxonomies alike. Where a post is over the cap, the terms you just added are kept first, then the deepest terms, then the lowest term ID.
 
 **Restrict terms by tree level no longer has *One term per level*.** It offers *Deepest only* and *Shallowest only*; use a Restrict how many terms a post holds rule for the old behavior. A stored row still holding the removed mode runs as *Deepest only*, so check any such rule. The old mode kept the alphabetically last term at a level; the count rule keeps the deepest, then the lowest term ID.
 
-**One rule can name several taxonomies.** On Restrict how many terms a post holds, Propagation, Set terms from the term hierarchy, Restrict terms by tree level and Related post terms, *Taxonomies* is now a multi-select, and a row naming several behaves as if it were repeated once per taxonomy. Your existing rules are unchanged: the first admin load of the rules tab rewrites each stored single taxonomy as a one-element list. An Apply to Existing Posts run in progress on one of these rules starts over once.
+**One rule can name several taxonomies.** On Restrict how many terms a post holds, Set terms from a related post, Set terms from the term hierarchy and Restrict terms by tree level, *Taxonomies* is now a multi-select, and a row naming several behaves as if it were repeated once per taxonomy. Your existing rules are unchanged: the first admin load of the rules tab rewrites each stored single taxonomy as a one-element list. An Apply to Existing Posts run in progress on one of these rules starts over once.
 
 = 0.10.0 =
 

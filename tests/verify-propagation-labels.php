@@ -84,7 +84,8 @@ $title = function (array $rule) use ($KIND) {
 
 // --- Propagation: explicit post_types map, merge, enabled. ------------------
 $t = $title([
-    'type'              => 'propagation_rules',
+    'type'              => 'terms_from_related_post',
+    'relationship'      => 'parent',
     'enabled'           => true,
     'post_types'        => ['page' => true, 'dept' => true],
     'taxonomy'          => 'category',
@@ -97,7 +98,8 @@ $check('no arrow in title',           !str_contains($t, '→'));
 
 // --- Propagation: empty post_types ⇒ no scope prefix. -----------------------
 $t = $title([
-    'type'              => 'propagation_rules',
+    'type'              => 'terms_from_related_post',
+    'relationship'      => 'parent',
     'enabled'           => true,
     'post_types'        => [],
     'taxonomy'          => 'breaker',
@@ -108,7 +110,8 @@ $check('claim suffix = owning', str_contains($t, '(owning)'));
 
 // --- Propagation: plain-list post_types + disabled prefix. ------------------
 $t = $title([
-    'type'              => 'propagation_rules',
+    'type'              => 'terms_from_related_post',
+    'relationship'      => 'parent',
     'enabled'           => false,
     'post_types'        => ['page'],
     'taxonomy'          => 'category',

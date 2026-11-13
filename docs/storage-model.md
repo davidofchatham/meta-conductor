@@ -103,10 +103,9 @@ Splitting rules across more options would push the ceiling further out, but the 
 | Rule Type | Storage | Reasoning |
 |-----------|---------|-----------|
 | `terms_from_term_hierarchy` | Options | Behavior toggle per taxonomy; bounded; single author |
-| `propagation_rules` | Options | Behavior toggle per post type; bounded |
+| `terms_from_related_post` | Options | One row type for both relationships (parent post, ACF field): claim, post types and, for ACF, a field reference; bounded |
 | `terms_from_trigger_term` | Options | Cross-taxonomy config; bounded |
 | `restrict_terms_by_level` | Options | One per taxonomy max |
-| `related_post_terms_rules` | Options | ACF sync config; bounded |
 | `acf_relationship_rules` (new) | Options | Parent/child relationship config; bounded |
 | `title_slug_from_pattern` | Options *(reassess)* | Named patterns per post type; *can* accumulate, but single-author + bounded-in-practice. Prior ROADMAP marked CPT/Phase-4 — **re-open**: no concurrent authoring; blast radius covered by the version token, not by a page split. CPT only if a real draft/test lifecycle is wanted. |
 | `terms_from_date_window` | Options *(reassess)* | Schedule rules *can* multiply, but single-author. Same re-open as `title_slug_from_pattern`. |

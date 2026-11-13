@@ -50,8 +50,7 @@ $check = function (string $name, bool $cond) use (&$fail, &$total) {
 // Hand-written on purpose — see (1) above.
 $expected = [
     OptionRuleStorage::KIND_TERM => [
-        'propagation_rules',
-        'related_post_terms_rules',
+        'terms_from_related_post',
         'terms_from_date_window',
         'terms_from_trigger_term',
         'terms_from_term_hierarchy',

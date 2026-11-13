@@ -59,7 +59,7 @@ foreach ($expected as $old => $new) {
 
 $unknown = $row('mystery_rules');
 $done    = $row('terms_from_date_window');
-$other   = $row('propagation_rules');
+$other   = $row('terms_from_related_post');
 $check('unregistered type string left alone', $one($unknown) === $unknown);
 $check('row already on a new id untouched', $one($done) === $done);
 $check('registered type outside the map untouched', $one($other) === $other);
