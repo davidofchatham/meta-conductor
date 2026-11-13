@@ -57,7 +57,6 @@ $valid_types = array(
 	'terms_from_related_post',
 	'terms_from_trigger_term',
 	'terms_from_date_window',
-	'related_post_terms_rules',
 	'restrict_terms_by_level',
 	'restrict_term_count',
 	'title_slug_from_pattern',
@@ -170,7 +169,7 @@ foreach ( $m['mc_rules'] as $type => $rules ) {
 		);
 
 		// Scope resolution mirrors seed.php's guard, including the
-		// related_post_terms case where the holder post type is the
+		// ACF-relationship case where the holder post type is the
 		// "post_type:field" prefix rather than a post_types field.
 		$scope = array();
 		if ( ! empty( $r['post_types'] ) && is_array( $r['post_types'] ) ) {

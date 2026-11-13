@@ -33,7 +33,8 @@
  * `OptionRuleStorage::migrated_types_for_kind()` so the set of types this
  * repeater offers and the set storage treats as authored cannot drift. Batch 1 (#57)
  * was the four types not live on any real site; #58 moved the two live ones
- * (`terms_from_trigger_term`, `related_post_terms_rules`) in, completing the collapse.
+ * (`terms_from_trigger_term` and the ACF-reference rule, now the `acf`
+ * relationship of `terms_from_related_post`) in, completing the collapse.
  * Their rows exist in real data, so two shapes are load-bearing: the ACF
  * field select's combined "post_type:field_name" value round-trips WHOLE
  * (the handler splits at read time; persisting the split would break the
@@ -99,13 +100,37 @@ class TermRulesConfig {
      * save (architecture.md → The ordered rule repeaters); H11's hand-written
      * `$expected_visible` is the independent check.
      *
+     * A reader may add a second condition (`shared_field_when()`): the types
+     * with none keep ONE `in` gate, and each type with one gets its own `all`
+     * clause, the lot joined by `any`. With no extras this is exactly the flat
+     * `type in [...]` gate it always was.
+     *
      * @param string $field Shared subfield id.
      */
     private static function readers(string $field): array {
-        return ConfigHelpers::type_gate(...array_values(array_filter(
-            self::types(),
-            static fn(string $type): bool => in_array($field, Registry::get($type)->reads_shared_fields(), true)
-        )));
+        $plain   = [];
+        $clauses = [];
+        foreach (self::types() as $type) {
+            $descriptor = Registry::get($type);
+            if (!in_array($field, $descriptor->reads_shared_fields(), true)) {
+                continue;
+            }
+            $when = $descriptor->shared_field_when($field);
+            if ($when) {
+                $clauses[] = ConfigHelpers::gate([$type], $when);
+            } else {
+                $plain[] = $type;
+            }
+        }
+
+        if (!$clauses) {
+            return ConfigHelpers::type_gate(...$plain);
+        }
+        if ($plain) {
+            array_unshift($clauses, ConfigHelpers::type_gate(...$plain));
+        }
+
+        return count($clauses) === 1 ? $clauses[0] : ['any' => $clauses];
     }
 
     /**
@@ -316,11 +341,10 @@ class TermRulesConfig {
                     'content' => '<p>' . esc_html__('Terms are copied within each chosen taxonomy, by ID — the same taxonomy on both ends of the relationship.', 'meta-conductor') . '</p>',
                 ],
             ],
-            // Gated (#58): the ACF-reference rule's post type is pinned by the
-            // relationship field it monitors — its handler never reads
-            // `post_types`, so offering the checkboxes there would store junk
-            // that reads as a working scope. Every type that DOES read the
-            // value is inside the gate, so nothing loses its scope on save.
+            // Gated to the types that read it: every type here since FW-61 04,
+            // where the ACF relationship took it as an optional narrowing of the
+            // receiving post (empty = no extra narrowing). Every type that
+            // reads the value is inside the gate, so nothing loses its scope.
             ConfigHelpers::post_types_field([
                 'conditions' => self::readers('post_types'),
             ]),
@@ -365,7 +389,7 @@ class TermRulesConfig {
             // have a claim fixed in code (#54 is where that gets stated).
             ConfigHelpers::claim_field('child', [
                 'id'          => 'conflict_handling',
-                'description' => __('What this rule does about terms a child post already has. Owning removes them on the next save or re-apply, not at edit time.', 'meta-conductor'),
+                'description' => __('What this rule does about terms the receiving post already has. Owning removes them on the next save or re-apply, not at edit time. Contributing only adds, except on a parent relationship, where it also withdraws a term the parent just lost.', 'meta-conductor'),
                 'conditions'  => self::readers('conflict_handling'),
             ]),
         ];

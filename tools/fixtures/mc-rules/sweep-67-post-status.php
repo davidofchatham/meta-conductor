@@ -145,12 +145,13 @@ switch ( $step ) {
 		};
 
 		mc67ps_author( array( array(
-			'type'                 => 'related_post_terms_rules',
+			'type'                 => 'terms_from_related_post',
+			'relationship'                 => 'acf',
 			'enabled'              => true,
 			'acf_field_name'       => 'mc_section:mc_related_items:field_mc_related_items',
 			'holder_role'          => 'source',
 			'taxonomy'             => 'mc_topic',
-			'keep_in_sync'         => true,
+			'conflict_handling'         => 'replace',
 			'post_status'          => array( 'publish' ),
 		) ) );
 		update_field( 'field_mc_related_items', array( $solo ), $holder );

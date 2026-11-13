@@ -474,13 +474,14 @@ switch ( $step ) {
 
 		mcae_author( array(
 			array(
-				'type'                   => 'related_post_terms_rules',
+				'type'                   => 'terms_from_related_post',
+				'relationship'                   => 'acf',
 				'enabled'                => true,
 				'acf_field_name'         => 'mc_section:mc_related_items:field_mc_related_items',
 				'reverse_acf_field_name' => 'mc_item:mc_parent_section:field_mc_parent_section',
 				'holder_role'            => 'source',
 				'taxonomy'               => 'mc_topic',
-				'keep_in_sync'           => true,
+				'conflict_handling'           => 'replace',
 				'post_status'            => array( 'publish' ),
 			),
 		) );

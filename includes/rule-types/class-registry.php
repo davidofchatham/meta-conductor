@@ -30,7 +30,6 @@ final class Registry {
      */
     private const DESCRIPTORS = [
         TermsFromRelatedPostRules::class,
-        RelatedPostTermsRules::class,
         TermsFromDateWindowRules::class,
         TermsFromTriggerTermRules::class,
         TermsFromTermHierarchyRules::class,

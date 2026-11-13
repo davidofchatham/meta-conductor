@@ -100,8 +100,22 @@ $settings = [
         ['name' => 'H1', 'taxonomy' => 'category', 'enabled' => true],
         ['name' => 'H2', 'taxonomy' => 'category', 'enabled' => false],
     ],
+    // One merged type, both relationships (FW-61): the parent row, then the two
+    // ACF rows with their combined "post_type:field" values, as the select
+    // stores them.
     'terms_from_related_post' => [
-        ['name' => 'P1', 'taxonomy' => 'category', 'enabled' => true, 'conflict_handling' => 'merge'],
+        ['name' => 'P1', 'relationship' => 'parent', 'taxonomy' => 'category', 'enabled' => true, 'conflict_handling' => 'merge'],
+        [
+            'name'                   => 'A1',
+            'relationship'           => 'acf',
+            'enabled'                => true,
+            'acf_field_name'         => 'event:related_team',
+            'reverse_acf_field_name' => 'team:related_events',
+            'taxonomy'               => 'sport',
+            'conflict_handling'      => 'replace',
+            'holder_role'            => 'target',
+        ],
+        ['name' => 'A2', 'relationship' => 'acf', 'enabled' => false, 'acf_field_name' => 'post:ref', 'taxonomy' => 'sport'],
     ],
     'terms_from_trigger_term' => [
         // Legacy scalar trigger + FormTokenField single-value target.
@@ -110,19 +124,6 @@ $settings = [
     ],
     'terms_from_date_window' => [
         ['name' => 'T1', 'enabled' => true, 'target_term_id' => ['21'], 'schedule_type' => 'daily'],
-    ],
-    'related_post_terms_rules' => [
-        // Combined "post_type:field" values, as the select stores them.
-        [
-            'name'                   => 'A1',
-            'enabled'                => true,
-            'acf_field_name'         => 'event:related_team',
-            'reverse_acf_field_name' => 'team:related_events',
-            'taxonomy'               => 'sport',
-            'keep_in_sync'           => true,
-            'holder_role'            => 'target',
-        ],
-        ['name' => 'A2', 'enabled' => false, 'acf_field_name' => 'post:ref', 'taxonomy' => 'sport'],
     ],
     'restrict_terms_by_level' => [
         ['name' => 'L1', 'taxonomy' => 'category', 'enabled' => true, 'restriction_mode' => 'deepest_only'],
@@ -146,7 +147,6 @@ $all_types = [
     'terms_from_related_post',
     'terms_from_trigger_term',
     'terms_from_date_window',
-    'related_post_terms_rules',
     'restrict_terms_by_level',
     'restrict_term_count',
     'title_slug_from_pattern',
@@ -225,13 +225,12 @@ $flat = OptionRuleStorage::all_types();
 sort($flat);
 $sorted_all = $all_types;
 sort($sorted_all);
-$check('all_types() is exactly the nine rule types', $flat === $sorted_all);
+$check('all_types() is exactly the eight rule types', $flat === $sorted_all);
 
 $check('every rule type maps to its kind', array_map(
     static fn(string $t): string => $storage->get_kind_for_type($t),
     $all_types
 ) === [
-    'term_rules',
     'term_rules',
     'term_rules',
     'term_rules',
@@ -254,10 +253,9 @@ $migrated = array_merge(
 );
 $check('every config-migrated type is a known type',
     array_diff($migrated, $all_types) === []);
-$check('the term kind reports its migrated types — all seven as of restrict_term_count',
+$check('the term kind reports its migrated types — all six',
     OptionRuleStorage::migrated_types_for_kind(OptionRuleStorage::KIND_TERM) === [
         'terms_from_related_post',
-        'related_post_terms_rules',
         'terms_from_date_window',
         'terms_from_trigger_term',
         'terms_from_term_hierarchy',
@@ -277,17 +275,24 @@ $projected = array_merge(
     OptionRuleStorage::project_kind_rules($lists['format_rules'])
 );
 
-$acf = $of_type($projected, 'related_post_terms_rules')[0];
+$related = $of_type($projected, 'terms_from_related_post');
+$acf     = $related[1];
 $check('the read normalizes: the combined acf-ref values are split',
     $acf['post_type'] === 'event'
     && $acf['acf_field_name'] === 'related_team'
     && $acf['reverse_acf_field_name'] === 'related_events');
+$check('the read splits ACF values on an `acf` row only — a parent row is left alone',
+    !array_key_exists('post_type', $related[0]) && !array_key_exists('acf_field_key', $related[0])
+    && !array_key_exists('post_type', OptionRuleStorage::project_kind_rules([
+        ['type' => 'terms_from_related_post', 'relationship' => 'parent', 'acf_field_name' => 'event:f:field_k'],
+    ])[0]));
 // FW-39: the read-time key-rename migration is gone — a legacy key is no
-// longer translated, and no default is invented for an absent one.
+// longer translated, and no default is invented for an absent one. FW-61 04
+// removed `keep_in_sync` itself; the read neither invents nor translates it.
 $check('the read no longer migrates legacy acf-ref keys',
-    !array_key_exists('keep_in_sync', OptionRuleStorage::project_kind_rules([[
-        'type' => 'related_post_terms_rules', 'acf_field_name' => 'post:ref',
-        'bidirectional' => true,
+    !array_key_exists('conflict_handling', OptionRuleStorage::project_kind_rules([[
+        'type' => 'terms_from_related_post', 'relationship' => 'acf', 'acf_field_name' => 'post:ref',
+        'keep_in_sync' => true, 'bidirectional' => true,
     ]])[0]));
 $check('the read normalizes: related term ids are canonicalized',
     $of_type($projected, 'terms_from_trigger_term')[0]['trigger_term_id'] === [12]
@@ -408,7 +413,7 @@ $check('a name is never confused for a key',
     OptionRuleStorage::split_acf_field_value('event:related_team')[2] === '');
 
 $acf_shaped = static fn(array $row): array => OptionRuleStorage::project_kind_rules([
-    ['type' => 'related_post_terms_rules', 'taxonomy' => 'sport'] + $row,
+    ['type' => 'terms_from_related_post', 'relationship' => 'acf', 'taxonomy' => 'sport'] + $row,
 ])[0];
 
 $keyed = $acf_shaped([

@@ -128,13 +128,23 @@ $check('replace: a term-less parent still delivers its removals',
 // --- A relationship this handler has no graph for is skipped (FW-61 03). ------
 // Neither entry point may touch WordPress for such a row: no `get_post` shim
 // exists here, so a call that reached one would fatal.
-$unknown = ['relationship' => 'acf', 'taxonomy' => 'category'];
+$unknown = ['relationship' => 'wibble', 'taxonomy' => 'category'];
 $check('an unknown relationship applies nothing', $handler->apply_to_post(1, $unknown) === false);
 $check('an unknown relationship declares no fan-out', $handler->fan_out(1, $unknown) === []);
 $check('a row with no relationship applies nothing', $handler->apply_to_post(1, ['taxonomy' => 'category']) === false);
 
+// --- An `acf` row runs nothing while ACF is inactive (FW-61 04). -------------
+// This harness has no ACF, so the row must be skipped before any WordPress call,
+// exactly like an unknown relationship; its stored value is never touched.
+if (!function_exists('acf_get_field')) {
+    $acf_row = ['relationship' => 'acf', 'taxonomy' => 'category', 'acf_field_name' => 'f', 'holder_role' => 'source'];
+    $check('an acf row applies nothing with ACF inactive', $handler->apply_to_post(1, $acf_row) === false);
+    $check('an acf row declares no fan-out with ACF inactive', $handler->fan_out(1, $acf_row) === []);
+}
+$check('the handler drains no captures when none were recorded', $handler->drain_captures() === []);
+
 // --- Report. ----------------------------------------------------------------
-$total = 26;
+$total = 29;
 if ($fail) {
     fwrite(STDERR, "\nPROPAGATION-INHERIT FAIL — " . count($fail) . "/$total assertions failed:\n");
     foreach ($fail as $f) { fwrite(STDERR, "  \xE2\x9C\x97 $f\n"); }

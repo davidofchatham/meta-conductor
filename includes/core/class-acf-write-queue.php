@@ -31,7 +31,7 @@ if (!defined('ABSPATH')) {
  * MECHANISM. `acf/update_value` fires BEFORE the value is written, so this
  * class never reads the post there — it only RECORDS the ID. Every apply
  * happens later, once the write has landed. That separation is what keeps the
- * mechanism clear of the pre-write hazard that RelatedPostTermsHandler's own
+ * mechanism clear of the pre-write hazard that the ACF relationship's own
  * sever capture has to reason about (arch.md handler-invariant #12).
  *
  * WHY EDITOR SAVES DON'T DOUBLE-APPLY. A normal editor/REST post save fires

@@ -88,6 +88,14 @@ final class AcfRelationship implements Relationship {
      */
     private array $field_target_types_cache = [];
 
+    /**
+     * Whether ACF is loaded far enough to read a relationship field. False ⇒ an
+     * `acf` row runs nothing (its stored value survives untouched).
+     */
+    public static function is_available(): bool {
+        return function_exists('acf_get_field') && function_exists('get_field');
+    }
+
     // ---------------------------------------------------------------------
     // Relationship contract
     // ---------------------------------------------------------------------
@@ -148,6 +156,13 @@ final class AcfRelationship implements Relationship {
      *   is partly a perf pre-filter).
      */
     public function is_eligible_dependent(\WP_Post $post, array $row): bool {
+        // `post_types` narrows the receiving post further; empty = no extra
+        // narrowing, so a row stored before the merge acts on what it acted on.
+        $scope = $this->scope_post_types($row);
+        if (!empty($scope) && !in_array($post->post_type, $scope, true)) {
+            return false;
+        }
+
         $dep_type = $this->holder_is_source($row) ? '' : $this->holder_post_type($row);
         if ($dep_type !== '') {
             return $post->post_type === $dep_type;
@@ -158,15 +173,39 @@ final class AcfRelationship implements Relationship {
 
     /**
      * The DEPENDENT end. Under `holder_role = source` (push) the dependents are
-     * the related posts, whose type the row never constrains, so "all".
+     * the related posts, whose type the row only constrains through its optional
+     * `post_types`, so "all" without one. Under pull the dependent is the
+     * holder; `post_types` can only narrow that away, and a collision check
+     * that over-reports is the safe direction, so the holder type stands.
      */
     public function written_post_types(array $row): array {
         if ($this->holder_is_source($row)) {
-            return [];
+            return $this->scope_post_types($row);
         }
         $post_type = trim($this->holder_post_type($row));
 
         return $post_type === '' ? [] : [$post_type];
+    }
+
+    /**
+     * The row's `post_types` as a slug list; `[]` for empty or `any`
+     * (`should_process_post()`'s "don't gate" sentinel).
+     *
+     * @return string[]
+     */
+    private function scope_post_types(array $row): array {
+        $slugs = (array) ($row['post_types'] ?? []);
+
+        return ($slugs === [] || ($slugs[0] ?? '') === 'any') ? [] : array_values($slugs);
+    }
+
+    /**
+     * Whether the row OWNS its taxonomy: only an owning (`replace`) row ever
+     * withdraws terms, so only it reacts to a sever. Contributing and
+     * Deferring never remove.
+     */
+    private function owns(array $row): bool {
+        return ($row['conflict_handling'] ?? 'merge') === 'replace';
     }
 
     /**
@@ -216,6 +255,7 @@ final class AcfRelationship implements Relationship {
      */
     public function sever_key(array $row): string {
         return implode('|', [
+            (string) ($row['relationship'] ?? 'acf'),
             (string) ($row['taxonomy'] ?? ''),
             (string) ($row['post_type'] ?? ''),
             (string) ($row['acf_field_name'] ?? ''),
@@ -246,8 +286,8 @@ final class AcfRelationship implements Relationship {
      *     A removed entry is a SOURCE, so the post to recompute is the edited
      *     post ITSELF. (#43)
      *
-     * Rows that do not own their taxonomy (keep_in_sync off) never remove, so a
-     * sever can't strip them: skipped in both directions (PR#24 Bug 3). The
+     * Rows that do not own their taxonomy (anything but Owning) never remove, so
+     * a sever can't strip them: skipped in both directions (PR#24 Bug 3). The
      * post-type gate matters because ACF field names aren't unique across post
      * types (PR#24 round 3 Bug 1).
      *
@@ -278,8 +318,8 @@ final class AcfRelationship implements Relationship {
         $dependent_rules = [];
         $self_rules      = [];
         foreach ($rules as $rule) {
-            if (empty($rule['keep_in_sync'])) {
-                continue; // add-only never removes
+            if (!$this->owns($rule)) {
+                continue; // contributing / deferring never remove
             }
             if ($this->holder_is_source($rule)) {
                 if ((string) ($rule['acf_field_name'] ?? '') === $field_name
@@ -363,8 +403,8 @@ final class AcfRelationship implements Relationship {
         }
 
         foreach ($rules as $rule) {
-            if (empty($rule['keep_in_sync'])) {
-                continue; // add-only never removes ⇒ a delete can't strip
+            if (!$this->owns($rule)) {
+                continue; // only Owning removes ⇒ a delete can't strip the rest
             }
             $taxonomy = (string) ($rule['taxonomy'] ?? '');
             if ($taxonomy === '') {

@@ -73,7 +73,6 @@ $classes = [
     'BWS\\MetaConductor\\Handlers\\TermsFromRelatedPostHandler',
     'BWS\\MetaConductor\\Handlers\\TermsFromTriggerTermHandler',
     'BWS\\MetaConductor\\Handlers\\TermsFromDateWindowHandler',
-    'BWS\\MetaConductor\\Handlers\\RelatedPostTermsHandler',
     'BWS\\MetaConductor\\Handlers\\RestrictTermsByLevelHandler',
     'BWS\\MetaConductor\\Handlers\\RestrictTermCountHandler',
     'BWS\\MetaConductor\\Handlers\\TitleSlugFromPatternHandler',
@@ -84,7 +83,6 @@ $classes = [
     'BWS\\MetaConductor\\RuleTypes\\Registry',
     'BWS\\MetaConductor\\RuleTypes\\Labels',
     'BWS\\MetaConductor\\RuleTypes\\TermsFromRelatedPostRules',
-    'BWS\\MetaConductor\\RuleTypes\\RelatedPostTermsRules',
     'BWS\\MetaConductor\\RuleTypes\\TermsFromDateWindowRules',
     'BWS\\MetaConductor\\RuleTypes\\TermsFromTriggerTermRules',
     'BWS\\MetaConductor\\RuleTypes\\TermsFromTermHierarchyRules',
@@ -119,8 +117,8 @@ $classes = [
     'BWS\\MetaConductor\\Admin\\Config\\GeneralConfig',
     // The ordered term-rule list. Propagation/TermsFromDateWindow/Hierarchical/
     // LevelRestriction/Personalize config classes were deleted in 0.8.0 (#57)
-    // when their sections collapsed into this one; Related and
-    // RelatedPostTerms followed in #58.
+    // when their sections collapsed into this one; Related and the
+    // ACF-reference rule followed in #58 (now the `acf` relationship, FW-61).
     'BWS\\MetaConductor\\Admin\\Config\\TermRulesConfig',
     'BWS\\MetaConductor\\Admin\\Config\\FormatRulesConfig',
     'BWS\\MetaConductor\\Admin\\Config\\WireframeConfig',

@@ -51,7 +51,6 @@ $check = function (string $name, bool $cond) use (&$fail, &$total) {
 $expected = [
     OptionRuleStorage::KIND_TERM => [
         'terms_from_related_post',
-        'related_post_terms_rules',
         'terms_from_date_window',
         'terms_from_trigger_term',
         'terms_from_term_hierarchy',

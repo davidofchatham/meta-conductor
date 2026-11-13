@@ -48,7 +48,7 @@ if (!function_exists('_n'))         { function _n($s, $p, $n, $d = 'default') { 
 // The collision section (#65) reads its findings from an option of its own.
 // Absent here, which is the "never saved" state — the section renders the
 // re-check button and no notice.
-if (!function_exists('get_option'))    { function get_option($name, $default = false) { return $default; } }
+if (!function_exists('get_option'))    { function get_option($name, $default = false) { return $GLOBALS['mc_test_options'][$name] ?? $default; } }
 if (!function_exists('update_option')) { function update_option($name, $value, $autoload = null) { return true; } }
 if (!function_exists('is_wp_error')) { function is_wp_error($t) { return false; } }
 
@@ -193,18 +193,20 @@ $check('post_status is the shared builder\'s field',
     ($by_id['post_status']['args']['options'] ?? null) === ConfigHelpers::post_status_checkbox_options());
 
 // post_types: still the shared builder's field, gated to exactly the types
-// whose handlers read it — every type but the ACF-reference rule (#58). A
-// type missing from this gate loses its scope on save; a type wrongly added
-// gets an inert control that stores junk.
+// whose handlers read it — every type since FW-61 04, where the ACF
+// relationship took it as an optional narrowing of the receiving post (it was
+// the one type that did not, #58). A type missing from this gate loses its
+// scope on save; a type wrongly added gets an inert control that stores junk.
 $check('post_types is the shared builder\'s field',
     ($by_id['post_types']['args']['options'] ?? null) === ConfigHelpers::post_types_checkbox_options());
-$check('post_types gates on every type except the ACF-reference rule',
-    ($by_id['post_types']['conditions']['value'] ?? [])
-        === array_values(array_diff($TYPES, ['related_post_terms_rules'])));
+$check('post_types gates on every type',
+    ($by_id['post_types']['conditions']['value'] ?? []) === $TYPES);
 
-// taxonomy: the ACF-reference rule joined the shared select's gate in #58.
-$check('taxonomy gate includes the ACF-reference rule',
-    in_array('related_post_terms_rules', $by_id['taxonomy']['conditions']['value'] ?? [], true));
+// taxonomy: the merged type reads it under BOTH relationships, so its gate is
+// the plain `type in` one with no relationship condition.
+$check('taxonomy gate includes the merged related-post type, with no relationship condition',
+    in_array('terms_from_related_post', $by_id['taxonomy']['conditions']['value'] ?? [], true)
+    && ($by_id['taxonomy']['conditions']['field'] ?? '') === 'type');
 
 // FW-56: the field takes a LIST. `multiple` is what makes the stored value one;
 // `required` stays so a typed row cannot be saved with no taxonomy; and there is
@@ -217,6 +219,20 @@ $check('taxonomy is a required multi-select over the taxonomies, with no placeho
 
 // --- Gated subfields name only real types, via `in`. ------------------------
 
+// A gate is either the flat `type in [...]` clause, or (FW-61 04) clauses joined
+// by `all` / `any` where every leaf is either that `type in` clause or an
+// `equals` on `relationship`. Anything else is a hand-written condition the
+// descriptors do not know about.
+$leaves = function ($c) use (&$leaves): array {
+    if (!is_array($c)) { return [null]; }
+    foreach (['all', 'any'] as $join) {
+        if (isset($c[$join])) {
+            return array_merge(...array_map($leaves, $c[$join]));
+        }
+    }
+    return [$c];
+};
+
 $ungated = ['type', 'enabled', 'post_status', 'row_title'];
 $gated_ok = true;
 $gate_covers = [];
@@ -224,20 +240,33 @@ foreach ($subfields as $s) {
     if (in_array($s['id'], $ungated, true)) {
         continue;
     }
-    $c = $s['conditions'] ?? null;
-    if (!is_array($c)
-        || ($c['field'] ?? '') !== 'type'
-        || ($c['operator'] ?? '') !== 'in'
-        || !is_array($c['value'] ?? null)
-        || array_diff($c['value'], $TYPES)) {
+    $has_type_clause = false;
+    foreach ($leaves($s['conditions'] ?? null) as $c) {
+        if (is_array($c) && ($c['field'] ?? '') === 'type') {
+            if (($c['operator'] ?? '') !== 'in' || !is_array($c['value'] ?? null) || array_diff($c['value'], $TYPES)) {
+                $gated_ok = false;
+                break 2;
+            }
+            $has_type_clause = true;
+            $gate_covers     = array_merge($gate_covers, $c['value']);
+        } elseif (!is_array($c)
+            || ($c['field'] ?? '') !== 'relationship'
+            || ($c['operator'] ?? '') !== 'equals'
+            || !in_array($c['value'] ?? null, ['parent', 'acf'], true)) {
+            $gated_ok = false;
+            break 2;
+        }
+    }
+    if (!$has_type_clause) {
         $gated_ok = false;
         break;
     }
-    $gate_covers = array_merge($gate_covers, $c['value']);
 }
-$check('every type-specific subfield gates on `type` with `in` + real types', $gated_ok);
+$check('every type-specific subfield gates on `type` with `in` + real types, plus at most a `relationship` equals', $gated_ok);
 $check('every offered type owns at least one gated subfield',
     empty(array_diff($TYPES, array_unique($gate_covers))));
+$check('the descriptors\' `when` never reaches Wireframe',
+    empty(array_filter($subfields, fn($s) => array_key_exists('when', $s))));
 
 // --- Claim comes from the shared builder, not re-authored inline. -----------
 // The 0.8.0 claim vocabulary (CONTEXT.md → Claim) must not regress in the collapse.
@@ -307,11 +336,56 @@ $check('every offered rule type reaches a real row-title builder', $titled);
 // The hierarchical-only option list is gone; the guarantee it stood for is now
 // this note, so the note is what gets machine-checked.
 
-$note = $by_id['hierarchical_post_type_note'] ?? [];
-$check('the related-post type carries a hierarchical-post-type note',
-    ($note['conditions']['value'] ?? []) === ['terms_from_related_post']);
+$gate_of = fn(string $id): array => $by_id[$id]['conditions'] ?? [];
+$note    = $by_id['hierarchical_post_type_note'] ?? [];
+$check('the related-post type carries a hierarchical-post-type note, on the parent relationship only',
+    $gate_of('hierarchical_post_type_note') === ConfigHelpers::gate(['terms_from_related_post'], ['relationship' => 'parent']));
 $check('the note actually says hierarchical',
     str_contains(strtolower($note['args']['content'] ?? ''), 'hierarchical'));
+
+// --- FW-61 04: the second gate dimension. ----------------------------------
+// The ACF-only controls and their two notes gate on `relationship = acf`; each
+// is the descriptor's own declaration (`when` / `shared_field_when`), never a
+// hand-written list. A control wrongly gated drops its value on save.
+
+foreach (['acf_field_name', 'holder_role', 'reverse_acf_field_name', 'acf_taxonomy_note', 'acf_status_note'] as $acf_only) {
+    $check("'$acf_only' gates on the merged type AND relationship = acf",
+        $gate_of($acf_only) === ConfigHelpers::gate(['terms_from_related_post'], ['relationship' => 'acf']));
+}
+$check('the relationship select is ungated beyond the type (both relationships read it)',
+    $gate_of('relationship') === ConfigHelpers::gate(['terms_from_related_post']));
+$check('the claim is shared by both relationships, so it has no relationship condition',
+    ($gate_of('conflict_handling')['field'] ?? '') === 'type'
+    && in_array('terms_from_related_post', $gate_of('conflict_handling')['value'] ?? [], true));
+
+// Both options stay stored whatever is installed; an unavailable one is only
+// labeled, because a vanishing option would drop the stored value on save.
+$rel_options = $by_id['relationship']['args']['options'] ?? [];
+$check('the relationship select always offers parent and acf', array_keys($rel_options) === ['parent', 'acf']);
+$check('without ACF the acf option is labeled "requires ACF" and a stored acf row shows the notice',
+    function_exists('acf_get_field')
+    || (str_contains($rel_options['acf'], 'requires ACF') && isset($by_id['acf_required_note'])
+        && $gate_of('acf_required_note') === ConfigHelpers::gate(['terms_from_related_post'], ['relationship' => 'acf'])));
+$check('the claim help says Contributing withdraws a lost term on a parent relationship',
+    str_contains($by_id['conflict_handling']['description'] ?? '', 'parent relationship')
+    && str_contains($by_id['conflict_handling']['description'] ?? '', 'Contributing'));
+$check('keep_in_sync is gone from the config', !isset($by_id['keep_in_sync']));
+
+// With ACF off the field select has no options, and a select drops a value that is
+// not among them on save. A stored ACF row must survive ACF being switched off, so
+// its stored field values are offered as themselves.
+if (!function_exists('acf_get_field_groups')) {
+    $GLOBALS['mc_test_options'][OptionRuleStorage::OPTION_NAME] = [$KIND => [[
+        'type' => 'terms_from_related_post', 'relationship' => 'acf',
+        'acf_field_name' => 'event:related_team:field_abc', 'reverse_acf_field_name' => 'team:related_events:field_def',
+    ]]];
+    $off = ConfigHelpers::acf_relationship_field_options('— pick —');
+    $check('ACF off: a stored field value stays selectable, so a save keeps it',
+        isset($off['event:related_team:field_abc'], $off['team:related_events:field_def'])
+        && array_key_first($off) === '');
+    unset($GLOBALS['mc_test_options']);
+    $check('ACF off, nothing stored: only the placeholder', array_keys(ConfigHelpers::acf_relationship_field_options()) === ['']);
+}
 
 // --- The real evaluator: what actually persists, per type. ------------------
 // This is the assertion the whole file exists for. For each rule type, run
@@ -320,11 +394,19 @@ $check('the note actually says hierarchical',
 // the type genuinely needs. A subfield missing here is a value silently
 // dropped on save; an extra one is junk stored for a type that never reads it.
 
+// The merged type is checked once per relationship (FW-61 04): the second gate
+// dimension is `relationship`, and flipping it is a save that drops whatever is
+// hidden, so each value gets its own exact set.
 $expected_visible = [
-    'terms_from_related_post' => [
+    'terms_from_related_post/parent' => [
         'type', 'enabled', 'taxonomy', 'hierarchical_post_type_note',
         'post_types', 'post_status', 'conflict_handling', 'relationship', 'row_title',
     ],
+    'terms_from_related_post/acf' => array_merge([
+        'type', 'enabled', 'taxonomy', 'acf_taxonomy_note',
+        'post_types', 'post_status', 'acf_status_note', 'conflict_handling', 'relationship',
+        'acf_field_name', 'holder_role', 'reverse_acf_field_name', 'row_title',
+    ], function_exists('acf_get_field') ? [] : ['acf_required_note']),
     'terms_from_date_window' => [
         'type', 'enabled', 'post_types', 'post_status',
         'filter_taxonomies', 'filter_terms', 'start_date', 'end_date',
@@ -345,35 +427,50 @@ $expected_visible = [
         'type', 'enabled', 'taxonomy', 'post_types', 'post_status',
         'max_terms', 'per_level', 'row_title',
     ],
-    // The two LIVE types (#58). A subfield missing here is a live rule's
-    // value silently dropped on the next settings save.
+    // A LIVE type (#58). A subfield missing here is a live rule's value
+    // silently dropped on the next settings save.
     'terms_from_trigger_term' => [
         'type', 'enabled', 'post_types', 'post_status',
         'trigger_type', 'trigger_term_id', 'trigger_taxonomy',
         'target_term_id', 'bidirectional', 'row_title',
     ],
-    'related_post_terms_rules' => [
-        'type', 'enabled', 'taxonomy', 'acf_taxonomy_note',
-        'post_status', 'acf_status_note',
-        'acf_field_name', 'holder_role', 'reverse_acf_field_name',
-        'keep_in_sync', 'row_title',
-    ],
 ];
 
+$scenarios = [];
 foreach ($TYPES as $type) {
+    if ($type === 'terms_from_related_post') {
+        $scenarios["$type/parent"] = [$type, ['relationship' => 'parent']];
+        $scenarios["$type/acf"]    = [$type, ['relationship' => 'acf']];
+    } else {
+        $scenarios[$type] = [$type, []];
+    }
+}
+
+foreach ($scenarios as $name => [$type, $row]) {
     $visible = [];
     foreach ($subfields as $s) {
-        if (Conditions::evaluate($s['conditions'] ?? null, ['type' => $type])) {
+        if (Conditions::evaluate($s['conditions'] ?? null, ['type' => $type] + $row)) {
             $visible[] = $s['id'];
         }
     }
 
     sort($visible);
-    $want = $expected_visible[$type] ?? [];
+    $want = $expected_visible[$name] ?? [];
     sort($want);
 
-    $check("visible subfields for '$type' are exactly what it needs", $visible === $want);
+    $check("visible subfields for '$name' are exactly what it needs", $visible === $want);
 }
+
+// The deliberate flip: moving a row from acf to parent hides exactly the ACF-only
+// controls, and nothing the parent branch needs. This is the one drop the round-trip
+// sweep is expected to show.
+$only_acf = array_values(array_diff($expected_visible['terms_from_related_post/acf'], $expected_visible['terms_from_related_post/parent']));
+sort($only_acf);
+$check('flipping acf to parent drops exactly the ACF-only settings',
+    $only_acf === array_values(array_filter(
+        ['acf_field_name', 'acf_required_note', 'acf_status_note', 'acf_taxonomy_note', 'holder_role', 'reverse_acf_field_name'],
+        fn($id) => in_array($id, $expected_visible['terms_from_related_post/acf'], true)
+    )));
 
 // An untyped row (freshly added) shows the shared frame only — nothing
 // type-specific, so nothing type-specific is written before a type is chosen.
@@ -457,26 +554,37 @@ $rel_tax_title = WireframeBootstrap::snapshot_term_rule_labels([$KIND => [[
 $check('taxonomy-triggered related title names the taxonomy',
     str_starts_with($rel_tax_title, '#1 Categories'));
 
-// ACF-reference: verb tracks keep_in_sync, direction tracks holder_role, and
-// the COMBINED "post_type:field" value renders as the bare field name (the
-// value itself round-trips whole — fan-in/fan-out apply no coercion, H10).
+// ACF relationship: direction tracks holder_role, the claim closes the title,
+// and the COMBINED "post_type:field" value renders as the bare field name (the
+// value itself round-trips whole — fan-in/fan-out apply no coercion, H10). The
+// old "Sync" verb went with keep_in_sync.
 $acf_title = WireframeBootstrap::snapshot_term_rule_labels([$KIND => [[
-    'type' => 'related_post_terms_rules', 'keep_in_sync' => true,
+    'type' => 'terms_from_related_post', 'relationship' => 'acf', 'conflict_handling' => 'replace',
     'holder_role' => 'source', 'taxonomy' => 'category',
     'acf_field_name' => 'event:related_team',
 ]]])[$KIND][0]['row_title'];
-$check('acf-reference title: Sync + to + bare field name',
-    str_starts_with($acf_title, '#1 Sync')
+$check('acf title: Copy + to + bare field name + claim',
+    str_starts_with($acf_title, '#1 Copy')
     && str_contains($acf_title, ' to ')
     && str_contains($acf_title, 'related_team')
-    && !str_contains($acf_title, 'event:'));
+    && !str_contains($acf_title, 'event:')
+    && str_ends_with($acf_title, '(owning)'));
 $acf_copy_title = WireframeBootstrap::snapshot_term_rule_labels([$KIND => [[
-    'type' => 'related_post_terms_rules', 'keep_in_sync' => false,
-    'holder_role' => 'target', 'taxonomy' => 'category',
+    'type' => 'terms_from_related_post', 'relationship' => 'acf', 'conflict_handling' => 'merge',
+    'holder_role' => 'target', 'taxonomy' => 'category', 'post_status' => ['publish'],
     'acf_field_name' => 'event:related_team',
 ]]])[$KIND][0]['row_title'];
-$check('acf-reference title: Copy + from when pull and not syncing',
-    str_starts_with($acf_copy_title, '#1 Copy') && str_contains($acf_copy_title, ' from '));
+$check('acf title: from when pull, the status list, and the claim',
+    str_contains($acf_copy_title, ' from ')
+    && str_contains($acf_copy_title, ' on Published')
+    && str_ends_with($acf_copy_title, '(contributing)')
+    && !str_contains($acf_copy_title . $acf_title, 'Sync'));
+$parent_title = WireframeBootstrap::snapshot_term_rule_labels([$KIND => [[
+    'type' => 'terms_from_related_post', 'relationship' => 'parent', 'conflict_handling' => 'replace',
+    'taxonomy' => 'category', 'post_types' => ['page'],
+]]])[$KIND][0]['row_title'];
+$check('a parent title is unchanged: scope, copy, "to children", claim',
+    $parent_title === '#1 Pages: Copy Categories terms to children (owning)');
 
 // --- The admin-load repair: a title backfill and nothing else. --------------
 //
@@ -493,7 +601,7 @@ $stored = [
     ['type' => 'terms_from_term_hierarchy', 'enabled' => true, 'taxonomy' => 'category',
      'hierarchy_direction' => 'parent_to_child', 'expansion_behavior' => 'merge'],
     ['type' => 'terms_from_trigger_term', 'trigger_term_id' => '12', 'target_term_id' => 9],
-    ['type' => 'related_post_terms_rules', 'acf_field_name' => 'event:ref',
+    ['type' => 'terms_from_related_post', 'relationship' => 'acf', 'acf_field_name' => 'event:ref',
      'source_taxonomy' => 'category', 'bidirectional' => true],
 ];
 $repaired = $r($stored);

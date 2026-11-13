@@ -8,6 +8,7 @@
 
 namespace BWS\MetaConductor\Handlers;
 
+use BWS\MetaConductor\Relationships\AcfRelationship;
 use BWS\MetaConductor\Relationships\ParentRelationship;
 use BWS\MetaConductor\Relationships\Relationship;
 
@@ -21,8 +22,17 @@ if (!defined('ABSPATH')) {
  * post can take terms across. The row's `relationship` picks the graph
  * (`relationship_for()`); the claim, the mirror read and write, the lost-terms
  * capture, the no-change short-circuit and the dispatcher entry points live
- * here once. Only `parent` exists in this ticket; the ACF relationship joins it
- * in FW-61 04. A row whose `relationship` has no implementation here is skipped.
+ * here once. A row whose `relationship` has no implementation here is skipped,
+ * and so is an `acf` row while ACF is inactive (its stored value survives; it
+ * just runs nothing).
+ *
+ * The ACF relationship is Related Post Terms (#63): a pull applier recomputing
+ * the written post from the sources the row resolves, a declared fan-out, and a
+ * capture layer for the one thing live state cannot answer, a SEVER. Owning
+ * (`replace`) is the only claim that withdraws a gone source's terms, and an
+ * empty source set is not an instruction to empty the target unless a sever was
+ * captured against this very row. ACF taxonomy mirror fields are read and
+ * written for `parent` rows only; FW-61 06 brings them to `acf`.
  *
  * The parent relationship is propagation, inverted to PULL (#62).
  *
@@ -96,8 +106,28 @@ class TermsFromRelatedPostHandler extends UnifiedHandlerBase {
      */
     private ParentRelationship $parent_relationship;
 
+    /**
+     * The ACF relationship graph and sever capture. This handler keeps the hook
+     * registration, the claim, the zero-source gate and the term write.
+     */
+    private AcfRelationship $acf_relationship;
+
+    /**
+     * Per-REQUEST memo of the enabled `acf` rows, for the CAPTURE path only: the
+     * applier is handed its rule by the pass and never reads the list.
+     *
+     * The `acf/update_value` capture fires once per relationship field saved
+     * site-wide, and each call would re-run get_enabled_rules over every rule.
+     * Rules are only mutated by the admin REST save, a separate request, so a
+     * request-lifetime memo is safe. (PR#24 round 8 #4)
+     *
+     * @var array<int,array>|null
+     */
+    private ?array $acf_rules_memo = null;
+
     public function __construct() {
         $this->parent_relationship = new ParentRelationship();
+        $this->acf_relationship    = new AcfRelationship();
         parent::__construct();
     }
 
@@ -110,8 +140,26 @@ class TermsFromRelatedPostHandler extends UnifiedHandlerBase {
     private function relationship_for(array $rule): ?Relationship {
         return match ((string) ($rule['relationship'] ?? '')) {
             'parent' => $this->parent_relationship,
+            'acf'    => AcfRelationship::is_available() ? $this->acf_relationship : null,
             default  => null,
         };
+    }
+
+    /**
+     * The enabled `acf` rows, for the capture path (the parent's lost-terms
+     * capture never reads them).
+     *
+     * @return array[]
+     */
+    private function acf_rules(): array {
+        if ($this->acf_rules_memo === null) {
+            $this->acf_rules_memo = array_values(array_filter(
+                $this->get_enabled_rules(),
+                static fn(array $rule): bool => ($rule['relationship'] ?? '') === 'acf'
+            ));
+        }
+
+        return $this->acf_rules_memo;
     }
 
     /**
@@ -125,10 +173,20 @@ class TermsFromRelatedPostHandler extends UnifiedHandlerBase {
      * `deleted_term_relationships` stays, and ONLY because what it reads stops
      * existing after the write: it records the removal and applies nothing.
      * The descriptor's `capture_hooks()` is the allow-list that says so, and H13
-     * fails on any registration here that is not on it.
+     * fails on any registration here that is not on it. It is the union of the
+     * parent's capture and the ACF relationship's three (registered below).
      */
     protected function init_hooks() {
         add_action('deleted_term_relationships', array($this, 'capture_removed_terms'), 10, 3);
+
+        // The ACF relationship's captures. Each reads a relationship the write
+        // is about to destroy: the two update filters run at priority 5, before
+        // ACF replaces the value, and `before_delete_post` is the last moment a
+        // dying post's field can be read. They record a SEVER and apply
+        // nothing, and are inert without an `acf` row.
+        add_filter('acf/update_value/type=relationship', array($this, 'capture_removed_dependents'), 5, 3);
+        add_filter('acf/update_value/type=post_object', array($this, 'capture_removed_dependents'), 5, 3);
+        add_action('before_delete_post', array($this, 'capture_deleted_post'), 10, 1);
     }
 
     /**
@@ -154,6 +212,9 @@ class TermsFromRelatedPostHandler extends UnifiedHandlerBase {
         $relationship = $this->relationship_for($rule);
         if (!$relationship) {
             return false;
+        }
+        if ($relationship === $this->acf_relationship) {
+            return $this->apply_acf_to_post($post_id, $rule);
         }
         $post = get_post($post_id);
         if (!$post || !$relationship->is_eligible_dependent($post, $rule)) {
@@ -264,6 +325,168 @@ class TermsFromRelatedPostHandler extends UnifiedHandlerBase {
         }
 
         return $relationship->dependents_of($post_id, $rule);
+    }
+
+    // ---------------------------------------------------------------------
+    // The ACF relationship (#63)
+    // ---------------------------------------------------------------------
+
+    /**
+     * Apply ONE `acf` row to ONE post: recompute this post's terms in the row's
+     * taxonomy from the sources THAT ROW resolves for it. Writes this post and
+     * nothing else.
+     *
+     * WHY THIS DOES NOT CALL `should_process_post()`. `post_status` gates the
+     * SOURCE here (§V5): "only copy from published sources". Applying it to the
+     * dependent would silently stop a draft dependent being kept in step by a
+     * published source. The receiving post's gate is the relationship's own
+     * two-sided eligibility, which includes the row's optional `post_types`.
+     *
+     * THE ZERO-SOURCE SKIP IS THE DESTRUCTIVE-WRITE GATE (invariant #2, V13). A
+     * push row's dependent type is any, so type-match alone would make every
+     * post in the field's target types a managed dependent and empty it.
+     * Positive evidence that the row manages this post is a resolved source, or
+     * a captured sever, which is the same evidence one moment later.
+     *
+     * @param int   $post_id Post to recompute.
+     * @param array $rule    One enabled `acf` row (canonical shape).
+     * @return bool Whether this post's terms actually changed.
+     */
+    private function apply_acf_to_post(int $post_id, array $rule): bool {
+        $taxonomy = (string) ($rule['taxonomy'] ?? '');
+        if ($post_id <= 0 || $taxonomy === '') {
+            return false;
+        }
+
+        $post = get_post($post_id);
+        if (!$post instanceof \WP_Post || !$this->acf_relationship->is_eligible_dependent($post, $rule)) {
+            return false;
+        }
+
+        $claim   = (string) ($rule['conflict_handling'] ?? 'merge');
+        $sources = $this->acf_relationship->sources_of($post_id, $rule);
+
+        // Only an Owning row withdraws a gone source's terms (PR#24 Bug 3), and
+        // only THIS row's own sever counts (`AcfRelationship::is_severed()`).
+        $orphaned = $claim === 'replace' && $this->acf_relationship->is_severed($post_id, $rule);
+
+        if (empty($sources) && !$orphaned) {
+            return false;
+        }
+
+        // A gated-out source still COUNTS as a resolved source above, its terms
+        // just don't contribute, so a dependent of a draft source is emptied
+        // under Owning rather than skipped as unmanaged.
+        $statuses = (array) ($rule['post_status'] ?? []);
+        $passing  = array_values(array_filter(
+            array_map('intval', $sources),
+            static fn(int $id): bool => empty($statuses)
+                || in_array(get_post_status($id), $statuses, true)
+        ));
+
+        return $this->write_acf_terms($post_id, $taxonomy, $this->native_terms_of($passing, $taxonomy), $claim);
+    }
+
+    /**
+     * The union of the given posts' native terms in one taxonomy, in ONE
+     * query (`wp_get_object_terms` takes an int[] of objects).
+     *
+     * @param int[]  $post_ids
+     * @param string $taxonomy
+     * @return int[]
+     */
+    private function native_terms_of(array $post_ids, string $taxonomy): array {
+        if (empty($post_ids)) {
+            return array();
+        }
+        $terms = wp_get_object_terms($post_ids, $taxonomy, array('fields' => 'ids'));
+
+        return is_wp_error($terms) ? array() : $this->normalize_term_ids((array) $terms);
+    }
+
+    /**
+     * Write one `acf` row's computed set through the shared claim semantics.
+     *
+     * `compute_end_state()` is the claim's one encoding, so an empty
+     * authoritative set still empties the taxonomy under Owning (`replace` of
+     * nothing) and leaves it alone under Contributing (`merge` of nothing).
+     * `apply_terms_to_post()` is not the write path: it early-returns on an
+     * empty term list, so it cannot express that. The claim encoding is shared;
+     * the guard is not. (#38 cluster 2, don't 6d.)
+     *
+     * @param int    $post_id  Dependent post.
+     * @param string $taxonomy Taxonomy.
+     * @param int[]  $terms    Authoritative term IDs for this row.
+     * @param string $claim    merge|replace|skip.
+     * @return bool Whether the post's terms actually changed.
+     */
+    private function write_acf_terms(int $post_id, string $taxonomy, array $terms, string $claim): bool {
+        $current = $this->current_term_ids($post_id, $taxonomy);
+        $final   = $this->compute_end_state($current, $terms, $claim);
+
+        // No-change short-circuit: a pass runs every row whether or not this
+        // one's trigger fired. Both sides are sorted, so === is a set test.
+        if ($final === $current) {
+            return false;
+        }
+
+        $result = wp_set_object_terms($post_id, $final, $taxonomy);
+
+        // WP_Error when the taxonomy no longer exists. Don't log a success for a
+        // write that silently no-op'd. (PR#24 round 7 #2)
+        if (is_wp_error($result)) {
+            $this->debug_log(
+                sprintf('ACF-ref write FAILED post %d tax %s: %s', $post_id, $taxonomy, $result->get_error_message()),
+                array('terms' => $final)
+            );
+            return false;
+        }
+
+        $this->debug_log(
+            sprintf('ACF-ref write (%s) post %d tax %s', $claim, $post_id, $taxonomy),
+            array('before' => $current, 'after' => $final)
+        );
+
+        return true;
+    }
+
+    /**
+     * Entities whose CAPTURED state needs a pass. Consumed.
+     *
+     * The dispatcher calls this at drain start, so a severed dependent reaches
+     * a full ordered pass by the same route a saved post does. It is a separate
+     * channel from `fan_out()` because the entity a sever affects may be
+     * reachable from no post that gets one: the holder was deleted, or the link
+     * that named it is gone.
+     *
+     * @return int[] Entity IDs to mark dirty.
+     */
+    public function drain_captures(): array {
+        return $this->acf_relationship->drain_marks();
+    }
+
+    /**
+     * CAPTURE hook (not an apply): `acf/update_value` at priority 5, before the
+     * value is written. Records which dependents the removal orphans; the diff
+     * and the direction logic are `AcfRelationship::capture_removed_dependents()`.
+     *
+     * @param mixed $value   New field value (returned unchanged).
+     * @param int   $post_id Post being saved (a source or a holder).
+     * @param array $field   ACF field array.
+     * @return mixed
+     */
+    public function capture_removed_dependents($value, $post_id, $field) {
+        return $this->acf_relationship->capture_removed_dependents($this->acf_rules(), $value, $post_id, $field);
+    }
+
+    /**
+     * CAPTURE hook (not an apply): a post is about to be permanently deleted;
+     * record the dependents it feeds while its relationships are still readable.
+     *
+     * @param int $post_id Post being deleted.
+     */
+    public function capture_deleted_post($post_id): void {
+        $this->acf_relationship->capture_deleted_post($this->acf_rules(), $post_id);
     }
 
     /**

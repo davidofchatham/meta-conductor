@@ -118,10 +118,31 @@ abstract class RuleType {
     }
 
     /**
+     * An extra value condition on a SHARED subfield this type reads, beside the
+     * `type` gate: `[field => value, …]`, every pair must hold (`equals`).
+     *
+     * `[]` ⇒ the field shows on every row of this type. A type with several
+     * relationships uses it to hide a note that describes only one of them.
+     * Must not name a field the type does not list in `reads_shared_fields()`.
+     * Never gate a field that carries a VALUE the other branch also reads: the
+     * hidden value is dropped on save.
+     *
+     * @param string $field Shared subfield id.
+     * @return array<string,string>
+     */
+    public function shared_field_when(string $field): array {
+        return [];
+    }
+
+    /**
      * This type's own subfields, in render order.
      *
      * Returned UNGATED: the kind config stamps a `type in [this type]` gate on
-     * every one, overwriting any `conditions` set here. Ids must be unique
+     * every one, overwriting any `conditions` set here. A subfield may carry a
+     * `when` (`[field => value, …]`, as `shared_field_when()`), which the config
+     * strips and turns into a second gate beside the type; a value-carrying
+     * subfield that is `when`-gated drops on save whenever the condition fails,
+     * which is the point. Ids must be unique
      * across the whole kind repeater (H11/H12), so a field two types read is
      * a shared one, declared by the config and listed in
      * `reads_shared_fields()`, not here.
