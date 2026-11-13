@@ -474,6 +474,22 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
       queue removes. H13 pins the sequence, both halves: that the format pass is
       reached from the drain at all, and that it is reached *after* the term
       pass.
+    - **The format pass owns no trigger and no queue, but it DECLARES
+      dependents (FW-62 03).** A `{parent:…}` token makes a child's title or field
+      a function of another post, so `FormatDispatcher::fan_out()` returns a
+      post's children and `run_entity()` marks them on the one queue after the
+      format pass; each then gets its own full ordered pass, and a grandchild
+      follows from the child's. It acts only when an enabled format rule has a
+      `parent:` token (found through `TokenEngine::tokens()`, memoized), so a
+      site without one pays no child lookup, and the lookup is the parent
+      relationship's `dependents_of()` filtered to the post types those rules
+      cover. It selects; it never writes or runs the child, which keeps the
+      dispatcher the single writer. Called whether or not the parent's own row
+      changed: the field a child reads may be exactly what was just edited. A
+      child drained before its parent converges because the parent's pass
+      fans back out to it (`drain()`'s per-entity bound is what ends the loop),
+      so Apply to Existing Posts needs no ordering of its own. H13 pins the hook,
+      its condition and that it calls no write primitive.
     - **The format applier seam is data-in/data-out**, not `apply_to_post`. A term rule's effect is a set of term relationships, so its applier writes and reports a boolean; a format rule's effect is the post ROW, and several rules can land on one row. So `apply_to_data(array, int, array): ?array` hands post data along the list and the *dispatcher* performs the single `wp_update_post()` at the end — one save, one row update, however many rules matched. It also carries field effects: see [Field effects ride the `$data` seam](#field-effects-ride-the-data-seam). `null` means "this rule does not apply here", which is distinct from returning the data unchanged, and the difference is what decides first-match-wins. The applier writes nothing at all, not even per-rule state: `FormatDispatcher::run_pass()` is `compute()` (runs the appliers, returns before/after, writes nothing — the format preview's entry point) then `write()`, which calls each answering rule's `commit_data()` (title/slug's idempotency meta) before the row update.
     - **The pre-write phase could not survive the conversion.** `title_slug` ran
       half of itself on `wp_insert_post_data` so the editor saw final values

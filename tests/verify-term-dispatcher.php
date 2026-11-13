@@ -69,6 +69,11 @@
  *      the callbacks, `TaxonomyManager` registers them (the handler registers
  *      nothing), and a callback only reads or redirects — a write primitive in
  *      one is a rule executing on a page view, outside any pass.
+ *  17. The FORMAT pass DECLARES its dependents (FW-62 03): `FormatDispatcher::
+ *      fan_out()` selects a post's children only when an enabled rule reads
+ *      `{parent:…}` (memoized token scan, covered post types, one
+ *      `dependents_of()` lookup, `[]` before it otherwise), `run_entity()` marks
+ *      them after the format pass, and neither writes, runs nor queues them.
  *
  * Run:  php tests/verify-term-dispatcher.php
  *
@@ -948,6 +953,84 @@ foreach (['drain', 'drain_post'] as $entry) {
             '%s() does not go through run_entity() — it would run the term pass alone, so a post drained by that path keeps the previous save\'s title (#64).',
             $entry
         );
+    }
+}
+
+// --- 12k. The format pass DECLARES its dependents (FW-62 03) -----------------
+// A `{parent:…}` token makes a child's title/field a function of ANOTHER post,
+// so a parent's pass must reach its children or they go stale against a value
+// their own pattern reads. The reach follows the term pass's shape (group 10):
+// `FormatDispatcher::fan_out()` SELECTS the children, `run_entity()` — the one
+// site that already sequences the two kinds — marks them on the one queue. The
+// format dispatcher owns no queue and no trigger (12b), so it must neither mark
+// nor drain nor write what it names; and it must cost a site with no
+// `{parent:…}` rule nothing, which means returning before any child lookup.
+if (isset($fsrc)) {
+    if (!preg_match('/public\s+function\s+fan_out\s*\(\s*int\s+\$(\w+)\s*\)\s*:\s*array\s*\{(.*?)\n    \}/s', $fsrc, $ffm)) {
+        $errors[] = 'FormatDispatcher::fan_out(int $post_id): array not found — a child\'s {parent:…} output would go stale when its parent changes (FW-62 03).';
+    } else {
+        $body = $ffm[2];
+        // The condition: derived from the enabled rules' patterns, by token
+        // name, through the engine's parser — never a regex over the pattern.
+        $scan = $method_body($fsrc, 'parent_token_post_types');
+        if ($scan === null) {
+            $errors[] = 'FormatDispatcher::parent_token_post_types() not found — fan_out() needs ONE site that decides whether any enabled rule reads {parent:…} and which post types they cover.';
+        } else {
+            $reads = $method_body($fsrc, 'reads_parent');
+            if (!preg_match('/\$this->reads_parent\(/', $scan) || $reads === null
+                || !preg_match('/TokenEngine::tokens\(/', $reads) || !preg_match('/[\'"]parent:[\'"]/', $reads)) {
+                $errors[] = 'parent_token_post_types() does not find {parent:…} rules through reads_parent(), which must scan TokenEngine::tokens() for the `parent:` prefix — a hand-parsed pattern drifts from the grammar render() uses.';
+            }
+            if (!preg_match('/\$this->ordered_rules\(/', $scan)) {
+                $errors[] = 'parent_token_post_types() does not read the ENABLED rules through ordered_rules() — a disabled {parent:…} row would make every parent pay the child lookup.';
+            }
+            if (!preg_match('/written_post_types\(/', $scan)) {
+                $errors[] = 'parent_token_post_types() does not take the covered post types from the descriptors\' written_post_types() — the child lookup would queue types no {parent:…} rule covers.';
+            }
+            if (!preg_match('/\$this->parent_scan\b/', $scan)) {
+                $errors[] = 'parent_token_post_types() is not memoized — every entity of a drain would re-parse every format pattern.';
+            }
+        }
+        if (!preg_match('/parent_token_post_types\(\)/', $body)) {
+            $errors[] = 'FormatDispatcher::fan_out() does not consult parent_token_post_types().';
+        } else {
+            $cond_at   = strpos($body, 'parent_token_post_types()');
+            $lookup_at = strpos($body, 'dependents_of(');
+            if ($lookup_at === false) {
+                $errors[] = 'FormatDispatcher::fan_out() does not find the children through the parent relationship\'s dependents_of() — it must share the one lookup the term pass uses.';
+            } elseif ($lookup_at < $cond_at || !preg_match('/\$types\s*===\s*null[^{]*\{\s*return\s*\[\s*\]\s*;/', substr($body, $cond_at, $lookup_at - $cond_at))) {
+                $errors[] = 'FormatDispatcher::fan_out() does not return [] BEFORE the child lookup when no enabled rule uses {parent:…} — a site without one would pay a query per entity.';
+            }
+        }
+        // Declares, never writes or runs: a pass here would nest inside the
+        // format pass, and a write would put the child outside the queue.
+        foreach (array_merge($write_primitives, ['wp_update_post', 'update_post_meta', 'update_field', 'update_sub_field', 'mark_dirty', 'run_pass', 'drain', 'drain_post', 'compute', 'write', 'commit_data', 'take_pass']) as $effect) {
+            foreach ([$body, $scan ?? ''] as $part) {
+                if (preg_match('/\b' . preg_quote($effect, '/') . '\s*\(/', $part)) {
+                    $errors[] = sprintf('FormatDispatcher fan_out() path calls %s() — fan_out declares the children for their own pass; it never writes or runs them (FW-62 03).', $effect);
+                    break;
+                }
+            }
+        }
+    }
+    // No queue of its own, beyond the absence of triggers (12b).
+    if (preg_match('/\$dirty\b|function\s+mark_dirty\b|function\s+drain\b/', $fsrc)) {
+        $errors[] = 'FormatDispatcher holds a queue ($dirty / mark_dirty / drain) — the declared children belong on TermDispatcher\'s one queue (FW-62 03).';
+    }
+    // The enqueue site: after the format pass, on the one queue.
+    if (isset($rem[1])) {
+        $fan_at = strpos($rem[1], 'format->fan_out(');
+        $fmt_at = strpos($rem[1], 'format->run_pass(');
+        if ($fan_at === false) {
+            $errors[] = 'run_entity() never asks the format dispatcher for its fan-out — a parent\'s children would keep a stale {parent:…} title until saved themselves (FW-62 03).';
+        } elseif ($fmt_at !== false && $fan_at < $fmt_at) {
+            $errors[] = 'run_entity() collects the format fan-out BEFORE the format pass — declare after the pass, as the term pass does.';
+        } elseif (!preg_match('/mark_dirty\(/', $rem[1])) {
+            $errors[] = 'run_entity() does not mark the format fan-out dirty — the declared children must ENQUEUE.';
+        }
+        if (preg_match('/format->fan_out\([^;]*\)\s*as\b.*?\{(.*?)\}/s', $rem[1], $loop) && preg_match('/\b(?:run_pass|drain|drain_post|apply)\s*\(/', $loop[1])) {
+            $errors[] = 'run_entity() runs the format fan-out inline instead of marking it — a pass nested in a pass puts the child outside the queue.';
+        }
     }
 }
 
