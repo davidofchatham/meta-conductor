@@ -60,8 +60,17 @@ final class PostTokenSource implements TokenSourceInterface {
         return ($value === '' || str_starts_with($value, '0000')) ? null : new \DateTimeImmutable($value, wp_timezone());
     }
 
-    public function parent_slug(): string {
-        $parent = (int) ($this->data['post_parent'] ?? 0);
-        return $parent > 0 ? (string) get_post_field('post_name', $parent) : '';
+    public function slug(): string {
+        return (string) ($this->data['post_name'] ?? '');
+    }
+
+    /**
+     * `parent` follows `post_parent` from the seam's data (as `{parent:slug}`
+     * always has) to a source over the parent's stored row.
+     */
+    public function related(string $relation, string $field = ''): ?TokenSourceInterface {
+        $parent = $relation === 'parent' ? (int) ($this->data['post_parent'] ?? 0) : 0;
+        $post   = $parent > 0 ? get_post($parent) : null;
+        return $post ? new self($parent, (array) $post) : null;
     }
 }

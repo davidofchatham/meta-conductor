@@ -42,12 +42,16 @@ final class RowTokenSource implements TokenSourceInterface {
         return $this->post->published();
     }
 
-    /** A row has no modified date or parent of its own: both answer empty. */
+    /** A row has no modified date, slug or relations of its own: all answer empty (FW-69). */
     public function modified(): ?\DateTimeInterface {
         return null;
     }
 
-    public function parent_slug(): string {
+    public function slug(): string {
         return '';
+    }
+
+    public function related(string $relation, string $field = ''): ?TokenSourceInterface {
+        return null;
     }
 }

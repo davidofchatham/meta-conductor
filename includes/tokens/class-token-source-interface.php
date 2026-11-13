@@ -33,7 +33,18 @@ interface TokenSourceInterface {
     public function modified(): ?\DateTimeInterface;
 
     /**
-     * The immediate parent's slug, or '' when there is no parent.
+     * This entity's own slug (`post_name`), or '' when it has none. The engine
+     * asks only a RELATED source for it: a bare `{slug}` on the post's own pass
+     * resolves empty there, so a pattern cannot read itself.
      */
-    public function parent_slug(): string;
+    public function slug(): string;
+
+    /**
+     * A source for the post this one is related to, or null when there is none
+     * (or the source cannot follow relations). Reads that source answers are the
+     * STORED values, never an in-flight pass's overlay. The engine owns the
+     * relation names and the one-hop rule; `$field` is the relation's own
+     * argument where it takes one.
+     */
+    public function related(string $relation, string $field = ''): ?TokenSourceInterface;
 }

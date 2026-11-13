@@ -5,7 +5,7 @@ namespace BWS\MetaConductor\Tokens;
 if (!defined('ABSPATH')) exit;
 
 /**
- * Renders `{meta:x} {term:tax} {pub_year} {mod_year} {parent:slug}`-style patterns: split into literal +
+ * Renders `{meta:x} {term:tax} {pub_year} {mod_year} {parent:meta:y}`-style patterns: split into literal +
  * token segments, resolve each token against a source, remove each empty token
  * together with the punctuation that only existed to join it, then trim what is
  * left. The removal rules are the ordered steps of bws-gb-dynamic-tags-extensions'
@@ -166,20 +166,7 @@ final class TokenEngine {
             return $policy->bound((string) $vars[$token]);
         }
 
-        [$kind, $arg] = self::split($token);
-        $date_part    = self::date_part_of($token);
-
-        $value = match (true) {
-            $date_part !== null && $arg === null              => self::date_part(
-                str_starts_with($kind, 'mod_') ? $source->modified() : $source->published(), $date_part, $policy),
-            $date_part !== null                               => self::date_field($source->field($arg), $date_part, $policy),
-            $arg === null                                     => '',
-            $kind === 'parent' && $arg === 'slug'             => $source->parent_slug(),
-            $kind === 'meta'                                  => self::scalar($source->field($arg)),
-            $kind === 'term'                                  => self::terms($source, $arg, $policy, true),
-            $kind === 'terms'                                 => self::terms($source, $arg, $policy, false),
-            default                                           => '',
-        };
+        $value = self::value($token, $source, $policy, false);
 
         if ($value === '') return '';
 
@@ -193,6 +180,35 @@ final class TokenEngine {
         }
 
         return $policy->sanitize($value);
+    }
+
+    /**
+     * One token's raw value from a source. `parent:<inner>` resolves `<inner>`
+     * against the related post's source, one hop: inside it (`$related`) a
+     * relation prefix is empty, and so is a bare `slug` outside it.
+     */
+    private static function value(string $token, TokenSourceInterface $source, OutputPolicy $policy, bool $related): string {
+        [$kind, $arg] = self::split($token);
+        $date_part    = self::date_part_of($token);
+
+        return match (true) {
+            $date_part !== null && $arg === null              => self::date_part(
+                str_starts_with($kind, 'mod_') ? $source->modified() : $source->published(), $date_part, $policy),
+            $date_part !== null                               => self::date_field($source->field($arg), $date_part, $policy),
+            $kind === 'slug' && $arg === null                 => $related ? $source->slug() : '',
+            $arg === null                                     => '',
+            $kind === 'parent'                                => $related ? '' : self::through($source, $kind, $arg, $policy),
+            $kind === 'meta'                                  => self::scalar($source->field($arg)),
+            $kind === 'term'                                  => self::terms($source, $arg, $policy, true),
+            $kind === 'terms'                                 => self::terms($source, $arg, $policy, false),
+            default                                           => '',
+        };
+    }
+
+    /** `<inner>` against the source's related post; empty when there is none. */
+    private static function through(TokenSourceInterface $source, string $relation, string $inner, OutputPolicy $policy): string {
+        $related = $source->related($relation);
+        return $related === null ? '' : self::value($inner, $related, $policy, true);
     }
 
     /** @return array{0: string, 1: ?string} Token kind and its argument (null when bare). */
