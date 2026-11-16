@@ -9,6 +9,7 @@ namespace BWS\MetaConductor\Core;
 
 use BWS\MetaConductor\Handlers\UnifiedHandlerBase;
 use BWS\MetaConductor\Relationships\ParentRelationship;
+use BWS\MetaConductor\Relationships\Relationship;
 use BWS\MetaConductor\RuleTypes\Registry;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 use BWS\MetaConductor\Storage\StorageFactory;
@@ -136,6 +137,14 @@ class FormatDispatcher {
     private ?array $parent_scan = null;
 
     /**
+     * The row-declared scan, memoized: `{rows, pairs}`. See
+     * `relationship_rows()`.
+     *
+     * @var array{rows: array, pairs: array}|null
+     */
+    private ?array $relationship_scan = null;
+
+    /**
      * Fingerprint of a disabled row passes run anyway; see `include_row()`.
      *
      * @var string|null
@@ -205,7 +214,9 @@ class FormatDispatcher {
 
     /**
      * The entities this post's format pass reaches: its children, when an
-     * enabled format rule reads `{parent:…}` (FW-62 03).
+     * enabled format rule reads `{parent:…}` (FW-62 03), and the dependents of
+     * every enabled row that copies from a related post, through that row's
+     * relationship (FW-5 05).
      *
      * DECLARES, NEVER WRITES OR RUNS. `TermDispatcher::run_entity()` marks the
      * ids on its one queue and each child gets its own full ordered pass, so a
@@ -214,22 +225,66 @@ class FormatDispatcher {
      * or not it changed this post: the parent's own row is often unchanged
      * while the field a child's pattern reads was just edited.
      *
-     * ZERO-COST WITHOUT A `{parent:…}` RULE: `parent_token_post_types()` is
-     * null and this returns before any child lookup. With one, the lookup is
-     * the parent relationship's `dependents_of()`, filtered to the post types
-     * those rules cover. Grandchildren follow because each child's own pass
-     * calls this again; `drain()`'s per-entity bound ends the chain.
+     * ZERO-COST WITHOUT EITHER: `parent_token_post_types()` is null and
+     * `relationship_rows()` is empty, so this returns before any lookup. With a
+     * `{parent:…}` rule the lookup is the parent relationship's
+     * `dependents_of()`, filtered to the post types those rules cover; a row
+     * brings its own relationship and post types. Grandchildren follow because
+     * each child's own pass calls this again; `drain()`'s per-entity bound ends
+     * the chain.
      *
      * @param int $post_id Entity just passed over.
      * @return int[] Child ids to mark dirty.
      */
     public function fan_out(int $post_id): array {
         $types = $this->parent_token_post_types();
-        if ($types === null || $post_id <= 0) {
+        $rows  = $this->relationship_rows();
+        if (($types === null && $rows === []) || $post_id <= 0) {
             return [];
         }
 
-        return (new ParentRelationship())->dependents_of($post_id, ['post_types' => $types]);
+        $ids = $types === null ? [] : (new ParentRelationship())->dependents_of($post_id, ['post_types' => $types]);
+        foreach ($rows as [$relationship, $rule]) {
+            $ids = array_merge($ids, $relationship->dependents_of($post_id, $rule));
+        }
+
+        return array_values(array_unique($ids));
+    }
+
+    /**
+     * The enabled rows that copy from a related post, each with the graph it
+     * walks (FW-5 05): `[Relationship, row]` pairs. A row declares its own
+     * dependents, so a source edit reaches the posts that read it with no
+     * `{parent:…}` token in play. A row that writes no post type is left out
+     * (`written_post_types()` is `['']`: nothing for the lookup to find).
+     *
+     * Memoized against the rows it scanned, like `parent_token_post_types()`.
+     *
+     * @return array<int, array{0: Relationship, 1: array}>
+     */
+    private function relationship_rows(): array {
+        $rows = $this->ordered_rules();
+        if ($this->relationship_scan !== null && $this->relationship_scan['rows'] === $rows) {
+            return $this->relationship_scan['pairs'];
+        }
+
+        $pairs = [];
+        foreach ($rows as $rule) {
+            $type = (string) ($rule['type'] ?? '');
+            if (!Registry::known($type) || !self::owns($type)) {
+                continue;
+            }
+            $descriptor   = Registry::get($type);
+            $relationship = $descriptor->relationship($rule);
+            $written      = $descriptor->written_post_types($rule);
+            // `[]` is every post type; `['']` is a row that writes nothing.
+            if ($relationship !== null && $descriptor->available() && ($written === [] || array_filter($written, 'strlen') !== [])) {
+                $pairs[] = [$relationship, $rule];
+            }
+        }
+        $this->relationship_scan = ['rows' => $rows, 'pairs' => $pairs];
+
+        return $pairs;
     }
 
     /**

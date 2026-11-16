@@ -1048,10 +1048,36 @@ if (isset($fsrc)) {
                 $errors[] = 'FormatDispatcher::fan_out() does not return [] BEFORE the child lookup when no enabled rule uses {parent:…} — a site without one would pay a query per entity.';
             }
         }
+        // FW-5 05: a row that copies from a related post declares its own
+        // dependents, through ITS relationship — the dispatcher names no graph
+        // for it, so the ACF relationship joins without touching this method.
+        $rows_scan = $method_body($fsrc, 'relationship_rows');
+        if ($rows_scan === null) {
+            $errors[] = 'FormatDispatcher::relationship_rows() not found — fan_out() needs ONE site that finds the enabled rows declaring dependents through a relationship (FW-5 05).';
+        } else {
+            if (!preg_match('/\$this->ordered_rules\(/', $rows_scan)) {
+                $errors[] = 'relationship_rows() does not read the ENABLED rules through ordered_rules() — a disabled copy row would make every post pay the child lookup.';
+            }
+            if (!preg_match('/->relationship\(\$rule\)/', $rows_scan) || preg_match('/new\s+(?:Parent|Acf)Relationship/', $rows_scan)) {
+                $errors[] = 'relationship_rows() must take each row\'s graph from the descriptor\'s relationship(), not name one — a new relationship would silently not fan out (FW-5 05).';
+            }
+            if (!preg_match('/written_post_types\(/', $rows_scan) || !preg_match('/->available\(\)/', $rows_scan)) {
+                $errors[] = 'relationship_rows() must skip a row that writes no post type or whose type is unavailable — a row the handler skips would still cost a lookup per entity.';
+            }
+            if (!preg_match('/\$this->relationship_scan\b/', $rows_scan)) {
+                $errors[] = 'relationship_rows() is not memoized — every entity of a drain would rescan every row.';
+            }
+        }
+        if (!preg_match('/\$this->relationship_rows\(\)/', $body) || !preg_match('/\$rows\s*===\s*\[\]/', $body)
+            || !preg_match('/\$relationship->dependents_of\(/', $body)) {
+            $errors[] = 'FormatDispatcher::fan_out() must return [] while relationship_rows() is empty and find each row\'s dependents through its relationship\'s dependents_of() (FW-5 05).';
+        } elseif (strpos($body, '$rows === []') > strpos($body, '$relationship->dependents_of(')) {
+            $errors[] = 'FormatDispatcher::fan_out() checks relationship_rows() AFTER the lookup — a site with no copy row would pay a query per entity (FW-5 05).';
+        }
         // Declares, never writes or runs: a pass here would nest inside the
         // format pass, and a write would put the child outside the queue.
         foreach (array_merge($write_primitives, ['wp_update_post', 'update_post_meta', 'update_field', 'update_sub_field', 'mark_dirty', 'run_pass', 'drain', 'drain_post', 'compute', 'write', 'commit_data', 'take_pass']) as $effect) {
-            foreach ([$body, $scan ?? ''] as $part) {
+            foreach ([$body, $scan ?? '', $rows_scan ?? ''] as $part) {
                 if (preg_match('/\b' . preg_quote($effect, '/') . '\s*\(/', $part)) {
                     $errors[] = sprintf('FormatDispatcher fan_out() path calls %s() — fan_out declares the children for their own pass; it never writes or runs them (FW-62 03).', $effect);
                     break;

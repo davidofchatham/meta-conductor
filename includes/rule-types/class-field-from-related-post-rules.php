@@ -9,6 +9,8 @@ namespace BWS\MetaConductor\RuleTypes;
 
 use BWS\MetaConductor\Admin\Config\ConfigHelpers;
 use BWS\MetaConductor\Handlers\FieldFromRelatedPostHandler;
+use BWS\MetaConductor\Relationships\ParentRelationship;
+use BWS\MetaConductor\Relationships\Relationship;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 
 // Prevent direct access
@@ -48,6 +50,13 @@ final class FieldFromRelatedPostRules extends RuleType {
      */
     public function available(): bool {
         return function_exists('acf_get_field') && function_exists('update_field');
+    }
+
+    /**
+     * The parent graph for a `parent` row; the ACF graph joins it with FW-5 08.
+     */
+    public function relationship(array $rule): ?Relationship {
+        return ($rule['relationship'] ?? '') === 'parent' ? new ParentRelationship() : null;
     }
 
     /**

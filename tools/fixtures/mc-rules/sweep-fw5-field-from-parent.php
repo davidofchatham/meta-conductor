@@ -187,6 +187,9 @@ try {
 	mcfp_set( $p, MCFP_TEXT, '' );
 	mcfp_save( $c );
 	$pass = mc_assert( 'D a draft parent is absent: the child keeps its value under Owning', mcfp_text( $c ), 'P4' ) && $pass;
+	// Republishing the parent now pushes to the child (05), so the parent holds
+	// the value the child should keep before it comes back.
+	update_field( MCFP_TEXT, 'P4', $p );
 	wp_update_post( array( 'ID' => $p, 'post_status' => 'publish' ) );
 	mcfp_drain();
 

@@ -7,6 +7,8 @@
 
 namespace BWS\MetaConductor\RuleTypes;
 
+use BWS\MetaConductor\Relationships\Relationship;
+
 // Prevent direct access
 if (!defined('ABSPATH')) {
     exit;
@@ -205,6 +207,21 @@ abstract class RuleType {
         }
 
         return $slugs;
+    }
+
+    /**
+     * The graph this row pulls from, when it copies from a related post.
+     *
+     * The format dispatcher asks a format-kind row for its `dependents_of()`,
+     * so an edit to a source reaches the posts that read it (FW-5 05); it
+     * never asks a term-kind type. Null for a row with no relationship, or one
+     * this build cannot walk.
+     *
+     * @param array $rule Projected row.
+     * @return Relationship|null
+     */
+    public function relationship(array $rule): ?Relationship {
+        return null;
     }
 
     /**

@@ -350,10 +350,11 @@ final class TermsFromRelatedPostRules extends RuleType {
     }
 
     /**
-     * A throwaway instance, enough for the pure facts above. The handler keeps
-     * its own, because their request memos belong to it.
+     * The graph a row walks: a throwaway instance, enough for the pure facts
+     * above. The handler keeps its own, because their request memos belong to
+     * it.
      */
-    private function relationship(array $rule): ?Relationship {
+    public function relationship(array $rule): ?Relationship {
         return match ((string) ($rule['relationship'] ?? '')) {
             'parent' => new ParentRelationship(),
             'acf'    => new AcfRelationship(),
