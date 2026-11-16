@@ -79,6 +79,18 @@ $pass   = function () use ( $d, $subject ) {
 };
 
 $was = array_map( 'get_post_status', $holders );
+
+// Snapshot every post this sweep touches (both stores), and put them back at the
+// end, so a later sweep sees the fixture as it was (the sever sweep needs the
+// second holder's own term).
+$snap = array();
+foreach ( array_merge( array( $subject ), $holders ) as $id ) {
+	$ids         = wp_get_object_terms( $id, 'mc_topic', array( 'fields' => 'ids' ) );
+	$snap[ $id ] = array(
+		'native' => is_wp_error( $ids ) ? array() : array_map( 'intval', $ids ),
+		'mirror' => (array) get_field( 'mc_topics', $id, false ),
+	);
+}
 $ok  = 0;
 $bad = 0;
 $chk = function ( $label, $got, $want ) use ( &$ok, &$bad ) {
@@ -136,8 +148,10 @@ try {
 	}
 	mc_write_ordered_rules( array(), OptionRuleStorage::KIND_TERM );
 	$d->drain();
-	foreach ( array_merge( array( $subject ), $holders ) as $id ) {
+	foreach ( $snap as $id => $was_terms ) {
 		$clear( $id );
+		update_field( 'mc_topics', $was_terms['mirror'], $id );
+		wp_set_object_terms( $id, $was_terms['native'], 'mc_topic' );
 	}
 	mc_restore();
 }

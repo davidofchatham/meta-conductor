@@ -125,6 +125,8 @@ switch ( $step ) {
 	// ---- S2a: give alpha TWO sources -------------------------------------
 	case 's2a':
 		WP_CLI::log( 'S2a — add holder2 as a second source of alpha' );
+		// The seed gives holder2 no term of its own; this step needs one.
+		wp_set_object_terms( $HOLDER2, array( 'west' ), 'mc_topic' );
 		$editor_save( 'mc_related_items', array( $ALPHA ), $HOLDER2 );
 		$editor_save( 'mc_parent_section', array( $HOLDER, $HOLDER2 ), $ALPHA );
 		wp_update_post( array( 'ID' => $HOLDER ) );
