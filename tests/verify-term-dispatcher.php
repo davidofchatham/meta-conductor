@@ -225,6 +225,19 @@ foreach (['get_post_status(' => 'filters sources by status', 'empty($sources)' =
     }
 }
 
+// The copy rule (FW-5 04) is the third caller: it resolves its eligible source
+// through the same gate, and neither reimplements the status filter nor tests
+// an empty source list itself.
+$copy_src = $strip_comments((string) file_get_contents(dirname(__DIR__) . '/includes/handlers/class-field-from-related-post-handler.php'));
+if (preg_match_all('/SourceGate::resolve\(/', $copy_src) < 1) {
+    $errors[] = 'FieldFromRelatedPostHandler does not route its source through SourceGate::resolve() — the zero-source gate must be written once.';
+}
+foreach (['get_post_status(' => 'filters sources by status', 'empty($sources)' => 'tests for zero sources', 'should_process_post(' => 'gates through the base post gate'] as $needle => $what) {
+    if (strpos($copy_src, $needle) !== false) {
+        $errors[] = sprintf('FieldFromRelatedPostHandler %s itself (`%s`) — that is SourceGate::resolve()\'s job.', $what, $needle);
+    }
+}
+
 // --- 2. Triggers are MARK-ONLY ---------------------------------------------
 // Each trigger callback's body may call mark_dirty and nothing else. A trigger
 // that ran a pass would restore one-pass-per-trigger, which is the defect the

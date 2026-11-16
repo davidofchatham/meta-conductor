@@ -52,7 +52,7 @@ $rows     = $settings[OptionRuleStorage::KIND_FORMAT] ?? [];
 
 $note('format_rules is populated', !empty($rows));
 // The format list holds title/slug rules and, since FW-4, Computed field rules.
-$format_types = ['title_slug_from_pattern', 'field_from_pattern'];
+$format_types = ['title_slug_from_pattern', 'field_from_pattern', 'field_from_related_post'];
 $note('every format row is a known format rule type',
     array_diff(array_column($rows, 'type'), $format_types) === []);
 $note('the legacy title_slug_from_pattern array is gone from storage (#66)',
@@ -110,6 +110,23 @@ foreach ($rows as $i => $row) {
 $note('the sanitized list keeps every row', count($sanitized) === count($rows));
 $note('every sanitized row is still typed',
     array_column($sanitized, 'type') === array_column($rows, 'type'));
+
+// ── 3. A Set a field from a related post row (FW-5 04). ─────────────────────
+// The manifest baseline carries no row of this type (it would be live in every
+// other sweep), so one is built here and run through the same sanitizer. Every
+// key the handler reads must come back; a wrong gate drops one silently.
+
+$copy_row = [
+    'type' => 'field_from_related_post', 'enabled' => true, 'name' => 'Copy probe',
+    'post_types' => ['mc_section'], 'relationship' => 'parent', 'source_field' => 'field_mc_cp_text',
+    'copy_target' => '', 'conflict_handling' => 'replace', 'post_status' => ['publish'], 'row_title' => 'x',
+];
+$copy_out = RepeaterField::sanitize([$copy_row], $field['args'])[0] ?? [];
+foreach (['type', 'enabled', 'name', 'post_types', 'relationship', 'source_field', 'copy_target', 'conflict_handling', 'post_status'] as $key) {
+    $note("copy row '$key' survives sanitize", ($copy_out[$key] ?? '(DROPPED)') == $copy_row[$key]);
+}
+$note('copy row carries no pattern-rule or title/slug keys',
+    array_intersect(['target_field', 'pattern', 'output', 'title_pattern', 'post_type'], array_keys($copy_out)) === []);
 
 echo $fail ? "\nSWEEP-59 FAIL: " . count($fail) . " failed\n" : "\nSWEEP-59 OK\n";
 exit($fail ? 1 : 0);

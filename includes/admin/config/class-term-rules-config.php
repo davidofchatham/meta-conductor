@@ -108,29 +108,7 @@ class TermRulesConfig {
      * @param string $field Shared subfield id.
      */
     private static function readers(string $field): array {
-        $plain   = [];
-        $clauses = [];
-        foreach (self::types() as $type) {
-            $descriptor = Registry::get($type);
-            if (!in_array($field, $descriptor->reads_shared_fields(), true)) {
-                continue;
-            }
-            $when = $descriptor->shared_field_when($field);
-            if ($when) {
-                $clauses[] = ConfigHelpers::gate([$type], $when);
-            } else {
-                $plain[] = $type;
-            }
-        }
-
-        if (!$clauses) {
-            return ConfigHelpers::type_gate(...$plain);
-        }
-        if ($plain) {
-            array_unshift($clauses, ConfigHelpers::type_gate(...$plain));
-        }
-
-        return count($clauses) === 1 ? $clauses[0] : ['any' => $clauses];
+        return ConfigHelpers::readers(self::types(), $field);
     }
 
     /**

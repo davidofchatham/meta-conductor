@@ -444,6 +444,17 @@ final class ExistingPostsApplier {
     }
 
     /**
+     * A field value as the report shows it. A scalar reads as its string; a raw
+     * array (a post ID list, a gallery) as JSON, since a string cast of an array
+     * is the word "Array" and a PHP warning.
+     *
+     * @param mixed $value
+     */
+    private static function show($value): string {
+        return is_array($value) || is_object($value) ? (string) wp_json_encode($value) : (string) $value;
+    }
+
+    /**
      * The computed values that differ from what a post stores, `name =>
      * [stored, computed]`.
      *
@@ -457,17 +468,17 @@ final class ExistingPostsApplier {
     private static function field_changes(int $post_id, array $after): array {
         $changes = [];
         foreach ($after['fields'] as $name => $value) {
-            $stored = (string) get_post_meta($post_id, (string) $name, true);
-            if ($stored !== (string) $value) {
-                $changes[$name] = [$stored, (string) $value];
+            $stored = self::show(get_post_meta($post_id, (string) $name, true));
+            if ($stored !== self::show($value)) {
+                $changes[$name] = [$stored, self::show($value)];
             }
         }
         foreach ($after['rows'] as $by_row) {
             foreach ($by_row as $cells) {
                 foreach ($cells as $cell) {
-                    $stored = (string) get_post_meta($post_id, $cell['meta'], true);
-                    if ($stored !== (string) $cell['value']) {
-                        $changes[$cell['label']] = [$stored, (string) $cell['value']];
+                    $stored = self::show(get_post_meta($post_id, $cell['meta'], true));
+                    if ($stored !== self::show($cell['value'])) {
+                        $changes[$cell['label']] = [$stored, self::show($cell['value'])];
                     }
                 }
             }
@@ -499,13 +510,13 @@ final class ExistingPostsApplier {
         $values = [];
         foreach ($fields as $name) {
             if (!str_contains($name, '[].')) {
-                $values[$name] = (string) get_post_meta($post_id, $name, true);
+                $values[$name] = self::show(get_post_meta($post_id, $name, true));
                 continue;
             }
             [$repeater, $sub] = explode('[].', $name, 2);
             $rows             = (int) get_post_meta($post_id, $repeater, true);
             for ($row = 1; $row <= $rows; $row++) {
-                $values[$repeater . '[' . $row . '].' . $sub] = (string) get_post_meta($post_id, $repeater . '_' . ($row - 1) . '_' . $sub, true);
+                $values[$repeater . '[' . $row . '].' . $sub] = self::show(get_post_meta($post_id, $repeater . '_' . ($row - 1) . '_' . $sub, true));
             }
         }
 

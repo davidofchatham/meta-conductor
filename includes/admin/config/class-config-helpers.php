@@ -163,6 +163,48 @@ class ConfigHelpers {
     }
 
     /**
+     * The gate for a shared subfield: every type whose descriptor lists it in
+     * `reads_shared_fields()`, in the order given.
+     *
+     * A type missing from a declaration has that value hidden and DROPPED on
+     * save (architecture.md → The ordered rule repeaters); H11 / H12's
+     * hand-written `$expected_visible` is the independent check.
+     *
+     * A reader may add a second condition (`shared_field_when()`): the types
+     * with none keep ONE `in` gate, and each type with one gets its own `all`
+     * clause, the lot joined by `any`. With no extras this is exactly the flat
+     * `type in [...]` gate.
+     *
+     * @param string[] $types Stored type keys of the list, in registry order.
+     * @param string   $field Shared subfield id.
+     */
+    public static function readers(array $types, string $field): array {
+        $plain   = [];
+        $clauses = [];
+        foreach ($types as $type) {
+            $descriptor = Registry::get($type);
+            if (!in_array($field, $descriptor->reads_shared_fields(), true)) {
+                continue;
+            }
+            $when = $descriptor->shared_field_when($field);
+            if ($when) {
+                $clauses[] = self::gate([$type], $when);
+            } else {
+                $plain[] = $type;
+            }
+        }
+
+        if (!$clauses) {
+            return self::type_gate(...$plain);
+        }
+        if ($plain) {
+            array_unshift($clauses, self::type_gate(...$plain));
+        }
+
+        return count($clauses) === 1 ? $clauses[0] : ['any' => $clauses];
+    }
+
+    /**
      * Every type's own subfields, each gated to that type alone, and further to
      * its `when` if the descriptor declared one.
      *
@@ -668,6 +710,87 @@ class ConfigHelpers {
         }
 
         return $placeholder_row + $fields_cache + $rows_cache;
+    }
+
+    /**
+     * ACF field types that hold no value of their own (layout and display
+     * fields), so there is nothing to copy. `clone` stores its members under the
+     * clone's own prefix, not as a value, so it is left out too.
+     */
+    public const NON_VALUE_TYPES = ['tab', 'message', 'accordion', 'clone', 'separator'];
+
+    /**
+     * The source select of *Set a field from a related post*: every top-level
+     * ACF field that holds a value, keyed by ACF FIELD KEY, labelled with its
+     * group and the post types the group is shown on. The post types ride in
+     * the label because a static list cannot follow the row's own post-type
+     * scope; the handler refuses a field its group does not show on the
+     * receiving type.
+     *
+     * Empty (placeholder only) when ACF is unavailable. Nothing is cached before
+     * ACF is confirmed loaded.
+     *
+     * @return array<string,string> field key => label.
+     */
+    public static function acf_source_field_options(): array {
+        static $cache = null;
+
+        $placeholder_row = ['' => __('— Select ACF field —', 'meta-conductor')];
+
+        if ($cache !== null) {
+            return $placeholder_row + $cache;
+        }
+        if (!function_exists('acf_get_field_groups') || !function_exists('acf_get_fields')) {
+            return $placeholder_row;
+        }
+
+        $cache      = [];
+        $post_types = get_post_types(['public' => true], 'objects');
+        unset($post_types['attachment']);
+
+        foreach ($post_types as $post_type) {
+            foreach ((array) acf_get_field_groups(['post_type' => $post_type->name]) as $group) {
+                foreach ((array) acf_get_fields($group['key']) as $field) {
+                    $key = (string) ($field['key'] ?? '');
+                    if ($key === '' || in_array($field['type'] ?? '', self::NON_VALUE_TYPES, true)) {
+                        continue;
+                    }
+                    $cache[$key]['label'] ??= sprintf('%s (%s)', $field['label'] ?? $field['name'], $field['name'] ?? '')
+                        . ((string) ($group['title'] ?? '') !== '' ? ' — ' . $group['title'] : '');
+                    $cache[$key]['types'][] = $post_type->label;
+                }
+            }
+        }
+
+        foreach ($cache as $key => $entry) {
+            $cache[$key] = $entry['label'] . ' [' . implode(', ', array_unique($entry['types'])) . ']';
+        }
+
+        return $placeholder_row + $cache;
+    }
+
+    /**
+     * Whether an ACF field's group is shown (by its location rules) on a post
+     * type — what *Same* needs before a copy may write a field onto a post.
+     *
+     * @param string $field_key ACF field key (top level).
+     * @param string $post_type Receiving post type.
+     */
+    public static function acf_field_shown_on(string $field_key, string $post_type): bool {
+        if ($field_key === '' || $post_type === ''
+            || !function_exists('acf_get_field_groups') || !function_exists('acf_get_fields')) {
+            return false;
+        }
+
+        foreach ((array) acf_get_field_groups(['post_type' => $post_type]) as $group) {
+            foreach ((array) acf_get_fields($group['key']) as $field) {
+                if (($field['key'] ?? '') === $field_key) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /**

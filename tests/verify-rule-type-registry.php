@@ -60,6 +60,7 @@ $expected = [
     OptionRuleStorage::KIND_FORMAT => [
         'title_slug_from_pattern',
         'field_from_pattern',
+        'field_from_related_post',
     ],
 ];
 $expected_flat = array_merge(...array_values($expected));
@@ -114,11 +115,11 @@ foreach ($all as $key => $d) {
     }
 }
 
-// Only the Computed field rule writes through a plugin that may be inactive;
-// without ACF (this harness) it is unavailable, every other type is not.
+// Only the two field rules write through a plugin that may be inactive;
+// without ACF (this harness) they are unavailable, every other type is not.
 foreach ($all as $key => $d) {
-    $check("$key: availability follows ACF only for the Computed field rule",
-        $d->available() === ($key === 'field_from_pattern' ? function_exists('acf_get_field') : true));
+    $check("$key: availability follows ACF only for the two field rules",
+        $d->available() === (in_array($key, ['field_from_pattern', 'field_from_related_post'], true) ? function_exists('acf_get_field') : true));
 }
 
 // The format pass's first-match gate is a descriptor fact (FW-4 ticket 04):

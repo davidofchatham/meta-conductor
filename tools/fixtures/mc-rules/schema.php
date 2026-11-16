@@ -105,6 +105,11 @@ function bws_fixture_mc_rules_register_types() {
  *                              `line` the row-rule TARGET, and `grp` a NESTED group
  *                              (inner) — a row token naming it must resolve empty.
  *
+ * group_mc_copy_fields (mc_section) — Set a field from a related post (FW-5):
+ *   mc_cp_text    — text SOURCE on the parent, copied onto its children.
+ *   mc_cp_display — text, written by a later pattern rule from mc_cp_text.
+ *   mc_cp_list    — relationship → mc_item, the array-valued copy.
+ *
  * group_mc_section_fields (mc_section):
  *   mc_related_items — relationship → mc_item (related_post_terms holder field).
  *   mc_primary_item  — post_object → mc_item (pull/post_object variant, sweep-time).
@@ -271,6 +276,33 @@ function bws_fixture_mc_rules_register_acf() {
 							),
 						),
 					),
+				),
+			),
+		)
+	);
+
+	// Set a field from a related post (FW-5): the receiving type is the
+	// hierarchical mc_section, so a child copies from its parent. A text source
+	// and a text target the pattern rule writes from it, and a relationship
+	// field for the array-valued copy. Its own group so no other sweep's
+	// mc_section field set changes.
+	acf_add_local_field_group(
+		array(
+			'key'      => 'group_mc_copy_fields',
+			'title'    => 'MC Copy Fields',
+			'location' => array(
+				array( array( 'param' => 'post_type', 'operator' => '==', 'value' => 'mc_section' ) ),
+			),
+			'fields'   => array(
+				array( 'key' => 'field_mc_cp_text', 'name' => 'mc_cp_text', 'label' => 'CP Text', 'type' => 'text' ),
+				array( 'key' => 'field_mc_cp_display', 'name' => 'mc_cp_display', 'label' => 'CP Display', 'type' => 'text' ),
+				array(
+					'key'           => 'field_mc_cp_list',
+					'name'          => 'mc_cp_list',
+					'label'         => 'CP List',
+					'type'          => 'relationship',
+					'post_type'     => array( 'mc_item' ),
+					'return_format' => 'id',
 				),
 			),
 		)

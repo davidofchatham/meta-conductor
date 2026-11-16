@@ -78,6 +78,7 @@ $classes = [
     'BWS\\MetaConductor\\Handlers\\RestrictTermCountHandler',
     'BWS\\MetaConductor\\Handlers\\TitleSlugFromPatternHandler',
     'BWS\\MetaConductor\\Handlers\\FieldFromPatternHandler',
+    'BWS\\MetaConductor\\Handlers\\FieldFromRelatedPostHandler',
     // RuleTypes\ (FW-39) — the descriptors and the registry that lists them.
     // Also proves the kebab DIRECTORY mapping (RuleTypes -> rule-types/).
     'BWS\\MetaConductor\\RuleTypes\\RuleType',
@@ -91,6 +92,7 @@ $classes = [
     'BWS\\MetaConductor\\RuleTypes\\RestrictTermCountRules',
     'BWS\\MetaConductor\\RuleTypes\\TitleSlugFromPatternRules',
     'BWS\\MetaConductor\\RuleTypes\\FieldFromPatternRules',
+    'BWS\\MetaConductor\\RuleTypes\\FieldFromRelatedPostRules',
     // Tokens\ (FW-40) — the pattern engine title/slug renders through.
     'BWS\\MetaConductor\\Tokens\\TokenEngine',
     'BWS\\MetaConductor\\Tokens\\PostTokenSource',

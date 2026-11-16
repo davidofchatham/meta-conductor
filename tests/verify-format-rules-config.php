@@ -146,6 +146,7 @@ require dirname(__DIR__) . '/vendor/autoload.php';
 require dirname(__DIR__) . '/autoload.php';
 
 use BWS\MetaConductor\Admin\WireframeBootstrap;
+use BWS\MetaConductor\Admin\Config\ConfigHelpers;
 use BWS\MetaConductor\Admin\Config\FormatRulesConfig;
 use BWS\MetaConductor\Admin\Config\TermRulesConfig;
 use BWS\MetaConductor\Admin\Config\WireframeConfig;
@@ -167,7 +168,7 @@ $subfields = $field['args']['subfields'];
 
 // --- The repeater is bound to the persisted kind list. ----------------------
 
-$check('the format kind has its migrated types (#59)', $TYPES === ['title_slug_from_pattern', 'field_from_pattern']);
+$check('the format kind has its migrated types (#59)', $TYPES === ['title_slug_from_pattern', 'field_from_pattern', 'field_from_related_post']);
 $check('repeater binds the format kind list', $field['id'] === $KIND);
 $check('repeater is sortable (order is authored)', !empty($field['args']['sortable']));
 $check('row title template resolves the snapshot', $field['args']['title_template'] === '{row_title}');
@@ -223,9 +224,9 @@ foreach (['type', 'enabled', 'name', 'row_title'] as $shared) {
 $check('post_type is a single-value select, gated to title & slug',
     ($by_id['post_type']['type'] ?? '') === 'select'
     && ($by_id['post_type']['conditions']['value'] ?? null) === ['title_slug_from_pattern']);
-$check('post_types is a checkboxes list, gated to computed field',
+$check('post_types is a checkboxes list, shared by the two field rules and no one else',
     ($by_id['post_types']['type'] ?? '') === 'checkboxes'
-    && ($by_id['post_types']['conditions']['value'] ?? null) === ['field_from_pattern']);
+    && ($by_id['post_types']['conditions']['value'] ?? null) === ['field_from_pattern', 'field_from_related_post']);
 $check('the computed field scope drops attachment and has no placeholder row',
     array_keys($by_id['post_types']['args']['options']) === ['post', 'page', 'mc_item']);
 $check('the computed field scope says none checked does nothing',
@@ -284,6 +285,10 @@ $expected_visible = [
     'field_from_pattern' => [
         'type', 'enabled', 'name', 'post_types',
         'target_field', 'pattern', 'output', 'row_title',
+    ],
+    'field_from_related_post' => [
+        'type', 'enabled', 'name', 'post_types',
+        'relationship', 'source_field', 'copy_target', 'conflict_handling', 'post_status', 'row_title',
     ],
 ];
 
@@ -376,6 +381,36 @@ $check('the output select offers text (the default) and html',
     array_keys($by_id['output']['args']['options']) === ['text', 'html']
     && ($by_id['output']['default'] ?? '') === 'text');
 
+// Set a field from a related post (FW-5 04). The handler's read contract, stated
+// apart from the visible-set above for the same reason.
+$visible_copy = [];
+foreach ($subfields as $s) {
+    if (Conditions::evaluate($s['conditions'] ?? null, ['type' => 'field_from_related_post'])) {
+        $visible_copy[] = $s['id'];
+    }
+}
+$check('every key the copy handler reads survives a save',
+    empty(array_diff(['enabled', 'post_types', 'relationship', 'source_field', 'conflict_handling', 'post_status'], $visible_copy)));
+$check('pattern and title/slug mechanics are not offered on a copy row',
+    !array_intersect(['target_field', 'pattern', 'output', 'title_pattern', 'slug_pattern', 'post_type'], $visible_copy));
+$check('the copy source select offers every value-holding top-level field, by key, with its group and post types',
+    array_keys($by_id['source_field']['args']['options']) === ['', 'field_a', 'field_b', 'field_c', 'field_d']
+    && $by_id['source_field']['args']['options']['field_c'] === 'Friends (friends) — Group A [MC Items]'
+    && !empty($by_id['source_field']['required']));
+$check('Same needs the field\'s group shown on the receiving post type',
+    ConfigHelpers::acf_field_shown_on('field_a', 'mc_item') === true
+    && ConfigHelpers::acf_field_shown_on('field_a', 'page') === false
+    && ConfigHelpers::acf_field_shown_on('field_gone', 'mc_item') === false
+    && ConfigHelpers::acf_field_shown_on('', 'mc_item') === false);
+$check('the relationship defaults to the parent and offers only it',
+    ($by_id['relationship']['default'] ?? '') === 'parent'
+    && array_keys($by_id['relationship']['args']['options']) === ['parent']);
+$check('the copy target offers Same (the empty value) and defaults to it',
+    array_keys($by_id['copy_target']['args']['options']) === [''] && ($by_id['copy_target']['default'] ?? null) === '');
+$check('the copy claim stores the three claim keys and defaults to contributing',
+    array_keys($by_id['conflict_handling']['args']['options']) === ['replace', 'merge', 'skip']
+    && ($by_id['conflict_handling']['default'] ?? '') === 'merge');
+
 // An untyped row (freshly added) shows the shared frame only.
 $untyped = [];
 foreach ($subfields as $s) {
@@ -423,6 +458,13 @@ $check('an unnamed computed field row is named rather than left blank',
 $check('a computed field row naming several post types lists them all',
     $title(['type' => 'field_from_pattern', 'name' => 'Display line', 'post_types' => ['mc_item', 'page'], 'target_field' => 'field_a'])
         === 'Display line — Display name (MC Items, Pages)');
+$check('a copy row title names the field, the claim and the post type',
+    $title(['type' => 'field_from_related_post', 'name' => 'Venue', 'post_types' => ['mc_item'], 'source_field' => 'field_a', 'conflict_handling' => 'replace'])
+        === 'Venue — Copy Display name from parent (owning) (MC Items)');
+$check('a copy row with no claim stored reads as contributing',
+    str_contains($title(['type' => 'field_from_related_post', 'name' => 'Venue', 'source_field' => 'field_a']), '(contributing)'));
+$check('an unnamed copy row is named rather than left blank',
+    str_starts_with($title(['type' => 'field_from_related_post', 'post_types' => ['mc_item']]), 'Untitled copy-from-related-post rule'));
 // The uniform marker the term list gained in #57 — the whole reason the live
 // {name} template was replaced by a snapshot.
 $check('a disabled row carries the uniform prefix',

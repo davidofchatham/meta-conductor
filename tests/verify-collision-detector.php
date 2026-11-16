@@ -132,7 +132,7 @@ $pairs = fn(array $found) => array_map(fn($f) => [$f['a']['index'], $f['b']['ind
 // row with every target-naming field filled, must name exactly one scheme.
 
 $desc = fn(string $type) => Registry::get($type);
-$full = ['taxonomy' => 'mc_topic', 'target_term_id' => 21, 'post_type' => 'mc_item', 'post_types' => ['mc_item'], 'target_field' => 'field_mc_x'];
+$full = ['taxonomy' => 'mc_topic', 'target_term_id' => 21, 'post_type' => 'mc_item', 'post_types' => ['mc_item'], 'target_field' => 'field_mc_x', 'source_field' => 'field_mc_x'];
 
 foreach (Registry::all() as $type => $descriptor) {
     $key = $descriptor->target_key(['type' => $type] + $full);
