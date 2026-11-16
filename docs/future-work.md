@@ -629,6 +629,15 @@ The plugin descends from the long-retired BWS Taxonomy Manager and still carries
 - **Open:** the cron hook is persisted state, so renaming it needs an upgrade step that clears the old scheduled event and schedules the new one (the transients expire on their own). Whether `TaxonomyManager` is renamed with the rest or kept, since it is the handler wiring and not a legacy-named surface a user can see.
 - **Blocked by:** — • **Interacts with:** FW-63
 
+#### FW-70 — Make the mc-rules fixture posts survive a `title_slug` rename
+
+The mc-rules fixture finds its posts by `post_name`, and its own `title_slug_from_pattern` rule renames `item-alpha` to `mc-item-alpha-2030` whenever a sweep saves it with the rules live (running `sweep-fw61-mirror first` does it; so does `mc_restore()` with the holder in its reset list). After that every by-name lookup misses: `mc_pid()` returns 0, which an earlier restore wrote into a relationship field as `'0'`, and `seed.php` upserts a duplicate post instead of finding the renamed one.
+
+- **Detail home:** none; this row carries it.
+- **Progress:** Half done. The by-name miss now fails loudly: `mc_pid_strict()` errors in the sweeps' ACF writes, and `mc_restore()` checks every reference before it clears the rules and aborts with the rules untouched. Nothing yet stops the rename itself, or the duplicate a seed over a renamed post creates; the recovery today is to restore the `post_name` by hand first (matrix §7).
+- **Open:** the clean fix is to stop identifying fixture posts by `post_name`: stamp each with a stable fixture-slug meta at seed time and look it up by that, so a rename is harmless to both `mc_pid()` and the seed upsert. The alternative is to keep the lookup and make the sweeps that save `item-alpha` run with the `title_slug` rule isolated out, which leaves the duplicate-on-seed trap in place.
+- **Blocked by:** — • **Interacts with:** —
+
 ---
 
 ## Closed / retired
