@@ -27,7 +27,8 @@ if (!defined('ABSPATH')) {
  *     readable, which dependents lost a source; `is_severed()` answers for one
  *     row and `drain_marks()` is the channel that hands the affected entities to
  *     the dispatcher. Capture records and applies nothing: the handler keeps the
- *     hook registration, the claim, the zero-source gate and the term write.
+ *     hook registration, the claim and the term write; `SourceGate` owns the
+ *     zero-source gate.
  *
  * Rows are the canonical shape: `post_type` is the HOLDER type (split off the
  * combined ACF value by the descriptor's `normalize()`), `acf_field_name` the
@@ -46,7 +47,7 @@ final class AcfRelationship implements Relationship {
      *
      * Keyed by the post TO RECOMPUTE, and by the ROW (see `sever_key()`), not
      * merely the taxonomy: the record is the ONE thing allowed to bypass the
-     * handler's zero-source gate, so a link cut under row C must never license
+     * zero-source gate (`SourceGate`), so a link cut under row C must never license
      * row A to empty-replace the taxonomy.
      *
      * @var array<int,array<string,bool>>
@@ -152,7 +153,7 @@ final class AcfRelationship implements Relationship {
      * push (dependent type = '' / any): the dependent is whatever the ACF field
      *   points AT, so narrow to the field's configured target post types when
      *   ACF can tell us; unknown/unconstrained stays eligible (correctness is
-     *   preserved: the handler's zero-source gate prevents any wrong write; this
+     *   preserved: `SourceGate` prevents any wrong write; this
      *   is partly a perf pre-filter).
      */
     public function is_eligible_dependent(\WP_Post $post, array $row): bool {

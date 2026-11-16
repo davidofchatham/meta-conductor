@@ -13,8 +13,8 @@
  *
  * `$DRAFT_WANT` is the one assertion ticket 02 flips. Ticket 01 recorded the
  * baseline: an Owning row whose sources are ALL gated out EMPTIES the dependent.
- * Ticket 02's shared zero-source gate makes it keep its terms (set the want to
- * the terms the subject held before the pass: coastal + west).
+ * Ticket 02's shared zero-source gate makes it keep its terms: the sweep primes
+ * the subject with coastal + west before the draft pass and wants them back.
  *
  * Each holder's status is changed with a direct $wpdb update so no save hook
  * fires, and put back afterward, pass or fail.
@@ -30,8 +30,8 @@ require_once __DIR__ . '/sweep-lib.php';
 use BWS\MetaConductor\Core\TermDispatcher;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 
-// Ticket 01 baseline. Ticket 02: array( 'coastal', 'west' ).
-$DRAFT_WANT = array();
+// Ticket 01 baseline was array() (emptied). Ticket 02's shared gate keeps them.
+$DRAFT_WANT = array( 'coastal', 'west' );
 
 $d = TermDispatcher::instance();
 if ( ! $d ) {
@@ -118,6 +118,12 @@ try {
 	) as $name => list( $statuses, $want ) ) {
 		foreach ( $holders as $i => $h ) {
 			$status( $h, $statuses[ $i ] );
+		}
+		if ( 'draft' === $name ) {
+			// The states run in sequence, so put back what the subject held at
+			// the start; the gate must leave exactly this alone.
+			update_field( 'mc_topics', $terms, $subject );
+			wp_set_object_terms( $subject, $terms, 'mc_topic' );
 		}
 		$pass();
 		WP_CLI::log( sprintf( '%s: native=[%s] mirror=[%s]', $name, implode( ',', $native( $subject ) ), implode( ',', $mirror( $subject ) ) ) );

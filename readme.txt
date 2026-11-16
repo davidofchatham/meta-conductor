@@ -51,6 +51,10 @@ Title, slug and field patterns can read a value from a related post.
 
 == Upgrade Notes ==
 
+= Unreleased =
+
+**A *Set terms from a related post* rule with an ACF relationship no longer empties a post whose sources are all unpublished.** A source that fails the rule's *Post status* limit now counts as absent, so an Owning rule whose related posts are all drafts leaves the post's terms alone instead of clearing them. If only some of the related posts are unpublished, the post still takes the terms of the published ones, as before. Removing a link still clears the post's terms under an Owning rule. Nothing is converted on update.
+
 = 0.11.0 =
 
 **Rule types have new names in the *Rule type* dropdown.** *Hierarchy* is now *Set terms from the term hierarchy*, *Related term* is *Set terms from a trigger term*, *Date window* is *Set terms from a date window*, *Level restriction* is *Restrict terms by tree level*, *Title & slug pattern* is *Set title and slug from a pattern*, and *Computed field* is *Set a field from a pattern*. Only the names changed; your rules behave exactly as before.

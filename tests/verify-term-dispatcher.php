@@ -209,6 +209,22 @@ if (!preg_match('/function\s+pass_enabled\s*\(\s*int\s+\$\w+\s*\)\s*:\s*bool\s*\
     }
 }
 
+// --- 1b. The zero-source gate is one encoding (FW-5 02). ----------------------
+// Both relationships of terms_from_related_post route through
+// `Relationships\SourceGate::resolve()`; a handler that filters sources by
+// status or tests for an empty source list itself has forked the rule, which is
+// how the parent and ACF relationships disagreed about a gated-out source.
+$related_file = dirname(__DIR__) . '/includes/handlers/class-terms-from-related-post-handler.php';
+$related_src  = $strip_comments((string) file_get_contents($related_file));
+if (preg_match_all('/SourceGate::resolve\(/', $related_src) < 2) {
+    $errors[] = 'TermsFromRelatedPostHandler does not route BOTH relationships (parent and acf) through SourceGate::resolve() — the zero-source gate must be written once.';
+}
+foreach (['get_post_status(' => 'filters sources by status', 'empty($sources)' => 'tests for zero sources'] as $needle => $what) {
+    if (strpos($related_src, $needle) !== false) {
+        $errors[] = sprintf('TermsFromRelatedPostHandler %s itself (`%s`) — that is SourceGate::resolve()\'s job.', $what, $needle);
+    }
+}
+
 // --- 2. Triggers are MARK-ONLY ---------------------------------------------
 // Each trigger callback's body may call mark_dirty and nothing else. A trigger
 // that ran a pass would restore one-pass-per-trigger, which is the defect the

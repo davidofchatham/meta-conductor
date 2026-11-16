@@ -11,6 +11,7 @@ namespace BWS\MetaConductor\Handlers;
 use BWS\MetaConductor\Relationships\AcfRelationship;
 use BWS\MetaConductor\Relationships\ParentRelationship;
 use BWS\MetaConductor\Relationships\Relationship;
+use BWS\MetaConductor\Relationships\SourceGate;
 
 // Prevent direct access
 if (!defined('ABSPATH')) {
@@ -109,7 +110,8 @@ class TermsFromRelatedPostHandler extends UnifiedHandlerBase {
 
     /**
      * The ACF relationship graph and sever capture. This handler keeps the hook
-     * registration, the claim, the zero-source gate and the term write.
+     * registration, the claim and the term write; the zero-source gate is
+     * `SourceGate`'s.
      */
     private AcfRelationship $acf_relationship;
 
@@ -222,23 +224,15 @@ class TermsFromRelatedPostHandler extends UnifiedHandlerBase {
             return false;
         }
 
-        $sources = $relationship->sources_of($post_id, $rule);
-        if (empty($sources)) {
+        // The parent is gated on `post_status` as well as the child, through the
+        // shared gate: no parent, or a parent that fails the status limit, skips
+        // the row. In stock WP a post_parent shares its child's post type; a
+        // cross-type parent is gated on status only, never on `post_types`.
+        $eligible = SourceGate::resolve($relationship->sources_of($post_id, $rule), $rule);
+        if ($eligible === null) {
             return false;
         }
-        $parent_id = (int) $sources[0];
-
-        // Gate on the PARENT as well as the child. In stock WP a post_parent is
-        // always the same post type as the child (the editor's parent dropdown
-        // is type-scoped), so the two gates agree and this is
-        // redundant-but-harmless. It only diverges under a cross-type
-        // post_parent (programmatic / non-stock) — if that ever becomes real,
-        // decide whether propagation scopes the source (parent), the target
-        // (child), or both. (0.6.0 review, carried through #62.)
-        $parent = get_post($parent_id);
-        if (!$parent || !$relationship->is_eligible_source($parent, $rule)) {
-            return false;
-        }
+        $parent_id = $eligible[0];
 
         $taxonomy = (string) ($rule['taxonomy'] ?? '');
         if ($taxonomy === '') {
@@ -346,8 +340,9 @@ class TermsFromRelatedPostHandler extends UnifiedHandlerBase {
      * THE ZERO-SOURCE SKIP IS THE DESTRUCTIVE-WRITE GATE (invariant #2, V13). A
      * push row's dependent type is any, so type-match alone would make every
      * post in the field's target types a managed dependent and empty it.
-     * Positive evidence that the row manages this post is a resolved source, or
-     * a captured sever, which is the same evidence one moment later.
+     * Positive evidence that the row manages this post is an ELIGIBLE source
+     * (resolved and passing the status limit; `SourceGate::resolve()`), or a
+     * captured sever, which is the same evidence one moment later.
      *
      * @param int   $post_id Post to recompute.
      * @param array $rule    One enabled `acf` row (canonical shape).
@@ -364,28 +359,21 @@ class TermsFromRelatedPostHandler extends UnifiedHandlerBase {
             return false;
         }
 
-        $claim   = (string) ($rule['conflict_handling'] ?? 'merge');
-        $sources = $this->acf_relationship->sources_of($post_id, $rule);
+        $claim = (string) ($rule['conflict_handling'] ?? 'merge');
 
         // Only an Owning row withdraws a gone source's terms (PR#24 Bug 3), and
         // only THIS row's own sever counts (`AcfRelationship::is_severed()`).
         $orphaned = $claim === 'replace' && $this->acf_relationship->is_severed($post_id, $rule);
 
-        if (empty($sources) && !$orphaned) {
+        // A source that fails the status limit counts as absent, so a dependent
+        // whose sources are ALL gated out is skipped like an unmanaged post,
+        // not emptied under Owning (FW-5 02). Only a sever overrides.
+        $eligible = SourceGate::resolve($this->acf_relationship->sources_of($post_id, $rule), $rule, $orphaned);
+        if ($eligible === null) {
             return false;
         }
 
-        // A gated-out source still COUNTS as a resolved source above, its terms
-        // just don't contribute, so a dependent of a draft source is emptied
-        // under Owning rather than skipped as unmanaged.
-        $statuses = (array) ($rule['post_status'] ?? []);
-        $passing  = array_values(array_filter(
-            array_map('intval', $sources),
-            static fn(int $id): bool => empty($statuses)
-                || in_array(get_post_status($id), $statuses, true)
-        ));
-
-        return $this->write_acf_terms($post_id, $taxonomy, $this->terms_of($passing, $taxonomy), $claim);
+        return $this->write_acf_terms($post_id, $taxonomy, $this->terms_of($eligible, $taxonomy), $claim);
     }
 
     /**

@@ -101,6 +101,7 @@ $classes = [
     // Relationships\ (FW-61 02) — the graph both flavors of terms-from-related-post read.
     'BWS\\MetaConductor\\Relationships\\ParentRelationship',
     'BWS\\MetaConductor\\Relationships\\AcfRelationship',
+    'BWS\\MetaConductor\\Relationships\\SourceGate',
     // Storage\ upgrade routine (FW-51 03) — delete with the class.
     'BWS\\MetaConductor\\Storage\\SlugEscalationMigration',
     // Storage\ rule-type id rewrite (FW-63 01) — delete with the class.

@@ -20,6 +20,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - `{parent:slug}` is unchanged for existing rules.
 - **Parent edits reach their children.** When a title, slug or field pattern reads `{parent:...}`, saving the parent (or changing its terms) re-runs the rule on its children, and their children in turn. A site with no `{parent:...}` pattern does no child lookup. `refs` does not fan out: a post that a `refs` token reads does not update the posts that read it, so they refresh when saved or through *Apply to Existing Posts*, and a bulk run can leave one stale until a second run.
 
+### Changed
+
+- **An Owning *Set terms from a related post* rule with an ACF relationship no longer empties a post whose sources are all unpublished.** A source that fails the rule's *Post status* limit counts as absent, and a post with no eligible source is left alone, as it already was through a parent post. Before, a post whose related posts were all drafts lost its terms under an Owning rule, so unpublishing a source to edit it could clear the terms of every post that read from it. A mixed set (some published, some not) behaves as before, and removing a link still clears the terms. A source that has been deleted no longer counts either, and a status limit of *any* now means no limit on this relationship, as it already did through a parent post. No stored shape changes.
+
 ## [0.11.1] — 2026-11-13
 
 ### Fixed
