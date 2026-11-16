@@ -103,6 +103,42 @@ if ( ! function_exists( 'mc_fixture_readable_statuses' ) ) {
 	}
 }
 
+if ( ! defined( 'MC_FIXTURE_STAMP_KEY' ) ) {
+	/** Post meta seed.php stamps on every manifest post: the manifest key. Survives a rename. */
+	define( 'MC_FIXTURE_STAMP_KEY', '_mc_fixture_slug' );
+}
+if ( ! function_exists( 'mc_fixture_stamped_ids' ) ) {
+	/**
+	 * IDs of the posts stamped with a manifest key, oldest first.
+	 *
+	 * Same unauthenticated-safe shape as the name lookup: `meta_query` never
+	 * sets `is_single`, so the permission re-check in the header note cannot
+	 * discard drafts.
+	 *
+	 * @param string        $fixture_slug Manifest posts[] key.
+	 * @param string        $post_type    Post type.
+	 * @param string[]|null $statuses     Statuses to search, or null for the upsert set.
+	 * @return int[]
+	 */
+	function mc_fixture_stamped_ids( $fixture_slug, $post_type, $statuses = null ) {
+		$q = new \WP_Query(
+			array(
+				'meta_key'               => MC_FIXTURE_STAMP_KEY,
+				'meta_value'             => $fixture_slug,
+				'post_type'              => $post_type,
+				'post_status'            => $statuses ? $statuses : mc_fixture_post_statuses(),
+				'posts_per_page'         => -1,
+				'fields'                 => 'ids',
+				'orderby'                => 'ID',
+				'order'                  => 'ASC',
+				'no_found_rows'          => true,
+				'ignore_sticky_posts'    => true,
+				'update_post_term_cache' => false,
+			)
+		);
+		return array_map( 'intval', $q->posts );
+	}
+}
 if ( ! function_exists( 'mc_fixture_find_post' ) ) {
 	/**
 	 * Find a fixture post by slug + type, regardless of login state.
@@ -112,12 +148,25 @@ if ( ! function_exists( 'mc_fixture_find_post' ) ) {
 	 * mc_fixture_readable_statuses() explicitly, so the widening is visible at
 	 * the call site rather than being a default everything inherits.
 	 *
-	 * @param string        $post_name Post slug.
-	 * @param string        $post_type Post type.
-	 * @param string[]|null $statuses  Statuses to search, or null for the upsert set.
+	 * Pass `$fixture_slug` (the manifest key) for an MC-owned post: the stamp
+	 * seed.php writes is tried first, so a rename (the fixture's own title_slug
+	 * rule renames `item-alpha`) cannot lose the post. `post_name` is the
+	 * fallback for a post seeded before the stamp existed. Posts another
+	 * blueprint owns have no stamp; omit it and the lookup is by name alone.
+	 *
+	 * @param string        $post_name    Post slug.
+	 * @param string        $post_type    Post type.
+	 * @param string[]|null $statuses     Statuses to search, or null for the upsert set.
+	 * @param string        $fixture_slug Manifest posts[] key, or '' for a by-name lookup.
 	 * @return int Post ID, or 0 if not found. Oldest match wins.
 	 */
-	function mc_fixture_find_post( $post_name, $post_type, $statuses = null ) {
+	function mc_fixture_find_post( $post_name, $post_type, $statuses = null, $fixture_slug = '' ) {
+		if ( '' !== $fixture_slug ) {
+			$stamped = mc_fixture_stamped_ids( $fixture_slug, $post_type, $statuses );
+			if ( $stamped ) {
+				return $stamped[0];
+			}
+		}
 		$q = new \WP_Query(
 			array(
 				'post_name__in'          => array( $post_name ),
@@ -142,12 +191,18 @@ if ( ! function_exists( 'mc_fixture_count_posts' ) ) {
 	/**
 	 * Count posts sharing a fixture slug — >1 means duplicates accumulated.
 	 *
-	 * @param string $post_name Post slug.
-	 * @param string $post_type Post type.
+	 * With `$fixture_slug`, the census is the union of the stamped posts and the
+	 * posts holding the name, so a renamed stamped twin and an unstamped copy a
+	 * pre-stamp seed left both show up.
+	 *
+	 * @param string $post_name    Post slug.
+	 * @param string $post_type    Post type.
+	 * @param string $fixture_slug Manifest posts[] key, or '' to count by name alone.
 	 * @return int[] Matching IDs, oldest first.
 	 */
-	function mc_fixture_count_posts( $post_name, $post_type ) {
-		$q = new \WP_Query(
+	function mc_fixture_count_posts( $post_name, $post_type, $fixture_slug = '' ) {
+		$stamped = '' !== $fixture_slug ? mc_fixture_stamped_ids( $fixture_slug, $post_type ) : array();
+		$q       = new \WP_Query(
 			array(
 				'post_name__in'          => array( $post_name ),
 				'post_type'              => $post_type,
@@ -163,6 +218,8 @@ if ( ! function_exists( 'mc_fixture_count_posts' ) ) {
 			)
 		);
 
-		return array_map( 'intval', $q->posts );
+		$ids = array_unique( array_merge( $stamped, array_map( 'intval', $q->posts ) ) );
+		sort( $ids );
+		return $ids;
 	}
 }

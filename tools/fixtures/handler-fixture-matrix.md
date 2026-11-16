@@ -729,13 +729,7 @@ after a restore, and repair with a `wp_update_post` under
 `add_filter('meta_conductor_acf_reapply_enabled','__return_false')` before
 re-seeding.
 
-**RESTORE GOTCHA (the original): it renames `post_name`.** Re-seed's
-`mc_fixture_find_post` addresses posts by `post_name`, so a renamed subject reads
-as missing and the seeder INSERTS a duplicate. Before re-seeding after a
-title_slug sweep you MUST first (a) empty the `title_slug_from_pattern` array (so the
-rename doesn't re-fire) and (b) `wp_update_post` the subjects' `post_name` back to
-their manifest values. Then re-seed. Verified afterward: `mc_item` count = 8
-(6 fixtures + 2 solo), all unique names, rule live, no duplicates.
+**RESTORE GOTCHA (the original): it renames `post_name`.** Since FW-70 the seed and `mc_pid()` find a manifest post by its `_mc_fixture_slug` stamp, so a renamed subject is still found and a re-seed no longer inserts a duplicate (it also writes the manifest `post_name` back). The slug itself still drifts: a sweep that asserts a slug or URL restores `post_name`. The one case that still needs the by-hand repair is a post renamed BEFORE it was stamped (a site last seeded before FW-70): (a) empty the `title_slug_from_pattern` array (so the rename doesn't re-fire) and (b) `wp_update_post` the subjects' `post_name` back to their manifest values, then re-seed to stamp them. Verified afterward: `mc_item` count = 8 (6 fixtures + 2 solo), all unique names, rule live, no duplicates.
 
 #### §64 title_slug as a format applier (#64, 0.8.0) — results
 
@@ -769,10 +763,7 @@ slug derives).
   returns without draining, `s2` finds the title and slug rewritten. Nothing else
   runs the format pass on a write involving no explicit drain.
 
-**RESTORE GOTCHA (in addition to §7's).** This sweep renames `post_name`, which
-is what `mc_pid()` looks a fixture post up by — so the subject's ID is cached in
-the `mc64_subject_id` option on first resolution and every later step reads that.
-`restore` renames the subject back from the manifest and drops the cache.
+**RESTORE GOTCHA (in addition to §7's).** This sweep renames `post_name`. `mc_pid()` no longer looks a post up by it (FW-70), but the sweep still caches the subject's ID in the `mc64_subject_id` option on first resolution and every later step reads that. `restore` renames the subject back from the manifest and drops the cache.
 
 #### §7 collision ladder (FW-51 02) — results
 

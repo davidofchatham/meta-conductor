@@ -19,10 +19,11 @@
  *     two user-edits of the same post+taxonomy in ONE eval still collapse to
  *     one. Keep one user-edit per wp-cli eval.
  *   - mc_restore() rewrites RULES + the manifest's relationship fields and resets
- *     the subjects you name. It does NOT recreate deleted/renamed posts —
- *     after a delete-holder (§4c) or a title_slug rename (§7) sweep, run the full
- *     seed.php instead (restore the post_name first for title_slug — see the
- *     matrix restore-gotcha note).
+ *     the subjects you name. It does NOT recreate deleted posts — after a
+ *     delete-holder (§4c) sweep, run the full seed.php instead. A title_slug rename
+ *     (§7) no longer needs that: posts are found by their `_mc_fixture_slug` stamp
+ *     (FW-70), so a renamed subject still resolves. Restore its post_name only
+ *     where the sweep asserts the slug or URL.
  */
 
 if ( ! defined( 'WP_CLI' ) || ! WP_CLI ) {
@@ -249,7 +250,7 @@ if ( ! function_exists( 'mc_restore' ) ) {
 		// Fail before touching the rules: an error after the clear leaves the site with none.
 		$problems = mc_check_post_field_refs( $manifest, $post_ids );
 		if ( $problems ) {
-			WP_CLI::error( 'mc_restore: fixture posts not found by post_name: ' . implode( ', ', $problems ) . ' — seed them, or if title_slug renamed one, restore its post_name first (matrix §7); never seed over a renamed post. Rules untouched.' );
+			WP_CLI::error( 'mc_restore: fixture posts not found: ' . implode( ', ', $problems ) . ' — seed them. Rules untouched.' );
 		}
 
 		// Rules OFF, then the relationship fields, then rules ON: a field write with
@@ -302,7 +303,7 @@ if ( ! function_exists( 'mc_reset_subject' ) ) {
 
 if ( ! function_exists( 'mc_pid' ) ) {
 	/**
-	 * Resolve a fixture post slug (manifest key) → live post ID, draft-safe.
+	 * Resolve a fixture post slug (manifest key) → live post ID, draft-safe. Found by the seed's stamp, so a rename cannot lose it.
 	 *
 	 * @param string $fixture_slug Manifest posts[] key (e.g. 'section-draft').
 	 * @return int Post ID or 0.
@@ -314,7 +315,7 @@ if ( ! function_exists( 'mc_pid' ) ) {
 		}
 		require_once __DIR__ . '/lookup.php';
 		$def = $manifest['posts'][ $fixture_slug ];
-		return mc_fixture_find_post( $def['post_name'], $def['post_type'] );
+		return mc_fixture_find_post( $def['post_name'], $def['post_type'], null, $fixture_slug );
 	}
 }
 
@@ -329,7 +330,7 @@ if ( ! function_exists( 'mc_pid_strict' ) ) {
 	function mc_pid_strict( $fixture_slug ) {
 		$id = mc_pid( $fixture_slug );
 		if ( ! $id ) {
-			WP_CLI::error( "fixture post '{$fixture_slug}' not found by post_name — seed it, or if title_slug renamed it, restore the post_name first (matrix §7); never seed over a renamed post." );
+			WP_CLI::error( "fixture post '{$fixture_slug}' not found — seed it." );
 		}
 		return $id;
 	}

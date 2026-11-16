@@ -93,6 +93,8 @@ match so the seeder converges on the surviving post where duplicates exist.
 `verify.php` asserts exactly one post per fixture slug, so any regression here
 fails loudly instead of growing silently.
 
+Pass the manifest key as the fourth argument for an MC-owned post. `seed.php` stamps every manifest post with the meta `_mc_fixture_slug` (the manifest key), and the lookup tries the stamp first, falling back to `post_name` only for a post seeded before the stamp. That is what lets the fixture's own `title_slug` rule rename `item-alpha` to `mc-item-alpha-2030` without `mc_pid()` missing it or the seed inserting a duplicate (FW-70). Posts another blueprint owns carry no stamp and stay looked up by name.
+
 Those statuses exclude `trash` by design, which makes B3 fail on
 core-structures' deliberately trashed `gate-trashed` fixture —
 [#70](https://github.com/davidofchatham/meta-conductor/issues/70).
@@ -146,16 +148,7 @@ Helpers: `mc_isolate($keep)`, `mc_restore($reset_ids=[])`, `mc_reset_subject($id
 `mc_pid($slug)`, `mc_tid($slug)`, `mc_terms($id,$tax)`, `mc_acf($id,$key)`,
 `mc_assert($label,$got,$want)`.
 
-**`mc_restore()` avoids a full re-seed** — it rewrites the rule arrays
-(token-resolved, shared with seed.php via `resolve.php`), re-applies the
-manifest's relationship fields (the same loop seed.php uses; a reference that
-does not resolve aborts before the rules are touched) and resets named
-subjects, skipping the post upserts + rewrite flush. Fall back to the full
-`seed.php` ONLY when a sweep deleted a post (§4c delete-holder) or renamed one
-(§7 title_slug — restore the `post_name` first, else the by-name lookup
-duplicates it). What sweep-lib does NOT change: isolation is still required
-(handlers hook at boot), and handler dedup is still per-request (one user-edit
-per eval).
+**`mc_restore()` avoids a full re-seed** — it rewrites the rule arrays (token-resolved, shared with seed.php via `resolve.php`), re-applies the manifest's relationship fields (the same loop seed.php uses; a reference that does not resolve aborts before the rules are touched) and resets named subjects, skipping the post upserts + rewrite flush. Fall back to the full `seed.php` ONLY when a sweep deleted a post (§4c delete-holder). A renamed post (§7 title_slug) is found by its stamp, so `mc_restore()` and a re-seed both cope; re-seeding also writes the manifest `post_name` back. Only a post renamed BEFORE it was ever stamped needs its `post_name` restored by hand first. What sweep-lib does NOT change: isolation is still required (handlers hook at boot), and handler dedup is still per-request (one user-edit per eval).
 
 ## Term tree (mc_topic)
 

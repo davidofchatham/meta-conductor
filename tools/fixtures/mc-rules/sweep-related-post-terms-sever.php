@@ -66,8 +66,8 @@ $find = function ( $name ) {
 $HOLDER  = $find( 'mc-holder' );
 $HOLDER2 = $find( 'mc-holder-two' );
 // item-alpha carries mc_event_date + a live title_slug rule, so ANY real save
-// renames it to mc-item-alpha-<date>. Accept either slug.
-$ALPHA   = $find( 'mc-item-alpha' ) ?: $find( 'mc-item-alpha-2030' );
+// renames it to mc-item-alpha-<date>; the stamp finds it under either slug.
+$ALPHA   = (int) mc_fixture_find_post( 'mc-item-alpha', 'mc_item', null, 'item-alpha' );
 $BETA    = $find( 'mc-item-beta' );
 $SBIDI   = $find( 'mc-bidi-holder' );
 $IBIDI   = $find( 'mc-item-bidi' );

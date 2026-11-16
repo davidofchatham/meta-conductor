@@ -88,7 +88,7 @@ try {
     // ── The subject: a seeded mc_item with a date field and topic terms. ────
 
     // mc_fixture_find_post returns an ID (0 when missing), not a post object.
-    $post_id = (int) mc_fixture_find_post('mc-item-alpha', 'mc_item');
+    $post_id = (int) mc_fixture_find_post('mc-item-alpha', 'mc_item', null, 'item-alpha');
     $post    = $post_id ? get_post($post_id) : null;
     if (!$post) {
         echo "FAIL cannot find fixture post mc-item-alpha — seed.php first\n";

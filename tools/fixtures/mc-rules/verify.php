@@ -50,7 +50,7 @@ $mc_post = function ( $fixture_slug ) use ( $mc_manifest ) {
 	if ( ! $def ) {
 		return 0;
 	}
-	return mc_fixture_find_post( $def['post_name'], $def['post_type'] );
+	return mc_fixture_find_post( $def['post_name'], $def['post_type'], null, $fixture_slug );
 };
 
 /** Resolve a fixture term slug → term_id. */
@@ -92,12 +92,22 @@ foreach ( array_keys( $mc_manifest['posts'] ) as $mc_slug ) {
 	$check( "post {$mc_slug} exists", $mc_post( $mc_slug ) > 0 );
 }
 
+// A3a. Every manifest post carries its stamp (FW-70): the stamp, not post_name,
+// is what lets a title_slug rename leave the post findable. A miss means the
+// post predates the stamp — re-seed to stamp it.
+foreach ( $mc_manifest['posts'] as $mc_slug => $mc_def ) {
+	$mc_id = $mc_post( $mc_slug );
+	$check(
+		"post {$mc_slug}: stamped " . MC_FIXTURE_STAMP_KEY,
+		$mc_id && get_post_meta( $mc_id, MC_FIXTURE_STAMP_KEY, true ) === $mc_slug
+	);
+}
 // A3b. Idempotency — exactly ONE post per fixture slug. A blind existence
 // check made the seeder re-insert `section-draft` on every run; four copies
 // accumulated before the missing-fixture failure gave it away. Assert the
 // invariant directly so duplication can't grow silently again.
 foreach ( $mc_manifest['posts'] as $mc_slug => $mc_def ) {
-	$mc_dupes = mc_fixture_count_posts( $mc_def['post_name'], $mc_def['post_type'] );
+	$mc_dupes = mc_fixture_count_posts( $mc_def['post_name'], $mc_def['post_type'], $mc_slug );
 	$check(
 		"post {$mc_slug}: exactly one copy (seed idempotent)",
 		count( $mc_dupes ) === 1,

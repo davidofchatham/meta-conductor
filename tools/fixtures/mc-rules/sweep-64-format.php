@@ -26,9 +26,10 @@
  * slug derives from the computed title — which also exercises the derived-slug
  * branch and the idempotency meta in one rule.
  *
- * ⚠️ THIS SWEEP RENAMES POSTS. `post_name` is what `mc_pid()` looks a fixture
- * post up by, so the subject's ID is cached in an option the moment it is first
- * resolved (`mc64_subject()`); every later step reads that. `restore` puts the
+ * ⚠️ THIS SWEEP RENAMES POSTS. `mc_pid()` finds a fixture post by its seed stamp
+ * (FW-70), so a rename no longer loses it, but the sweep still caches the
+ * subject's ID in an option the moment it is first resolved (`mc64_subject()`);
+ * every later step reads that. `restore` puts the
  * title and slug back from the manifest and drops the cache. The `bulk` step
  * additionally snapshots and repairs every OTHER mc_item, because bulk apply
  * legitimately reaches all of them.
@@ -72,9 +73,8 @@ function mc64_dispatcher() {
 /**
  * The subject, by ID.
  *
- * `mc_pid()` resolves by `post_name`, and this sweep rewrites `post_name` — so
- * the ID is cached on first resolution and every later eval reads the cache.
- * Without this, step 2 onwards cannot find the post it just renamed.
+ * This sweep rewrites `post_name`, so the ID is cached on first resolution and
+ * every later eval reads the cache.
  *
  * @return int
  */

@@ -213,12 +213,17 @@ foreach ( $mc_manifest['posts'] as $mc_slug => $mc_def ) {
 		$mc_args['post_parent'] = $mc_post_ids[ $mc_def['parent'] ];
 	}
 
-	$mc_existing = mc_fixture_find_post( $mc_def['post_name'], $mc_def['post_type'] );
+	// Stamp first, post_name as the fallback for a post seeded before the stamp.
+	// The stamp is what lets a title_slug rename leave the post findable.
+	$mc_existing = mc_fixture_find_post( $mc_def['post_name'], $mc_def['post_type'], null, $mc_slug );
 	if ( $mc_existing ) {
 		$mc_args['ID']           = $mc_existing;
 		$mc_post_ids[ $mc_slug ] = (int) wp_update_post( $mc_args );
 	} else {
 		$mc_post_ids[ $mc_slug ] = (int) wp_insert_post( $mc_args );
+	}
+	if ( $mc_post_ids[ $mc_slug ] ) {
+		update_post_meta( $mc_post_ids[ $mc_slug ], MC_FIXTURE_STAMP_KEY, $mc_slug );
 	}
 }
 $log( 'posts: ' . count( $mc_post_ids ) . ' upserted' );

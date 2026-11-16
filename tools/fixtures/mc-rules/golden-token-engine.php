@@ -50,7 +50,7 @@ require_once __DIR__ . '/lookup.php';
 
 $mode = $args[0] ?? 'capture';
 
-$post_id = (int) mc_fixture_find_post('mc-item-alpha', 'mc_item');
+$post_id = (int) mc_fixture_find_post('mc-item-alpha', 'mc_item', null, 'item-alpha');
 if (!$post_id) {
     fwrite(STDERR, "cannot find fixture post mc-item-alpha — seed.php first\n");
     exit(1);
