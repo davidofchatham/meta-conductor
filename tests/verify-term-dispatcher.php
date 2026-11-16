@@ -822,8 +822,14 @@ if (!is_file($format_file)) {
             $errors[] = 'FormatDispatcher::write() does not call write_fields() before the row update — computed fields would not be persisted by the pass.';
         }
         $write_fields = $method_body($fsrc, 'write_fields');
-        if ($write_fields === null || !preg_match('/update_field\(\s*\$key/', $write_fields)) {
-            $errors[] = 'FormatDispatcher::write_fields() must write through update_field() by the ACF field KEY — a name write skips the field\'s reference row on a first write.';
+        // The field write is MetaWriter's (FW-5 03): the dispatcher hands it the
+        // field's KEY, and MetaWriter writes through update_field() by key.
+        if ($write_fields === null || !preg_match('/MetaWriter::write\(\s*\$post_id\s*,\s*\(string\)\s*\$name\s*,\s*\$value\s*,[^;]*field_keys/', $write_fields)) {
+            $errors[] = 'FormatDispatcher::write_fields() must write through MetaWriter::write() with the field\'s ACF KEY from field_keys — a name write skips the field\'s reference row on a first write.';
+        }
+        $meta_writer = $strip_comments((string) file_get_contents($root . '/includes/core/class-meta-writer.php'));
+        if (!preg_match('/update_field\(\s*\$acf_key/', $meta_writer)) {
+            $errors[] = 'MetaWriter::write() must write an ACF field through update_field() by the field KEY.';
         }
         if ($write_fields === null || !preg_match('/update_sub_field\(\s*\[\s*\$repeater_key\s*,\s*\$row\s*,\s*\$sub_key\s*\]/', $write_fields)) {
             $errors[] = 'FormatDispatcher::write_fields() must write a repeater cell through update_sub_field() addressed by repeater KEY, 1-based row and subfield KEY.';
@@ -893,7 +899,7 @@ foreach ($kind_types('format_rules') as $type) {
     // preview. Per-rule state belongs in commit_data(), which only write() calls.
     // `update_field` joined the list with the Computed field rule: its value
     // rides `$data['fields']` and FormatDispatcher::write_fields() persists it.
-    foreach (['wp_update_post', 'wp_insert_post', 'update_post_meta', 'update_option', 'update_field', 'update_sub_field', 'add_post_meta'] as $effect) {
+    foreach (['wp_update_post', 'wp_insert_post', 'update_post_meta', 'update_option', 'update_field', 'update_sub_field', 'add_post_meta', 'MetaWriter::write'] as $effect) {
         if (preg_match('/\b' . preg_quote($effect, '/') . '\s*\(/', $applier)) {
             $errors[] = sprintf(
                 '%s::apply_to_data() calls %s() — a format applier returns data; the dispatcher writes the row and commit_data() the per-rule state (#64, FW-16 03).',

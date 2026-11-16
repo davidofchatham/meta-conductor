@@ -61,6 +61,7 @@ $classes = [
     'BWS\\MetaConductor\\Core\\AcfWriteQueue',
     'BWS\\MetaConductor\\Core\\TermDispatcher',
     'BWS\\MetaConductor\\Core\\FormatDispatcher',
+    'BWS\\MetaConductor\\Core\\MetaWriter',
     'BWS\\MetaConductor\\Core\\RuleChoice',
     'BWS\\MetaConductor\\Core\\ExistingPostsApplier',
     'BWS\\MetaConductor\\Core\\TermCountSurvivors',

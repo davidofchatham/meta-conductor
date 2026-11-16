@@ -485,14 +485,20 @@ class FormatDispatcher {
      * listener is switched off for it, or every write would queue a second,
      * idempotent pass at shutdown.
      *
-     * SLASHED, like the row update below: `update_field()` unslashes its value
-     * on the way to `update_metadata()`, so an unslashed `a` stores as `ab`.
+     * Values are RAW — an array, an ID list or a repeater value is never cast —
+     * and `MetaWriter` slashes them once: `update_field()` unslashes its value
+     * on the way to `update_metadata()`, so an unslashed `a` stores as `ab`. A
+     * field with a key in `field_keys` is written through ACF by that key; one
+     * without is plain meta, which `MetaWriter` routes through ACF when the name
+     * matches an ACF field and refuses when it starts with `_`.
      *
      * Row cells go through `update_sub_field()` and follow the same rules.
      *
      * An unchanged value is not written, and an all-empty result writes `''` —
-     * the stored value must not outlive its sources. Compared as strings: ACF
-     * stores every supported target type as one.
+     * the stored value must not outlive its sources. Compared STRICTLY against
+     * the unformatted stored meta (`get_post_meta()`, not `get_field()`, which
+     * would substitute the field's default for a missing value): a string value
+     * compares as it always did, since ACF stores a scalar target as a string.
      *
      * @param int   $post_id Entity.
      * @param array $after   `compute()`'s final data.
@@ -500,29 +506,28 @@ class FormatDispatcher {
      */
     private function write_fields(int $post_id, array $after): int {
         $written = 0;
-        if ((empty($after['fields']) && empty($after['rows'])) || !function_exists('update_field')) {
+        if (empty($after['fields']) && empty($after['rows'])) {
             return $written;
         }
 
         add_filter('meta_conductor_acf_reapply_enabled', '__return_false');
         try {
             foreach ($after['fields'] as $name => $value) {
-                $key = (string) ($after['field_keys'][$name] ?? '');
-                if ($key !== '' && (string) get_post_meta($post_id, $name, true) !== (string) $value) {
-                    update_field($key, wp_slash((string) $value), $post_id);
+                if (get_post_meta($post_id, $name, true) !== $value
+                    && MetaWriter::write($post_id, (string) $name, $value, (string) ($after['field_keys'][$name] ?? ''))) {
                     $written++;
                 }
             }
 
             // Repeater-row cells, by repeater key, 1-based row and subfield key.
             // ACF's subfield write keeps the field-key reference row and fires
-            // no save hook, like the field write above. Compared as strings
+            // no save hook, like the field write above. Compared strictly
             // against the cell's stored meta, so an unchanged row is not written.
             foreach ($after['rows'] ?? [] as $repeater_key => $by_row) {
                 foreach ($by_row as $row => $cells) {
                     foreach ($cells as $sub_key => $cell) {
-                        if (function_exists('update_sub_field') && (string) get_post_meta($post_id, $cell['meta'], true) !== (string) $cell['value']) {
-                            update_sub_field([$repeater_key, $row, $sub_key], wp_slash((string) $cell['value']), $post_id);
+                        if (function_exists('update_sub_field') && get_post_meta($post_id, $cell['meta'], true) !== $cell['value']) {
+                            update_sub_field([$repeater_key, $row, $sub_key], wp_slash($cell['value']), $post_id);
                             $written++;
                         }
                     }
