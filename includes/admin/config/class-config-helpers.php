@@ -11,6 +11,7 @@
 
 namespace BWS\MetaConductor\Admin\Config;
 
+use BWS\MetaConductor\Relationships\AcfRelationship;
 use BWS\MetaConductor\RuleTypes\FieldFromPatternRules;
 use BWS\MetaConductor\RuleTypes\Registry;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
@@ -526,6 +527,104 @@ class ConfigHelpers {
 
         $cache = $options;
         return $options;
+    }
+
+    /**
+     * The relationship subfields the two related-post rule types share
+     * (`terms_from_related_post`, `field_from_related_post`): `relationship`,
+     * the ACF-off notice, `acf_field_name`, `holder_role`,
+     * `reverse_acf_field_name`, in that order.
+     *
+     * The STRUCTURE is shared (ids, `when` gates, defaults, `required`,
+     * `columns`, option keys) so the two cannot drift: a drifted gate is a
+     * condition-hidden subfield that drops on save (architecture.md → *The
+     * ordered rule repeaters*). The COPY is the type's own, passed in verbatim
+     * so each call site keeps its strings literal for translation, and so
+     * none can carry a bare `{word}` (H12).
+     *
+     * @param array{parent_option:string,field_description:string,holder_label:string,holder_description:string,reverse_description:string} $copy
+     * @return array[]
+     */
+    public static function acf_relationship_subfields(array $copy): array {
+        $acf = ['relationship' => 'acf'];
+
+        $fields = [
+            [
+                'id'          => 'relationship',
+                'type'        => 'select',
+                'label'       => __('Relationship', 'meta-conductor'),
+                'description' => __('Where the source post comes from. Changing it clears the settings that belonged to the other relationship.', 'meta-conductor'),
+                'default'     => 'parent',
+                'required'    => true,
+                'columns'     => 12,
+                'args'        => [
+                    'options' => [
+                        'parent' => $copy['parent_option'],
+                        'acf'    => AcfRelationship::is_available()
+                            ? __('ACF relationship field — posts joined by a relationship or post-object field', 'meta-conductor')
+                            : __('ACF relationship field — requires ACF, which is not active', 'meta-conductor'),
+                    ],
+                ],
+            ],
+        ];
+
+        // The notice a stored ACF row shows while ACF is off. Declared only
+        // then: with ACF active it would be a permanent inert note.
+        if (!AcfRelationship::is_available()) {
+            $fields[] = [
+                'id'      => 'acf_required_note',
+                'type'    => 'html',
+                'columns' => 12,
+                'when'    => $acf,
+                'args'    => [
+                    'variant' => 'warning',
+                    'content' => '<p>' . esc_html__('This rule requires ACF, which is not active. It does nothing until ACF is active again; its settings are kept.', 'meta-conductor') . '</p>',
+                ],
+            ];
+        }
+
+        return array_merge($fields, [
+            [
+                'id'          => 'acf_field_name',
+                'type'        => 'select',
+                'label'       => __('Monitored relationship field', 'meta-conductor'),
+                'description' => $copy['field_description'],
+                'default'     => '',
+                'required'    => true,
+                'columns'     => 12,
+                'when'        => $acf,
+                'args'        => [
+                    'options' => self::acf_relationship_field_options(),
+                ],
+            ],
+            [
+                'id'          => 'holder_role',
+                'type'        => 'radio',
+                'label'       => $copy['holder_label'],
+                'description' => $copy['holder_description'],
+                'default'     => 'source',
+                'columns'     => 12,
+                'when'        => $acf,
+                'args'        => [
+                    'options' => [
+                        'source' => __('Field holder → copies out to related posts (push)', 'meta-conductor'),
+                        'target' => __('Related posts → copies in to the field holder (pull)', 'meta-conductor'),
+                    ],
+                ],
+            ],
+            [
+                'id'          => 'reverse_acf_field_name',
+                'type'        => 'select',
+                'label'       => __('Reverse relationship field (optional)', 'meta-conductor'),
+                'description' => $copy['reverse_description'],
+                'default'     => '',
+                'columns'     => 12,
+                'when'        => $acf,
+                'args'        => [
+                    'options' => self::acf_relationship_field_options(__('— None / auto —', 'meta-conductor')),
+                ],
+            ],
+        ]);
     }
 
     /**

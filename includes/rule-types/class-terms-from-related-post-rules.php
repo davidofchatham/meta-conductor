@@ -194,84 +194,12 @@ final class TermsFromRelatedPostRules extends RuleType {
      * @return array[]
      */
     public function subfields(): array {
-        $acf = ['relationship' => 'acf'];
-
-        $fields = [
-            [
-                'id'          => 'relationship',
-                'type'        => 'select',
-                'label'       => __('Relationship', 'meta-conductor'),
-                'description' => __('Where the source post comes from. Changing it clears the settings that belonged to the other relationship.', 'meta-conductor'),
-                'default'     => 'parent',
-                'required'    => true,
-                'columns'     => 12,
-                'args'        => [
-                    'options' => [
-                        'parent' => __('Parent post — a post takes terms from its parent', 'meta-conductor'),
-                        'acf'    => AcfRelationship::is_available()
-                            ? __('ACF relationship field — posts joined by a relationship or post-object field', 'meta-conductor')
-                            : __('ACF relationship field — requires ACF, which is not active', 'meta-conductor'),
-                    ],
-                ],
-            ],
-        ];
-
-        // The notice a stored ACF row shows while ACF is off. Declared only
-        // then: with ACF active it would be a permanent inert note.
-        if (!AcfRelationship::is_available()) {
-            $fields[] = [
-                'id'      => 'acf_required_note',
-                'type'    => 'html',
-                'columns' => 12,
-                'when'    => $acf,
-                'args'    => [
-                    'variant' => 'warning',
-                    'content' => '<p>' . esc_html__('This rule requires ACF, which is not active. It does nothing until ACF is active again; its settings are kept.', 'meta-conductor') . '</p>',
-                ],
-            ];
-        }
-
-        return array_merge($fields, [
-            [
-                'id'          => 'acf_field_name',
-                'type'        => 'select',
-                'label'       => __('Monitored relationship field', 'meta-conductor'),
-                'description' => __('The post-object or relationship field connecting the two posts. Watched at both ends — a change to either post re-syncs. The post type that OWNS this field is the "field holder"; "Source" below decides which end\'s terms win. Each option names its field group, so two fields sharing a name can be told apart. ⚠ Only top-level relationship/post-object fields are listed — fields nested inside an ACF Group, Repeater, or Flexible Content container are not shown and are not currently supported.', 'meta-conductor'),
-                'default'     => '',
-                'required'    => true,
-                'columns'     => 12,
-                'when'        => $acf,
-                'args'        => [
-                    'options' => ConfigHelpers::acf_relationship_field_options(),
-                ],
-            ],
-            [
-                'id'          => 'holder_role',
-                'type'        => 'radio',
-                'label'       => __('Source (terms copied from)', 'meta-conductor'),
-                'description' => __('Which end is authoritative — its terms are copied to the other end. The trigger is ambient (a change at either end re-syncs); this decides direction.', 'meta-conductor'),
-                'default'     => 'source',
-                'columns'     => 12,
-                'when'        => $acf,
-                'args'        => [
-                    'options' => [
-                        'source' => __('Field holder → copies out to related posts (push)', 'meta-conductor'),
-                        'target' => __('Related posts → copies in to the field holder (pull)', 'meta-conductor'),
-                    ],
-                ],
-            ],
-            [
-                'id'          => 'reverse_acf_field_name',
-                'type'        => 'select',
-                'label'       => __('Reverse relationship field (optional)', 'meta-conductor'),
-                'description' => __('The inverse relationship field on the other end, if any. Speeds the reverse lookup. Leave blank to auto-detect ACF bidirectional fields. ⚠ Only top-level relationship/post-object fields are listed — group/repeater/flexible-content-nested fields are not shown or supported. ⚠ With neither an explicit reverse field nor a detectable bidirectional field, the reverse lookup falls back to an unindexed query on every save — slow on large sites. Set this (or use an ACF bidirectional field) to avoid it.', 'meta-conductor'),
-                'default'     => '',
-                'columns'     => 12,
-                'when'        => $acf,
-                'args'        => [
-                    'options' => ConfigHelpers::acf_relationship_field_options(__('— None / auto —', 'meta-conductor')),
-                ],
-            ],
+        return ConfigHelpers::acf_relationship_subfields([
+            'parent_option'       => __('Parent post — a post takes terms from its parent', 'meta-conductor'),
+            'field_description'   => __('The post-object or relationship field connecting the two posts. Watched at both ends — a change to either post re-syncs. The post type that OWNS this field is the "field holder"; "Source" below decides which end\'s terms win. Each option names its field group, so two fields sharing a name can be told apart. ⚠ Only top-level relationship/post-object fields are listed — fields nested inside an ACF Group, Repeater, or Flexible Content container are not shown and are not currently supported.', 'meta-conductor'),
+            'holder_label'        => __('Source (terms copied from)', 'meta-conductor'),
+            'holder_description'  => __('Which end is authoritative — its terms are copied to the other end. The trigger is ambient (a change at either end re-syncs); this decides direction.', 'meta-conductor'),
+            'reverse_description' => __('The inverse relationship field on the other end, if any. Speeds the reverse lookup. Leave blank to auto-detect ACF bidirectional fields. ⚠ Only top-level relationship/post-object fields are listed — group/repeater/flexible-content-nested fields are not shown or supported. ⚠ With neither an explicit reverse field nor a detectable bidirectional field, the reverse lookup falls back to an unindexed query on every save — slow on large sites. Set this (or use an ACF bidirectional field) to avoid it.', 'meta-conductor'),
         ]);
     }
 

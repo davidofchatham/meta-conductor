@@ -322,66 +322,14 @@ final class FieldFromRelatedPostRules extends RuleType {
      * @return array[]
      */
     public function subfields(): array {
-        $acf = ['relationship' => 'acf'];
-
         $fields = [
-            [
-                'id'          => 'relationship',
-                'type'        => 'select',
-                'label'       => __('Relationship', 'meta-conductor'),
-                'description' => __('Where the source post comes from. Changing it clears the settings that belonged to the other relationship.', 'meta-conductor'),
-                'default'     => 'parent',
-                'required'    => true,
-                'columns'     => 12,
-                'args'        => [
-                    'options' => [
-                        'parent' => __('Parent post — a post takes the field from its parent', 'meta-conductor'),
-                        'acf'    => AcfRelationship::is_available()
-                            ? __('ACF relationship field — posts joined by a relationship or post-object field', 'meta-conductor')
-                            : __('ACF relationship field — requires ACF, which is not active', 'meta-conductor'),
-                    ],
-                ],
-            ],
-            [
-                'id'          => 'acf_field_name',
-                'type'        => 'select',
-                'label'       => __('Monitored relationship field', 'meta-conductor'),
-                'description' => __('The post-object or relationship field connecting the two posts. The post type that OWNS this field is the "field holder"; "Source" below decides which end the value is copied from. Only one related post counts as the source: the first one that holds a value, taken in the order the field lists its posts (pull), or in the order the reverse field lists them, else by ascending post ID (push). Each option names its field group, so two fields sharing a name can be told apart. ⚠ Only top-level relationship/post-object fields are listed.', 'meta-conductor'),
-                'default'     => '',
-                'required'    => true,
-                'columns'     => 12,
-                'when'        => $acf,
-                'args'        => [
-                    'options' => ConfigHelpers::acf_relationship_field_options(),
-                ],
-            ],
-            [
-                'id'          => 'holder_role',
-                'type'        => 'radio',
-                'label'       => __('Source (field copied from)', 'meta-conductor'),
-                'description' => __('Which end is authoritative — its value is copied to the other end. The trigger is ambient (a change at either end re-syncs); this decides direction.', 'meta-conductor'),
-                'default'     => 'source',
-                'columns'     => 12,
-                'when'        => $acf,
-                'args'        => [
-                    'options' => [
-                        'source' => __('Field holder → copies out to related posts (push)', 'meta-conductor'),
-                        'target' => __('Related posts → copies in to the field holder (pull)', 'meta-conductor'),
-                    ],
-                ],
-            ],
-            [
-                'id'          => 'reverse_acf_field_name',
-                'type'        => 'select',
-                'label'       => __('Reverse relationship field (optional)', 'meta-conductor'),
-                'description' => __('The inverse relationship field on the other end, if any. Speeds the reverse lookup and, in a push, orders the sources. Leave blank to auto-detect ACF bidirectional fields. ⚠ With neither an explicit reverse field nor a detectable bidirectional field, the reverse lookup falls back to an unindexed query on every save — slow on large sites. Set this (or use an ACF bidirectional field) to avoid it.', 'meta-conductor'),
-                'default'     => '',
-                'columns'     => 12,
-                'when'        => $acf,
-                'args'        => [
-                    'options' => ConfigHelpers::acf_relationship_field_options(__('— None / auto —', 'meta-conductor')),
-                ],
-            ],
+            ...ConfigHelpers::acf_relationship_subfields([
+                'parent_option'       => __('Parent post — a post takes the field from its parent', 'meta-conductor'),
+                'field_description'   => __('The post-object or relationship field connecting the two posts. The post type that OWNS this field is the "field holder"; "Source" below decides which end the value is copied from. Only one related post counts as the source: the first one that holds a value, taken in the order the field lists its posts (pull), or in the order the reverse field lists them, else by ascending post ID (push). Each option names its field group, so two fields sharing a name can be told apart. ⚠ Only top-level relationship/post-object fields are listed.', 'meta-conductor'),
+                'holder_label'        => __('Source (field copied from)', 'meta-conductor'),
+                'holder_description'  => __('Which end is authoritative — its value is copied to the other end. The trigger is ambient (a change at either end re-syncs); this decides direction.', 'meta-conductor'),
+                'reverse_description' => __('The inverse relationship field on the other end, if any. Speeds the reverse lookup and, in a push, orders the sources. Leave blank to auto-detect ACF bidirectional fields. ⚠ With neither an explicit reverse field nor a detectable bidirectional field, the reverse lookup falls back to an unindexed query on every save — slow on large sites. Set this (or use an ACF bidirectional field) to avoid it.', 'meta-conductor'),
+            ]),
             [
                 'id'          => 'source_field',
                 'type'        => 'select',
@@ -426,22 +374,6 @@ final class FieldFromRelatedPostRules extends RuleType {
                 'description' => __('The status the source must have: a parent (or, with an ACF field, a related post) that does not have one of the checked statuses is ignored and the receiving post keeps its value. With the parent, the receiving post must have one of them too. Leave all unchecked to apply to every status.', 'meta-conductor'),
             ]),
         ];
-
-        // The notice a stored ACF row shows while ACF is off, right under the
-        // relationship select. Declared only then: with ACF active it would be
-        // a permanent inert note.
-        if (!AcfRelationship::is_available()) {
-            array_splice($fields, 1, 0, [[
-                'id'      => 'acf_required_note',
-                'type'    => 'html',
-                'columns' => 12,
-                'when'    => $acf,
-                'args'    => [
-                    'variant' => 'warning',
-                    'content' => '<p>' . esc_html__('This rule requires ACF, which is not active. It does nothing until ACF is active again; its settings are kept.', 'meta-conductor') . '</p>',
-                ],
-            ]]);
-        }
 
         return $fields;
     }
