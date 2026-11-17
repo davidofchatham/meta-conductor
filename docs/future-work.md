@@ -152,24 +152,34 @@ Progress: Not started. The rule type was converted to the term dispatcher in #63
 
 Open:
 
-- **Tier filter** — sync only a particular hierarchy level of a taxonomy (e.g. only 2nd-level terms).
+- **Tier filter** — sync only a particular hierarchy level of a taxonomy (e.g. only 2nd-level terms). Same predicate as FW-12's shared term-subset filter; build it there once, as that row's second consumer, rather than as an `acf`-only field.
 - **Manual-survives mode** — let hand-added, non-source-derivable terms persist under Keep-in-sync; today the synced taxonomy is wholly rule-owned. **Blocked on a rejected primitive**: this needs provenance (rule-domain-vs-manual tracking), which is rejected plugin-wide ([architecture.md](architecture.md) invariant 19, *Rejected: provenance*). Wanting it reopens that decision plugin-wide rather than being a local feature. Cheaper alternative inside the current model: expose the rule's **claim** as *contributing* instead of *owning*, which never removes anything — manual terms survive because nothing reconciles, at the cost of losing source-authoritative cleanup.
 - **True cross-taxonomy copy** — map terms by slug/name so source and target taxonomies can differ; the current copy is by ID, single taxonomy only.
 - **Multi-level chain propagation** — a post that is BOTH a dependent (of A) and a source (for C) used not to propagate to C in the same save, and the planned fix was a depth-bounded re-dispatch inside the handler. **Probably dissolved by #63**: the handler's `fan_out()` marks each dependent dirty, each dependent gets its own full ordered pass, and a dependent that is a source under another row fans out in turn; the drain's one-pass-per-entity bound terminates it. Confirm with a 3-level sweep, then drop this bullet.
 - **Single-owner optimization** — skip the multi-source rule-union when a dependent provably has one owner (ACF `max=1` / native bidi). Negligible gain when a reverse field is configured; only matters for the meta_query fallback with large fan-out.
 - **Multiple taxonomies per rule** — moved to FW-56. The case for scoping it with FW-11 did not hold: `find_holders_referencing` memoizes per request without the taxonomy in its key, so rules duplicated per taxonomy already share one tier-3 scan.
 
-Blocked by: `decision:reopen provenance` — manual-survives only; the rest are unblocked  •  Interacts with: FW-9, FW-11, FW-19, FW-56 (closed)
+Blocked by: `decision:reopen provenance` — manual-survives only; the rest are unblocked  •  Interacts with: FW-9, FW-11, FW-12, FW-19, FW-56 (closed)
 
-#### FW-12 — Sub-scope field for restricting rules
+#### FW-12 — Shared term-subset filter (first consumer: restricting rules)
 
-A rule whose **claim** is *restricting* (level-restriction and Term count limit) declares no narrower **jurisdiction**, so it governs its entire taxonomy and necessarily collides with any rule touching that taxonomy on overlapping post types. The archetype: term-hierarchy `child_to_parent` *adds* ancestors while level-restriction `include_ancestors=false` *strips* them — an unresolvable contradiction that can only be warned about. A sub-scope field ("governs levels 3–4 only", or "only under branch X") would let such pairs be made genuinely **disjoint** instead of merely warned: the collision dissolves rather than being reported.
+A term-subset predicate over one taxonomy — "levels N–M only", or "only under branch X" — shared as one descriptor-defined subfield group (`level_min`, `level_max`, `under_term`, read via `readers('<id>')`, don't #3) that rule types opt into. Two ways a type reads it: as a narrower **jurisdiction** (restricting rules), or as an **effect filter** on what a rule copies (FW-10's tier filter). Name it *term filter* or *subtree*, not *scope*: CONTEXT.md bans *scope* as ambiguous.
 
-Detail home: none; this row carries it. Vocabulary: [CONTEXT.md](../CONTEXT.md) → *Claim*, *Jurisdiction*. Term count limit shares the gap: it also governs its whole taxonomy and has no sub-scope field, so "cap level 3 only" is inexpressible and a count rule still collides with every other rule on its taxonomy.
+First consumer: a rule whose **claim** is *restricting* (level-restriction and Term count limit) declares no narrower jurisdiction, so it governs its entire taxonomy and necessarily collides with any rule touching that taxonomy on overlapping post types. The archetype: term-hierarchy `child_to_parent` *adds* ancestors while level-restriction `include_ancestors=false` *strips* them — an unresolvable contradiction that can only be warned about. With the filter, such pairs become genuinely **disjoint** instead of merely warned: the collision dissolves rather than being reported. Term count limit shares the gap: "cap level 3 only" is inexpressible today, and a count rule still collides with every other rule on its taxonomy.
+
+Second consumer: FW-10's tier filter (sync only a hierarchy level of a taxonomy). Same predicate, applied to the source or target term set instead of a jurisdiction.
+
+Open:
+
+- **CONTEXT.md amendment** — the *Jurisdiction* entry says narrowing is "a rule-type feature, not a general claim modifier". A shared group changes that to "a shared, opt-in subfield group a rule type may adopt"; amend the entry (and keep its reasoning) when this ships.
+- **Collision detector** — `CollisionDetector` pairs on equal target only. Disjoint filters need a third comparison (levels disjoint, or branches disjoint) before the collision actually dissolves; without it the filter narrows behavior but the warning still fires.
+- **Opt-in per type** — each adopting type is its own schema change, so the live-rule-type rule applies per type, not once.
+
+Detail home: none; this row carries it. Vocabulary: [CONTEXT.md](../CONTEXT.md) → *Claim*, *Jurisdiction*.
 
 Progress: Not started.
 
-Blocked by: `decision:is level_restriction live on a real site` — it needs config + storage + UI on a **shipped** rule type, so the live-rule-type schema rule applies before any schema change  •  Interacts with: FW-25, FW-34
+Blocked by: `decision:is level_restriction live on a real site` — the first consumer needs config + storage + UI on a **shipped** rule type, so the live-rule-type schema rule applies before any schema change  •  Interacts with: FW-10, FW-25, FW-34
 
 #### FW-13 — Scoping which provocations a format rule answers
 
