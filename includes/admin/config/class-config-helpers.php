@@ -770,6 +770,27 @@ class ConfigHelpers {
     }
 
     /**
+     * The target picker's ACF choices: the source list's fields (no
+     * placeholder) with each field's TYPE in the label. A static select cannot
+     * follow the row's source, so the author matches types by the label and the
+     * handler refuses a target whose type differs from the source's.
+     *
+     * @return array<string,string> field key => label.
+     */
+    public static function acf_target_field_options(): array {
+        $options = [];
+        foreach (self::acf_source_field_options() as $key => $label) {
+            if ($key === '') {
+                continue;
+            }
+            $field         = \acf_get_field($key);
+            $options[$key] = $label . (is_array($field) ? ' (' . ($field['type'] ?? '') . ')' : '');
+        }
+
+        return $options;
+    }
+
+    /**
      * Whether an ACF field's group is shown (by its location rules) on a post
      * type — what *Same* needs before a copy may write a field onto a post.
      *

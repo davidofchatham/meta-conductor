@@ -83,6 +83,9 @@ mw_check('array: raw, slashed per string', $calls, [['update_post_meta', 'plain_
 [$ok, $calls] = mw_run('plain_key', '');
 mw_check('empty value: written', $calls, [['update_post_meta', 'plain_key', '', 7]]);
 
+mw_check('acceptable: plain', [MetaWriter::acceptable('a'), MetaWriter::acceptable('a_b')], [true, true]);
+mw_check('acceptable: empty and _-prefixed refused', [MetaWriter::acceptable(''), MetaWriter::acceptable('_a')], [false, false]);
+
 if ($fail) {
     fwrite(STDERR, "META-WRITER FAIL — $fail check(s).\n");
     exit(1);

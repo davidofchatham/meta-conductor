@@ -26,6 +26,13 @@
  *                    before the rule.
  *   I  Same          a post type whose field groups do not show the field is
  *                    left alone.
+ *   J  target pick   (06) an ACF source copies raw into a DIFFERENT ACF field of
+ *                    the same type; a target of another type is left alone.
+ *   K  plain meta    a meta source copies into a meta target; a key with several
+ *                    rows copies its first value only.
+ *   L  ACF-named     a meta target whose name matches an ACF field ends with
+ *                    ACF's field-key reference intact.
+ *   M  refusal       a `_`-prefixed meta key writes nothing, source or target.
  *
  * Every temp post is deleted and the fixture's rules restored afterward, pass or
  * fail. Check `wp post list --post_type=mc_item --fields=ID,post_name` after
@@ -263,6 +270,52 @@ try {
 	update_post_meta( $pp, 'mc_cp_text', 'page-parent' );
 	mcfp_save( $pc );
 	$pass = mc_assert( 'I a post type that does not show the field is left alone', get_post_meta( $pc, 'mc_cp_text', true ), '' ) && $pass;
+
+	// --- J. a picked ACF target ---------------------------------------------
+	mcfp_author( array( array_merge( mcfp_copy( 'replace' ), array( 'copy_target' => MCFP_DISPLAY ) ) ) );
+	mcfp_set( $p, MCFP_TEXT, 'J1' );
+	mcfp_set( $c, MCFP_TEXT, 'own' );
+	mcfp_save( $c );
+	$pass = mc_assert( 'J same-type ACF target takes the parent\'s source value', get_post_meta( $c, 'mc_cp_display', true ), 'J1' ) && $pass;
+	$pass = mc_assert( 'J …and the source field on the child is untouched', mcfp_text( $c ), 'own' ) && $pass;
+
+	mcfp_author( array( array_merge( mcfp_copy( 'replace' ), array( 'copy_target' => MCFP_LIST ) ) ) );
+	mcfp_set( $c, MCFP_LIST, array() );
+	mcfp_save( $c );
+	$pass = mc_assert( 'J a target of another field type is left alone', mcfp_list( $c ), array() ) && $pass;
+
+	// --- K. plain meta → plain meta -----------------------------------------
+	$meta = array(
+		'source_field' => '@meta',
+		'source_meta'  => 'mc_pm_src',
+		'copy_target'  => '@meta',
+		'target_meta'  => 'mc_pm_dst',
+	);
+	mcfp_author( array( array_merge( mcfp_copy( 'replace' ), $meta ) ) );
+	add_post_meta( $p, 'mc_pm_src', 'first' );
+	add_post_meta( $p, 'mc_pm_src', 'second' );
+	mcfp_save( $c );
+	$pass = mc_assert( 'K plain meta copies, first value only', get_post_meta( $c, 'mc_pm_dst', true ), 'first' ) && $pass;
+	$pass = mc_assert( 'K …and writes a single row', count( get_post_meta( $c, 'mc_pm_dst' ) ), 1 ) && $pass;
+
+	// --- L. a meta name that matches an ACF field ---------------------------
+	mcfp_author( array( array_merge( mcfp_copy( 'replace' ), $meta, array( 'target_meta' => 'mc_cp_text' ) ) ) );
+	delete_post_meta( $c, 'mc_cp_text' );
+	delete_post_meta( $c, '_mc_cp_text' );
+	mcfp_save( $c );
+	$pass = mc_assert( 'L the value lands', mcfp_text( $c ), 'first' ) && $pass;
+	$pass = mc_assert( 'L ACF\'s field-key reference is intact', get_post_meta( $c, '_mc_cp_text', true ), MCFP_TEXT ) && $pass;
+
+	// --- M. a `_`-prefixed key is refused -----------------------------------
+	add_post_meta( $p, '_mc_pm_private', 'secret' );
+	mcfp_author( array( array_merge( mcfp_copy( 'replace' ), $meta, array( 'source_meta' => '_mc_pm_private', 'target_meta' => 'mc_pm_dst2' ) ) ) );
+	mcfp_save( $c );
+	$pass = mc_assert( 'M a _-prefixed source copies nothing', get_post_meta( $c, 'mc_pm_dst2', true ), '' ) && $pass;
+	mcfp_author( array( array_merge( mcfp_copy( 'replace' ), $meta, array( 'target_meta' => '_mc_pm_written' ) ) ) );
+	mcfp_save( $c );
+	$pass = mc_assert( 'M a _-prefixed target writes nothing', get_post_meta( $c, '_mc_pm_written', true ), '' ) && $pass;
+	delete_post_meta( $p, 'mc_pm_src' );
+	delete_post_meta( $p, '_mc_pm_private' );
 } finally {
 	foreach ( array_reverse( $ids ) as $id ) {
 		wp_delete_post( $id, true );

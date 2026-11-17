@@ -141,6 +141,7 @@ if (!function_exists('acf_get_field')) {
     }
 }
 if (!function_exists('update_field')) { function update_field() { return true; } }
+if (!function_exists('apply_filters')) { function apply_filters($tag, $value) { return $value; } }
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 require dirname(__DIR__) . '/autoload.php';
@@ -246,6 +247,15 @@ $check('the post-type description states first-match-wins',
 
 // --- Gated subfields name only real types, via `in`. ------------------------
 
+$leaves = function ($c) use (&$leaves): array {
+    if (!is_array($c)) { return [null]; }
+    foreach (['all', 'any'] as $join) {
+        if (isset($c[$join])) {
+            return array_merge(...array_map($leaves, $c[$join]));
+        }
+    }
+    return [$c];
+};
 $ungated  = ['type', 'enabled', 'name', 'row_title'];
 $gated_ok = true;
 $gate_covers = [];
@@ -253,18 +263,31 @@ foreach ($subfields as $s) {
     if (in_array($s['id'], $ungated, true)) {
         continue;
     }
-    $c = $s['conditions'] ?? null;
-    if (!is_array($c)
-        || ($c['field'] ?? '') !== 'type'
-        || ($c['operator'] ?? '') !== 'in'
-        || !is_array($c['value'] ?? null)
-        || array_diff($c['value'], $TYPES)) {
+    // A gate is the flat `type in [...]` clause, or (FW-5 06) clauses joined by
+    // `all` whose other leaves are an `equals` on `source_field` / `copy_target`
+    // (the plain-meta name boxes). Anything else is a hand-written condition.
+    $has_type_clause = false;
+    foreach ($leaves($s['conditions'] ?? null) as $c) {
+        if (is_array($c) && ($c['field'] ?? '') === 'type') {
+            if (($c['operator'] ?? '') !== 'in' || !is_array($c['value'] ?? null) || array_diff($c['value'], $TYPES)) {
+                $gated_ok = false;
+                break 2;
+            }
+            $has_type_clause = true;
+            $gate_covers     = array_merge($gate_covers, $c['value']);
+        } elseif (!is_array($c)
+            || !in_array($c['field'] ?? '', ['source_field', 'copy_target'], true)
+            || ($c['operator'] ?? '') !== 'equals') {
+            $gated_ok = false;
+            break 2;
+        }
+    }
+    if (!$has_type_clause) {
         $gated_ok = false;
         break;
     }
-    $gate_covers = array_merge($gate_covers, $c['value']);
 }
-$check('every type-specific subfield gates on `type` with `in` + real types', $gated_ok);
+$check('every type-specific subfield gates on `type` with `in` + real types, plus at most a meta-pick `equals`', $gated_ok);
 $check('every offered type owns at least one gated subfield',
     empty(array_diff($TYPES, array_unique($gate_covers))));
 // A `not_in` gate is indistinguishable from no gate while there is one type,
@@ -394,7 +417,7 @@ $check('every key the copy handler reads survives a save',
 $check('pattern and title/slug mechanics are not offered on a copy row',
     !array_intersect(['target_field', 'pattern', 'output', 'title_pattern', 'slug_pattern', 'post_type'], $visible_copy));
 $check('the copy source select offers every value-holding top-level field, by key, with its group and post types',
-    array_keys($by_id['source_field']['args']['options']) === ['', 'field_a', 'field_b', 'field_c', 'field_d']
+    array_keys($by_id['source_field']['args']['options']) === ['', '@meta', 'field_a', 'field_b', 'field_c', 'field_d']
     && $by_id['source_field']['args']['options']['field_c'] === 'Friends (friends) — Group A [MC Items]'
     && !empty($by_id['source_field']['required']));
 $check('Same needs the field\'s group shown on the receiving post type',
@@ -405,12 +428,63 @@ $check('Same needs the field\'s group shown on the receiving post type',
 $check('the relationship defaults to the parent and offers only it',
     ($by_id['relationship']['default'] ?? '') === 'parent'
     && array_keys($by_id['relationship']['args']['options']) === ['parent']);
-$check('the copy target offers Same (the empty value) and defaults to it',
-    array_keys($by_id['copy_target']['args']['options']) === [''] && ($by_id['copy_target']['default'] ?? null) === '');
+$check('the copy target offers Same (the empty value), a plain meta key, then every ACF field with its type, and defaults to Same',
+    array_keys($by_id['copy_target']['args']['options']) === ['', '@meta', 'field_a', 'field_b', 'field_c', 'field_d']
+    && ($by_id['copy_target']['default'] ?? null) === ''
+    && str_ends_with($by_id['copy_target']['args']['options']['field_a'], '(text)')
+    && str_ends_with($by_id['copy_target']['args']['options']['field_c'], '(relationship)'));
+
+// The plain-meta names (FW-5 06): each shows only while its select picks the
+// meta choice, and a leading underscore fails Wireframe's own validator.
+$meta_row = ['type' => 'field_from_related_post', 'source_field' => '@meta', 'copy_target' => '@meta'];
+$acf_row  = ['type' => 'field_from_related_post', 'source_field' => 'field_a', 'copy_target' => 'field_b'];
+$shown = fn(array $row) => array_values(array_filter(['source_meta', 'target_meta'],
+    fn($id) => Conditions::evaluate($by_id[$id]['conditions'] ?? null, $row)));
+$check('the meta names show when their select picks a plain meta key',
+    $shown($meta_row) === ['source_meta', 'target_meta']);
+$check('the meta names are gated out (and dropped on save) on an ACF pick or another type',
+    $shown($acf_row) === []
+    && $shown(['type' => 'field_from_pattern'] + $meta_row) === []
+    && $shown(['type' => 'field_from_related_post', 'source_field' => '@meta', 'copy_target' => 'field_b']) === ['source_meta']);
+$names_ok = true;
+foreach (['source_meta', 'target_meta'] as $id) {
+    $names_ok = $names_ok && !empty($by_id[$id]['required']) && ($by_id[$id]['type'] ?? '') === 'text';
+}
+$check('both meta names are required text', $names_ok);
+$meta_validate = function (string $name) use ($by_id): bool {
+    $sub = $by_id['source_meta'];
+    $sub['conditions'] = null;
+    $out = \Wireframe\Framework\Validator::validate(
+        ['r' => [['source_meta' => $name]]],
+        ['r' => ['type' => 'repeater', 'args' => ['subfields' => [$sub]]]]
+    );
+    return empty($out['errors']);
+};
+$check('a plain meta key passes the save validator',
+    $meta_validate('mc_plain_dst') && $meta_validate('a_b') && $meta_validate('9lives'));
+$check('a _-prefixed meta key is refused by the save validator',
+    !$meta_validate('_edit_lock') && !$meta_validate(' _x') && !$meta_validate('_') && !$meta_validate('_mc_cp_text'));
 $check('the copy claim stores the three claim keys and defaults to contributing',
     array_keys($by_id['conflict_handling']['args']['options']) === ['replace', 'merge', 'skip']
     && ($by_id['conflict_handling']['default'] ?? '') === 'merge');
 
+// What the descriptor makes of source and target (FW-5 06).
+$copy = \BWS\MetaConductor\RuleTypes\Registry::get('field_from_related_post');
+$check('Same on an ACF source targets the source key; collisions key on it',
+    $copy->target(['source_field' => 'field_a']) === ['key' => 'field_a', 'name' => '']
+    && $copy->target_key(['source_field' => 'field_a', 'post_types' => ['mc_item']]) === 'field|field_a');
+$check('a picked ACF target wins over Same',
+    $copy->target(['source_field' => 'field_a', 'copy_target' => 'field_b']) === ['key' => 'field_b', 'name' => '']);
+$check('a meta source with Same writes the same meta name; a meta target its own',
+    $copy->target(['source_field' => '@meta', 'source_meta' => ' k ']) === ['key' => '', 'name' => 'k']
+    && $copy->target(['source_field' => 'field_a', 'copy_target' => '@meta', 'target_meta' => 'dst']) === ['key' => '', 'name' => 'dst']
+    && $copy->target_key(['source_field' => '@meta', 'source_meta' => 'k', 'post_types' => ['mc_item']]) === 'meta|k');
+$check('a _-prefixed or empty meta name leaves the row unfinished at run time too',
+    $copy->target(['source_field' => '@meta', 'source_meta' => '_x']) === null
+    && $copy->target(['source_field' => 'field_a', 'copy_target' => '@meta', 'target_meta' => '_x']) === null
+    && $copy->source_meta(['source_field' => '@meta', 'source_meta' => '']) === '');
+$check('a meta source is not an ACF key',
+    $copy->source_key(['source_field' => '@meta']) === '' && $copy->is_meta_source(['source_field' => '@meta']));
 // An untyped row (freshly added) shows the shared frame only.
 $untyped = [];
 foreach ($subfields as $s) {

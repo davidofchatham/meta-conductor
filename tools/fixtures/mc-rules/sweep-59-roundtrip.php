@@ -125,6 +125,16 @@ $copy_out = RepeaterField::sanitize([$copy_row], $field['args'])[0] ?? [];
 foreach (['type', 'enabled', 'name', 'post_types', 'relationship', 'source_field', 'copy_target', 'conflict_handling', 'post_status'] as $key) {
     $note("copy row '$key' survives sanitize", ($copy_out[$key] ?? '(DROPPED)') == $copy_row[$key]);
 }
+// Plain meta on both ends (FW-5 06): the two names must survive while their select picks the meta choice.
+$meta_row = array_merge($copy_row, ['source_field' => '@meta', 'source_meta' => 'mc_pm_src', 'copy_target' => '@meta', 'target_meta' => 'mc_pm_dst']);
+$meta_out = RepeaterField::sanitize([$meta_row], $field['args'])[0] ?? [];
+foreach (['source_field', 'source_meta', 'copy_target', 'target_meta'] as $key) {
+    $note("meta copy row '$key' survives sanitize", ($meta_out[$key] ?? '(DROPPED)') == $meta_row[$key]);
+}
+// …and drop once the select moves back to an ACF field (the `when` gate).
+$back_out = RepeaterField::sanitize([array_merge($meta_row, ['source_field' => 'field_mc_cp_text', 'copy_target' => 'field_mc_cp_display'])], $field['args'])[0] ?? [];
+$note('a stale meta name is dropped once the select picks an ACF field',
+    !array_key_exists('source_meta', $back_out) && !array_key_exists('target_meta', $back_out) && ($back_out['copy_target'] ?? '') === 'field_mc_cp_display');
 $note('copy row carries no pattern-rule or title/slug keys',
     array_intersect(['target_field', 'pattern', 'output', 'title_pattern', 'post_type'], array_keys($copy_out)) === []);
 

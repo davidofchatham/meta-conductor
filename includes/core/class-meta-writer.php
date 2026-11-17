@@ -33,6 +33,15 @@ if (!defined('ABSPATH')) {
 final class MetaWriter {
 
     /**
+     * Whether a plain meta name clears the acceptance bar: non-empty and not
+     * `_`-prefixed. The save-time check in the descriptor's config and the
+     * handler's own guard both ask here, so there is one definition.
+     */
+    public static function acceptable(string $name): bool {
+        return $name !== '' && $name[0] !== '_';
+    }
+
+    /**
      * @param int    $post_id Entity.
      * @param string $name    Meta name (ignored for the write when `$acf_key` is given).
      * @param mixed  $value   Raw, unslashed.
@@ -42,7 +51,7 @@ final class MetaWriter {
      */
     public static function write(int $post_id, string $name, $value, string $acf_key = ''): bool {
         if ($acf_key === '') {
-            if ($name === '' || $name[0] === '_') {
+            if (!self::acceptable($name)) {
                 return false;
             }
             $field = function_exists('acf_maybe_get_field') ? \acf_maybe_get_field($name, $post_id, false) : false;

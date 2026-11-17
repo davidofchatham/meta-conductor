@@ -61,9 +61,13 @@ class FieldFromRelatedPostHandler extends UnifiedHandlerBase {
             return null;
         }
 
-        $key = $descriptor->source_key($rule);
+        $source_key  = $descriptor->source_key($rule);
+        $source_meta = $descriptor->source_meta($rule);
+        $target      = $descriptor->target($rule);
+        $post_type   = (string) ($data['post_type'] ?? '');
         // Empty `post_types` is "none", not "all" — see the descriptor.
-        if ($key === '' || !in_array($data['post_type'] ?? '', (array) ($rule['post_types'] ?? []), true)) {
+        if (($source_key === '' && $source_meta === '') || $target === null
+            || !in_array($post_type, (array) ($rule['post_types'] ?? []), true)) {
             return null;
         }
 
@@ -78,14 +82,28 @@ class FieldFromRelatedPostHandler extends UnifiedHandlerBase {
             return null;
         }
 
-        // *Same* writes the field of the same key, so it must exist here.
-        $field = \acf_get_field($key);
-        if (!is_array($field) || ($name = (string) ($field['name'] ?? '')) === ''
-            || !ConfigHelpers::acf_field_shown_on($key, (string) ($data['post_type'] ?? ''))) {
-            return null;
+        // An ACF target must exist, be shown on the receiving type (this is what
+        // *Same* needs too) and, when it is not the source itself, have the
+        // source's field type. A meta target is its name, written by MetaWriter.
+        $key  = $target['key'];
+        $name = $target['name'];
+        if ($key !== '') {
+            $field = \acf_get_field($key);
+            if (!is_array($field) || ($name = (string) ($field['name'] ?? '')) === ''
+                || !ConfigHelpers::acf_field_shown_on($key, $post_type)) {
+                return null;
+            }
+            if ($source_key !== '' && $key !== $source_key) {
+                $source = \acf_get_field($source_key);
+                if (!is_array($source) || ($source['type'] ?? null) !== ($field['type'] ?? '')) {
+                    return null;
+                }
+            }
         }
 
-        $value = \get_field($key, $eligible[0], false);
+        $value = $source_key !== ''
+            ? \get_field($source_key, $eligible[0], false)
+            : \get_post_meta($eligible[0], $source_meta, true);
         $empty = self::is_empty($value);
         $claim = (string) ($rule['conflict_handling'] ?? 'merge');
 
@@ -94,14 +112,18 @@ class FieldFromRelatedPostHandler extends UnifiedHandlerBase {
         }
         if ($claim === 'skip') {
             // A cell an earlier rule set in this pass beats the stored value.
-            $current = array_key_exists($name, $data['fields']) ? $data['fields'][$name] : \get_field($key, $post_id, false);
+            $current = array_key_exists($name, $data['fields'])
+                ? $data['fields'][$name]
+                : ($key !== '' ? \get_field($key, $post_id, false) : \get_post_meta($post_id, $name, true));
             if ($empty || !self::is_empty($current)) {
                 return null;
             }
         }
 
-        $data['fields'][$name]     = $empty ? '' : $value;
-        $data['field_keys'][$name] = $key;
+        $data['fields'][$name] = $empty ? '' : $value;
+        if ($key !== '') {
+            $data['field_keys'][$name] = $key;
+        }
 
         return $data;
     }
