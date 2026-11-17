@@ -270,7 +270,7 @@ foreach ($subfields as $s) {
     }
     // A gate is the flat `type in [...]` clause, or (FW-5 06) clauses joined by
     // `all` whose other leaves are an `equals` on `source_field` / `copy_target`
-    // (the plain-meta name boxes). Anything else is a hand-written condition.
+    // (the plain-meta name boxes) or on `relationship` = `acf` (FW-5 08). Anything else is a hand-written condition.
     $has_type_clause = false;
     foreach ($leaves($s['conditions'] ?? null) as $c) {
         if (is_array($c) && ($c['field'] ?? '') === 'type') {
@@ -281,8 +281,9 @@ foreach ($subfields as $s) {
             $has_type_clause = true;
             $gate_covers     = array_merge($gate_covers, $c['value']);
         } elseif (!is_array($c)
-            || !in_array($c['field'] ?? '', ['source_field', 'copy_target'], true)
-            || ($c['operator'] ?? '') !== 'equals') {
+            || !in_array($c['field'] ?? '', ['source_field', 'copy_target', 'relationship'], true)
+            || ($c['operator'] ?? '') !== 'equals'
+            || (($c['field'] ?? '') === 'relationship' && ($c['value'] ?? null) !== 'acf')) {
             $gated_ok = false;
             break 2;
         }
@@ -446,9 +447,25 @@ $check('Same needs the field\'s group shown on the receiving post type',
     && ConfigHelpers::acf_field_shown_on('field_a', 'page') === false
     && ConfigHelpers::acf_field_shown_on('field_gone', 'mc_item') === false
     && ConfigHelpers::acf_field_shown_on('', 'mc_item') === false);
-$check('the relationship defaults to the parent and offers only it',
+$check('the relationship defaults to the parent and offers the parent and the ACF field',
     ($by_id['relationship']['default'] ?? '') === 'parent'
-    && array_keys($by_id['relationship']['args']['options']) === ['parent']);
+    && array_keys($by_id['relationship']['args']['options']) === ['parent', 'acf']);
+// The ACF controls (FW-5 08) show on an `acf` row alone, so a parent row drops
+// them on save, and they hold the combined value the term rule's do.
+$acf_shown = fn(array $row) => array_values(array_filter(['acf_field_name', 'holder_role', 'reverse_acf_field_name'],
+    fn($id) => Conditions::evaluate($by_id[$id]['conditions'] ?? null, $row)));
+$check('the ACF field, holder and reverse controls show on an acf row and not on a parent row',
+    $acf_shown(['type' => 'field_from_related_post', 'relationship' => 'acf']) === ['acf_field_name', 'holder_role', 'reverse_acf_field_name']
+    && $acf_shown(['type' => 'field_from_related_post', 'relationship' => 'parent']) === []
+    && $acf_shown(['type' => 'field_from_pattern', 'relationship' => 'acf']) === []);
+$check('an acf row splits the combined field values like the term rule does',
+    ($copy_norm = $grp->normalize(['relationship' => 'acf', 'acf_field_name' => 'mc_section:friends:field_c', 'reverse_acf_field_name' => 'mc_item:mc_parent:field_p']))
+    && $copy_norm['post_type'] === 'mc_section' && $copy_norm['acf_field_name'] === 'friends' && $copy_norm['acf_field_key'] === 'field_c'
+    && $copy_norm['reverse_acf_field_name'] === 'mc_parent' && $copy_norm['reverse_acf_field_key'] === 'field_p'
+    && $grp->normalize(['relationship' => 'parent', 'acf_field_name' => 'a:b:c']) === ['relationship' => 'parent', 'acf_field_name' => 'a:b:c']);
+$check('post_status gates the source on an acf row and not on a parent row',
+    $grp->status_gates_source(['relationship' => 'acf']) === true
+    && $grp->status_gates_source(['relationship' => 'parent']) === false);
 $check('the copy target offers Same (the empty value), a plain meta key, then every ACF field with its type, and defaults to Same',
     array_keys($by_id['copy_target']['args']['options']) === ['', '@meta', 'field_a', 'field_b', 'field_c', 'field_d']
     && ($by_id['copy_target']['default'] ?? null) === ''

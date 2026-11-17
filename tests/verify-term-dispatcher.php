@@ -237,6 +237,16 @@ foreach (['get_post_status(' => 'filters sources by status', 'empty($sources)' =
         $errors[] = sprintf('FieldFromRelatedPostHandler %s itself (`%s`) — that is SourceGate::resolve()\'s job.', $what, $needle);
     }
 }
+// FW-5 08: the ACF relationship rides the same applier. The graph comes from the
+// descriptor (the one place `parent` / `acf` map to a class, which the fan-out
+// reads too), so the handler names neither, and the descriptor offers the ACF one.
+if (strpos($copy_src, '$descriptor->relationship(') === false || strpos($copy_src, 'new ParentRelationship') !== false) {
+    $errors[] = 'FieldFromRelatedPostHandler must take its relationship from the descriptor\'s relationship() and not construct one — fan_out() and the applier would walk different graphs (FW-5 08).';
+}
+$copy_rules_src = $strip_comments((string) file_get_contents(dirname(__DIR__) . '/includes/rule-types/class-field-from-related-post-rules.php'));
+if (strpos($copy_rules_src, "'acf'    => new AcfRelationship()") === false) {
+    $errors[] = 'FieldFromRelatedPostRules::relationship() must return AcfRelationship for an acf row — without it the copy rule has no ACF fan-out (FW-5 08).';
+}
 
 // --- 2. Triggers are MARK-ONLY ---------------------------------------------
 // Each trigger callback's body may call mark_dirty and nothing else. A trigger

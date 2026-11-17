@@ -8,6 +8,8 @@
 
 namespace BWS\MetaConductor\Relationships;
 
+use BWS\MetaConductor\Storage\OptionRuleStorage;
+
 if (!defined('ABSPATH')) {
     exit;
 }
@@ -95,6 +97,41 @@ final class AcfRelationship implements Relationship {
      */
     public static function is_available(): bool {
         return function_exists('acf_get_field') && function_exists('get_field');
+    }
+
+    /**
+     * Split an `acf` row's combined ACF field values ("post_type:field_name:
+     * field_key") into scalar `post_type` + bare `acf_field_name` + `acf_field_key`
+     * (#25), and the optional reverse field likewise. A legacy two-part value
+     * yields an empty key, which readers take as "resolve by name". Shared by
+     * every rule type that rides this relationship, so the shape is derived once.
+     *
+     * @param array $row Raw row.
+     * @return array Row with the split values; non-`acf` rows untouched.
+     */
+    public static function normalize_row(array $row): array {
+        if (($row['relationship'] ?? '') !== 'acf') {
+            return $row;
+        }
+
+        if (!empty($row['acf_field_name'])) {
+            [$pt, $bare, $key]     = OptionRuleStorage::split_acf_field_value((string) $row['acf_field_name']);
+            $row['acf_field_name'] = $bare;
+            $row['acf_field_key']  = $key;
+            if ($pt !== null) {
+                $row['post_type'] = $pt;
+            } elseif (!isset($row['post_type'])) {
+                $row['post_type'] = '';
+            }
+        }
+
+        if (!empty($row['reverse_acf_field_name'])) {
+            [, $rbare, $rkey]              = OptionRuleStorage::split_acf_field_value((string) $row['reverse_acf_field_name']);
+            $row['reverse_acf_field_name'] = $rbare;
+            $row['reverse_acf_field_key']  = $rkey;
+        }
+
+        return $row;
     }
 
     // ---------------------------------------------------------------------
@@ -660,6 +697,9 @@ final class AcfRelationship implements Relationship {
             'post_status'    => 'any',
             'numberposts'    => -1,
             'fields'         => 'ids',
+            // A stable order: a rule that takes the FIRST source reads it.
+            'orderby'        => 'ID',
+            'order'          => 'ASC',
             'meta_query'     => [[
                 'key'     => $field_name,
                 'value'   => (string) $related_id,

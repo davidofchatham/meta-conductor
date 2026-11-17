@@ -165,30 +165,7 @@ final class TermsFromRelatedPostRules extends RuleType {
      * name", i.e. pre-#25 behavior. Only an `acf` row carries them.
      */
     public function normalize(array $row): array {
-        if (($row['relationship'] ?? '') !== 'acf') {
-            return $row;
-        }
-
-        if (!empty($row['acf_field_name'])) {
-            [$pt, $bare, $key]     = OptionRuleStorage::split_acf_field_value((string) $row['acf_field_name']);
-            $row['acf_field_name'] = $bare;
-            $row['acf_field_key']  = $key;
-            if ($pt !== null) {
-                $row['post_type'] = $pt;
-            } elseif (!isset($row['post_type'])) {
-                $row['post_type'] = '';
-            }
-        }
-
-        // Reverse field is stored in the same option format; the relationship
-        // wants the bare field name and, since #25, the key beside it.
-        if (!empty($row['reverse_acf_field_name'])) {
-            [, $rbare, $rkey]              = OptionRuleStorage::split_acf_field_value((string) $row['reverse_acf_field_name']);
-            $row['reverse_acf_field_name'] = $rbare;
-            $row['reverse_acf_field_key']  = $rkey;
-        }
-
-        return $row;
+        return AcfRelationship::normalize_row($row);
     }
 
     /**

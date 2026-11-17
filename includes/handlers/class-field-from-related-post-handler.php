@@ -3,8 +3,10 @@
  * Set a field from a related post — the format applier for `field_from_related_post`.
  *
  * Copies one ACF field's RAW value (unformatted, so an array, a post ID list or
- * a whole repeater arrives intact) from the receiving post's parent onto the
- * receiving post. The applier returns the value in the seam's `fields` /
+ * a whole repeater arrives intact) from a related post onto the receiving post:
+ * its parent, or a post an ACF relationship field joins to it (push or pull).
+ * Only one source counts: the first eligible one holding a value, in the order
+ * the relationship resolves them. The applier returns the value in the seam's `fields` /
  * `field_keys` and the format dispatcher writes it once, so a rule ordered
  * after this one reads the copied value in the same pass.
  *
@@ -19,7 +21,7 @@
 namespace BWS\MetaConductor\Handlers;
 
 use BWS\MetaConductor\Admin\Config\ConfigHelpers;
-use BWS\MetaConductor\Relationships\ParentRelationship;
+use BWS\MetaConductor\Relationships\AcfRelationship;
 use BWS\MetaConductor\Relationships\SourceGate;
 use BWS\MetaConductor\RuleTypes\Registry;
 
@@ -57,7 +59,13 @@ class FieldFromRelatedPostHandler extends UnifiedHandlerBase {
      */
     public function apply_to_data(array $data, int $post_id, array $rule): ?array {
         $descriptor = Registry::for_handler(static::class);
-        if (!$descriptor->available() || ($rule['relationship'] ?? '') !== 'parent') {
+        $relationship = $descriptor->relationship($rule);
+        if (!$descriptor->available() || $relationship === null) {
+            return null;
+        }
+        // An ACF row names its field; without ACF's field API or a field it is idle.
+        if ($relationship instanceof AcfRelationship
+            && (!AcfRelationship::is_available() || (string) ($rule['acf_field_name'] ?? '') === '')) {
             return null;
         }
 
@@ -73,8 +81,7 @@ class FieldFromRelatedPostHandler extends UnifiedHandlerBase {
             return null;
         }
 
-        $post         = get_post($post_id);
-        $relationship = new ParentRelationship();
+        $post = get_post($post_id);
         if (!$post instanceof \WP_Post || !$relationship->is_eligible_dependent($post, $rule)) {
             return null;
         }
@@ -90,7 +97,7 @@ class FieldFromRelatedPostHandler extends UnifiedHandlerBase {
         if ($group !== '') {
             $applied = false;
             foreach ($this->group_members($group) as $member) {
-                $next = $this->copy_slot($data, $post_id, $rule, $post_type, $eligible[0], $member, '', ['key' => $member, 'name' => '']);
+                $next = $this->copy_slot($data, $post_id, $rule, $post_type, $eligible, $member, '', ['key' => $member, 'name' => '']);
                 if ($next !== null) {
                     $data    = $next;
                     $applied = true;
@@ -100,7 +107,7 @@ class FieldFromRelatedPostHandler extends UnifiedHandlerBase {
             return $applied ? $data : null;
         }
 
-        return $this->copy_slot($data, $post_id, $rule, $post_type, $eligible[0], $source_key, $source_meta, $target);
+        return $this->copy_slot($data, $post_id, $rule, $post_type, $eligible, $source_key, $source_meta, $target);
     }
 
     /**
@@ -123,10 +130,11 @@ class FieldFromRelatedPostHandler extends UnifiedHandlerBase {
     /**
      * One field slot: read the source, apply the claim, set the cell.
      *
+     * @param int[]                              $sources Eligible source posts, in the relationship's order.
      * @param array{key:string,name:string}|null $target
      * @return array|null `$data` with the cell set, or null when the slot does not apply.
      */
-    private function copy_slot(array $data, int $post_id, array $rule, string $post_type, int $source_post, string $source_key, string $source_meta, ?array $target): ?array {
+    private function copy_slot(array $data, int $post_id, array $rule, string $post_type, array $sources, string $source_key, string $source_meta, ?array $target): ?array {
         // An ACF target must exist, be shown on the receiving type (this is what
         // *Same* needs too) and, when it is not the source itself, have the
         // source's field type. A meta target is its name, written by MetaWriter.
@@ -146,9 +154,17 @@ class FieldFromRelatedPostHandler extends UnifiedHandlerBase {
             }
         }
 
-        $value = $source_key !== ''
-            ? \get_field($source_key, $source_post, false)
-            : \get_post_meta($source_post, $source_meta, true);
+        // One source counts: the first, in the relationship's order, that holds
+        // a value; when none does, the empty one.
+        $value = null;
+        foreach ($sources as $source_post) {
+            $value = $source_key !== ''
+                ? \get_field($source_key, $source_post, false)
+                : \get_post_meta($source_post, $source_meta, true);
+            if (!self::is_empty($value)) {
+                break;
+            }
+        }
         $empty = self::is_empty($value);
         $claim = (string) ($rule['conflict_handling'] ?? 'merge');
 

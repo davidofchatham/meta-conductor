@@ -10,6 +10,7 @@ namespace BWS\MetaConductor\RuleTypes;
 use BWS\MetaConductor\Admin\Config\ConfigHelpers;
 use BWS\MetaConductor\Core\MetaWriter;
 use BWS\MetaConductor\Handlers\FieldFromRelatedPostHandler;
+use BWS\MetaConductor\Relationships\AcfRelationship;
 use BWS\MetaConductor\Relationships\ParentRelationship;
 use BWS\MetaConductor\Relationships\Relationship;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
@@ -62,10 +63,28 @@ final class FieldFromRelatedPostRules extends RuleType {
     }
 
     /**
-     * The parent graph for a `parent` row; the ACF graph joins it with FW-5 08.
+     * The graph a row walks: the parent's, or the ACF relationship field's.
      */
     public function relationship(array $rule): ?Relationship {
-        return ($rule['relationship'] ?? '') === 'parent' ? new ParentRelationship() : null;
+        return match ((string) ($rule['relationship'] ?? '')) {
+            'parent' => new ParentRelationship(),
+            'acf'    => new AcfRelationship(),
+            default  => null,
+        };
+    }
+
+    /**
+     * Splits an `acf` row's combined field values, the same shape the term rule reads.
+     */
+    public function normalize(array $row): array {
+        return AcfRelationship::normalize_row($row);
+    }
+
+    /**
+     * Whether `post_status` gates the SOURCE, as the row's relationship states it.
+     */
+    public function status_gates_source(array $rule): bool {
+        return $this->relationship($rule)?->status_gates_source($rule) ?? false;
     }
 
     /**
@@ -200,7 +219,9 @@ final class FieldFromRelatedPostRules extends RuleType {
     /**
      * Every field here is gated to this type (the kind config stamps it).
      *
-     * `relationship` offers the parent only for now. `source_meta` / `target_meta`
+     * The ACF controls show, and persist, on an `acf` row alone (the
+     * `relationship` gate), and store the combined "post_type:field_name:
+     * field_key" value whole, as the term rule does. `source_meta` / `target_meta`
      * show only while their select picks a plain meta key; the `when` gate
      * drops a stale name on save once the select moves back to an ACF field.
      *
@@ -210,6 +231,8 @@ final class FieldFromRelatedPostRules extends RuleType {
      * @return array[]
      */
     public function subfields(): array {
+        $acf = ['relationship' => 'acf'];
+
         return [
             [
                 'id'          => 'relationship',
@@ -222,7 +245,48 @@ final class FieldFromRelatedPostRules extends RuleType {
                 'args'        => [
                     'options' => [
                         'parent' => __('Parent post — a post takes the field from its parent', 'meta-conductor'),
+                        'acf'    => __('ACF relationship field — posts joined by a relationship or post-object field', 'meta-conductor'),
                     ],
+                ],
+            ],
+            [
+                'id'          => 'acf_field_name',
+                'type'        => 'select',
+                'label'       => __('Monitored relationship field', 'meta-conductor'),
+                'description' => __('The post-object or relationship field connecting the two posts. The post type that OWNS this field is the "field holder"; "Source" below decides which end the value is copied from. Only one related post counts as the source: the first one that holds a value, taken in the order the field lists its posts (pull), or in the order the reverse field lists them, else by ascending post ID (push). Each option names its field group, so two fields sharing a name can be told apart. ⚠ Only top-level relationship/post-object fields are listed.', 'meta-conductor'),
+                'default'     => '',
+                'required'    => true,
+                'columns'     => 12,
+                'when'        => $acf,
+                'args'        => [
+                    'options' => ConfigHelpers::acf_relationship_field_options(),
+                ],
+            ],
+            [
+                'id'          => 'holder_role',
+                'type'        => 'radio',
+                'label'       => __('Source (field copied from)', 'meta-conductor'),
+                'description' => __('Which end is authoritative — its value is copied to the other end. The trigger is ambient (a change at either end re-syncs); this decides direction.', 'meta-conductor'),
+                'default'     => 'source',
+                'columns'     => 12,
+                'when'        => $acf,
+                'args'        => [
+                    'options' => [
+                        'source' => __('Field holder → copies out to related posts (push)', 'meta-conductor'),
+                        'target' => __('Related posts → copies in to the field holder (pull)', 'meta-conductor'),
+                    ],
+                ],
+            ],
+            [
+                'id'          => 'reverse_acf_field_name',
+                'type'        => 'select',
+                'label'       => __('Reverse relationship field (optional)', 'meta-conductor'),
+                'description' => __('The inverse relationship field on the other end, if any. Speeds the reverse lookup and, in a push, orders the sources. Leave blank to auto-detect ACF bidirectional fields. ⚠ With neither an explicit reverse field nor a detectable bidirectional field, the reverse lookup falls back to an unindexed query on every save — slow on large sites. Set this (or use an ACF bidirectional field) to avoid it.', 'meta-conductor'),
+                'default'     => '',
+                'columns'     => 12,
+                'when'        => $acf,
+                'args'        => [
+                    'options' => ConfigHelpers::acf_relationship_field_options(__('— None / auto —', 'meta-conductor')),
                 ],
             ],
             [
@@ -266,7 +330,7 @@ final class FieldFromRelatedPostRules extends RuleType {
                 ],
             ]),
             ConfigHelpers::post_status_field([
-                'description' => __('Both the receiving post and the parent it copies from must have one of the checked statuses; a parent that does not is ignored and the post keeps its value. Leave all unchecked to apply to every status.', 'meta-conductor'),
+                'description' => __('The status the source must have: a parent (or, with an ACF field, a related post) that does not have one of the checked statuses is ignored and the receiving post keeps its value. With the parent, the receiving post must have one of them too. Leave all unchecked to apply to every status.', 'meta-conductor'),
             ]),
         ];
     }
