@@ -116,6 +116,15 @@ foreach (['relationship', 'taxonomy', 'post_type', 'acf_field_name', 'reverse_ac
     $check("sever key distinguishes {$f}", $acf->sever_key($other) !== $acf->sever_key($row));
 }
 
+// A field row names no taxonomy, so what it copies and where tells two apart;
+// a term row's key keeps its shape (FW-5 09).
+$field_row = ['relationship' => 'acf', 'post_type' => 'h', 'acf_field_name' => 'f', 'holder_role' => 'source', 'source_field' => 'field_a', 'copy_target' => 'field_b'];
+foreach (['source_field', 'source_meta', 'copy_target', 'target_meta'] as $f) {
+    $other = $field_row;
+    $other[$f] = 'x';
+    $check("sever key distinguishes {$f} on a field row", $acf->sever_key($other) !== $acf->sever_key($field_row));
+}
+
 // The descriptor answers through the module.
 $merged = new TermsFromRelatedPostRules();
 $check('descriptor written_post_types delegates (acf)', $merged->written_post_types($row) === $acf->written_post_types($row));

@@ -32,15 +32,82 @@ if (!defined('ABSPATH')) {
 
 class FieldFromRelatedPostHandler extends UnifiedHandlerBase {
 
+    /**
+     * The ACF relationship graph and its sever capture, held here so the
+     * request memos live as long as the handler.
+     */
+    private AcfRelationship $acf_relationship;
+
+    /** Per-request memo of the enabled `acf` rows, for the capture path only. */
+    private ?array $acf_rules_memo = null;
+
+    public function __construct() {
+        $this->acf_relationship = new AcfRelationship();
+        parent::__construct();
+    }
+
     protected function validate_rule_internal($rule): bool {
         return !empty($rule['enabled']);
     }
 
     /**
-     * No hooks of its own: the format pass owns the trigger and calls
-     * `apply_to_data()` for every enabled row.
+     * Capture only, the descriptor's `capture_hooks()`: the format pass owns
+     * the trigger and calls `apply_to_data()` for every enabled row. Each
+     * capture reads a relationship the write is about to destroy and records a
+     * sever; it applies nothing.
      */
-    protected function init_hooks(): void {}
+    protected function init_hooks(): void {
+        add_filter('acf/update_value/type=relationship', array($this, 'capture_removed_dependents'), 5, 3);
+        add_filter('acf/update_value/type=post_object', array($this, 'capture_removed_dependents'), 5, 3);
+        add_action('before_delete_post', array($this, 'capture_deleted_post'), 10, 1);
+    }
+
+    /**
+     * Posts a captured sever says need a pass. Consumed.
+     *
+     * @return int[]
+     */
+    public function drain_captures(): array {
+        return $this->acf_relationship->drain_marks();
+    }
+
+    /**
+     * CAPTURE hook (not an apply): see `AcfRelationship::capture_removed_dependents()`.
+     *
+     * @param mixed $value   New field value (returned unchanged).
+     * @param int   $post_id Post being saved.
+     * @param array $field   ACF field array.
+     * @return mixed
+     */
+    public function capture_removed_dependents($value, $post_id, $field) {
+        return $this->acf_relationship->capture_removed_dependents($this->acf_rules(), $value, $post_id, $field);
+    }
+
+    /**
+     * CAPTURE hook (not an apply): a post is about to be deleted; record the
+     * dependents it feeds while its relationships are still readable.
+     *
+     * @param int $post_id Post being deleted.
+     */
+    public function capture_deleted_post($post_id): void {
+        $this->acf_relationship->capture_deleted_post($this->acf_rules(), $post_id);
+    }
+
+    /**
+     * The enabled `acf` rows, for the capture path.
+     *
+     * @return array[]
+     */
+    private function acf_rules(): array {
+        if ($this->acf_rules_memo === null) {
+            $this->acf_rules_memo = array_values(array_filter(
+                $this->get_enabled_rules(),
+                static fn(array $rule): bool => ($rule['relationship'] ?? '') === 'acf'
+            ));
+        }
+
+        return $this->acf_rules_memo;
+    }
 
     /**
      * One rule over one post. Idempotent, and the handler's whole apply — a pass
@@ -60,6 +127,9 @@ class FieldFromRelatedPostHandler extends UnifiedHandlerBase {
     public function apply_to_data(array $data, int $post_id, array $rule): ?array {
         $descriptor = Registry::for_handler(static::class);
         $relationship = $descriptor->relationship($rule);
+        if ($relationship instanceof AcfRelationship) {
+            $relationship = $this->acf_relationship;
+        }
         if (!$descriptor->available() || $relationship === null) {
             return null;
         }
@@ -86,7 +156,12 @@ class FieldFromRelatedPostHandler extends UnifiedHandlerBase {
             return null;
         }
 
-        $eligible = SourceGate::resolve($relationship->sources_of($post_id, $rule), $rule);
+        // Only an Owning row clears on a sever, and only THIS row's own sever
+        // counts. Contributing and Deferring keep the value.
+        $orphaned = $relationship instanceof AcfRelationship
+            && ($rule['conflict_handling'] ?? 'merge') === 'replace'
+            && $this->acf_relationship->is_severed($post_id, $rule);
+        $eligible = SourceGate::resolve($relationship->sources_of($post_id, $rule), $rule, $orphaned);
         if ($eligible === null) {
             return null;
         }

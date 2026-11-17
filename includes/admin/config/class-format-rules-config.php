@@ -51,6 +51,7 @@ namespace BWS\MetaConductor\Admin\Config;
 
 use BWS\MetaConductor\Admin\CollisionDetector;
 use BWS\MetaConductor\Admin\DuplicateNameNotice;
+use BWS\MetaConductor\RuleTypes\FieldFromRelatedPostRules;
 use BWS\MetaConductor\RuleTypes\Registry;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 
@@ -124,6 +125,7 @@ class FormatRulesConfig {
                 ConfigHelpers::token_reference_field(),
                 // Null off the settings screen and when nothing is duplicated.
                 DuplicateNameNotice::field(),
+                FieldFromRelatedPostRules::loop_notice(),
                 [
                     'id'    => OptionRuleStorage::KIND_FORMAT,
                     'type'  => 'repeater',

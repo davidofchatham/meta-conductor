@@ -447,6 +447,12 @@ $check('Same needs the field\'s group shown on the receiving post type',
     && ConfigHelpers::acf_field_shown_on('field_a', 'page') === false
     && ConfigHelpers::acf_field_shown_on('field_gone', 'mc_item') === false
     && ConfigHelpers::acf_field_shown_on('', 'mc_item') === false);
+// ACF's get_field() is not stubbed here, so the relationship is unavailable: the
+// stored `acf` option stays offered (a save must not drop it) and the note shows.
+$check('ACF off: the "requires ACF" note shows on an acf row and the option stays (FW-5 09)',
+    isset($by_id['acf_required_note']) && !empty($by_id['acf_required_note']['conditions'] ?? $by_id['acf_required_note']['when'] ?? null)
+    && isset($by_id['relationship']['args']['options']['acf']));
+$check('no loop notice while ACF is off (FW-5 09)', \BWS\MetaConductor\RuleTypes\FieldFromRelatedPostRules::loop_notice() === null);
 $check('the relationship defaults to the parent and offers the parent and the ACF field',
     ($by_id['relationship']['default'] ?? '') === 'parent'
     && array_keys($by_id['relationship']['args']['options']) === ['parent', 'acf']);

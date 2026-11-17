@@ -238,6 +238,28 @@ final class AcfRelationship implements Relationship {
     }
 
     /**
+     * Whether the row says what it writes: a taxonomy (term rows) or a source
+     * field (field rows). An unfinished row has nothing to sever.
+     */
+    private static function names_target(array $row): bool {
+        return (string) ($row['taxonomy'] ?? '') !== '' || (string) ($row['source_field'] ?? '') !== '';
+    }
+
+    /**
+     * Whether the row's field is ACF-bidirectional and links posts of the
+     * holder's own type, so two posts may source each other. The cycle is
+     * allowed; `TermDispatcher::drain()`'s per-entity bound ends it.
+     */
+    public function loops_on_one_type(array $row): bool {
+        $selector = self::acf_selector($row);
+        $holder   = $this->holder_post_type($row);
+
+        return $holder !== ''
+            && $this->acf_bidirectional_partners($selector) !== []
+            && in_array($holder, $this->acf_field_target_post_types($selector), true);
+    }
+
+    /**
      * Whether the row OWNS its taxonomy: only an owning (`replace`) row ever
      * withdraws terms, so only it reacts to a sever. Contributing and
      * Deferring never remove.
@@ -292,7 +314,7 @@ final class AcfRelationship implements Relationship {
      * @return string
      */
     public function sever_key(array $row): string {
-        return implode('|', [
+        $key = implode('|', [
             (string) ($row['relationship'] ?? 'acf'),
             (string) ($row['taxonomy'] ?? ''),
             (string) ($row['post_type'] ?? ''),
@@ -300,6 +322,18 @@ final class AcfRelationship implements Relationship {
             (string) ($row['reverse_acf_field_name'] ?? ''),
             (string) ($row['holder_role'] ?? 'target'),
         ]);
+
+        // A field row names no taxonomy; what it copies and where is what tells
+        // two of them apart. Appended only when present, so a term row's key
+        // keeps its shape.
+        $copy = implode('|', [
+            (string) ($row['source_field'] ?? ''),
+            (string) ($row['source_meta'] ?? ''),
+            (string) ($row['copy_target'] ?? ''),
+            (string) ($row['target_meta'] ?? ''),
+        ]);
+
+        return $copy === '|||' ? $key : $key . '|' . $copy;
     }
 
     /**
@@ -355,7 +389,13 @@ final class AcfRelationship implements Relationship {
         // they are SOURCES (so the post to recompute is this one).
         $dependent_rules = [];
         $self_rules      = [];
+        $managed = false;
         foreach ($rules as $rule) {
+            // Any claim's graph changes with this write, so the memo below is
+            // dropped for all of them; only an Owning row records a sever.
+            $managed = $managed
+                || (string) ($rule['acf_field_name'] ?? '') === $field_name
+                || $this->field_is_reverse_of($field_name, $rule);
             if (!$this->owns($rule)) {
                 continue; // contributing / deferring never remove
             }
@@ -371,6 +411,9 @@ final class AcfRelationship implements Relationship {
                 && $this->is_eligible_source($post, $rule)) {
                 $dependent_rules[] = $rule; // pull, source end (B8)
             }
+        }
+        if ($managed) {
+            $this->reverse_lookup_cache = [];
         }
         if (empty($dependent_rules) && empty($self_rules)) {
             return $value;
@@ -444,8 +487,7 @@ final class AcfRelationship implements Relationship {
             if (!$this->owns($rule)) {
                 continue; // only Owning removes ⇒ a delete can't strip the rest
             }
-            $taxonomy = (string) ($rule['taxonomy'] ?? '');
-            if ($taxonomy === '') {
+            if (!self::names_target($rule)) {
                 continue;
             }
 
@@ -487,7 +529,7 @@ final class AcfRelationship implements Relationship {
      * @param int[] $post_ids Posts orphaned under it.
      */
     private function record_sever(array $rule, array $post_ids): void {
-        if ((string) ($rule['taxonomy'] ?? '') === '' || empty($post_ids)) {
+        if (!self::names_target($rule) || empty($post_ids)) {
             return;
         }
         $key = $this->sever_key($rule);

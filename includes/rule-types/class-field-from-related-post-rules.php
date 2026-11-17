@@ -14,6 +14,7 @@ use BWS\MetaConductor\Relationships\AcfRelationship;
 use BWS\MetaConductor\Relationships\ParentRelationship;
 use BWS\MetaConductor\Relationships\Relationship;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
+use BWS\MetaConductor\Storage\StorageFactory;
 
 // Prevent direct access
 if (!defined('ABSPATH')) {
@@ -71,6 +72,22 @@ final class FieldFromRelatedPostRules extends RuleType {
             'acf'    => new AcfRelationship(),
             default  => null,
         };
+    }
+
+    /**
+     * The ACF reference controls sit on an `acf` row, so the pass needs the
+     * three captures a sever reads, and the queue must be told what they name.
+     */
+    public function capture_hooks(): array {
+        return [
+            'acf/update_value/type=relationship',
+            'acf/update_value/type=post_object',
+            'before_delete_post',
+        ];
+    }
+
+    public function drains_captures(): bool {
+        return true;
     }
 
     /**
@@ -233,7 +250,7 @@ final class FieldFromRelatedPostRules extends RuleType {
     public function subfields(): array {
         $acf = ['relationship' => 'acf'];
 
-        return [
+        $fields = [
             [
                 'id'          => 'relationship',
                 'type'        => 'select',
@@ -245,7 +262,9 @@ final class FieldFromRelatedPostRules extends RuleType {
                 'args'        => [
                     'options' => [
                         'parent' => __('Parent post — a post takes the field from its parent', 'meta-conductor'),
-                        'acf'    => __('ACF relationship field — posts joined by a relationship or post-object field', 'meta-conductor'),
+                        'acf'    => AcfRelationship::is_available()
+                            ? __('ACF relationship field — posts joined by a relationship or post-object field', 'meta-conductor')
+                            : __('ACF relationship field — requires ACF, which is not active', 'meta-conductor'),
                     ],
                 ],
             ],
@@ -332,6 +351,61 @@ final class FieldFromRelatedPostRules extends RuleType {
             ConfigHelpers::post_status_field([
                 'description' => __('The status the source must have: a parent (or, with an ACF field, a related post) that does not have one of the checked statuses is ignored and the receiving post keeps its value. With the parent, the receiving post must have one of them too. Leave all unchecked to apply to every status.', 'meta-conductor'),
             ]),
+        ];
+
+        // The notice a stored ACF row shows while ACF is off, right under the
+        // relationship select. Declared only then: with ACF active it would be
+        // a permanent inert note.
+        if (!AcfRelationship::is_available()) {
+            array_splice($fields, 1, 0, [[
+                'id'      => 'acf_required_note',
+                'type'    => 'html',
+                'columns' => 12,
+                'when'    => $acf,
+                'args'    => [
+                    'variant' => 'warning',
+                    'content' => '<p>' . esc_html__('This rule requires ACF, which is not active. It does nothing until ACF is active again; its settings are kept.', 'meta-conductor') . '</p>',
+                ],
+            ]]);
+        }
+
+        return $fields;
+    }
+
+    /**
+     * Page-level advisory, null when there is nothing to say: an enabled `acf`
+     * row whose field is bidirectional and links posts of one type, where two
+     * posts may source each other. The cycle is allowed and ends at
+     * `TermDispatcher::drain()`'s per-entity bound; this only says so. Built
+     * from the stored rows, as `DuplicateNameNotice` is.
+     */
+    public static function loop_notice(): ?array {
+        if (!AcfRelationship::is_available()) {
+            return null;
+        }
+
+        $graph = new AcfRelationship();
+        $names = [];
+        foreach (StorageFactory::get_instance()->get_rules('field_from_related_post', ['enabled' => true]) as $row) {
+            if (($row['relationship'] ?? '') === 'acf' && $graph->loops_on_one_type($row)) {
+                $names[] = (string) ($row['name'] ?? '') !== '' ? (string) $row['name'] : __('(unnamed rule)', 'meta-conductor');
+            }
+        }
+        if ($names === []) {
+            return null;
+        }
+
+        // A rule name is author text and `html` content interpolates `{word}`.
+        $list = implode(', ', array_map(static fn(string $n): string => str_replace(['{', '}'], ['&#123;', '&#125;'], esc_html($n)), $names));
+
+        return [
+            'id'      => 'field_from_related_post_loop',
+            'type'    => 'html',
+            'columns' => 12,
+            'args'    => [
+                'variant' => 'warning',
+                'content' => '<p>' . esc_html__('A bidirectional ACF field links posts of one post type, so two posts may source each other. The copy still ends, but the value one ends up with depends on which post is saved last. Rules:', 'meta-conductor') . ' ' . $list . '</p>',
+            ],
         ];
     }
 

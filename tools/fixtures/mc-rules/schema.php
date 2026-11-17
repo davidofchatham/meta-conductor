@@ -226,6 +226,19 @@ function bws_fixture_mc_rules_register_acf() {
 					'bidirectional'        => 1,
 					'bidirectional_target' => array( 'field_mc_bidi_sections' ),
 				),
+				// Same-type bidirectional pair (FW-5 09): sections linking
+				// sections, ACF-bidirectional to ITSELF, so two posts can
+				// source each other and the loop notice has a field to name.
+				array(
+					'key'                  => 'field_mc_peer_sections',
+					'name'                 => 'mc_peer_sections',
+					'label'                => 'Peer MC Sections',
+					'type'                 => 'relationship',
+					'post_type'            => array( 'mc_section' ),
+					'return_format'        => 'id',
+					'bidirectional'        => 1,
+					'bidirectional_target' => array( 'field_mc_peer_sections' ),
+				),
 				array(
 					'key'           => 'field_mc_topics_section',
 					'name'          => 'mc_topics',
