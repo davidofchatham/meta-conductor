@@ -143,6 +143,7 @@ $interfaces = [
 $traits = [
     'BWS\\MetaConductor\\Handlers\\TermOperations',
     'BWS\\MetaConductor\\Handlers\\AcfBridge',
+    'BWS\\MetaConductor\\Handlers\\AcfSeverCapture',
 ];
 
 $missing = [];

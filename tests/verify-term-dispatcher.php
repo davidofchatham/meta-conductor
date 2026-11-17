@@ -382,6 +382,25 @@ foreach ($descriptors as $type => $descriptor) {
     }
 }
 
+// A handler's declarations are its file's plus those of any handler trait it
+// composes with a bare `use Trait;` (the capture path lives in
+// `AcfSeverCapture`), comments stripped. Reading the file alone would call a
+// trait-declared hook callback or `drain_captures()` undeclared.
+$handler_source = static function (string $file) use ($root, $strip_comments): string {
+    $src = $strip_comments((string) file_get_contents($root . '/includes/handlers/' . $file));
+    if (preg_match_all('/^\s*use\s+(\w+)\s*;/m', $src, $uses)) {
+        foreach ($uses[1] as $trait) {
+            $kebab = strtolower((string) preg_replace('/(?<!^)[A-Z]/', '-$0', $trait));
+            $path  = $root . '/includes/handlers/class-' . $kebab . '.php';
+            if (is_file($path)) {
+                $src .= "
+" . $strip_comments((string) file_get_contents($path));
+            }
+        }
+    }
+    return $src;
+};
+
 /**
  * Every hook a handler file registers, as `hook@line`.
  *
@@ -403,7 +422,7 @@ $registered_hooks = static function (string $body): array {
 };
 
 foreach ($handler_files as $type => $handler_file) {
-    $body = $strip_comments((string) file_get_contents($root . '/includes/handlers/' . $handler_file));
+    $body = $handler_source($handler_file);
 
     $allowed = $capture[$type] ?? [];
     foreach ($registered_hooks($body) as $hook) {
@@ -515,7 +534,7 @@ $method_body = static function (string $body, string $name): ?string {
 };
 
 foreach ($capture as $type => $hooks) {
-    $body = $strip_comments((string) file_get_contents($root . '/includes/handlers/' . $handler_files[$type]));
+    $body = $handler_source($handler_files[$type]);
 
     foreach ($hooks as $hook) {
         // add_action OR add_filter: `related_post_terms`' sever captures are
@@ -625,7 +644,7 @@ if (!preg_match('/function\s+enqueue_fan_out\s*\([^)]*\)\s*:\s*void\s*\{(.*?)\n 
 // A handler's fan_out() may SELECT; it must not write. The write is what the
 // declaration exists to avoid.
 foreach ($handler_files as $type => $handler_file) {
-    $body = $strip_comments((string) file_get_contents($root . '/includes/handlers/' . $handler_file));
+    $body = $handler_source($handler_file);
     $fan  = $method_body($body, 'fan_out');
     if ($fan === null) {
         continue; // inherits the empty default — nothing to check
@@ -692,7 +711,7 @@ if (!preg_match('/function\s+drain\s*\(\s*\)\s*:\s*void\s*\{(.*?)\n    \}/s', $s
 // applier, which the queue was going to run anyway.
 foreach ($descriptors as $type => $descriptor) {
     $overrides = $method_body(
-        $strip_comments((string) file_get_contents($root . '/includes/handlers/' . $handler_files[$type])),
+        $handler_source($handler_files[$type]),
         'drain_captures'
     ) !== null;
 
@@ -722,7 +741,7 @@ foreach ($descriptors as $type => $descriptor) {
 // no order around it.
 foreach ($handler_files as $type => $handler_file) {
     $drainer = $method_body(
-        $strip_comments((string) file_get_contents($root . '/includes/handlers/' . $handler_file)),
+        $handler_source($handler_file),
         'drain_captures'
     );
     if ($drainer === null) {
@@ -909,7 +928,7 @@ if (count($data_sites) > 1 && !$foreign_data) {
 // keeps one save to one row update however many rules matched, and what lets
 // the deferred pre-write phase reuse the seam on data that has no row yet.
 foreach ($kind_types('format_rules') as $type) {
-    $applier = $method_body($strip_comments((string) file_get_contents($root . '/includes/handlers/' . $handler_files[$type])), 'apply_to_data');
+    $applier = $method_body($handler_source($handler_files[$type]), 'apply_to_data');
     if ($applier === null) {
         $errors[] = sprintf(
             '%s is a format-kind handler but declares no apply_to_data() — it would inherit the base null, so every rule of its type reports "not mine" and silently never runs.',
@@ -1213,7 +1232,7 @@ $read_writes      = array_merge($write_primitives, [
 $runtime_count = 0;
 
 foreach ($descriptors as $type => $descriptor) {
-    $hbody = $strip_comments((string) file_get_contents($root . '/includes/handlers/' . $handler_files[$type]));
+    $hbody = $handler_source($handler_files[$type]);
 
     foreach ($descriptor->runtime_hooks() as $hook => $spec) {
         $runtime_count++;

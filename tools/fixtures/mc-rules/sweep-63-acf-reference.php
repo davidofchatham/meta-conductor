@@ -49,7 +49,7 @@
  *
  * WHY EVERY SEVER NEEDS ITS OWN EVAL, SEPARATE FROM THE STAGING ONE. The
  * capture path reads the rule set through a REQUEST-LIFETIME memo
- * (`TermsFromRelatedPostHandler::acf_rules()`), which is correct on a live site
+ * (`AcfSeverCapture::acf_rules()`), which is correct on a live site
  * — rules are only mutated by the admin REST save, a different request — and a
  * trap here: `mc63_stage()` writes relationship fields while the rules are
  * SILENCED, which populates that memo with the empty set, so a sever later in

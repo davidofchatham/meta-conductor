@@ -32,14 +32,8 @@ if (!defined('ABSPATH')) {
 
 class FieldFromRelatedPostHandler extends UnifiedHandlerBase {
 
-    /**
-     * The ACF relationship graph and its sever capture, held here so the
-     * request memos live as long as the handler.
-     */
-    private AcfRelationship $acf_relationship;
-
-    /** Per-request memo of the enabled `acf` rows, for the capture path only. */
-    private ?array $acf_rules_memo = null;
+    // The ACF relationship graph, its enabled-rows memo and the sever capture.
+    use AcfSeverCapture;
 
     public function __construct() {
         $this->acf_relationship = new AcfRelationship();
@@ -60,53 +54,6 @@ class FieldFromRelatedPostHandler extends UnifiedHandlerBase {
         add_filter('acf/update_value/type=relationship', array($this, 'capture_removed_dependents'), 5, 3);
         add_filter('acf/update_value/type=post_object', array($this, 'capture_removed_dependents'), 5, 3);
         add_action('before_delete_post', array($this, 'capture_deleted_post'), 10, 1);
-    }
-
-    /**
-     * Posts a captured sever says need a pass. Consumed.
-     *
-     * @return int[]
-     */
-    public function drain_captures(): array {
-        return $this->acf_relationship->drain_marks();
-    }
-
-    /**
-     * CAPTURE hook (not an apply): see `AcfRelationship::capture_removed_dependents()`.
-     *
-     * @param mixed $value   New field value (returned unchanged).
-     * @param int   $post_id Post being saved.
-     * @param array $field   ACF field array.
-     * @return mixed
-     */
-    public function capture_removed_dependents($value, $post_id, $field) {
-        return $this->acf_relationship->capture_removed_dependents($this->acf_rules(), $value, $post_id, $field);
-    }
-
-    /**
-     * CAPTURE hook (not an apply): a post is about to be deleted; record the
-     * dependents it feeds while its relationships are still readable.
-     *
-     * @param int $post_id Post being deleted.
-     */
-    public function capture_deleted_post($post_id): void {
-        $this->acf_relationship->capture_deleted_post($this->acf_rules(), $post_id);
-    }
-
-    /**
-     * The enabled `acf` rows, for the capture path.
-     *
-     * @return array[]
-     */
-    private function acf_rules(): array {
-        if ($this->acf_rules_memo === null) {
-            $this->acf_rules_memo = array_values(array_filter(
-                $this->get_enabled_rules(),
-                static fn(array $rule): bool => ($rule['relationship'] ?? '') === 'acf'
-            ));
-        }
-
-        return $this->acf_rules_memo;
     }
 
     /**
