@@ -383,18 +383,25 @@ foreach ($descriptors as $type => $descriptor) {
 }
 
 // A handler's declarations are its file's plus those of any handler trait it
-// composes with a bare `use Trait;` (the capture path lives in
-// `AcfSeverCapture`), comments stripped. Reading the file alone would call a
-// trait-declared hook callback or `drain_captures()` undeclared.
-$handler_source = static function (string $file) use ($root, $strip_comments): string {
+// composes with a class-level `use Trait;` or `use A, B;` (the capture path
+// lives in `AcfSeverCapture`), comments stripped. Reading the file alone would
+// call a trait-declared hook callback or `drain_captures()` undeclared. A
+// trait named there with no file in includes/handlers/ is an error, not a
+// silent skip: a check that reads less than the class declares tests nothing.
+// A trait's lines follow the handler's, so a `hook@line` is only a line in the
+// combined source.
+$handler_source = static function (string $file) use ($root, $strip_comments, &$errors): string {
     $src = $strip_comments((string) file_get_contents($root . '/includes/handlers/' . $file));
-    if (preg_match_all('/^\s*use\s+(\w+)\s*;/m', $src, $uses)) {
-        foreach ($uses[1] as $trait) {
-            $kebab = strtolower((string) preg_replace('/(?<!^)[A-Z]/', '-$0', $trait));
-            $path  = $root . '/includes/handlers/class-' . $kebab . '.php';
-            if (is_file($path)) {
-                $src .= "
-" . $strip_comments((string) file_get_contents($path));
+    if (preg_match_all('/^\s*use\s+(\w+(?:\s*,\s*\w+)*)\s*;/m', $src, $uses)) {
+        foreach ($uses[1] as $list) {
+            foreach (preg_split('/\s*,\s*/', $list) as $trait) {
+                $kebab = strtolower((string) preg_replace('/(?<!^)[A-Z]/', '-$0', $trait));
+                $path  = $root . '/includes/handlers/class-' . $kebab . '.php';
+                if (!is_file($path)) {
+                    $errors[] = sprintf('%s composes trait %s, but includes/handlers/class-%s.php does not exist — H13 would read the handler without it.', $file, $trait, $kebab);
+                    continue;
+                }
+                $src .= PHP_EOL . $strip_comments((string) file_get_contents($path));
             }
         }
     }

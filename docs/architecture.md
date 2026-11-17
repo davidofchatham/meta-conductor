@@ -26,7 +26,7 @@ Key boundaries (the rules that matter, regardless of class names):
 - **A rule whose basis is a relationship asks the relationship module who feeds whom** (`Relationships\Relationship`), and never walks the graph itself. See *The relationship module* below.
 - **Handlers never call `get_option()` directly** — they read/write through the storage layer (`Storage\StorageFactory`), which is also the canonical-shape adapter (see below).
 - **One `wp_options` key** (`bws_meta_conductor_settings`) holds every rule type, each an array of rule rows, plus a few global keys (per-taxonomy conflict overrides, manual-processing toggle).
-- **One handler base**: `UnifiedHandlerBase` (typed PHP 8.1 helpers, storage-backed), composing the `TermOperations` and `AcfBridge` traits. All 7 handlers extend it; the legacy `HandlerBase` was deleted in 0.6.0 when the last handler migrated.
+- **One handler base**: `UnifiedHandlerBase` (typed PHP 8.1 helpers, storage-backed), composing the `TermOperations` and `AcfBridge` traits. All 7 handlers extend it; the two related-post handlers additionally compose `AcfSeverCapture` (the ACF sever capture: the enabled-rows memo, the capture hook callbacks and `drain_captures()`), whose hook registration stays in each handler; the legacy `HandlerBase` was deleted in 0.6.0 when the last handler migrated.
 
 ## Writing a rule handler — hard-won invariants
 
