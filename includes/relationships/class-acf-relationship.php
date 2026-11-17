@@ -8,6 +8,8 @@
 
 namespace BWS\MetaConductor\Relationships;
 
+use BWS\MetaConductor\Storage\OptionRuleStorage;
+
 if (!defined('ABSPATH')) {
     exit;
 }
@@ -27,7 +29,8 @@ if (!defined('ABSPATH')) {
  *     readable, which dependents lost a source; `is_severed()` answers for one
  *     row and `drain_marks()` is the channel that hands the affected entities to
  *     the dispatcher. Capture records and applies nothing: the handler keeps the
- *     hook registration, the claim, the zero-source gate and the term write.
+ *     hook registration, the claim and the term write; `SourceGate` owns the
+ *     zero-source gate.
  *
  * Rows are the canonical shape: `post_type` is the HOLDER type (split off the
  * combined ACF value by the descriptor's `normalize()`), `acf_field_name` the
@@ -46,7 +49,7 @@ final class AcfRelationship implements Relationship {
      *
      * Keyed by the post TO RECOMPUTE, and by the ROW (see `sever_key()`), not
      * merely the taxonomy: the record is the ONE thing allowed to bypass the
-     * handler's zero-source gate, so a link cut under row C must never license
+     * zero-source gate (`SourceGate`), so a link cut under row C must never license
      * row A to empty-replace the taxonomy.
      *
      * @var array<int,array<string,bool>>
@@ -94,6 +97,41 @@ final class AcfRelationship implements Relationship {
      */
     public static function is_available(): bool {
         return function_exists('acf_get_field') && function_exists('get_field');
+    }
+
+    /**
+     * Split an `acf` row's combined ACF field values ("post_type:field_name:
+     * field_key") into scalar `post_type` + bare `acf_field_name` + `acf_field_key`
+     * (#25), and the optional reverse field likewise. A legacy two-part value
+     * yields an empty key, which readers take as "resolve by name". Shared by
+     * every rule type that rides this relationship, so the shape is derived once.
+     *
+     * @param array $row Raw row.
+     * @return array Row with the split values; non-`acf` rows untouched.
+     */
+    public static function normalize_row(array $row): array {
+        if (($row['relationship'] ?? '') !== 'acf') {
+            return $row;
+        }
+
+        if (!empty($row['acf_field_name'])) {
+            [$pt, $bare, $key]     = OptionRuleStorage::split_acf_field_value((string) $row['acf_field_name']);
+            $row['acf_field_name'] = $bare;
+            $row['acf_field_key']  = $key;
+            if ($pt !== null) {
+                $row['post_type'] = $pt;
+            } elseif (!isset($row['post_type'])) {
+                $row['post_type'] = '';
+            }
+        }
+
+        if (!empty($row['reverse_acf_field_name'])) {
+            [, $rbare, $rkey]              = OptionRuleStorage::split_acf_field_value((string) $row['reverse_acf_field_name']);
+            $row['reverse_acf_field_name'] = $rbare;
+            $row['reverse_acf_field_key']  = $rkey;
+        }
+
+        return $row;
     }
 
     // ---------------------------------------------------------------------
@@ -152,7 +190,7 @@ final class AcfRelationship implements Relationship {
      * push (dependent type = '' / any): the dependent is whatever the ACF field
      *   points AT, so narrow to the field's configured target post types when
      *   ACF can tell us; unknown/unconstrained stays eligible (correctness is
-     *   preserved: the handler's zero-source gate prevents any wrong write; this
+     *   preserved: `SourceGate` prevents any wrong write; this
      *   is partly a perf pre-filter).
      */
     public function is_eligible_dependent(\WP_Post $post, array $row): bool {
@@ -197,6 +235,28 @@ final class AcfRelationship implements Relationship {
         $slugs = (array) ($row['post_types'] ?? []);
 
         return ($slugs === [] || ($slugs[0] ?? '') === 'any') ? [] : array_values($slugs);
+    }
+
+    /**
+     * Whether the row says what it writes: a taxonomy (term rows) or a source
+     * field (field rows). An unfinished row has nothing to sever.
+     */
+    private static function names_target(array $row): bool {
+        return (string) ($row['taxonomy'] ?? '') !== '' || (string) ($row['source_field'] ?? '') !== '';
+    }
+
+    /**
+     * Whether the row's field is ACF-bidirectional and links posts of the
+     * holder's own type, so two posts may source each other. The cycle is
+     * allowed; `TermDispatcher::drain()`'s per-entity bound ends it.
+     */
+    public function loops_on_one_type(array $row): bool {
+        $selector = self::acf_selector($row);
+        $holder   = $this->holder_post_type($row);
+
+        return $holder !== ''
+            && $this->acf_bidirectional_partners($selector) !== []
+            && in_array($holder, $this->acf_field_target_post_types($selector), true);
     }
 
     /**
@@ -254,7 +314,7 @@ final class AcfRelationship implements Relationship {
      * @return string
      */
     public function sever_key(array $row): string {
-        return implode('|', [
+        $key = implode('|', [
             (string) ($row['relationship'] ?? 'acf'),
             (string) ($row['taxonomy'] ?? ''),
             (string) ($row['post_type'] ?? ''),
@@ -262,6 +322,18 @@ final class AcfRelationship implements Relationship {
             (string) ($row['reverse_acf_field_name'] ?? ''),
             (string) ($row['holder_role'] ?? 'target'),
         ]);
+
+        // A field row names no taxonomy; what it copies and where is what tells
+        // two of them apart. Appended only when present, so a term row's key
+        // keeps its shape.
+        $copy = implode('|', [
+            (string) ($row['source_field'] ?? ''),
+            (string) ($row['source_meta'] ?? ''),
+            (string) ($row['copy_target'] ?? ''),
+            (string) ($row['target_meta'] ?? ''),
+        ]);
+
+        return $copy === '|||' ? $key : $key . '|' . $copy;
     }
 
     /**
@@ -317,7 +389,13 @@ final class AcfRelationship implements Relationship {
         // they are SOURCES (so the post to recompute is this one).
         $dependent_rules = [];
         $self_rules      = [];
+        $managed = false;
         foreach ($rules as $rule) {
+            // Any claim's graph changes with this write, so the memo below is
+            // dropped for all of them; only an Owning row records a sever.
+            $managed = $managed
+                || (string) ($rule['acf_field_name'] ?? '') === $field_name
+                || $this->field_is_reverse_of($field_name, $rule);
             if (!$this->owns($rule)) {
                 continue; // contributing / deferring never remove
             }
@@ -333,6 +411,9 @@ final class AcfRelationship implements Relationship {
                 && $this->is_eligible_source($post, $rule)) {
                 $dependent_rules[] = $rule; // pull, source end (B8)
             }
+        }
+        if ($managed) {
+            $this->reverse_lookup_cache = [];
         }
         if (empty($dependent_rules) && empty($self_rules)) {
             return $value;
@@ -406,8 +487,7 @@ final class AcfRelationship implements Relationship {
             if (!$this->owns($rule)) {
                 continue; // only Owning removes ⇒ a delete can't strip the rest
             }
-            $taxonomy = (string) ($rule['taxonomy'] ?? '');
-            if ($taxonomy === '') {
+            if (!self::names_target($rule)) {
                 continue;
             }
 
@@ -449,7 +529,7 @@ final class AcfRelationship implements Relationship {
      * @param int[] $post_ids Posts orphaned under it.
      */
     private function record_sever(array $rule, array $post_ids): void {
-        if ((string) ($rule['taxonomy'] ?? '') === '' || empty($post_ids)) {
+        if (!self::names_target($rule) || empty($post_ids)) {
             return;
         }
         $key = $this->sever_key($rule);
@@ -659,6 +739,9 @@ final class AcfRelationship implements Relationship {
             'post_status'    => 'any',
             'numberposts'    => -1,
             'fields'         => 'ids',
+            // A stable order: a rule that takes the FIRST source reads it.
+            'orderby'        => 'ID',
+            'order'          => 'ASC',
             'meta_query'     => [[
                 'key'     => $field_name,
                 'value'   => (string) $related_id,

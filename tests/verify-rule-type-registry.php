@@ -60,6 +60,7 @@ $expected = [
     OptionRuleStorage::KIND_FORMAT => [
         'title_slug_from_pattern',
         'field_from_pattern',
+        'field_from_related_post',
     ],
 ];
 $expected_flat = array_merge(...array_values($expected));
@@ -114,12 +115,24 @@ foreach ($all as $key => $d) {
     }
 }
 
-// Only the Computed field rule writes through a plugin that may be inactive;
-// without ACF (this harness) it is unavailable, every other type is not.
+// Only Computed field writes through a plugin that may be inactive; without ACF
+// (this harness) it is unavailable, every other type is not. Set a field from a
+// related post stays available: with ACF off its ACF rows idle (`relationship()`
+// is null) while a stored row keeps its type and a parent row on plain meta runs.
 foreach ($all as $key => $d) {
-    $check("$key: availability follows ACF only for the Computed field rule",
+    $check("$key: availability follows ACF only for Computed field",
         $d->available() === ($key === 'field_from_pattern' ? function_exists('acf_get_field') : true));
 }
+$copy = $all['field_from_related_post'];
+$check('field_from_related_post: with ACF off an acf row, or one naming an ACF field, has no relationship',
+    !function_exists('acf_get_field')
+    && $copy->relationship(['relationship' => 'acf']) === null
+    && $copy->relationship(['relationship' => 'parent', 'source_field' => 'field_x']) === null
+    && $copy->relationship(['relationship' => 'parent', 'source_field' => '@meta', 'copy_target' => 'field_x']) === null
+    && $copy->relationship(['relationship' => 'parent', 'source_field' => 'group_x']) === null);
+$check('…while a parent row copying plain meta to plain meta keeps its relationship',
+    $copy->relationship(['relationship' => 'parent', 'source_field' => '@meta', 'copy_target' => '@meta']) !== null
+    && $copy->relationship(['relationship' => 'parent', 'source_field' => '@meta']) !== null);
 
 // The format pass's first-match gate is a descriptor fact (FW-4 ticket 04):
 // true only for the title/slug lookup table, so a Computed field rule composes.

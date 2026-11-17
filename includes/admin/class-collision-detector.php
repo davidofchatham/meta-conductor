@@ -45,7 +45,14 @@
  *
  * The claim axis is not consulted either, for the same reason: two purely
  * contributing rules cannot in fact fight, but establishing that per type is
- * the jurisdiction half of the deferred detector, not this one.
+ * the jurisdiction half of the deferred detector, not this one. The one place
+ * it is read is the field copy rule: a Deferring copy (`skip`) still pairs, but
+ * its finding carries `severity => low` and renders in a softer notice, because
+ * it fills only an empty field and cannot overwrite what the other rule wrote.
+ * The term side keeps one level.
+ *
+ * A row that writes a SET of fields (a group copy) names each member through
+ * `RuleType::target_keys()`, resolved at detection time, and pairs per field.
  *
  * ## Two surfaces, one detector
  *
@@ -64,6 +71,7 @@ namespace BWS\MetaConductor\Admin;
 
 use BWS\MetaConductor\Admin\Config\ConfigHelpers;
 use BWS\MetaConductor\Handlers\TermsFromTermHierarchyHandler;
+use BWS\MetaConductor\RuleTypes\FieldFromRelatedPostRules;
 use BWS\MetaConductor\RuleTypes\RestrictTermsByLevelRules;
 use BWS\MetaConductor\RuleTypes\TermsFromTermHierarchyRules;
 use BWS\MetaConductor\RuleTypes\Registry;
@@ -88,6 +96,9 @@ class CollisionDetector {
      * Not autoloaded — only the settings page and its save hook read it.
      */
     const OPTION_NAME = 'bws_mc_collision_warnings';
+
+    /** The severity of a finding a Deferring copy rule is party to; a finding with none is normal. */
+    const SEVERITY_LOW = 'low';
 
     /**
      * Register the two surfaces.
@@ -182,23 +193,21 @@ class CollisionDetector {
                 continue;
             }
 
-            $key = $descriptor?->target_key($row);
-
             // No resolvable target — an untyped row, or one whose taxonomy or
             // target term has not been picked yet. Half-authored rules are not
-            // collisions, they are unfinished.
-            if ($key === null) {
-                continue;
+            // collisions, they are unfinished. A row that writes a SET (a group
+            // copy) is one fact per target, so a pair is found, and named, per
+            // field.
+            foreach ($descriptor?->target_keys($row) ?? [] as $key) {
+                $facts[] = [
+                    'index'      => $place,
+                    'type'       => $type,
+                    'descriptor' => $descriptor,
+                    'row'        => $row,
+                    'key'        => self::canonical_key($key),
+                    'post_types' => $descriptor->written_post_types($row),
+                ];
             }
-
-            $facts[] = [
-                'index'      => $place,
-                'type'       => $type,
-                'descriptor' => $descriptor,
-                'row'        => $row,
-                'key'        => $key,
-                'post_types' => $descriptor->written_post_types($row),
-            ];
         }
 
         $found = [];
@@ -221,6 +230,25 @@ class CollisionDetector {
         }
 
         return array_merge($unknown, $found);
+    }
+
+    /**
+     * The key two writes of one stored field share. `MetaWriter` routes a plain
+     * meta name through ACF when it matches an ACF field, so `meta|<name>` and
+     * `field|<key>` name the same field and must pair; any other key, and a
+     * name no ACF field answers to, is returned as given.
+     *
+     * @param string $key Target key from `RuleType::target_keys()`.
+     */
+    private static function canonical_key(string $key): string {
+        if (!str_starts_with($key, 'meta|') || !function_exists('acf_maybe_get_field')) {
+            return $key;
+        }
+
+        // No post at detection time, so ACF falls back to the field's own name.
+        $field = \acf_maybe_get_field(substr($key, strlen('meta|')), false, false);
+
+        return is_array($field) && !empty($field['key']) ? 'field|' . $field['key'] : $key;
     }
 
     /**
@@ -259,7 +287,7 @@ class CollisionDetector {
     private static function finding(string $kind, array $a, array $b): array {
         [$code, $first, $second] = self::diagnose($a, $b);
 
-        return [
+        $finding = [
             'kind'   => $kind,
             'code'   => $code,
             'a'      => self::rule_ref($first),
@@ -267,6 +295,27 @@ class CollisionDetector {
             'target' => self::target_label($a['key']),
             'scope'  => self::scope_label($a['post_types'], $b['post_types']),
         ];
+
+        // Only the lower severity is stored: every finding without the key is
+        // the normal one, which keeps findings persisted before it was added valid.
+        if ($code === 'deferring_field') {
+            $finding['severity'] = self::SEVERITY_LOW;
+        }
+
+        return $finding;
+    }
+
+    /**
+     * A Deferring field copy: it writes only into a field that is empty, so it
+     * stands down for any rule that wrote one first. Only this type is asked —
+     * the term side keeps one level, and the claim is not read there.
+     *
+     * @param array $fact
+     * @return bool
+     */
+    private static function defers(array $fact): bool {
+        return $fact['descriptor'] instanceof FieldFromRelatedPostRules
+            && ($fact['row']['conflict_handling'] ?? 'merge') === 'skip';
     }
 
     /**
@@ -325,6 +374,15 @@ class CollisionDetector {
         // type, so the lower rule is not merely outranked — it never runs.
         if (str_starts_with($a['key'], 'fields|')) {
             return ['first_match_wins', $a, $b];
+        }
+
+        // A Deferring field copy contends, but softly: it fills only an empty
+        // field, so it cannot overwrite what the other rule wrote.
+        if (self::defers($a)) {
+            return ['deferring_field', $a, $b];
+        }
+        if (self::defers($b)) {
+            return ['deferring_field', $b, $a];
         }
 
         return ['shared_target', $a, $b];
@@ -623,6 +681,13 @@ class CollisionDetector {
                     $a_title, $b_title, $target, $scope, $order
                 );
 
+            case 'deferring_field':
+                return sprintf(
+                    /* translators: 1: the Deferring rule, 2: the other rule, 3: the field, 4: post types, 5: order sentence. */
+                    __('“%1$s” only fills %3$s while it is empty, and “%2$s” also writes it, on %4$s. “%1$s” never overwrites a value “%2$s” wrote above it, but “%2$s” can overwrite what “%1$s” filled if it sits lower. %5$s', 'meta-conductor'),
+                    $a_title, $b_title, $target, $scope, $order
+                );
+
             case 'first_match_wins':
                 return sprintf(
                     /* translators: 1: rule name, 2: rule name, 3: what is written, 4: post types. */
@@ -790,16 +855,23 @@ class CollisionDetector {
         $found  = self::stored_for($kind);
         $fields = [];
 
-        if ($found !== []) {
-            $fields[] = [
-                'id'      => $kind . '_collision_notice',
-                'type'    => 'html',
-                'columns' => 12,
-                'args'    => [
-                    'variant' => 'warning',
-                    'content' => self::notice_html($found),
-                ],
-            ];
+        // Two notices, so a Deferring rule's softer finding does not read as the
+        // same alarm as a rule that overwrites.
+        $low    = array_values(array_filter($found, fn($f) => ($f['severity'] ?? '') === self::SEVERITY_LOW));
+        $normal = array_values(array_filter($found, fn($f) => ($f['severity'] ?? '') !== self::SEVERITY_LOW));
+
+        foreach ([['', 'warning', $normal], ['_low', 'info', $low]] as [$suffix, $variant, $list]) {
+            if ($list !== []) {
+                $fields[] = [
+                    'id'      => $kind . '_collision_notice' . $suffix,
+                    'type'    => 'html',
+                    'columns' => 12,
+                    'args'    => [
+                        'variant' => $variant,
+                        'content' => self::notice_html($list),
+                    ],
+                ];
+            }
         }
 
         $fields[] = [

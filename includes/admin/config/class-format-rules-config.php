@@ -30,10 +30,11 @@
  * what is it called. Everything else is gated to the descriptor that declares
  * it, including the post-type scope: `title_slug_from_pattern` owns a SCALAR
  * `post_type` select (the format pass is first-match-wins per rule type, so
- * the value is a lookup key into a table keyed by post type), and
- * `field_from_pattern` owns a `post_types` checkboxes list (its rules
- * compose in list order, so a scope is what it needs). The two are different
- * questions, which is why they are two subfields and not one shared one.
+ * the value is a lookup key into a table keyed by post type), whereas the
+ * rules that compose in list order (`field_from_pattern`,
+ * `field_from_related_post`) share one `post_types` checkboxes list, gated by
+ * `ConfigHelpers::readers()` from their `reads_shared_fields()`. The two are
+ * different questions, which is why they are two subfields and not one.
  *
  * The stored `type` value is the rule type's id verbatim (`title_slug_from_pattern`),
  * as it is in the term list, which is what lets `get_enabled_rules()` filter
@@ -50,6 +51,7 @@ namespace BWS\MetaConductor\Admin\Config;
 
 use BWS\MetaConductor\Admin\CollisionDetector;
 use BWS\MetaConductor\Admin\DuplicateNameNotice;
+use BWS\MetaConductor\RuleTypes\FieldFromRelatedPostRules;
 use BWS\MetaConductor\RuleTypes\Registry;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 
@@ -123,6 +125,7 @@ class FormatRulesConfig {
                 ConfigHelpers::token_reference_field(),
                 // Null off the settings screen and when nothing is duplicated.
                 DuplicateNameNotice::field(),
+                FieldFromRelatedPostRules::loop_notice(),
                 [
                     'id'    => OptionRuleStorage::KIND_FORMAT,
                     'type'  => 'repeater',
@@ -225,6 +228,19 @@ class FormatRulesConfig {
                     'placeholder' => __('e.g. Personnel Title & Slug', 'meta-conductor'),
                 ],
             ],
+            // Every type that reads it is inside the gate (descriptors'
+            // `reads_shared_fields()`), so none loses its scope on save. None
+            // checked means NOTHING for these rules, not every type — a field
+            // write on a type whose ACF group lacks the field would store
+            // orphan meta. The attachment type is not offered.
+            ConfigHelpers::post_types_field([
+                'label'       => __('Post types', 'meta-conductor'),
+                'description' => __('The post types this rule writes to. Check at least one — a rule with none checked does nothing.', 'meta-conductor'),
+                'conditions'  => ConfigHelpers::readers(self::types(), 'post_types'),
+                'args'        => [
+                    'options' => ConfigHelpers::format_post_type_options(),
+                ],
+            ]),
         ];
     }
 }

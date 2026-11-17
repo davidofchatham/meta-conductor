@@ -132,6 +132,11 @@ if (!function_exists('acf_get_fields')) {
         return $parent === 'group_a' ? array_values($GLOBALS['h12_acf_fields']) : ($GLOBALS['h12_acf_subfields'][$parent] ?? []);
     }
 }
+if (!function_exists('acf_get_field_group')) {
+    function acf_get_field_group($key) {
+        return $key === 'group_a' ? ['key' => 'group_a', 'title' => 'Group A'] : false;
+    }
+}
 if (!function_exists('acf_get_field')) {
     function acf_get_field($key) {
         foreach ($GLOBALS['h12_acf_subfields'] as $subs) {
@@ -141,11 +146,13 @@ if (!function_exists('acf_get_field')) {
     }
 }
 if (!function_exists('update_field')) { function update_field() { return true; } }
+if (!function_exists('apply_filters')) { function apply_filters($tag, $value) { return $value; } }
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 require dirname(__DIR__) . '/autoload.php';
 
 use BWS\MetaConductor\Admin\WireframeBootstrap;
+use BWS\MetaConductor\Admin\Config\ConfigHelpers;
 use BWS\MetaConductor\Admin\Config\FormatRulesConfig;
 use BWS\MetaConductor\Admin\Config\TermRulesConfig;
 use BWS\MetaConductor\Admin\Config\WireframeConfig;
@@ -167,7 +174,7 @@ $subfields = $field['args']['subfields'];
 
 // --- The repeater is bound to the persisted kind list. ----------------------
 
-$check('the format kind has its migrated types (#59)', $TYPES === ['title_slug_from_pattern', 'field_from_pattern']);
+$check('the format kind has its migrated types (#59)', $TYPES === ['title_slug_from_pattern', 'field_from_pattern', 'field_from_related_post']);
 $check('repeater binds the format kind list', $field['id'] === $KIND);
 $check('repeater is sortable (order is authored)', !empty($field['args']['sortable']));
 $check('row title template resolves the snapshot', $field['args']['title_template'] === '{row_title}');
@@ -223,9 +230,9 @@ foreach (['type', 'enabled', 'name', 'row_title'] as $shared) {
 $check('post_type is a single-value select, gated to title & slug',
     ($by_id['post_type']['type'] ?? '') === 'select'
     && ($by_id['post_type']['conditions']['value'] ?? null) === ['title_slug_from_pattern']);
-$check('post_types is a checkboxes list, gated to computed field',
+$check('post_types is a checkboxes list, shared by the two field rules and no one else',
     ($by_id['post_types']['type'] ?? '') === 'checkboxes'
-    && ($by_id['post_types']['conditions']['value'] ?? null) === ['field_from_pattern']);
+    && ($by_id['post_types']['conditions']['value'] ?? null) === ['field_from_pattern', 'field_from_related_post']);
 $check('the computed field scope drops attachment and has no placeholder row',
     array_keys($by_id['post_types']['args']['options']) === ['post', 'page', 'mc_item']);
 $check('the computed field scope says none checked does nothing',
@@ -245,6 +252,15 @@ $check('the post-type description states first-match-wins',
 
 // --- Gated subfields name only real types, via `in`. ------------------------
 
+$leaves = function ($c) use (&$leaves): array {
+    if (!is_array($c)) { return [null]; }
+    foreach (['all', 'any'] as $join) {
+        if (isset($c[$join])) {
+            return array_merge(...array_map($leaves, $c[$join]));
+        }
+    }
+    return [$c];
+};
 $ungated  = ['type', 'enabled', 'name', 'row_title'];
 $gated_ok = true;
 $gate_covers = [];
@@ -252,18 +268,32 @@ foreach ($subfields as $s) {
     if (in_array($s['id'], $ungated, true)) {
         continue;
     }
-    $c = $s['conditions'] ?? null;
-    if (!is_array($c)
-        || ($c['field'] ?? '') !== 'type'
-        || ($c['operator'] ?? '') !== 'in'
-        || !is_array($c['value'] ?? null)
-        || array_diff($c['value'], $TYPES)) {
+    // A gate is the flat `type in [...]` clause, or (FW-5 06) clauses joined by
+    // `all` whose other leaves are an `equals` on `source_field` / `copy_target`
+    // (the plain-meta name boxes) or on `relationship` = `acf` (FW-5 08). Anything else is a hand-written condition.
+    $has_type_clause = false;
+    foreach ($leaves($s['conditions'] ?? null) as $c) {
+        if (is_array($c) && ($c['field'] ?? '') === 'type') {
+            if (($c['operator'] ?? '') !== 'in' || !is_array($c['value'] ?? null) || array_diff($c['value'], $TYPES)) {
+                $gated_ok = false;
+                break 2;
+            }
+            $has_type_clause = true;
+            $gate_covers     = array_merge($gate_covers, $c['value']);
+        } elseif (!is_array($c)
+            || !in_array($c['field'] ?? '', ['source_field', 'copy_target', 'relationship'], true)
+            || ($c['operator'] ?? '') !== 'equals'
+            || (($c['field'] ?? '') === 'relationship' && ($c['value'] ?? null) !== 'acf')) {
+            $gated_ok = false;
+            break 2;
+        }
+    }
+    if (!$has_type_clause) {
         $gated_ok = false;
         break;
     }
-    $gate_covers = array_merge($gate_covers, $c['value']);
 }
-$check('every type-specific subfield gates on `type` with `in` + real types', $gated_ok);
+$check('every type-specific subfield gates on `type` with `in` + real types, plus at most a meta-pick `equals`', $gated_ok);
 $check('every offered type owns at least one gated subfield',
     empty(array_diff($TYPES, array_unique($gate_covers))));
 // A `not_in` gate is indistinguishable from no gate while there is one type,
@@ -284,6 +314,10 @@ $expected_visible = [
     'field_from_pattern' => [
         'type', 'enabled', 'name', 'post_types',
         'target_field', 'pattern', 'output', 'row_title',
+    ],
+    'field_from_related_post' => [
+        'type', 'enabled', 'name', 'post_types',
+        'relationship', 'source_field', 'copy_target', 'conflict_handling', 'post_status', 'row_title',
     ],
 ];
 
@@ -376,6 +410,125 @@ $check('the output select offers text (the default) and html',
     array_keys($by_id['output']['args']['options']) === ['text', 'html']
     && ($by_id['output']['default'] ?? '') === 'text');
 
+// Set a field from a related post (FW-5 04). The handler's read contract, stated
+// apart from the visible-set above for the same reason.
+$visible_copy = [];
+foreach ($subfields as $s) {
+    if (Conditions::evaluate($s['conditions'] ?? null, ['type' => 'field_from_related_post'])) {
+        $visible_copy[] = $s['id'];
+    }
+}
+$check('every key the copy handler reads survives a save',
+    empty(array_diff(['enabled', 'post_types', 'relationship', 'source_field', 'conflict_handling', 'post_status'], $visible_copy)));
+$check('pattern and title/slug mechanics are not offered on a copy row',
+    !array_intersect(['target_field', 'pattern', 'output', 'title_pattern', 'slug_pattern', 'post_type'], $visible_copy));
+$check('the copy source select offers every value-holding top-level field, by key, with its group and post types',
+    array_slice(array_keys($by_id['source_field']['args']['options']), 0, 6) === ['', '@meta', 'field_a', 'field_b', 'field_c', 'field_d']
+    && $by_id['source_field']['args']['options']['field_c'] === 'Friends (friends) — Group A [MC Items]'
+    && !empty($by_id['source_field']['required']));
+// Group mode (FW-5 07): a whole field group is a source too, offered after the
+// fields; it is never a target (the target is forced to the same group).
+$check('the copy source select also offers each field group, by group key, after the fields',
+    array_keys($by_id['source_field']['args']['options']) === ['', '@meta', 'field_a', 'field_b', 'field_c', 'field_d', 'group_a']
+    && $by_id['source_field']['args']['options']['group_a'] === 'Field group: Group A [MC Items]');
+$grp = \BWS\MetaConductor\RuleTypes\Registry::get('field_from_related_post');
+$group_row = ['source_field' => 'group_a', 'copy_target' => 'field_b', 'post_types' => ['mc_item']];
+$check('a group source is a group, not a field key, and has no single target',
+    $grp->source_group($group_row) === 'group_a'
+    && $grp->source_key($group_row) === ''
+    && $grp->target($group_row) === null
+    && $grp->target_key($group_row) === null
+    && $grp->source_group(['source_field' => 'field_a']) === ''
+    && $grp->source_group(['source_field' => '@meta']) === '');
+$check('a group row is titled by its group',
+    str_contains($grp->row_title(['name' => 'G'] + $group_row), 'Copy Group A from parent'));
+$check('Same needs the field\'s group shown on the receiving post type',
+    ConfigHelpers::acf_field_shown_on('field_a', 'mc_item') === true
+    && ConfigHelpers::acf_field_shown_on('field_a', 'page') === false
+    && ConfigHelpers::acf_field_shown_on('field_gone', 'mc_item') === false
+    && ConfigHelpers::acf_field_shown_on('', 'mc_item') === false);
+// ACF's get_field() is not stubbed here, so the relationship is unavailable: the
+// stored `acf` option stays offered (a save must not drop it) and the note shows.
+$check('ACF off: the "requires ACF" note shows on an acf row and the option stays (FW-5 09)',
+    isset($by_id['acf_required_note']) && !empty($by_id['acf_required_note']['conditions'] ?? $by_id['acf_required_note']['when'] ?? null)
+    && isset($by_id['relationship']['args']['options']['acf']));
+$check('no loop notice while ACF is off (FW-5 09)', \BWS\MetaConductor\RuleTypes\FieldFromRelatedPostRules::loop_notice() === null);
+$check('the relationship defaults to the parent and offers the parent and the ACF field',
+    ($by_id['relationship']['default'] ?? '') === 'parent'
+    && array_keys($by_id['relationship']['args']['options']) === ['parent', 'acf']);
+// The ACF controls (FW-5 08) show on an `acf` row alone, so a parent row drops
+// them on save, and they hold the combined value the term rule's do.
+$acf_shown = fn(array $row) => array_values(array_filter(['acf_field_name', 'holder_role', 'reverse_acf_field_name'],
+    fn($id) => Conditions::evaluate($by_id[$id]['conditions'] ?? null, $row)));
+$check('the ACF field, holder and reverse controls show on an acf row and not on a parent row',
+    $acf_shown(['type' => 'field_from_related_post', 'relationship' => 'acf']) === ['acf_field_name', 'holder_role', 'reverse_acf_field_name']
+    && $acf_shown(['type' => 'field_from_related_post', 'relationship' => 'parent']) === []
+    && $acf_shown(['type' => 'field_from_pattern', 'relationship' => 'acf']) === []);
+$check('an acf row splits the combined field values like the term rule does',
+    ($copy_norm = $grp->normalize(['relationship' => 'acf', 'acf_field_name' => 'mc_section:friends:field_c', 'reverse_acf_field_name' => 'mc_item:mc_parent:field_p']))
+    && $copy_norm['post_type'] === 'mc_section' && $copy_norm['acf_field_name'] === 'friends' && $copy_norm['acf_field_key'] === 'field_c'
+    && $copy_norm['reverse_acf_field_name'] === 'mc_parent' && $copy_norm['reverse_acf_field_key'] === 'field_p'
+    && $grp->normalize(['relationship' => 'parent', 'acf_field_name' => 'a:b:c']) === ['relationship' => 'parent', 'acf_field_name' => 'a:b:c']);
+$check('post_status gates the source on an acf row and not on a parent row',
+    $grp->status_gates_source(['relationship' => 'acf']) === true
+    && $grp->status_gates_source(['relationship' => 'parent']) === false);
+$check('the copy target offers Same (the empty value), a plain meta key, then every ACF field with its type, and defaults to Same',
+    array_keys($by_id['copy_target']['args']['options']) === ['', '@meta', 'field_a', 'field_b', 'field_c', 'field_d']
+    && ($by_id['copy_target']['default'] ?? null) === ''
+    && str_ends_with($by_id['copy_target']['args']['options']['field_a'], '(text)')
+    && str_ends_with($by_id['copy_target']['args']['options']['field_c'], '(relationship)'));
+
+// The plain-meta names (FW-5 06): each shows only while its select picks the
+// meta choice, and a leading underscore fails Wireframe's own validator.
+$meta_row = ['type' => 'field_from_related_post', 'source_field' => '@meta', 'copy_target' => '@meta'];
+$acf_row  = ['type' => 'field_from_related_post', 'source_field' => 'field_a', 'copy_target' => 'field_b'];
+$shown = fn(array $row) => array_values(array_filter(['source_meta', 'target_meta'],
+    fn($id) => Conditions::evaluate($by_id[$id]['conditions'] ?? null, $row)));
+$check('the meta names show when their select picks a plain meta key',
+    $shown($meta_row) === ['source_meta', 'target_meta']);
+$check('the meta names are gated out (and dropped on save) on an ACF pick or another type',
+    $shown($acf_row) === []
+    && $shown(['type' => 'field_from_pattern'] + $meta_row) === []
+    && $shown(['type' => 'field_from_related_post', 'source_field' => '@meta', 'copy_target' => 'field_b']) === ['source_meta']);
+$names_ok = true;
+foreach (['source_meta', 'target_meta'] as $id) {
+    $names_ok = $names_ok && !empty($by_id[$id]['required']) && ($by_id[$id]['type'] ?? '') === 'text';
+}
+$check('both meta names are required text', $names_ok);
+$meta_validate = function (string $name) use ($by_id): bool {
+    $sub = $by_id['source_meta'];
+    $sub['conditions'] = null;
+    $out = \Wireframe\Framework\Validator::validate(
+        ['r' => [['source_meta' => $name]]],
+        ['r' => ['type' => 'repeater', 'args' => ['subfields' => [$sub]]]]
+    );
+    return empty($out['errors']);
+};
+$check('a plain meta key passes the save validator',
+    $meta_validate('mc_plain_dst') && $meta_validate('a_b') && $meta_validate('9lives'));
+$check('a _-prefixed meta key is refused by the save validator',
+    !$meta_validate('_edit_lock') && !$meta_validate(' _x') && !$meta_validate('_') && !$meta_validate('_mc_cp_text'));
+$check('the copy claim stores the three claim keys and defaults to contributing',
+    array_keys($by_id['conflict_handling']['args']['options']) === ['replace', 'merge', 'skip']
+    && ($by_id['conflict_handling']['default'] ?? '') === 'merge');
+
+// What the descriptor makes of source and target (FW-5 06).
+$copy = \BWS\MetaConductor\RuleTypes\Registry::get('field_from_related_post');
+$check('Same on an ACF source targets the source key; collisions key on it',
+    $copy->target(['source_field' => 'field_a']) === ['key' => 'field_a', 'name' => '']
+    && $copy->target_key(['source_field' => 'field_a', 'post_types' => ['mc_item']]) === 'field|field_a');
+$check('a picked ACF target wins over Same',
+    $copy->target(['source_field' => 'field_a', 'copy_target' => 'field_b']) === ['key' => 'field_b', 'name' => '']);
+$check('a meta source with Same writes the same meta name; a meta target its own',
+    $copy->target(['source_field' => '@meta', 'source_meta' => ' k ']) === ['key' => '', 'name' => 'k']
+    && $copy->target(['source_field' => 'field_a', 'copy_target' => '@meta', 'target_meta' => 'dst']) === ['key' => '', 'name' => 'dst']
+    && $copy->target_key(['source_field' => '@meta', 'source_meta' => 'k', 'post_types' => ['mc_item']]) === 'meta|k');
+$check('a _-prefixed or empty meta name leaves the row unfinished at run time too',
+    $copy->target(['source_field' => '@meta', 'source_meta' => '_x']) === null
+    && $copy->target(['source_field' => 'field_a', 'copy_target' => '@meta', 'target_meta' => '_x']) === null
+    && $copy->source_meta(['source_field' => '@meta', 'source_meta' => '']) === '');
+$check('a meta source is not an ACF key',
+    $copy->source_key(['source_field' => '@meta']) === '' && $copy->is_meta_source(['source_field' => '@meta']));
 // An untyped row (freshly added) shows the shared frame only.
 $untyped = [];
 foreach ($subfields as $s) {
@@ -423,6 +576,18 @@ $check('an unnamed computed field row is named rather than left blank',
 $check('a computed field row naming several post types lists them all',
     $title(['type' => 'field_from_pattern', 'name' => 'Display line', 'post_types' => ['mc_item', 'page'], 'target_field' => 'field_a'])
         === 'Display line — Display name (MC Items, Pages)');
+$check('a copy row title names the field, the claim and the post type',
+    $title(['type' => 'field_from_related_post', 'name' => 'Venue', 'post_types' => ['mc_item'], 'source_field' => 'field_a', 'conflict_handling' => 'replace'])
+        === 'Venue — Copy Display name from parent (owning) (MC Items)');
+$copy_acf = ['type' => 'field_from_related_post', 'name' => 'Venue', 'post_types' => ['mc_item'], 'source_field' => 'field_a', 'conflict_handling' => 'replace', 'relationship' => 'acf'];
+$check('an acf copy row titles its direction: a push goes to related posts, a pull comes from them',
+    $title($copy_acf + ['holder_role' => 'source']) === 'Venue — Copy Display name to related posts (owning) (MC Items)'
+    && $title($copy_acf + ['holder_role' => 'target']) === 'Venue — Copy Display name from related posts (owning) (MC Items)'
+    && str_contains($title($copy_acf), 'from related posts'));
+$check('a copy row with no claim stored reads as contributing',
+    str_contains($title(['type' => 'field_from_related_post', 'name' => 'Venue', 'source_field' => 'field_a']), '(contributing)'));
+$check('an unnamed copy row is named rather than left blank',
+    str_starts_with($title(['type' => 'field_from_related_post', 'post_types' => ['mc_item']]), 'Untitled copy-from-related-post rule'));
 // The uniform marker the term list gained in #57 — the whole reason the live
 // {name} template was replaced by a snapshot.
 $check('a disabled row carries the uniform prefix',

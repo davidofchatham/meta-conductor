@@ -9,6 +9,7 @@ namespace BWS\MetaConductor\Core;
 
 use BWS\MetaConductor\Handlers\UnifiedHandlerBase;
 use BWS\MetaConductor\Relationships\ParentRelationship;
+use BWS\MetaConductor\Relationships\Relationship;
 use BWS\MetaConductor\RuleTypes\Registry;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 use BWS\MetaConductor\Storage\StorageFactory;
@@ -136,6 +137,14 @@ class FormatDispatcher {
     private ?array $parent_scan = null;
 
     /**
+     * The row-declared scan, memoized: `{rows, pairs}`. See
+     * `relationship_rows()`.
+     *
+     * @var array{rows: array, pairs: array}|null
+     */
+    private ?array $relationship_scan = null;
+
+    /**
      * Fingerprint of a disabled row passes run anyway; see `include_row()`.
      *
      * @var string|null
@@ -205,7 +214,9 @@ class FormatDispatcher {
 
     /**
      * The entities this post's format pass reaches: its children, when an
-     * enabled format rule reads `{parent:…}` (FW-62 03).
+     * enabled format rule reads `{parent:…}` (FW-62 03), and the dependents of
+     * every enabled row that copies from a related post, through that row's
+     * relationship (FW-5 05).
      *
      * DECLARES, NEVER WRITES OR RUNS. `TermDispatcher::run_entity()` marks the
      * ids on its one queue and each child gets its own full ordered pass, so a
@@ -214,22 +225,66 @@ class FormatDispatcher {
      * or not it changed this post: the parent's own row is often unchanged
      * while the field a child's pattern reads was just edited.
      *
-     * ZERO-COST WITHOUT A `{parent:…}` RULE: `parent_token_post_types()` is
-     * null and this returns before any child lookup. With one, the lookup is
-     * the parent relationship's `dependents_of()`, filtered to the post types
-     * those rules cover. Grandchildren follow because each child's own pass
-     * calls this again; `drain()`'s per-entity bound ends the chain.
+     * ZERO-COST WITHOUT EITHER: `parent_token_post_types()` is null and
+     * `relationship_rows()` is empty, so this returns before any lookup. With a
+     * `{parent:…}` rule the lookup is the parent relationship's
+     * `dependents_of()`, filtered to the post types those rules cover; a row
+     * brings its own relationship and post types. Grandchildren follow because
+     * each child's own pass calls this again; `drain()`'s per-entity bound ends
+     * the chain.
      *
      * @param int $post_id Entity just passed over.
      * @return int[] Child ids to mark dirty.
      */
     public function fan_out(int $post_id): array {
         $types = $this->parent_token_post_types();
-        if ($types === null || $post_id <= 0) {
+        $rows  = $this->relationship_rows();
+        if (($types === null && $rows === []) || $post_id <= 0) {
             return [];
         }
 
-        return (new ParentRelationship())->dependents_of($post_id, ['post_types' => $types]);
+        $ids = $types === null ? [] : (new ParentRelationship())->dependents_of($post_id, ['post_types' => $types]);
+        foreach ($rows as [$relationship, $rule]) {
+            $ids = array_merge($ids, $relationship->dependents_of($post_id, $rule));
+        }
+
+        return array_values(array_unique($ids));
+    }
+
+    /**
+     * The enabled rows that copy from a related post, each with the graph it
+     * walks (FW-5 05): `[Relationship, row]` pairs. A row declares its own
+     * dependents, so a source edit reaches the posts that read it with no
+     * `{parent:…}` token in play. A row that writes no post type is left out
+     * (`written_post_types()` is `['']`: nothing for the lookup to find).
+     *
+     * Memoized against the rows it scanned, like `parent_token_post_types()`.
+     *
+     * @return array<int, array{0: Relationship, 1: array}>
+     */
+    private function relationship_rows(): array {
+        $rows = $this->ordered_rules();
+        if ($this->relationship_scan !== null && $this->relationship_scan['rows'] === $rows) {
+            return $this->relationship_scan['pairs'];
+        }
+
+        $pairs = [];
+        foreach ($rows as $rule) {
+            $type = (string) ($rule['type'] ?? '');
+            if (!Registry::known($type) || !self::owns($type)) {
+                continue;
+            }
+            $descriptor   = Registry::get($type);
+            $relationship = $descriptor->relationship($rule);
+            $written      = $descriptor->written_post_types($rule);
+            // `[]` is every post type; `['']` is a row that writes nothing.
+            if ($relationship !== null && $descriptor->available() && ($written === [] || array_filter($written, 'strlen') !== [])) {
+                $pairs[] = [$relationship, $rule];
+            }
+        }
+        $this->relationship_scan = ['rows' => $rows, 'pairs' => $pairs];
+
+        return $pairs;
     }
 
     /**
@@ -485,14 +540,20 @@ class FormatDispatcher {
      * listener is switched off for it, or every write would queue a second,
      * idempotent pass at shutdown.
      *
-     * SLASHED, like the row update below: `update_field()` unslashes its value
-     * on the way to `update_metadata()`, so an unslashed `a` stores as `ab`.
+     * Values are RAW — an array, an ID list or a repeater value is never cast —
+     * and `MetaWriter` slashes them once: `update_field()` unslashes its value
+     * on the way to `update_metadata()`, so an unslashed `a` stores as `ab`. A
+     * field with a key in `field_keys` is written through ACF by that key; one
+     * without is plain meta, which `MetaWriter` routes through ACF when the name
+     * matches an ACF field and refuses when it starts with `_`.
      *
      * Row cells go through `update_sub_field()` and follow the same rules.
      *
      * An unchanged value is not written, and an all-empty result writes `''` —
-     * the stored value must not outlive its sources. Compared as strings: ACF
-     * stores every supported target type as one.
+     * the stored value must not outlive its sources. Compared STRICTLY against
+     * the unformatted stored meta (`get_post_meta()`, not `get_field()`, which
+     * would substitute the field's default for a missing value): a string value
+     * compares as it always did, since ACF stores a scalar target as a string.
      *
      * @param int   $post_id Entity.
      * @param array $after   `compute()`'s final data.
@@ -500,29 +561,28 @@ class FormatDispatcher {
      */
     private function write_fields(int $post_id, array $after): int {
         $written = 0;
-        if ((empty($after['fields']) && empty($after['rows'])) || !function_exists('update_field')) {
+        if (empty($after['fields']) && empty($after['rows'])) {
             return $written;
         }
 
         add_filter('meta_conductor_acf_reapply_enabled', '__return_false');
         try {
             foreach ($after['fields'] as $name => $value) {
-                $key = (string) ($after['field_keys'][$name] ?? '');
-                if ($key !== '' && (string) get_post_meta($post_id, $name, true) !== (string) $value) {
-                    update_field($key, wp_slash((string) $value), $post_id);
+                if (get_post_meta($post_id, $name, true) !== $value
+                    && MetaWriter::write($post_id, (string) $name, $value, (string) ($after['field_keys'][$name] ?? ''))) {
                     $written++;
                 }
             }
 
             // Repeater-row cells, by repeater key, 1-based row and subfield key.
             // ACF's subfield write keeps the field-key reference row and fires
-            // no save hook, like the field write above. Compared as strings
+            // no save hook, like the field write above. Compared strictly
             // against the cell's stored meta, so an unchanged row is not written.
             foreach ($after['rows'] ?? [] as $repeater_key => $by_row) {
                 foreach ($by_row as $row => $cells) {
                     foreach ($cells as $sub_key => $cell) {
-                        if (function_exists('update_sub_field') && (string) get_post_meta($post_id, $cell['meta'], true) !== (string) $cell['value']) {
-                            update_sub_field([$repeater_key, $row, $sub_key], wp_slash((string) $cell['value']), $post_id);
+                        if (function_exists('update_sub_field') && get_post_meta($post_id, $cell['meta'], true) !== $cell['value']) {
+                            update_sub_field([$repeater_key, $row, $sub_key], wp_slash($cell['value']), $post_id);
                             $written++;
                         }
                     }

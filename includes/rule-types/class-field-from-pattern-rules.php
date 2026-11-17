@@ -177,16 +177,23 @@ final class FieldFromPatternRules extends RuleType {
     }
 
     /**
+     * `post_types` is the scope shared with *Set a field from a related post*
+     * (`FormatRulesConfig` declares it once, gated by `readers()`): checkboxes
+     * like the term list's. These rules compose in list order, so unlike title
+     * & slug (first match per post type) one rule may cover several types.
+     * Unlike the term list, none checked means NOTHING, not every type — a
+     * field write on a type whose ACF group lacks the field would store orphan
+     * meta. The attachment type is not offered (see
+     * `ConfigHelpers::format_post_type_options()`).
+     */
+    public function reads_shared_fields(): array {
+        return ['post_types'];
+    }
+
+    /**
      * Every field here is gated to this type (the kind config stamps it). The
-     * shared format frame — type, enabled, name, row_title — is read by this
-     * handler too and stays ungated.
-     *
-     * `post_types` is this type's own scope, checkboxes like the term list's:
-     * these rules compose in list order, so unlike title & slug (first match
-     * per post type) one rule may cover several types. Unlike the term list,
-     * none checked means NOTHING, not every type — a field write on a type
-     * whose ACF group lacks the field would store orphan meta. The attachment
-     * type is not offered (see `ConfigHelpers::format_post_type_options()`).
+     * shared format frame — type, enabled, name, row_title — and the shared
+     * `post_types` are read by this handler too and are declared outside it.
      *
      * No bare `{word}` in a description (H12 enforces); the colon tokens
      * are safe.
@@ -195,13 +202,6 @@ final class FieldFromPatternRules extends RuleType {
      */
     public function subfields(): array {
         return [
-            ConfigHelpers::post_types_field([
-                'label'       => __('Post types', 'meta-conductor'),
-                'description' => __('The post types this rule writes to. Check at least one — a rule with none checked does nothing.', 'meta-conductor'),
-                'args'        => [
-                    'options' => ConfigHelpers::format_post_type_options(),
-                ],
-            ]),
             [
                 'id'          => 'target_field',
                 'type'        => 'select',

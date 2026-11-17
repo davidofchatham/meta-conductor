@@ -209,6 +209,45 @@ if (!preg_match('/function\s+pass_enabled\s*\(\s*int\s+\$\w+\s*\)\s*:\s*bool\s*\
     }
 }
 
+// --- 1b. The zero-source gate is one encoding (FW-5 02). ----------------------
+// Both relationships of terms_from_related_post route through
+// `Relationships\SourceGate::resolve()`; a handler that filters sources by
+// status or tests for an empty source list itself has forked the rule, which is
+// how the parent and ACF relationships disagreed about a gated-out source.
+$related_file = dirname(__DIR__) . '/includes/handlers/class-terms-from-related-post-handler.php';
+$related_src  = $strip_comments((string) file_get_contents($related_file));
+if (preg_match_all('/SourceGate::resolve\(/', $related_src) < 2) {
+    $errors[] = 'TermsFromRelatedPostHandler does not route BOTH relationships (parent and acf) through SourceGate::resolve() — the zero-source gate must be written once.';
+}
+foreach (['get_post_status(' => 'filters sources by status', 'empty($sources)' => 'tests for zero sources'] as $needle => $what) {
+    if (strpos($related_src, $needle) !== false) {
+        $errors[] = sprintf('TermsFromRelatedPostHandler %s itself (`%s`) — that is SourceGate::resolve()\'s job.', $what, $needle);
+    }
+}
+
+// The copy rule (FW-5 04) is the third caller: it resolves its eligible source
+// through the same gate, and neither reimplements the status filter nor tests
+// an empty source list itself.
+$copy_src = $strip_comments((string) file_get_contents(dirname(__DIR__) . '/includes/handlers/class-field-from-related-post-handler.php'));
+if (preg_match_all('/SourceGate::resolve\(/', $copy_src) < 1) {
+    $errors[] = 'FieldFromRelatedPostHandler does not route its source through SourceGate::resolve() — the zero-source gate must be written once.';
+}
+foreach (['get_post_status(' => 'filters sources by status', 'empty($sources)' => 'tests for zero sources', 'should_process_post(' => 'gates through the base post gate'] as $needle => $what) {
+    if (strpos($copy_src, $needle) !== false) {
+        $errors[] = sprintf('FieldFromRelatedPostHandler %s itself (`%s`) — that is SourceGate::resolve()\'s job.', $what, $needle);
+    }
+}
+// FW-5 08: the ACF relationship rides the same applier. The graph comes from the
+// descriptor (the one place `parent` / `acf` map to a class, which the fan-out
+// reads too), so the handler names neither, and the descriptor offers the ACF one.
+if (strpos($copy_src, '$descriptor->relationship(') === false || strpos($copy_src, 'new ParentRelationship') !== false) {
+    $errors[] = 'FieldFromRelatedPostHandler must take its relationship from the descriptor\'s relationship() and not construct one — fan_out() and the applier would walk different graphs (FW-5 08).';
+}
+$copy_rules_src = $strip_comments((string) file_get_contents(dirname(__DIR__) . '/includes/rule-types/class-field-from-related-post-rules.php'));
+if (strpos($copy_rules_src, "'acf'    => new AcfRelationship()") === false) {
+    $errors[] = 'FieldFromRelatedPostRules::relationship() must return AcfRelationship for an acf row — without it the copy rule has no ACF fan-out (FW-5 08).';
+}
+
 // --- 2. Triggers are MARK-ONLY ---------------------------------------------
 // Each trigger callback's body may call mark_dirty and nothing else. A trigger
 // that ran a pass would restore one-pass-per-trigger, which is the defect the
@@ -343,6 +382,32 @@ foreach ($descriptors as $type => $descriptor) {
     }
 }
 
+// A handler's declarations are its file's plus those of any handler trait it
+// composes with a class-level `use Trait;` or `use A, B;` (the capture path
+// lives in `AcfSeverCapture`), comments stripped. Reading the file alone would
+// call a trait-declared hook callback or `drain_captures()` undeclared. A
+// trait named there with no file in includes/handlers/ is an error, not a
+// silent skip: a check that reads less than the class declares tests nothing.
+// A trait's lines follow the handler's, so a `hook@line` is only a line in the
+// combined source.
+$handler_source = static function (string $file) use ($root, $strip_comments, &$errors): string {
+    $src = $strip_comments((string) file_get_contents($root . '/includes/handlers/' . $file));
+    if (preg_match_all('/^\s*use\s+(\w+(?:\s*,\s*\w+)*)\s*;/m', $src, $uses)) {
+        foreach ($uses[1] as $list) {
+            foreach (preg_split('/\s*,\s*/', $list) as $trait) {
+                $kebab = strtolower((string) preg_replace('/(?<!^)[A-Z]/', '-$0', $trait));
+                $path  = $root . '/includes/handlers/class-' . $kebab . '.php';
+                if (!is_file($path)) {
+                    $errors[] = sprintf('%s composes trait %s, but includes/handlers/class-%s.php does not exist — H13 would read the handler without it.', $file, $trait, $kebab);
+                    continue;
+                }
+                $src .= PHP_EOL . $strip_comments((string) file_get_contents($path));
+            }
+        }
+    }
+    return $src;
+};
+
 /**
  * Every hook a handler file registers, as `hook@line`.
  *
@@ -364,7 +429,7 @@ $registered_hooks = static function (string $body): array {
 };
 
 foreach ($handler_files as $type => $handler_file) {
-    $body = $strip_comments((string) file_get_contents($root . '/includes/handlers/' . $handler_file));
+    $body = $handler_source($handler_file);
 
     $allowed = $capture[$type] ?? [];
     foreach ($registered_hooks($body) as $hook) {
@@ -476,7 +541,7 @@ $method_body = static function (string $body, string $name): ?string {
 };
 
 foreach ($capture as $type => $hooks) {
-    $body = $strip_comments((string) file_get_contents($root . '/includes/handlers/' . $handler_files[$type]));
+    $body = $handler_source($handler_files[$type]);
 
     foreach ($hooks as $hook) {
         // add_action OR add_filter: `related_post_terms`' sever captures are
@@ -586,7 +651,7 @@ if (!preg_match('/function\s+enqueue_fan_out\s*\([^)]*\)\s*:\s*void\s*\{(.*?)\n 
 // A handler's fan_out() may SELECT; it must not write. The write is what the
 // declaration exists to avoid.
 foreach ($handler_files as $type => $handler_file) {
-    $body = $strip_comments((string) file_get_contents($root . '/includes/handlers/' . $handler_file));
+    $body = $handler_source($handler_file);
     $fan  = $method_body($body, 'fan_out');
     if ($fan === null) {
         continue; // inherits the empty default — nothing to check
@@ -653,7 +718,7 @@ if (!preg_match('/function\s+drain\s*\(\s*\)\s*:\s*void\s*\{(.*?)\n    \}/s', $s
 // applier, which the queue was going to run anyway.
 foreach ($descriptors as $type => $descriptor) {
     $overrides = $method_body(
-        $strip_comments((string) file_get_contents($root . '/includes/handlers/' . $handler_files[$type])),
+        $handler_source($handler_files[$type]),
         'drain_captures'
     ) !== null;
 
@@ -683,7 +748,7 @@ foreach ($descriptors as $type => $descriptor) {
 // no order around it.
 foreach ($handler_files as $type => $handler_file) {
     $drainer = $method_body(
-        $strip_comments((string) file_get_contents($root . '/includes/handlers/' . $handler_file)),
+        $handler_source($handler_file),
         'drain_captures'
     );
     if ($drainer === null) {
@@ -806,8 +871,14 @@ if (!is_file($format_file)) {
             $errors[] = 'FormatDispatcher::write() does not call write_fields() before the row update — computed fields would not be persisted by the pass.';
         }
         $write_fields = $method_body($fsrc, 'write_fields');
-        if ($write_fields === null || !preg_match('/update_field\(\s*\$key/', $write_fields)) {
-            $errors[] = 'FormatDispatcher::write_fields() must write through update_field() by the ACF field KEY — a name write skips the field\'s reference row on a first write.';
+        // The field write is MetaWriter's (FW-5 03): the dispatcher hands it the
+        // field's KEY, and MetaWriter writes through update_field() by key.
+        if ($write_fields === null || !preg_match('/MetaWriter::write\(\s*\$post_id\s*,\s*\(string\)\s*\$name\s*,\s*\$value\s*,[^;]*field_keys/', $write_fields)) {
+            $errors[] = 'FormatDispatcher::write_fields() must write through MetaWriter::write() with the field\'s ACF KEY from field_keys — a name write skips the field\'s reference row on a first write.';
+        }
+        $meta_writer = $strip_comments((string) file_get_contents($root . '/includes/core/class-meta-writer.php'));
+        if (!preg_match('/update_field\(\s*\$acf_key/', $meta_writer)) {
+            $errors[] = 'MetaWriter::write() must write an ACF field through update_field() by the field KEY.';
         }
         if ($write_fields === null || !preg_match('/update_sub_field\(\s*\[\s*\$repeater_key\s*,\s*\$row\s*,\s*\$sub_key\s*\]/', $write_fields)) {
             $errors[] = 'FormatDispatcher::write_fields() must write a repeater cell through update_sub_field() addressed by repeater KEY, 1-based row and subfield KEY.';
@@ -864,7 +935,7 @@ if (count($data_sites) > 1 && !$foreign_data) {
 // keeps one save to one row update however many rules matched, and what lets
 // the deferred pre-write phase reuse the seam on data that has no row yet.
 foreach ($kind_types('format_rules') as $type) {
-    $applier = $method_body($strip_comments((string) file_get_contents($root . '/includes/handlers/' . $handler_files[$type])), 'apply_to_data');
+    $applier = $method_body($handler_source($handler_files[$type]), 'apply_to_data');
     if ($applier === null) {
         $errors[] = sprintf(
             '%s is a format-kind handler but declares no apply_to_data() — it would inherit the base null, so every rule of its type reports "not mine" and silently never runs.',
@@ -877,7 +948,7 @@ foreach ($kind_types('format_rules') as $type) {
     // preview. Per-rule state belongs in commit_data(), which only write() calls.
     // `update_field` joined the list with the Computed field rule: its value
     // rides `$data['fields']` and FormatDispatcher::write_fields() persists it.
-    foreach (['wp_update_post', 'wp_insert_post', 'update_post_meta', 'update_option', 'update_field', 'update_sub_field', 'add_post_meta'] as $effect) {
+    foreach (['wp_update_post', 'wp_insert_post', 'update_post_meta', 'update_option', 'update_field', 'update_sub_field', 'add_post_meta', 'MetaWriter::write'] as $effect) {
         if (preg_match('/\b' . preg_quote($effect, '/') . '\s*\(/', $applier)) {
             $errors[] = sprintf(
                 '%s::apply_to_data() calls %s() — a format applier returns data; the dispatcher writes the row and commit_data() the per-rule state (#64, FW-16 03).',
@@ -1013,10 +1084,36 @@ if (isset($fsrc)) {
                 $errors[] = 'FormatDispatcher::fan_out() does not return [] BEFORE the child lookup when no enabled rule uses {parent:…} — a site without one would pay a query per entity.';
             }
         }
+        // FW-5 05: a row that copies from a related post declares its own
+        // dependents, through ITS relationship — the dispatcher names no graph
+        // for it, so the ACF relationship joins without touching this method.
+        $rows_scan = $method_body($fsrc, 'relationship_rows');
+        if ($rows_scan === null) {
+            $errors[] = 'FormatDispatcher::relationship_rows() not found — fan_out() needs ONE site that finds the enabled rows declaring dependents through a relationship (FW-5 05).';
+        } else {
+            if (!preg_match('/\$this->ordered_rules\(/', $rows_scan)) {
+                $errors[] = 'relationship_rows() does not read the ENABLED rules through ordered_rules() — a disabled copy row would make every post pay the child lookup.';
+            }
+            if (!preg_match('/->relationship\(\$rule\)/', $rows_scan) || preg_match('/new\s+(?:Parent|Acf)Relationship/', $rows_scan)) {
+                $errors[] = 'relationship_rows() must take each row\'s graph from the descriptor\'s relationship(), not name one — a new relationship would silently not fan out (FW-5 05).';
+            }
+            if (!preg_match('/written_post_types\(/', $rows_scan) || !preg_match('/->available\(\)/', $rows_scan)) {
+                $errors[] = 'relationship_rows() must skip a row that writes no post type or whose type is unavailable — a row the handler skips would still cost a lookup per entity.';
+            }
+            if (!preg_match('/\$this->relationship_scan\b/', $rows_scan)) {
+                $errors[] = 'relationship_rows() is not memoized — every entity of a drain would rescan every row.';
+            }
+        }
+        if (!preg_match('/\$this->relationship_rows\(\)/', $body) || !preg_match('/\$rows\s*===\s*\[\]/', $body)
+            || !preg_match('/\$relationship->dependents_of\(/', $body)) {
+            $errors[] = 'FormatDispatcher::fan_out() must return [] while relationship_rows() is empty and find each row\'s dependents through its relationship\'s dependents_of() (FW-5 05).';
+        } elseif (strpos($body, '$rows === []') > strpos($body, '$relationship->dependents_of(')) {
+            $errors[] = 'FormatDispatcher::fan_out() checks relationship_rows() AFTER the lookup — a site with no copy row would pay a query per entity (FW-5 05).';
+        }
         // Declares, never writes or runs: a pass here would nest inside the
         // format pass, and a write would put the child outside the queue.
         foreach (array_merge($write_primitives, ['wp_update_post', 'update_post_meta', 'update_field', 'update_sub_field', 'mark_dirty', 'run_pass', 'drain', 'drain_post', 'compute', 'write', 'commit_data', 'take_pass']) as $effect) {
-            foreach ([$body, $scan ?? ''] as $part) {
+            foreach ([$body, $scan ?? '', $rows_scan ?? ''] as $part) {
                 if (preg_match('/\b' . preg_quote($effect, '/') . '\s*\(/', $part)) {
                     $errors[] = sprintf('FormatDispatcher fan_out() path calls %s() — fan_out declares the children for their own pass; it never writes or runs them (FW-62 03).', $effect);
                     break;
@@ -1142,7 +1239,7 @@ $read_writes      = array_merge($write_primitives, [
 $runtime_count = 0;
 
 foreach ($descriptors as $type => $descriptor) {
-    $hbody = $strip_comments((string) file_get_contents($root . '/includes/handlers/' . $handler_files[$type]));
+    $hbody = $handler_source($handler_files[$type]);
 
     foreach ($descriptor->runtime_hooks() as $hook => $spec) {
         $runtime_count++;

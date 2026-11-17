@@ -61,6 +61,7 @@ $classes = [
     'BWS\\MetaConductor\\Core\\AcfWriteQueue',
     'BWS\\MetaConductor\\Core\\TermDispatcher',
     'BWS\\MetaConductor\\Core\\FormatDispatcher',
+    'BWS\\MetaConductor\\Core\\MetaWriter',
     'BWS\\MetaConductor\\Core\\RuleChoice',
     'BWS\\MetaConductor\\Core\\ExistingPostsApplier',
     'BWS\\MetaConductor\\Core\\TermCountSurvivors',
@@ -77,6 +78,7 @@ $classes = [
     'BWS\\MetaConductor\\Handlers\\RestrictTermCountHandler',
     'BWS\\MetaConductor\\Handlers\\TitleSlugFromPatternHandler',
     'BWS\\MetaConductor\\Handlers\\FieldFromPatternHandler',
+    'BWS\\MetaConductor\\Handlers\\FieldFromRelatedPostHandler',
     // RuleTypes\ (FW-39) — the descriptors and the registry that lists them.
     // Also proves the kebab DIRECTORY mapping (RuleTypes -> rule-types/).
     'BWS\\MetaConductor\\RuleTypes\\RuleType',
@@ -90,6 +92,7 @@ $classes = [
     'BWS\\MetaConductor\\RuleTypes\\RestrictTermCountRules',
     'BWS\\MetaConductor\\RuleTypes\\TitleSlugFromPatternRules',
     'BWS\\MetaConductor\\RuleTypes\\FieldFromPatternRules',
+    'BWS\\MetaConductor\\RuleTypes\\FieldFromRelatedPostRules',
     // Tokens\ (FW-40) — the pattern engine title/slug renders through.
     'BWS\\MetaConductor\\Tokens\\TokenEngine',
     'BWS\\MetaConductor\\Tokens\\PostTokenSource',
@@ -101,6 +104,7 @@ $classes = [
     // Relationships\ (FW-61 02) — the graph both flavors of terms-from-related-post read.
     'BWS\\MetaConductor\\Relationships\\ParentRelationship',
     'BWS\\MetaConductor\\Relationships\\AcfRelationship',
+    'BWS\\MetaConductor\\Relationships\\SourceGate',
     // Storage\ upgrade routine (FW-51 03) — delete with the class.
     'BWS\\MetaConductor\\Storage\\SlugEscalationMigration',
     // Storage\ rule-type id rewrite (FW-63 01) — delete with the class.
@@ -139,6 +143,7 @@ $interfaces = [
 $traits = [
     'BWS\\MetaConductor\\Handlers\\TermOperations',
     'BWS\\MetaConductor\\Handlers\\AcfBridge',
+    'BWS\\MetaConductor\\Handlers\\AcfSeverCapture',
 ];
 
 $missing = [];

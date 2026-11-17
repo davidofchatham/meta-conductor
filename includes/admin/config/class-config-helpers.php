@@ -11,6 +11,7 @@
 
 namespace BWS\MetaConductor\Admin\Config;
 
+use BWS\MetaConductor\Relationships\AcfRelationship;
 use BWS\MetaConductor\RuleTypes\FieldFromPatternRules;
 use BWS\MetaConductor\RuleTypes\Registry;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
@@ -160,6 +161,48 @@ class ConfigHelpers {
         }
 
         return ['all' => $rules];
+    }
+
+    /**
+     * The gate for a shared subfield: every type whose descriptor lists it in
+     * `reads_shared_fields()`, in the order given.
+     *
+     * A type missing from a declaration has that value hidden and DROPPED on
+     * save (architecture.md → The ordered rule repeaters); H11 / H12's
+     * hand-written `$expected_visible` is the independent check.
+     *
+     * A reader may add a second condition (`shared_field_when()`): the types
+     * with none keep ONE `in` gate, and each type with one gets its own `all`
+     * clause, the lot joined by `any`. With no extras this is exactly the flat
+     * `type in [...]` gate.
+     *
+     * @param string[] $types Stored type keys of the list, in registry order.
+     * @param string   $field Shared subfield id.
+     */
+    public static function readers(array $types, string $field): array {
+        $plain   = [];
+        $clauses = [];
+        foreach ($types as $type) {
+            $descriptor = Registry::get($type);
+            if (!in_array($field, $descriptor->reads_shared_fields(), true)) {
+                continue;
+            }
+            $when = $descriptor->shared_field_when($field);
+            if ($when) {
+                $clauses[] = self::gate([$type], $when);
+            } else {
+                $plain[] = $type;
+            }
+        }
+
+        if (!$clauses) {
+            return self::type_gate(...$plain);
+        }
+        if ($plain) {
+            array_unshift($clauses, self::type_gate(...$plain));
+        }
+
+        return count($clauses) === 1 ? $clauses[0] : ['any' => $clauses];
     }
 
     /**
@@ -487,6 +530,104 @@ class ConfigHelpers {
     }
 
     /**
+     * The relationship subfields the two related-post rule types share
+     * (`terms_from_related_post`, `field_from_related_post`): `relationship`,
+     * the ACF-off notice, `acf_field_name`, `holder_role`,
+     * `reverse_acf_field_name`, in that order.
+     *
+     * The STRUCTURE is shared (ids, `when` gates, defaults, `required`,
+     * `columns`, option keys) so the two cannot drift: a drifted gate is a
+     * condition-hidden subfield that drops on save (architecture.md → *The
+     * ordered rule repeaters*). The COPY is the type's own, passed in verbatim
+     * so each call site keeps its strings literal for translation, and so
+     * none can carry a bare `{word}` (H12).
+     *
+     * @param array{parent_option:string,field_description:string,holder_label:string,holder_description:string,reverse_description:string} $copy
+     * @return array[]
+     */
+    public static function acf_relationship_subfields(array $copy): array {
+        $acf = ['relationship' => 'acf'];
+
+        $fields = [
+            [
+                'id'          => 'relationship',
+                'type'        => 'select',
+                'label'       => __('Relationship', 'meta-conductor'),
+                'description' => __('Where the source post comes from. Changing it clears the settings that belonged to the other relationship.', 'meta-conductor'),
+                'default'     => 'parent',
+                'required'    => true,
+                'columns'     => 12,
+                'args'        => [
+                    'options' => [
+                        'parent' => $copy['parent_option'],
+                        'acf'    => AcfRelationship::is_available()
+                            ? __('ACF relationship field — posts joined by a relationship or post-object field', 'meta-conductor')
+                            : __('ACF relationship field — requires ACF, which is not active', 'meta-conductor'),
+                    ],
+                ],
+            ],
+        ];
+
+        // The notice a stored ACF row shows while ACF is off. Declared only
+        // then: with ACF active it would be a permanent inert note.
+        if (!AcfRelationship::is_available()) {
+            $fields[] = [
+                'id'      => 'acf_required_note',
+                'type'    => 'html',
+                'columns' => 12,
+                'when'    => $acf,
+                'args'    => [
+                    'variant' => 'warning',
+                    'content' => '<p>' . esc_html__('This rule requires ACF, which is not active. It does nothing until ACF is active again; its settings are kept.', 'meta-conductor') . '</p>',
+                ],
+            ];
+        }
+
+        return array_merge($fields, [
+            [
+                'id'          => 'acf_field_name',
+                'type'        => 'select',
+                'label'       => __('Monitored relationship field', 'meta-conductor'),
+                'description' => $copy['field_description'],
+                'default'     => '',
+                'required'    => true,
+                'columns'     => 12,
+                'when'        => $acf,
+                'args'        => [
+                    'options' => self::acf_relationship_field_options(),
+                ],
+            ],
+            [
+                'id'          => 'holder_role',
+                'type'        => 'radio',
+                'label'       => $copy['holder_label'],
+                'description' => $copy['holder_description'],
+                'default'     => 'source',
+                'columns'     => 12,
+                'when'        => $acf,
+                'args'        => [
+                    'options' => [
+                        'source' => __('Field holder → copies out to related posts (push)', 'meta-conductor'),
+                        'target' => __('Related posts → copies in to the field holder (pull)', 'meta-conductor'),
+                    ],
+                ],
+            ],
+            [
+                'id'          => 'reverse_acf_field_name',
+                'type'        => 'select',
+                'label'       => __('Reverse relationship field (optional)', 'meta-conductor'),
+                'description' => $copy['reverse_description'],
+                'default'     => '',
+                'columns'     => 12,
+                'when'        => $acf,
+                'args'        => [
+                    'options' => self::acf_relationship_field_options(__('— None / auto —', 'meta-conductor')),
+                ],
+            ],
+        ]);
+    }
+
+    /**
      * ACF relationship/post-object fields across all field groups,
      * labelled "Post Type: field_name".
      *
@@ -579,15 +720,17 @@ class ConfigHelpers {
         // Raw on purpose (not don't 1's `get_rules()`): the select's option keys are
         // the COMBINED values, and the projection would split them.
         $stored = get_option(OptionRuleStorage::OPTION_NAME, []);
-        $rows   = is_array($stored) ? ($stored[OptionRuleStorage::KIND_TERM] ?? []) : [];
         $out    = [];
 
-        foreach ((array) $rows as $row) {
-            foreach (['acf_field_name', 'reverse_acf_field_name'] as $key) {
-                $value = is_array($row) ? (string) ($row[$key] ?? '') : '';
-                if ($value !== '') {
-                    /* translators: %s: the stored ACF field value */
-                    $out[$value] = sprintf(__('%s (ACF inactive)', 'meta-conductor'), $value);
+        // Both kinds: the term list's ACF rows and *Set a field from a related post*.
+        foreach ([OptionRuleStorage::KIND_TERM, OptionRuleStorage::KIND_FORMAT] as $kind) {
+            foreach ((array) (is_array($stored) ? ($stored[$kind] ?? []) : []) as $row) {
+                foreach (['acf_field_name', 'reverse_acf_field_name'] as $key) {
+                    $value = is_array($row) ? (string) ($row[$key] ?? '') : '';
+                    if ($value !== '') {
+                        /* translators: %s: the stored ACF field value */
+                        $out[$value] = sprintf(__('%s (ACF inactive)', 'meta-conductor'), $value);
+                    }
                 }
             }
         }
@@ -635,11 +778,8 @@ class ConfigHelpers {
         }
 
         $fields_cache = [];
-        $post_types   = get_post_types(['public' => true], 'objects');
-        unset($post_types['attachment']);
-
-        foreach ($post_types as $post_type) {
-            foreach ((array) acf_get_field_groups(['post_type' => $post_type->name]) as $group) {
+        foreach (self::format_post_type_options() as $post_type => $post_type_label) {
+            foreach ((array) acf_get_field_groups(['post_type' => $post_type]) as $group) {
                 foreach ((array) acf_get_fields($group['key']) as $field) {
                     $key = (string) ($field['key'] ?? '');
                     if ($key !== '' && ($field['type'] ?? '') === 'repeater') {
@@ -658,7 +798,7 @@ class ConfigHelpers {
                     }
                     $fields_cache[$key]['label'] = sprintf('%s (%s)', $field['label'] ?? $field['name'], $field['name'] ?? '')
                         . ((string) ($group['title'] ?? '') !== '' ? ' — ' . $group['title'] : '');
-                    $fields_cache[$key]['types'][] = $post_type->label;
+                    $fields_cache[$key]['types'][] = $post_type_label;
                 }
             }
         }
@@ -668,6 +808,143 @@ class ConfigHelpers {
         }
 
         return $placeholder_row + $fields_cache + $rows_cache;
+    }
+
+    /**
+     * ACF field types that hold no value of their own (layout and display
+     * fields), so there is nothing to copy. `clone` stores its members under the
+     * clone's own prefix, not as a value, so it is left out too.
+     */
+    public const NON_VALUE_TYPES = ['tab', 'message', 'accordion', 'clone', 'separator'];
+
+    /**
+     * The source select of *Set a field from a related post*: every top-level
+     * ACF field that holds a value, keyed by ACF FIELD KEY, labelled with its
+     * group and the post types the group is shown on. The post types ride in
+     * the label because a static list cannot follow the row's own post-type
+     * scope; the handler refuses a field its group does not show on the
+     * receiving type.
+     *
+     * Empty (placeholder only) when ACF is unavailable. Nothing is cached before
+     * ACF is confirmed loaded.
+     *
+     * @return array<string,string> field key => label.
+     */
+    public static function acf_source_field_options(): array {
+        static $cache = null;
+
+        $placeholder_row = ['' => __('— Select ACF field —', 'meta-conductor')];
+
+        if ($cache !== null) {
+            return $placeholder_row + $cache;
+        }
+        if (!function_exists('acf_get_field_groups') || !function_exists('acf_get_fields')) {
+            return $placeholder_row;
+        }
+
+        $cache = [];
+        foreach (self::format_post_type_options() as $post_type => $post_type_label) {
+            foreach ((array) acf_get_field_groups(['post_type' => $post_type]) as $group) {
+                foreach ((array) acf_get_fields($group['key']) as $field) {
+                    $key = (string) ($field['key'] ?? '');
+                    if ($key === '' || in_array($field['type'] ?? '', self::NON_VALUE_TYPES, true)) {
+                        continue;
+                    }
+                    $cache[$key]['label'] ??= sprintf('%s (%s)', $field['label'] ?? $field['name'], $field['name'] ?? '')
+                        . ((string) ($group['title'] ?? '') !== '' ? ' — ' . $group['title'] : '');
+                    $cache[$key]['types'][] = $post_type_label;
+                }
+            }
+        }
+
+        foreach ($cache as $key => $entry) {
+            $cache[$key] = $entry['label'] . ' [' . implode(', ', array_unique($entry['types'])) . ']';
+        }
+
+        return $placeholder_row + $cache;
+    }
+
+    /**
+     * The group choices of the copy source select (FW-5 group mode): every ACF
+     * field group shown on a public post type, keyed by GROUP key, labelled
+     * with its title and the post types it is shown on. Never a target: a group
+     * source writes into the same group.
+     *
+     * @return array<string,string> group key => label (no placeholder).
+     */
+    public static function acf_group_options(): array {
+        if (!function_exists('acf_get_field_groups')) {
+            return [];
+        }
+
+        $groups = [];
+        foreach (self::format_post_type_options() as $post_type => $post_type_label) {
+            foreach ((array) acf_get_field_groups(['post_type' => $post_type]) as $group) {
+                $key = (string) ($group['key'] ?? '');
+                if ($key === '') {
+                    continue;
+                }
+                $groups[$key]['title'] ??= (string) ($group['title'] ?? $key);
+                $groups[$key]['types'][] = $post_type_label;
+            }
+        }
+
+        $options = [];
+        foreach ($groups as $key => $entry) {
+            $options[$key] = sprintf(
+                /* translators: 1: field group title, 2: post types it is shown on */
+                __('Field group: %1$s [%2$s]', 'meta-conductor'),
+                $entry['title'],
+                implode(', ', array_unique($entry['types']))
+            );
+        }
+
+        return $options;
+    }
+
+    /**
+     * The target picker's ACF choices: the source list's fields (no
+     * placeholder) with each field's TYPE in the label. A static select cannot
+     * follow the row's source, so the author matches types by the label and the
+     * handler refuses a target whose type differs from the source's.
+     *
+     * @return array<string,string> field key => label.
+     */
+    public static function acf_target_field_options(): array {
+        $options = [];
+        foreach (self::acf_source_field_options() as $key => $label) {
+            if ($key === '') {
+                continue;
+            }
+            $field         = \acf_get_field($key);
+            $options[$key] = $label . (is_array($field) ? ' (' . ($field['type'] ?? '') . ')' : '');
+        }
+
+        return $options;
+    }
+
+    /**
+     * Whether an ACF field's group is shown (by its location rules) on a post
+     * type — what *Same* needs before a copy may write a field onto a post.
+     *
+     * @param string $field_key ACF field key (top level).
+     * @param string $post_type Receiving post type.
+     */
+    public static function acf_field_shown_on(string $field_key, string $post_type): bool {
+        if ($field_key === '' || $post_type === ''
+            || !function_exists('acf_get_field_groups') || !function_exists('acf_get_fields')) {
+            return false;
+        }
+
+        foreach ((array) acf_get_field_groups(['post_type' => $post_type]) as $group) {
+            foreach ((array) acf_get_fields($group['key']) as $field) {
+                if (($field['key'] ?? '') === $field_key) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -686,6 +963,19 @@ class ConfigHelpers {
         $field = \acf_get_field($key);
 
         return is_array($field) ? (string) ($field['label'] ?? '') : '';
+    }
+
+    /**
+     * A field group's title from its key, or '' when it no longer resolves.
+     */
+    public static function acf_group_title(string $key): string {
+        if ($key === '' || !function_exists('acf_get_field_group')) {
+            return '';
+        }
+
+        $group = \acf_get_field_group($key);
+
+        return is_array($group) ? (string) ($group['title'] ?? '') : '';
     }
 
     /**

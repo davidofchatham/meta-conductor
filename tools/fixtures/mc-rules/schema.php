@@ -105,6 +105,14 @@ function bws_fixture_mc_rules_register_types() {
  *                              `line` the row-rule TARGET, and `grp` a NESTED group
  *                              (inner) — a row token naming it must resolve empty.
  *
+ * group_mc_copy_fields (mc_section) — Set a field from a related post (FW-5):
+ *   mc_cp_text    — text SOURCE on the parent, copied onto its children.
+ *   mc_cp_display — text, written by a later pattern rule from mc_cp_text.
+ *   mc_cp_list    — relationship → mc_item, the array-valued copy.
+ *
+ * group_mc_copy_group (mc_section) — group-mode source (FW-5 07):
+ *   mc_gp_one, mc_gp_two — text members; mc_gp_rows — repeater (cell), one value.
+ *
  * group_mc_section_fields (mc_section):
  *   mc_related_items — relationship → mc_item (related_post_terms holder field).
  *   mc_primary_item  — post_object → mc_item (pull/post_object variant, sweep-time).
@@ -218,6 +226,19 @@ function bws_fixture_mc_rules_register_acf() {
 					'bidirectional'        => 1,
 					'bidirectional_target' => array( 'field_mc_bidi_sections' ),
 				),
+				// Same-type bidirectional pair (FW-5 09): sections linking
+				// sections, ACF-bidirectional to ITSELF, so two posts can
+				// source each other and the loop notice has a field to name.
+				array(
+					'key'                  => 'field_mc_peer_sections',
+					'name'                 => 'mc_peer_sections',
+					'label'                => 'Peer MC Sections',
+					'type'                 => 'relationship',
+					'post_type'            => array( 'mc_section' ),
+					'return_format'        => 'id',
+					'bidirectional'        => 1,
+					'bidirectional_target' => array( 'field_mc_peer_sections' ),
+				),
 				array(
 					'key'           => 'field_mc_topics_section',
 					'name'          => 'mc_topics',
@@ -270,6 +291,58 @@ function bws_fixture_mc_rules_register_acf() {
 								array( 'key' => 'field_mc_cf_roster_inner', 'name' => 'inner', 'label' => 'Inner', 'type' => 'text' ),
 							),
 						),
+					),
+				),
+			),
+		)
+	);
+
+	// Set a field from a related post (FW-5): the receiving type is the
+	// hierarchical mc_section, so a child copies from its parent. A text source
+	// and a text target the pattern rule writes from it, and a relationship
+	// field for the array-valued copy. Its own group so no other sweep's
+	// mc_section field set changes.
+	acf_add_local_field_group(
+		array(
+			'key'      => 'group_mc_copy_fields',
+			'title'    => 'MC Copy Fields',
+			'location' => array(
+				array( array( 'param' => 'post_type', 'operator' => '==', 'value' => 'mc_section' ) ),
+			),
+			'fields'   => array(
+				array( 'key' => 'field_mc_cp_text', 'name' => 'mc_cp_text', 'label' => 'CP Text', 'type' => 'text' ),
+				array( 'key' => 'field_mc_cp_display', 'name' => 'mc_cp_display', 'label' => 'CP Display', 'type' => 'text' ),
+				array(
+					'key'           => 'field_mc_cp_list',
+					'name'          => 'mc_cp_list',
+					'label'         => 'CP List',
+					'type'          => 'relationship',
+					'post_type'     => array( 'mc_item' ),
+					'return_format' => 'id',
+				),
+			),
+		)
+	);
+
+	// Group-mode source (FW-5 07): two text members and a repeater, all on
+	// mc_section. The sweep adds a further member at run time.
+	acf_add_local_field_group(
+		array(
+			'key'      => 'group_mc_copy_group',
+			'title'    => 'MC Copy Group',
+			'location' => array(
+				array( array( 'param' => 'post_type', 'operator' => '==', 'value' => 'mc_section' ) ),
+			),
+			'fields'   => array(
+				array( 'key' => 'field_mc_gp_one', 'name' => 'mc_gp_one', 'label' => 'GP One', 'type' => 'text' ),
+				array( 'key' => 'field_mc_gp_two', 'name' => 'mc_gp_two', 'label' => 'GP Two', 'type' => 'text' ),
+				array(
+					'key'        => 'field_mc_gp_rows',
+					'name'       => 'mc_gp_rows',
+					'label'      => 'GP Rows',
+					'type'       => 'repeater',
+					'sub_fields' => array(
+						array( 'key' => 'field_mc_gp_cell', 'name' => 'cell', 'label' => 'Cell', 'type' => 'text' ),
 					),
 				),
 			),

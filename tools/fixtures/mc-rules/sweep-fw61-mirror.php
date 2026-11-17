@@ -16,7 +16,9 @@
  *             meta at all) receives its first write.
  *   status    The row's status limit gates the SOURCE for the mirror store as
  *             it does for native: a gated-out source contributes nothing from
- *             either store, and an Owning dependent is emptied in both.
+ *             either store, and a dependent with no eligible source is
+ *             skipped, so it keeps what it held in both (FW-5 02; it was
+ *             emptied before the shared zero-source gate).
  *   sever-a / sever-b   A sever under Owning empties the mirror store as well
  *             as the native one. Own evals: the capture reads the rule list
  *             through a request-lifetime memo that staging fills with the empty
@@ -220,7 +222,7 @@ switch ( $step ) {
 		break;
 
 	case 'status':
-		WP_CLI::log( 'status — a gated-out source contributes from NEITHER store; Owning empties both' );
+		WP_CLI::log( 'status — a gated-out source contributes from NEITHER store; the dependent is left alone' );
 		global $wpdb;
 		list( $subject, $holder ) = mcm_stage_graph();
 		mcm_set_source( $holder, 'mirror', array( $coastal ) );
@@ -236,8 +238,8 @@ switch ( $step ) {
 		mcm_pass( $subject );
 		$wpdb->update( $wpdb->posts, array( 'post_status' => $was ), array( 'ID' => $holder ) );
 		clean_post_cache( $holder );
-		$check( 'status / draft source: native emptied', mcm_native( $subject ), array() );
-		$check( 'status / draft source: mirror emptied', mcm_mirror( $subject ), array() );
+		$check( 'status / draft source: native kept', mcm_native( $subject ), array( 'coastal' ) );
+		$check( 'status / draft source: mirror kept', mcm_mirror( $subject ), array( 'coastal' ) );
 		break;
 
 	case 'sever-a':

@@ -18,6 +18,7 @@ Meta Conductor adds rule-driven automation to WordPress taxonomies and meta fiel
 * Set a post's terms from a related post: its parent, or the posts an ACF relationship field names
 * Generate titles and slugs from token patterns with collision avoidance
 * Store a composed value (a display name, a roster line) in an ACF field, or in one subfield of every row of a repeater, from the same token patterns
+* Copy a field's value from a related post (the parent post, or a post an ACF relationship field names) into a post, as the raw stored value: a single field, or a whole ACF field group
 * Read another post into a title, slug or field pattern: the parent post (`{parent:meta:address}`) or the first post an ACF relationship field names (`{refs:venue:meta:season}`)
 * Restrict which depths of a hierarchical taxonomy a post may carry
 * Cap how many terms a post may hold in a taxonomy
@@ -49,7 +50,28 @@ Title, slug and field patterns can read a value from a related post.
 * No status gate applies: a draft or private related post is read like a published one, so its value can appear in a public title, slug or field. Do not point a token at a value you want kept private. Values are read as stored on the related post.
 * Editing a parent updates its children, and their children, automatically. Editing a post a `refs` token reads does not update the posts that read it: they refresh when saved or when you run *Apply to Existing Posts*, and a bulk run can leave one stale until a second run.
 
+== Copying a field from a related post ==
+
+The *Set a field from a related post* rule, in the *Format & Transform* list, copies a field's value from a related post onto the post being saved. A venue post can supply its address to every session, a team post can push a season label onto each player, and a parent page can hand a field down to its child pages.
+
+* **Relationship.** *Parent post* copies from the post's parent, to its children. *ACF field* copies across a relationship or post-object field, and is offered only while ACF is active. As on *Set terms from a related post*, you pick the field, which post type holds it, and which end is the source: *pull* copies into the post that holds the field, *push* copies from the holder onto every post its field lists.
+* **What is copied.** One field, picked by ACF field key so a rename does not break the rule, or a plain meta key. Or, with ACF, a whole field group: every top-level field of the group is copied into the same group on the receiving post, and a field added to the group later is picked up without re-saving the rule. The value is copied as stored, so a list of posts, an image or a whole repeater arrives intact. A plain meta key holding several values copies its first value only.
+* **Where it goes.** *Same* writes the same field on the receiving post, and is offered only where the field's group is shown on that post type. You can pick another ACF field instead, which must be the same field type as the source, or a plain meta key. A meta key that matches an ACF field is written through ACF so its field-key reference stays intact. A key starting with `_` is refused, since those belong to WordPress and other plugins.
+* **Claim.** *Contributing* (the default) writes the source's value when it has one and never clears. *Owning* makes the target always equal the source's, including an empty value. *Deferring* fills the target only while it is empty. In a group copy each field is its own claim, so one empty field does not decide the others.
+* **Only one source counts.** The parent relationship has one. With an ACF field that lists several posts, the first one holding a value wins. Pulling, that is the field's own order, so reordering the field changes the winner. Pushing, it is the order of the reverse field when there is one, otherwise the lowest post ID.
+* **When nothing is copied.** A related post that does not have one of the rule's checked *Post status* values counts as absent, and a post with no eligible source is left alone under every claim: a draft venue, a post with no parent and a post detached from its parent all keep their value. Removing a post from the field that listed it, or deleting its source, clears the value only under Owning. Detaching a post from its parent never clears it.
+* **Edits flow on.** Saving a source updates the posts that read it, and their own dependents in turn, without re-saving each one. Rules run in list order, so a title or computed-field rule placed after the copy sees the copied value.
+* **ACF off.** A rule that needs ACF (the *ACF field* relationship, or an ACF field or field group as source or target) stays saved while ACF is inactive. It does nothing, the settings page says it needs ACF, and saving the page keeps its settings. A *Parent post* rule copying one plain meta key to another keeps working.
+* **Collisions and loops.** Another rule that writes the same field on an overlapping post type is flagged, and list order decides. A Deferring copy is flagged at a lower level. The settings page also notes a bidirectional ACF field that links posts of one type, where two posts can source each other and the result can depend on save order.
+* *Apply to Existing Posts* runs the rule over posts that already exist, and its preview lists every field a group copy would write.
+
 == Upgrade Notes ==
+
+= Unreleased =
+
+**New rule type: *Set a field from a related post*.** Nothing changes for existing rules. See *Copying a field from a related post* above.
+
+**A *Set terms from a related post* rule with an ACF relationship no longer empties a post whose sources are all unpublished.** A source that fails the rule's *Post status* limit now counts as absent, so an Owning rule whose related posts are all drafts leaves the post's terms alone instead of clearing them. If only some of the related posts are unpublished, the post still takes the terms of the published ones, as before. Removing a link still clears the post's terms under an Owning rule. Nothing is converted on update.
 
 = 0.11.0 =
 

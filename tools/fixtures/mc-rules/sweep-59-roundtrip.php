@@ -52,7 +52,7 @@ $rows     = $settings[OptionRuleStorage::KIND_FORMAT] ?? [];
 
 $note('format_rules is populated', !empty($rows));
 // The format list holds title/slug rules and, since FW-4, Computed field rules.
-$format_types = ['title_slug_from_pattern', 'field_from_pattern'];
+$format_types = ['title_slug_from_pattern', 'field_from_pattern', 'field_from_related_post'];
 $note('every format row is a known format rule type',
     array_diff(array_column($rows, 'type'), $format_types) === []);
 $note('the legacy title_slug_from_pattern array is gone from storage (#66)',
@@ -110,6 +110,37 @@ foreach ($rows as $i => $row) {
 $note('the sanitized list keeps every row', count($sanitized) === count($rows));
 $note('every sanitized row is still typed',
     array_column($sanitized, 'type') === array_column($rows, 'type'));
+
+// ── 3. A Set a field from a related post row (FW-5 04). ─────────────────────
+// The manifest baseline carries no row of this type (it would be live in every
+// other sweep), so one is built here and run through the same sanitizer. Every
+// key the handler reads must come back; a wrong gate drops one silently.
+
+$copy_row = [
+    'type' => 'field_from_related_post', 'enabled' => true, 'name' => 'Copy probe',
+    'post_types' => ['mc_section'], 'relationship' => 'parent', 'source_field' => 'field_mc_cp_text',
+    'copy_target' => '', 'conflict_handling' => 'replace', 'post_status' => ['publish'], 'row_title' => 'x',
+];
+$copy_out = RepeaterField::sanitize([$copy_row], $field['args'])[0] ?? [];
+foreach (['type', 'enabled', 'name', 'post_types', 'relationship', 'source_field', 'copy_target', 'conflict_handling', 'post_status'] as $key) {
+    $note("copy row '$key' survives sanitize", ($copy_out[$key] ?? '(DROPPED)') == $copy_row[$key]);
+}
+// Plain meta on both ends (FW-5 06): the two names must survive while their select picks the meta choice.
+$meta_row = array_merge($copy_row, ['source_field' => '@meta', 'source_meta' => 'mc_pm_src', 'copy_target' => '@meta', 'target_meta' => 'mc_pm_dst']);
+$meta_out = RepeaterField::sanitize([$meta_row], $field['args'])[0] ?? [];
+foreach (['source_field', 'source_meta', 'copy_target', 'target_meta'] as $key) {
+    $note("meta copy row '$key' survives sanitize", ($meta_out[$key] ?? '(DROPPED)') == $meta_row[$key]);
+}
+// …and drop once the select moves back to an ACF field (the `when` gate).
+$back_out = RepeaterField::sanitize([array_merge($meta_row, ['source_field' => 'field_mc_cp_text', 'copy_target' => 'field_mc_cp_display'])], $field['args'])[0] ?? [];
+$note('a stale meta name is dropped once the select picks an ACF field',
+    !array_key_exists('source_meta', $back_out) && !array_key_exists('target_meta', $back_out) && ($back_out['copy_target'] ?? '') === 'field_mc_cp_display');
+// Group mode (FW-5 07): the group key rides in `source_field`; Copy into stays (ignored).
+$group_row = array_merge($copy_row, ['source_field' => 'group_mc_copy_group', 'copy_target' => '']);
+$group_out = RepeaterField::sanitize([$group_row], $field['args'])[0] ?? [];
+$note("group copy row 'source_field' survives sanitize", ($group_out['source_field'] ?? '(DROPPED)') === 'group_mc_copy_group');
+$note('copy row carries no pattern-rule or title/slug keys',
+    array_intersect(['target_field', 'pattern', 'output', 'title_pattern', 'post_type'], array_keys($copy_out)) === []);
 
 echo $fail ? "\nSWEEP-59 FAIL: " . count($fail) . " failed\n" : "\nSWEEP-59 OK\n";
 exit($fail ? 1 : 0);

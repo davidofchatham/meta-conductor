@@ -51,9 +51,11 @@ _Avoid_: condition, relation (the retired name of the *relationship* kind), link
 **Relationship**:
 The edge a rule traverses when its **basis** includes a relationship: a **source** (the end whose values are read), a **dependent** (the end that is written) and the entity kind of each end. One edge answers both "who feeds this entity" and "who does this entity feed", which is what lets a rule's **reach** be declared from the source side and reconciled from the dependent side. Each kind fixes the entity kind of each end; the contract carries no kind until a second one is implemented. The kinds:
 
-- **Parent** — an entity and its parent: a post and its `post_parent`, or a term and its parent term. *Natural.* Implemented for posts only, as the `parent` relationship of *Set terms from a related post*; the hierarchy rule's term ancestry still walks its own traversal.
-- **ACF field** — an entity and the entities an ACF relationship or post-object field names; the field can sit on a post, a term or a user, and either end can hold it. *Authored.* Implemented for posts only, as the `acf` relationship of *Set terms from a related post*.
+- **Parent** — an entity and its parent: a post and its `post_parent`, or a term and its parent term. *Natural.* Implemented for posts only, as the `parent` relationship of *Set terms from a related post* and *Set a field from a related post*; the hierarchy rule's term ancestry still walks its own traversal.
+- **ACF field** — an entity and the entities an ACF relationship or post-object field names; the field can sit on a post, a term or a user, and either end can hold it. *Authored.* Implemented for posts only, as the `acf` relationship of *Set terms from a related post* and *Set a field from a related post*.
 - **Assignment** — a post and the terms it holds. **Draft, not implemented.** It names the traversal *Set terms from a trigger term* does today, so that rule has a place to land if it moves onto the relationship module.
+
+A dependent's **eligible sources** are the resolved sources that pass the rule's status gate; a source that fails it is *absent*, not a source with an empty value. A dependent with no eligible source is left alone under every claim, unless the rule captured a **sever** against it (a source cut from the relationship, or deleted). That is the one case where an *owning* rule may clear a dependent it can no longer resolve a source for, and it is recorded against the rule row that owned the cut, never the taxonomy or field. A rule that copies from one source takes the first eligible one that holds a value, in the order the relationship returns them.
 
 _Avoid_: link, relation, reference (see **Basis**).
 

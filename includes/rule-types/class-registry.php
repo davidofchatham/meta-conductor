@@ -37,6 +37,7 @@ final class Registry {
         RestrictTermCountRules::class,
         TitleSlugFromPatternRules::class,
         FieldFromPatternRules::class,
+        FieldFromRelatedPostRules::class,
     ];
 
     /**

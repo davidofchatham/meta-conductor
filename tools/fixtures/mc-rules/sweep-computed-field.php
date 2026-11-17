@@ -35,6 +35,8 @@
  *   wp eval-file .../sweep-computed-field.php title-before       # title rule before it reads the stored value
  *   wp eval-file .../sweep-computed-field.php title-first-match  # two title rules: first wins
  *   wp eval-file .../sweep-computed-field.php self-ref           # own-target token is empty; stable over 3 passes
+ *   wp eval-file .../sweep-computed-field.php array-write   # FW-5 03: a raw array reaches an ACF field intact; an identical rewrite is skipped
+ *   wp eval-file .../sweep-computed-field.php meta-helper   # FW-5 03: MetaWriter routes plain / ACF-named keys and refuses `_`
  *   wp eval-file .../sweep-computed-field.php restore    # baseline rules, clean subject, post_name check
  *
  * REPEATER ROWS (FW-4 06): a row rule targets `line` in every row of the roster
@@ -619,6 +621,62 @@ switch ( $step ) {
 	case 'rows-s2':
 		mc_assert( '§70aa shutdown drained the bare repeater write into the row lines',
 			mcf_lines( $subject, 2 ), 'Guard / 5 / 165 | Center / 7 / 210' );
+		break;
+
+	// FW-5 03: the write site takes RAW values. An array reaches an ACF field
+	// through write_fields() and reads back intact; a second identical write is
+	// skipped (strict compare). Drives the private write site by reflection:
+	// no rule type produces an array until FW-5 04.
+	case 'array-write':
+		$name  = 'mc_related_items';
+		$ids   = array( (string) $subject, (string) mc_pid( 'item-alpha' ) );
+		$prior = metadata_exists( 'post', $control, $name ) ? get_post_meta( $control, $name, true ) : null;
+		$fd    = FormatDispatcher::instance();
+		$wf    = new ReflectionMethod( $fd, 'write_fields' );
+		$wf->setAccessible( true );
+		$after = array( 'fields' => array( $name => $ids ), 'field_keys' => array( $name => 'field_mc_related_items' ) );
+
+		$first  = $wf->invoke( $fd, $control, $after );
+		wp_cache_delete( $control, 'post_meta' );
+		$stored = get_post_meta( $control, $name, true );
+		$second = $wf->invoke( $fd, $control, $after );
+
+		mc_assert( '§FW5-03a an array value is written (one field)', $first, 1 );
+		mc_assert( '§FW5-03b it reads back as the same array', $stored, $ids );
+		mc_assert( '§FW5-03c ACF reads it through the field, unformatted', array_map( 'strval', (array) get_field( 'field_mc_related_items', $control, false ) ), $ids );
+		mc_assert( '§FW5-03d the field-key reference row is intact', mcf_meta( $control, '_' . $name ), 'field_mc_related_items' );
+		mc_assert( '§FW5-03e an identical second write is skipped', $second, 0 );
+
+		// Put the holder back as found.
+		delete_post_meta( $control, $name );
+		delete_post_meta( $control, '_' . $name );
+		if ( $prior !== null ) {
+			update_field( 'field_mc_related_items', $prior, $control );
+		}
+		$d = TermDispatcher::instance();
+		$r = new ReflectionProperty( $d, 'dirty' );
+		$r->setAccessible( true );
+		$r->setValue( $d, array() );
+		break;
+
+	// FW-5 03: the shared meta helper (FW-46's bar) against real ACF.
+	case 'meta-helper':
+		$mw = '\\BWS\\MetaConductor\\Core\\MetaWriter';
+		add_filter( 'meta_conductor_acf_reapply_enabled', '__return_false', 99 );
+		delete_post_meta( $control, 'mc_cf_display' );
+		delete_post_meta( $control, '_mc_cf_display' );
+
+		mc_assert( '§FW5-03f plain key: written', $mw::write( $control, 'mc_plain_probe', "it's" ), true );
+		mc_assert( '§FW5-03g plain key: stored as typed, no reference row', array( mcf_meta( $control, 'mc_plain_probe' ), mcf_meta( $control, '_mc_plain_probe' ) ), array( "it's", null ) );
+		mc_assert( '§FW5-03h ACF-named key: written through ACF', $mw::write( $control, 'mc_cf_display', 'via acf' ), true );
+		mc_assert( '§FW5-03i ACF-named key: field-key reference intact', array( mcf_meta( $control, 'mc_cf_display' ), mcf_meta( $control, '_mc_cf_display' ) ), array( 'via acf', MCF_TEXT ) );
+		mc_assert( '§FW5-03j _-prefixed key: refused', $mw::write( $control, '_mc_plain_probe', 'x' ), false );
+		mc_assert( '§FW5-03k _-prefixed key: nothing stored', mcf_meta( $control, '_mc_plain_probe' ), null );
+
+		foreach ( array( 'mc_plain_probe', 'mc_cf_display', '_mc_cf_display' ) as $name ) {
+			delete_post_meta( $control, $name );
+		}
+		remove_filter( 'meta_conductor_acf_reapply_enabled', '__return_false', 99 );
 		break;
 
 	case 'restore':

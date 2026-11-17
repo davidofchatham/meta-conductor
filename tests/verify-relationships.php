@@ -7,7 +7,8 @@
  *     method, no kind parameter), with the entity-neutral/post-only decision
  *     stated in its docblock;
  *   - both implementations implement it, and the pure facts they answer
- *     (written post types, status gating, the ACF sever key);
+ *     (written post types, status gating, the ACF sever key, the shared
+ *     zero-source gate);
  *   - that the graph no longer lives in the two handlers.
  *
  * The behavior seam is the testbed sweeps through the dispatcher (the ticket-01
@@ -32,12 +33,18 @@ if (!class_exists('WP_Post')) {
     }
 }
 
+// Stub: post 1 published, 2 draft, 3 private; anything else does not exist.
+if (!function_exists('get_post_status')) {
+    function get_post_status($id) { return [1 => 'publish', 2 => 'draft', 3 => 'private'][$id] ?? false; }
+}
+
 require dirname(__DIR__) . '/vendor/autoload.php';
 require dirname(__DIR__) . '/autoload.php';
 
 use BWS\MetaConductor\Relationships\AcfRelationship;
 use BWS\MetaConductor\Relationships\ParentRelationship;
 use BWS\MetaConductor\Relationships\Relationship;
+use BWS\MetaConductor\Relationships\SourceGate;
 use BWS\MetaConductor\RuleTypes\TermsFromRelatedPostRules;
 
 $fail  = [];
@@ -109,6 +116,15 @@ foreach (['relationship', 'taxonomy', 'post_type', 'acf_field_name', 'reverse_ac
     $check("sever key distinguishes {$f}", $acf->sever_key($other) !== $acf->sever_key($row));
 }
 
+// A field row names no taxonomy, so what it copies and where tells two apart;
+// a term row's key keeps its shape (FW-5 09).
+$field_row = ['relationship' => 'acf', 'post_type' => 'h', 'acf_field_name' => 'f', 'holder_role' => 'source', 'source_field' => 'field_a', 'copy_target' => 'field_b'];
+foreach (['source_field', 'source_meta', 'copy_target', 'target_meta'] as $f) {
+    $other = $field_row;
+    $other[$f] = 'x';
+    $check("sever key distinguishes {$f} on a field row", $acf->sever_key($other) !== $acf->sever_key($field_row));
+}
+
 // The descriptor answers through the module.
 $merged = new TermsFromRelatedPostRules();
 $check('descriptor written_post_types delegates (acf)', $merged->written_post_types($row) === $acf->written_post_types($row));
@@ -126,6 +142,23 @@ $check('parent: a dependent must pass post_types', !$parent->is_eligible_depende
 $check('parent: a dependent must pass post_status', !$parent->is_eligible_dependent($page_parent, $gated));
 $check('parent: a source is NOT gated on post_types', $parent->is_eligible_source($post_parent, $gated));
 $check('parent: a source is gated on post_status', !$parent->is_eligible_source($page_parent, $gated));
+
+// --- The zero-source gate (FW-5 02): eligible = resolved AND status-passing. ---
+$pub = ['post_status' => ['publish']];
+$check('gate: no limit keeps every existing source', SourceGate::resolve([1, 2], []) === [1, 2]);
+$check('gate: "any" is no limit', SourceGate::resolve([1, 2], ['post_status' => ['any']]) === [1, 2]);
+$check('gate: a limit drops failing sources, order kept', SourceGate::resolve([2, 1, 3], ['post_status' => ['publish', 'private']]) === [1, 3]);
+$check('gate: mixed set keeps the passing source', SourceGate::resolve([2, 1], $pub) === [1]);
+$check('gate: all sources failing = skip', SourceGate::resolve([2, 3], $pub) === null);
+$check('gate: no resolved source = skip', SourceGate::resolve([], []) === null);
+$check('gate: a missing source never counts', SourceGate::resolve([99], []) === null);
+$check('gate: a sever on THIS row overrides the skip, with an empty set', SourceGate::resolve([2], $pub, true) === []);
+$check('gate: a sever with no sources at all still proceeds', SourceGate::resolve([], [], true) === []);
+$check('gate: a sever does not add back a failing source', SourceGate::resolve([2, 1], $pub, true) === [1]);
+$gdoc = preg_replace("/\s*
+\s*\*\s*/", " ", (string) (new ReflectionClass(SourceGate::class))->getDocComment());
+$check('gate docblock states eligible = resolved and status-passing, zero = skip, sever overrides',
+    stripos($gdoc, 'resolved sources that pass') !== false && stripos($gdoc, 'SKIPPED') !== false && stripos($gdoc, 'sever') !== false);
 
 // --- The graph left the handlers. ------------------------------------------------
 $strip = static function (string $src): string {
@@ -149,7 +182,9 @@ foreach (['child_cache', 'CHILD_STATUSES', 'resolve_child_post_types', 'get_post
 
 // Kept in the handler by design.
 $check('parent lost-terms capture stays in the related-post handler', strpos($prop, 'captured_removals') !== false);
-$check('zero-source gate stays in the related-post handler', strpos($prop, 'empty($sources)') !== false);
+// The zero-source gate moved into the module (FW-5 02); H13 pins the routing.
+$check('zero-source gate is not reimplemented in the related-post handler',
+    strpos($prop, 'empty($sources)') === false && strpos($prop, 'get_post_status(') === false);
 
 // The two old handlers and descriptors are gone, not aliased.
 foreach (['class-related-post-terms-handler.php' => 'handlers', 'class-related-post-terms-rules.php' => 'rule-types'] as $file => $dir) {

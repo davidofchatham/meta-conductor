@@ -11,6 +11,7 @@ namespace BWS\MetaConductor\Handlers;
 use BWS\MetaConductor\Relationships\AcfRelationship;
 use BWS\MetaConductor\Relationships\ParentRelationship;
 use BWS\MetaConductor\Relationships\Relationship;
+use BWS\MetaConductor\Relationships\SourceGate;
 
 // Prevent direct access
 if (!defined('ABSPATH')) {
@@ -84,6 +85,9 @@ if (!defined('ABSPATH')) {
  */
 class TermsFromRelatedPostHandler extends UnifiedHandlerBase {
 
+    // The ACF relationship graph, its enabled-rows memo and the sever capture.
+    use AcfSeverCapture;
+
     /**
      * Terms removed from an object THIS REQUEST, keyed `"object_id:taxonomy"`.
      *
@@ -107,25 +111,6 @@ class TermsFromRelatedPostHandler extends UnifiedHandlerBase {
      */
     private ParentRelationship $parent_relationship;
 
-    /**
-     * The ACF relationship graph and sever capture. This handler keeps the hook
-     * registration, the claim, the zero-source gate and the term write.
-     */
-    private AcfRelationship $acf_relationship;
-
-    /**
-     * Per-REQUEST memo of the enabled `acf` rows, for the CAPTURE path only: the
-     * applier is handed its rule by the pass and never reads the list.
-     *
-     * The `acf/update_value` capture fires once per relationship field saved
-     * site-wide, and each call would re-run get_enabled_rules over every rule.
-     * Rules are only mutated by the admin REST save, a separate request, so a
-     * request-lifetime memo is safe. (PR#24 round 8 #4)
-     *
-     * @var array<int,array>|null
-     */
-    private ?array $acf_rules_memo = null;
-
     public function __construct() {
         $this->parent_relationship = new ParentRelationship();
         $this->acf_relationship    = new AcfRelationship();
@@ -144,23 +129,6 @@ class TermsFromRelatedPostHandler extends UnifiedHandlerBase {
             'acf'    => AcfRelationship::is_available() ? $this->acf_relationship : null,
             default  => null,
         };
-    }
-
-    /**
-     * The enabled `acf` rows, for the capture path (the parent's lost-terms
-     * capture never reads them).
-     *
-     * @return array[]
-     */
-    private function acf_rules(): array {
-        if ($this->acf_rules_memo === null) {
-            $this->acf_rules_memo = array_values(array_filter(
-                $this->get_enabled_rules(),
-                static fn(array $rule): bool => ($rule['relationship'] ?? '') === 'acf'
-            ));
-        }
-
-        return $this->acf_rules_memo;
     }
 
     /**
@@ -222,23 +190,15 @@ class TermsFromRelatedPostHandler extends UnifiedHandlerBase {
             return false;
         }
 
-        $sources = $relationship->sources_of($post_id, $rule);
-        if (empty($sources)) {
+        // The parent is gated on `post_status` as well as the child, through the
+        // shared gate: no parent, or a parent that fails the status limit, skips
+        // the row. In stock WP a post_parent shares its child's post type; a
+        // cross-type parent is gated on status only, never on `post_types`.
+        $eligible = SourceGate::resolve($relationship->sources_of($post_id, $rule), $rule);
+        if ($eligible === null) {
             return false;
         }
-        $parent_id = (int) $sources[0];
-
-        // Gate on the PARENT as well as the child. In stock WP a post_parent is
-        // always the same post type as the child (the editor's parent dropdown
-        // is type-scoped), so the two gates agree and this is
-        // redundant-but-harmless. It only diverges under a cross-type
-        // post_parent (programmatic / non-stock) — if that ever becomes real,
-        // decide whether propagation scopes the source (parent), the target
-        // (child), or both. (0.6.0 review, carried through #62.)
-        $parent = get_post($parent_id);
-        if (!$parent || !$relationship->is_eligible_source($parent, $rule)) {
-            return false;
-        }
+        $parent_id = $eligible[0];
 
         $taxonomy = (string) ($rule['taxonomy'] ?? '');
         if ($taxonomy === '') {
@@ -346,8 +306,9 @@ class TermsFromRelatedPostHandler extends UnifiedHandlerBase {
      * THE ZERO-SOURCE SKIP IS THE DESTRUCTIVE-WRITE GATE (invariant #2, V13). A
      * push row's dependent type is any, so type-match alone would make every
      * post in the field's target types a managed dependent and empty it.
-     * Positive evidence that the row manages this post is a resolved source, or
-     * a captured sever, which is the same evidence one moment later.
+     * Positive evidence that the row manages this post is an ELIGIBLE source
+     * (resolved and passing the status limit; `SourceGate::resolve()`), or a
+     * captured sever, which is the same evidence one moment later.
      *
      * @param int   $post_id Post to recompute.
      * @param array $rule    One enabled `acf` row (canonical shape).
@@ -364,28 +325,21 @@ class TermsFromRelatedPostHandler extends UnifiedHandlerBase {
             return false;
         }
 
-        $claim   = (string) ($rule['conflict_handling'] ?? 'merge');
-        $sources = $this->acf_relationship->sources_of($post_id, $rule);
+        $claim = (string) ($rule['conflict_handling'] ?? 'merge');
 
         // Only an Owning row withdraws a gone source's terms (PR#24 Bug 3), and
         // only THIS row's own sever counts (`AcfRelationship::is_severed()`).
         $orphaned = $claim === 'replace' && $this->acf_relationship->is_severed($post_id, $rule);
 
-        if (empty($sources) && !$orphaned) {
+        // A source that fails the status limit counts as absent, so a dependent
+        // whose sources are ALL gated out is skipped like an unmanaged post,
+        // not emptied under Owning (FW-5 02). Only a sever overrides.
+        $eligible = SourceGate::resolve($this->acf_relationship->sources_of($post_id, $rule), $rule, $orphaned);
+        if ($eligible === null) {
             return false;
         }
 
-        // A gated-out source still COUNTS as a resolved source above, its terms
-        // just don't contribute, so a dependent of a draft source is emptied
-        // under Owning rather than skipped as unmanaged.
-        $statuses = (array) ($rule['post_status'] ?? []);
-        $passing  = array_values(array_filter(
-            array_map('intval', $sources),
-            static fn(int $id): bool => empty($statuses)
-                || in_array(get_post_status($id), $statuses, true)
-        ));
-
-        return $this->write_acf_terms($post_id, $taxonomy, $this->terms_of($passing, $taxonomy), $claim);
+        return $this->write_acf_terms($post_id, $taxonomy, $this->terms_of($eligible, $taxonomy), $claim);
     }
 
     /**
@@ -444,45 +398,6 @@ class TermsFromRelatedPostHandler extends UnifiedHandlerBase {
         );
 
         return true;
-    }
-
-    /**
-     * Entities whose CAPTURED state needs a pass. Consumed.
-     *
-     * The dispatcher calls this at drain start, so a severed dependent reaches
-     * a full ordered pass by the same route a saved post does. It is a separate
-     * channel from `fan_out()` because the entity a sever affects may be
-     * reachable from no post that gets one: the holder was deleted, or the link
-     * that named it is gone.
-     *
-     * @return int[] Entity IDs to mark dirty.
-     */
-    public function drain_captures(): array {
-        return $this->acf_relationship->drain_marks();
-    }
-
-    /**
-     * CAPTURE hook (not an apply): `acf/update_value` at priority 5, before the
-     * value is written. Records which dependents the removal orphans; the diff
-     * and the direction logic are `AcfRelationship::capture_removed_dependents()`.
-     *
-     * @param mixed $value   New field value (returned unchanged).
-     * @param int   $post_id Post being saved (a source or a holder).
-     * @param array $field   ACF field array.
-     * @return mixed
-     */
-    public function capture_removed_dependents($value, $post_id, $field) {
-        return $this->acf_relationship->capture_removed_dependents($this->acf_rules(), $value, $post_id, $field);
-    }
-
-    /**
-     * CAPTURE hook (not an apply): a post is about to be permanently deleted;
-     * record the dependents it feeds while its relationships are still readable.
-     *
-     * @param int $post_id Post being deleted.
-     */
-    public function capture_deleted_post($post_id): void {
-        $this->acf_relationship->capture_deleted_post($this->acf_rules(), $post_id);
     }
 
     /**

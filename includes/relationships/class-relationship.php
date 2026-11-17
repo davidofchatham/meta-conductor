@@ -25,9 +25,9 @@ if (!defined('ABSPATH')) {
  *
  * A "source" is the end whose terms are read; a "dependent" is the end that is
  * written. The module answers WHO those are and whether a post is eligible to
- * be one. It never writes. The claim, the term write, the no-change
- * short-circuit and the zero-source gate belong to the handler that calls it,
- * because the dispatcher is the only caller of an applier (architecture.md
+ * be one. It never writes. The claim, the term write and the no-change
+ * short-circuit belong to the handler that calls it, and the zero-source gate
+ * is `SourceGate`'s, because the dispatcher is the only caller of an applier (architecture.md
  * invariant 17).
  */
 interface Relationship {

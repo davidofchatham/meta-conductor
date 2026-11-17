@@ -137,6 +137,9 @@ $settings = [
     'field_from_pattern' => [
         ['name' => 'F1', 'enabled' => true, 'post_types' => ['event'], 'target_field' => 'field_x', 'pattern' => '{term:sport}'],
     ],
+    'field_from_related_post' => [
+        ['name' => 'R1', 'enabled' => true, 'post_types' => ['event'], 'relationship' => 'parent', 'source_field' => 'field_x', 'conflict_handling' => 'merge'],
+    ],
     // Non-rule globals: never rows, never a guard trigger.
     'conflict_handling_overrides' => [['taxonomy' => 'category', 'mode' => 'replace']],
     'manual_processing_enabled'   => true,
@@ -151,6 +154,7 @@ $all_types = [
     'restrict_term_count',
     'title_slug_from_pattern',
     'field_from_pattern',
+    'field_from_related_post',
 ];
 
 // The same rules in the kind-list shape, KIND_TYPES order — what a 0.8.0+ site
@@ -225,7 +229,7 @@ $flat = OptionRuleStorage::all_types();
 sort($flat);
 $sorted_all = $all_types;
 sort($sorted_all);
-$check('all_types() is exactly the eight rule types', $flat === $sorted_all);
+$check('all_types() is exactly the nine rule types', $flat === $sorted_all);
 
 $check('every rule type maps to its kind', array_map(
     static fn(string $t): string => $storage->get_kind_for_type($t),
@@ -237,6 +241,7 @@ $check('every rule type maps to its kind', array_map(
     'term_rules',
     'term_rules',
     'term_rules',
+    'format_rules',
     'format_rules',
     'format_rules',
 ]);
@@ -264,7 +269,7 @@ $check('the term kind reports its migrated types — all six',
     ]);
 $check('the format kind reports its migrated type (#59)',
     OptionRuleStorage::migrated_types_for_kind(OptionRuleStorage::KIND_FORMAT)
-        === ['title_slug_from_pattern', 'field_from_pattern']);
+        === ['title_slug_from_pattern', 'field_from_pattern', 'field_from_related_post']);
 
 // =============================================================================
 // 4. THE READ — projection, normalization, and the per-type `id`.

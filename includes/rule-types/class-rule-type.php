@@ -7,6 +7,8 @@
 
 namespace BWS\MetaConductor\RuleTypes;
 
+use BWS\MetaConductor\Relationships\Relationship;
+
 // Prevent direct access
 if (!defined('ABSPATH')) {
     exit;
@@ -186,6 +188,22 @@ abstract class RuleType {
     abstract public function target_key(array $rule): ?string;
 
     /**
+     * Every effect target a row writes — `target_key()` for a row with one, more
+     * for a row that writes a SET (a group copy: one field per member).
+     *
+     * This, not `target_key()`, is what the collision scan and the Apply report
+     * read, so a type with a set overrides it and keeps `target_key()` null.
+     *
+     * @param array $rule Projected row.
+     * @return string[] Empty ⇒ nothing resolvable yet.
+     */
+    public function target_keys(array $rule): array {
+        $key = $this->target_key($rule);
+
+        return $key === null ? [] : [$key];
+    }
+
+    /**
      * The post types a row WRITES — not the ones it looks at.
      *
      * Empty ⇒ every post type, which keeps both readers permissive in the
@@ -205,6 +223,21 @@ abstract class RuleType {
         }
 
         return $slugs;
+    }
+
+    /**
+     * The graph this row pulls from, when it copies from a related post.
+     *
+     * The format dispatcher asks a format-kind row for its `dependents_of()`,
+     * so an edit to a source reaches the posts that read it (FW-5 05); it
+     * never asks a term-kind type. Null for a row with no relationship, or one
+     * this build cannot walk.
+     *
+     * @param array $rule Projected row.
+     * @return Relationship|null
+     */
+    public function relationship(array $rule): ?Relationship {
+        return null;
     }
 
     /**

@@ -410,7 +410,8 @@ final class ExistingPostsApplier {
     /**
      * The ACF field NAMES the format pass writes, for the report: the target of
      * every Computed field row the pass runs (the enabled rows, plus the chosen
-     * one when it is a disabled format row), resolved from the stored key. A row
+     * one when it is a disabled format row), resolved from the stored key (a plain
+     * meta target is its own name). A row
      * rule's target is `repeater[].subfield`, which `snapshot()` expands per post
      * to the rows that post holds.
      *
@@ -421,26 +422,40 @@ final class ExistingPostsApplier {
         $include = !$choice['all'] && $choice['kind'] === FormatDispatcher::KIND ? $choice['fingerprint'] : null;
         $names   = [];
         foreach (RuleChoice::pass_rows(StorageFactory::get_instance()->get_kind_rules(FormatDispatcher::KIND), $include) as $rule) {
-            $key = Registry::get((string) ($rule['type'] ?? ''))?->target_key($rule);
-            if ($key === null) {
-                continue;
-            }
-            if (str_starts_with($key, 'row|')) {
-                [$repeater, $sub] = explode('|', substr($key, strlen('row|')), 2);
-                $repeater         = ConfigHelpers::acf_field_name($repeater);
-                $sub              = ConfigHelpers::acf_field_name($sub);
-                $name             = $repeater !== '' && $sub !== '' ? $repeater . '[].' . $sub : '';
-            } elseif (str_starts_with($key, 'field|')) {
-                $name = ConfigHelpers::acf_field_name(substr($key, strlen('field|')));
-            } else {
-                continue;
-            }
-            if ($name !== '') {
-                $names[] = $name;
+            // A group copy names one field per member, which is why this reads
+            // the set, not the one key.
+            foreach (Registry::get((string) ($rule['type'] ?? ''))?->target_keys($rule) ?? [] as $key) {
+                if (str_starts_with($key, 'row|')) {
+                    [$repeater, $sub] = explode('|', substr($key, strlen('row|')), 2);
+                    $repeater         = ConfigHelpers::acf_field_name($repeater);
+                    $sub              = ConfigHelpers::acf_field_name($sub);
+                    $name             = $repeater !== '' && $sub !== '' ? $repeater . '[].' . $sub : '';
+                } elseif (str_starts_with($key, 'field|')) {
+                    $name = ConfigHelpers::acf_field_name(substr($key, strlen('field|')));
+                } elseif (str_starts_with($key, 'meta|')) {
+                    // A plain meta target is already a name.
+                    $name = substr($key, strlen('meta|'));
+                } else {
+                    continue;
+                }
+                if ($name !== '') {
+                    $names[] = $name;
+                }
             }
         }
 
         return array_values(array_unique($names));
+    }
+
+    /**
+     * A field value as the report shows it. A scalar reads as its string; a raw
+     * array (a post ID list, a gallery) as JSON, since a string cast of an array
+     * is the word "Array" and a PHP warning.
+     *
+     * @param mixed $value
+     */
+    private static function show($value): string {
+        return is_array($value) || is_object($value) ? (string) wp_json_encode($value) : (string) $value;
     }
 
     /**
@@ -457,17 +472,17 @@ final class ExistingPostsApplier {
     private static function field_changes(int $post_id, array $after): array {
         $changes = [];
         foreach ($after['fields'] as $name => $value) {
-            $stored = (string) get_post_meta($post_id, (string) $name, true);
-            if ($stored !== (string) $value) {
-                $changes[$name] = [$stored, (string) $value];
+            $stored = self::show(get_post_meta($post_id, (string) $name, true));
+            if ($stored !== self::show($value)) {
+                $changes[$name] = [$stored, self::show($value)];
             }
         }
         foreach ($after['rows'] as $by_row) {
             foreach ($by_row as $cells) {
                 foreach ($cells as $cell) {
-                    $stored = (string) get_post_meta($post_id, $cell['meta'], true);
-                    if ($stored !== (string) $cell['value']) {
-                        $changes[$cell['label']] = [$stored, (string) $cell['value']];
+                    $stored = self::show(get_post_meta($post_id, $cell['meta'], true));
+                    if ($stored !== self::show($cell['value'])) {
+                        $changes[$cell['label']] = [$stored, self::show($cell['value'])];
                     }
                 }
             }
@@ -499,13 +514,13 @@ final class ExistingPostsApplier {
         $values = [];
         foreach ($fields as $name) {
             if (!str_contains($name, '[].')) {
-                $values[$name] = (string) get_post_meta($post_id, $name, true);
+                $values[$name] = self::show(get_post_meta($post_id, $name, true));
                 continue;
             }
             [$repeater, $sub] = explode('[].', $name, 2);
             $rows             = (int) get_post_meta($post_id, $repeater, true);
             for ($row = 1; $row <= $rows; $row++) {
-                $values[$repeater . '[' . $row . '].' . $sub] = (string) get_post_meta($post_id, $repeater . '_' . ($row - 1) . '_' . $sub, true);
+                $values[$repeater . '[' . $row . '].' . $sub] = self::show(get_post_meta($post_id, $repeater . '_' . ($row - 1) . '_' . $sub, true));
             }
         }
 
