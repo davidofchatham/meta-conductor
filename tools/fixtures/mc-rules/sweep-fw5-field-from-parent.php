@@ -36,6 +36,11 @@
  *   N  group mode    (07) a field group copies every member into the same group,
  *                    a repeater as one value, a member added later without
  *                    re-saving the rule; each member is its own claim slot.
+ *   O  collisions    (10) a group copy collides per member; the Apply report lists
+ *                    every member it writes.
+ *   P  plain meta    a plain-meta target is named in the Apply report and preview.
+ *   Q  ACF name      a meta name that matches an ACF field collides with a rule on it.
+ *   R  empty list    Owning copies an empty list as a list.
  *
  * Every temp post is deleted and the fixture's rules restored afterward, pass or
  * fail. Check `wp post list --post_type=mc_item --fields=ID,post_name` after
@@ -383,6 +388,40 @@ try {
 	mcfp_author( array( $grp_rule( 'merge' ) ) );
 	$names = ( new ReflectionMethod( ExistingPostsApplier::class, 'field_names' ) )->invoke( null, array( 'all' => true, 'kind' => FormatDispatcher::KIND, 'fingerprint' => '' ) );
 	$pass  = mc_assert( 'O the Apply report lists every member a group copy writes', $names, array( 'mc_gp_one', 'mc_gp_two', 'mc_gp_rows', 'mc_gp_late' ) ) && $pass;
+
+	// --- P. a plain-meta target shows in the Apply report -------------------
+	mcfp_author( array( array_merge( mcfp_copy( 'replace' ), $meta ) ) );
+	$names = ( new ReflectionMethod( ExistingPostsApplier::class, 'field_names' ) )->invoke( null, array( 'all' => true, 'kind' => FormatDispatcher::KIND, 'fingerprint' => '' ) );
+	$pass  = mc_assert( 'P the Apply report lists a plain-meta target by its name', $names, array( 'mc_pm_dst' ) ) && $pass;
+
+	add_post_meta( $p, 'mc_pm_src', 'report-me' );
+	delete_post_meta( $c, 'mc_pm_dst' );
+	$choice  = RuleChoice::encode( OptionRuleStorage::KIND_FORMAT, 0, StorageFactory::get_instance()->get_kind_rules( OptionRuleStorage::KIND_FORMAT )[0] );
+	$preview = ExistingPostsApplier::preview( $choice );
+	$shown   = null;
+	foreach ( (array) ( $preview['sample'] ?? array() ) as $entry ) {
+		if ( (int) $entry['post_id'] === (int) $c ) {
+			$shown = $entry['fields']['mc_pm_dst'] ?? null;
+		}
+	}
+	$pass = mc_assert( 'P the preview shows the plain-meta copy, before and after', $shown, array( '', 'report-me' ) ) && $pass;
+	delete_post_meta( $p, 'mc_pm_src' );
+
+	// --- Q. a meta name that matches an ACF field collides with a rule on it -
+	$to_acf_name = array_merge( mcfp_copy( 'replace' ), $meta, array( 'target_meta' => 'mc_cp_display' ) );
+	$found       = CollisionDetector::detect( OptionRuleStorage::KIND_FORMAT, OptionRuleStorage::project_kind_rules( array( $to_acf_name, mcfp_pattern() ) ) );
+	$pass        = mc_assert( 'Q a plain-meta copy into an ACF field\'s name collides with a rule on that field', count( $found ), 1 ) && $pass;
+	$plain_name  = array_merge( $to_acf_name, array( 'target_meta' => 'mc_pm_no_such_field' ) );
+	$pass        = mc_assert( 'Q a name no ACF field answers to does not', CollisionDetector::detect( OptionRuleStorage::KIND_FORMAT, OptionRuleStorage::project_kind_rules( array( $plain_name, mcfp_pattern() ) ) ), array() ) && $pass;
+
+	// --- R. Owning copies an empty list as a list (the source's value) -------
+	mcfp_author( array( mcfp_copy( 'replace', MCFP_LIST ) ) );
+	mcfp_set( $p, MCFP_LIST, $list );
+	mcfp_save( $c );
+	$pass = mc_assert( 'R the child holds the parent\'s list', mcfp_list( $c ), $list ) && $pass;
+	mcfp_set( $p, MCFP_LIST, array() );
+	mcfp_save( $c );
+	$pass = mc_assert( 'R an empty parent list leaves the child an empty list, not a string', mcfp_list( $c ), array() ) && $pass;
 } finally {
 	acf_remove_local_field( 'field_mc_gp_late' );
 	foreach ( array_reverse( $ids ) as $id ) {

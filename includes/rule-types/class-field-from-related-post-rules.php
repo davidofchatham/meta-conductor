@@ -2,7 +2,7 @@
 /**
  * Descriptor for `field_from_related_post` rows — Set a field from a related post.
  *
- * @since 0.3.0
+ * @since 0.12.0
  */
 
 namespace BWS\MetaConductor\RuleTypes;
@@ -30,6 +30,12 @@ if (!defined('ABSPATH')) {
  * target is *Same* (the source's own field or meta name) unless the author picks
  * another; `source_field` / `copy_target` hold '' / an ACF key / `META`, and the
  * meta name rides in `source_meta` / `target_meta`.
+ *
+ * The type is offered whether or not ACF is active: a parent row over plain
+ * meta needs only core, and a stored row keeps its type on save (a select drops
+ * a value that is not among its options). A row that needs ACF (see
+ * `relationship()`) is idle while ACF is off and keeps its settings. Authoring
+ * one still needs ACF, because the ACF field pickers are built from it.
  */
 final class FieldFromRelatedPostRules extends RuleType {
 
@@ -56,22 +62,42 @@ final class FieldFromRelatedPostRules extends RuleType {
     }
 
     /**
-     * The rule reads and writes through ACF, so without it there is nothing to
-     * copy: the type is not offered and the handler skips any row already stored.
-     */
-    public function available(): bool {
-        return function_exists('acf_get_field') && function_exists('update_field');
-    }
-
-    /**
      * The graph a row walks: the parent's, or the ACF relationship field's.
+     *
+     * Null for a row that cannot run while ACF is off, which is how the handler
+     * and the format dispatcher's fan-out both skip it: an `acf` row, or one that
+     * names an ACF field or group as source or target. The type itself stays
+     * available (see `needs_acf()`), so a stored row keeps its type and its
+     * settings on save, and a `parent` row copying plain meta keeps working.
      */
     public function relationship(array $rule): ?Relationship {
+        if (!self::acf_loaded() && $this->needs_acf($rule)) {
+            return null;
+        }
+
         return match ((string) ($rule['relationship'] ?? '')) {
             'parent' => new ParentRelationship(),
             'acf'    => new AcfRelationship(),
             default  => null,
         };
+    }
+
+    /**
+     * Whether the row reads or writes through ACF: an `acf` relationship, an ACF
+     * field or group as source, or an ACF field as the target. A plain meta key
+     * at both ends over the parent needs nothing but core.
+     */
+    private function needs_acf(array $rule): bool {
+        $source = trim((string) ($rule['source_field'] ?? ''));
+        $target = trim((string) ($rule['copy_target'] ?? ''));
+
+        return ($rule['relationship'] ?? '') === 'acf'
+            || ($source !== '' && $source !== self::META)
+            || ($target !== '' && $target !== self::META);
+    }
+
+    private static function acf_loaded(): bool {
+        return function_exists('acf_get_field') && function_exists('update_field');
     }
 
     /**
@@ -237,7 +263,7 @@ final class FieldFromRelatedPostRules extends RuleType {
 
     /**
      * Schema:
-     *   {name} — Copy {field_label} from parent ({claim}){ (Post type)}
+     *   {name} — Copy {field_label} {from parent|to related posts|from related posts} ({claim}){ (Post type)}
      *   e.g. "Venue address — Copy Address from parent (contributing) (MC Items)"
      */
     public function row_title(array $row): string {
@@ -254,11 +280,20 @@ final class FieldFromRelatedPostRules extends RuleType {
                 ? ConfigHelpers::acf_group_title($group)
                 : ConfigHelpers::acf_field_label($this->source_key($row)));
 
+        // The direction an `acf` row copies is its holder role: the holder is the
+        // source in a push, and an absent role means pull (`AcfRelationship`).
+        $from = match (true) {
+            ($row['relationship'] ?? '') !== 'acf'   => __('from parent', 'meta-conductor'),
+            ($row['holder_role'] ?? '') === 'source' => __('to related posts', 'meta-conductor'),
+            default                                   => __('from related posts', 'meta-conductor'),
+        };
+
         return $name
             . ' — ' . sprintf(
-                /* translators: 1: field label, 2: claim name */
-                __('Copy %1$s from parent (%2$s)', 'meta-conductor'),
+                /* translators: 1: field label, 2: "from parent" / "to related posts" / "from related posts", 3: claim name */
+                __('Copy %1$s %2$s (%3$s)', 'meta-conductor'),
                 $field !== '' ? $field : __('a field', 'meta-conductor'),
+                $from,
                 Labels::claim_label($row['conflict_handling'] ?? 'merge')
             )
             . Labels::scope_label((array) ($row['post_types'] ?? []));
@@ -356,7 +391,7 @@ final class FieldFromRelatedPostRules extends RuleType {
                 'required'    => true,
                 'columns'     => 12,
                 'args'        => [
-                    'options' => self::with_meta_option(ConfigHelpers::acf_source_field_options()) + ConfigHelpers::acf_group_options(),
+                    'options' => self::with_meta_option(ConfigHelpers::acf_source_field_options()) + ConfigHelpers::acf_group_options() + self::stored_while_acf_off('source_field'),
                 ],
             ],
             self::meta_name_field('source_meta', 'source_field', __('Meta key to copy', 'meta-conductor'), __('The plain post meta key read from the parent. When the key has several values only the first is copied. A key starting with an underscore is refused.', 'meta-conductor')),
@@ -370,8 +405,8 @@ final class FieldFromRelatedPostRules extends RuleType {
                 'args'        => [
                     'options' => [
                         ''         => __('Same field', 'meta-conductor'),
-                        self::META => __('A plain meta key…', 'meta-conductor'),
-                    ] + ConfigHelpers::acf_target_field_options(),
+                        self::META => self::meta_option_label(),
+                    ] + ConfigHelpers::acf_target_field_options() + self::stored_while_acf_off('copy_target'),
                 ],
             ],
             self::meta_name_field('target_meta', 'copy_target', __('Meta key to write', 'meta-conductor'), __('The plain post meta key written on the receiving post. A key starting with an underscore is refused.', 'meta-conductor')),
@@ -455,7 +490,39 @@ final class FieldFromRelatedPostRules extends RuleType {
      * @return array<string,string>
      */
     private static function with_meta_option(array $options): array {
-        return ['' => $options[''] ?? '', self::META => __('A plain meta key…', 'meta-conductor')] + $options;
+        return ['' => $options[''] ?? '', self::META => self::meta_option_label()] + $options;
+    }
+
+    /**
+     * With ACF off the pickers list no ACF field, and a select drops a value that
+     * is not among its options on save, which would gut a stored row that is only
+     * idle. So each stored ACF key (or group key) is offered as itself, as the
+     * term list does for its relationship fields. Empty while ACF is active.
+     *
+     * @param string $field `source_field` or `copy_target`.
+     * @return array<string,string> stored value => label.
+     */
+    private static function stored_while_acf_off(string $field): array {
+        if (self::acf_loaded()) {
+            return [];
+        }
+
+        $stored = get_option(OptionRuleStorage::OPTION_NAME, []);
+        $out    = [];
+        foreach ((array) (is_array($stored) ? ($stored[OptionRuleStorage::KIND_FORMAT] ?? []) : []) as $row) {
+            $value = is_array($row) ? trim((string) ($row[$field] ?? '')) : '';
+            if ($value !== '' && $value !== self::META) {
+                /* translators: %s: the stored ACF field or group key */
+                $out[$value] = sprintf(__('%s (ACF inactive)', 'meta-conductor'), $value);
+            }
+        }
+
+        return $out;
+    }
+
+    /** The label of the plain-meta choice in both the source and the target select. */
+    private static function meta_option_label(): string {
+        return __('A plain meta key…', 'meta-conductor');
     }
 
     /**

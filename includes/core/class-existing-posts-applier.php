@@ -410,7 +410,8 @@ final class ExistingPostsApplier {
     /**
      * The ACF field NAMES the format pass writes, for the report: the target of
      * every Computed field row the pass runs (the enabled rows, plus the chosen
-     * one when it is a disabled format row), resolved from the stored key. A row
+     * one when it is a disabled format row), resolved from the stored key (a plain
+     * meta target is its own name). A row
      * rule's target is `repeater[].subfield`, which `snapshot()` expands per post
      * to the rows that post holds.
      *
@@ -431,6 +432,9 @@ final class ExistingPostsApplier {
                     $name             = $repeater !== '' && $sub !== '' ? $repeater . '[].' . $sub : '';
                 } elseif (str_starts_with($key, 'field|')) {
                     $name = ConfigHelpers::acf_field_name(substr($key, strlen('field|')));
+                } elseif (str_starts_with($key, 'meta|')) {
+                    // A plain meta target is already a name.
+                    $name = substr($key, strlen('meta|'));
                 } else {
                     continue;
                 }

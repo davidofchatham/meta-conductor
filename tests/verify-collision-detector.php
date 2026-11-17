@@ -99,6 +99,19 @@ if (!function_exists('acf_get_field')) {
     }
 }
 
+// ACF's name-or-key lookup, which is how `MetaWriter` finds the field a plain
+// meta name routes to: `display_name` is the field `field_mc_a`.
+if (!function_exists('acf_maybe_get_field')) {
+    function acf_maybe_get_field($selector, $post_id = false, $strict = true) {
+        foreach (['field_mc_a' => 'display_name', 'field_mc_b' => 'sort_name'] as $key => $name) {
+            if ($selector === $key || ($selector === $name && !$strict)) {
+                return acf_get_field($key);
+            }
+        }
+        return false;
+    }
+}
+
 // Group membership by group key: two value fields and a tab (no value, so never a
 // member), plus a group holding one field a copy row also targets.
 if (!function_exists('acf_get_fields')) {
@@ -712,6 +725,21 @@ $check('a plain-meta copy collides with another copy of the same meta key only',
         $cp(['source_field' => '@meta', 'source_meta' => 'k']),
         $cp(['source_field' => '@meta', 'source_meta' => 'j']),
     ]) === []);
+// A meta name that matches an ACF field is written through ACF, so it is that field.
+$to_meta = fn(string $name, array $over = []) => $cp(['source_field' => '@meta', 'source_meta' => 'k', 'copy_target' => '@meta', 'target_meta' => $name] + $over);
+$check('a plain-meta copy into an ACF field\'s name collides with a rule on that field',
+    count($scan($KIND_FORMAT, [$to_meta('display_name'), $cf()])) === 1
+    && count($scan($KIND_FORMAT, [$cf(), $to_meta('display_name')])) === 1);
+$check('and with a copy of that field by key, and names it by the field\'s label',
+    count($ma = $scan($KIND_FORMAT, [$to_meta('display_name'), $cp()])) === 1
+    && str_contains(CollisionDetector::message($ma[0]), 'the “Display name” field'));
+$check('a plain-meta copy into a name no ACF field answers to collides with no field rule',
+    $scan($KIND_FORMAT, [$to_meta('plain_name'), $cf()]) === []
+    && $scan($KIND_FORMAT, [$to_meta('sort_name'), $cf()]) === []);
+$check('a plain-meta copy still collides with a plain-meta copy of the same name',
+    count($scan($KIND_FORMAT, [$to_meta('plain_name'), $to_meta('plain_name')])) === 1);
+$check('a Deferring plain-meta copy into an ACF name collides at the lower severity',
+    ($scan($KIND_FORMAT, [$cf(), $to_meta('display_name', ['conflict_handling' => 'skip'])])[0]['severity'] ?? '') === 'low');
 $check('a copy row with no post type checked is unfinished, not colliding',
     $scan($KIND_FORMAT, [$cp(['post_types' => []]), $cp()]) === []);
 

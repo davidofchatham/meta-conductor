@@ -21,7 +21,7 @@
  * the caller owns those.
  *
  * @package Meta_Conductor
- * @since 0.3.0
+ * @since 0.12.0
  */
 
 namespace BWS\MetaConductor\Core;

@@ -204,7 +204,7 @@ class CollisionDetector {
                     'type'       => $type,
                     'descriptor' => $descriptor,
                     'row'        => $row,
-                    'key'        => $key,
+                    'key'        => self::canonical_key($key),
                     'post_types' => $descriptor->written_post_types($row),
                 ];
             }
@@ -230,6 +230,25 @@ class CollisionDetector {
         }
 
         return array_merge($unknown, $found);
+    }
+
+    /**
+     * The key two writes of one stored field share. `MetaWriter` routes a plain
+     * meta name through ACF when it matches an ACF field, so `meta|<name>` and
+     * `field|<key>` name the same field and must pair; any other key, and a
+     * name no ACF field answers to, is returned as given.
+     *
+     * @param string $key Target key from `RuleType::target_keys()`.
+     */
+    private static function canonical_key(string $key): string {
+        if (!str_starts_with($key, 'meta|') || !function_exists('acf_maybe_get_field')) {
+            return $key;
+        }
+
+        // No post at detection time, so ACF falls back to the field's own name.
+        $field = \acf_maybe_get_field(substr($key, strlen('meta|')), false, false);
+
+        return is_array($field) && !empty($field['key']) ? 'field|' . $field['key'] : $key;
     }
 
     /**

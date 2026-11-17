@@ -15,7 +15,7 @@
  * A draft parent, a root post and a post detached to root all resolve to no
  * eligible source, so the post keeps its value under every claim.
  *
- * @since 0.3.0
+ * @since 0.12.0
  */
 
 namespace BWS\MetaConductor\Handlers;
@@ -130,7 +130,9 @@ class FieldFromRelatedPostHandler extends UnifiedHandlerBase {
         if ($relationship instanceof AcfRelationship) {
             $relationship = $this->acf_relationship;
         }
-        if (!$descriptor->available() || $relationship === null) {
+        // Null with ACF off for a row that needs it (`relationship()`), so a
+        // stored row of that kind is idle, its settings kept.
+        if ($relationship === null) {
             return null;
         }
         // An ACF row names its field; without ACF's field API or a field it is idle.
@@ -200,8 +202,8 @@ class FieldFromRelatedPostHandler extends UnifiedHandlerBase {
         $name = $target['name'];
         if ($key !== '') {
             $field = \acf_get_field($key);
-            if (!is_array($field) || ($name = (string) ($field['name'] ?? '')) === ''
-                || !ConfigHelpers::acf_field_shown_on($key, $post_type)) {
+            $name  = is_array($field) ? (string) ($field['name'] ?? '') : '';
+            if ($name === '' || !ConfigHelpers::acf_field_shown_on($key, $post_type)) {
                 return null;
             }
             if ($source_key !== '' && $key !== $source_key) {
@@ -239,7 +241,9 @@ class FieldFromRelatedPostHandler extends UnifiedHandlerBase {
             }
         }
 
-        $data['fields'][$name] = $empty ? '' : $value;
+        // Owning copies the source's value including an empty list, which stays a
+        // list; any other empty (null, false) is the empty string.
+        $data['fields'][$name] = $empty && !is_array($value) ? '' : $value;
         if ($key !== '') {
             $data['field_keys'][$name] = $key;
         }

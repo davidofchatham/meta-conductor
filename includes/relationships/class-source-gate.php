@@ -3,7 +3,7 @@
  * The zero-source gate every relationship rule shares.
  *
  * @package Meta_Conductor
- * @since 0.8.0
+ * @since 0.12.0
  */
 
 namespace BWS\MetaConductor\Relationships;

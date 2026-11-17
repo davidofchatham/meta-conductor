@@ -579,6 +579,11 @@ $check('a computed field row naming several post types lists them all',
 $check('a copy row title names the field, the claim and the post type',
     $title(['type' => 'field_from_related_post', 'name' => 'Venue', 'post_types' => ['mc_item'], 'source_field' => 'field_a', 'conflict_handling' => 'replace'])
         === 'Venue — Copy Display name from parent (owning) (MC Items)');
+$copy_acf = ['type' => 'field_from_related_post', 'name' => 'Venue', 'post_types' => ['mc_item'], 'source_field' => 'field_a', 'conflict_handling' => 'replace', 'relationship' => 'acf'];
+$check('an acf copy row titles its direction: a push goes to related posts, a pull comes from them',
+    $title($copy_acf + ['holder_role' => 'source']) === 'Venue — Copy Display name to related posts (owning) (MC Items)'
+    && $title($copy_acf + ['holder_role' => 'target']) === 'Venue — Copy Display name from related posts (owning) (MC Items)'
+    && str_contains($title($copy_acf), 'from related posts'));
 $check('a copy row with no claim stored reads as contributing',
     str_contains($title(['type' => 'field_from_related_post', 'name' => 'Venue', 'source_field' => 'field_a']), '(contributing)'));
 $check('an unnamed copy row is named rather than left blank',

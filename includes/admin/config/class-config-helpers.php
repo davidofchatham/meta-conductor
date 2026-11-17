@@ -621,15 +621,17 @@ class ConfigHelpers {
         // Raw on purpose (not don't 1's `get_rules()`): the select's option keys are
         // the COMBINED values, and the projection would split them.
         $stored = get_option(OptionRuleStorage::OPTION_NAME, []);
-        $rows   = is_array($stored) ? ($stored[OptionRuleStorage::KIND_TERM] ?? []) : [];
         $out    = [];
 
-        foreach ((array) $rows as $row) {
-            foreach (['acf_field_name', 'reverse_acf_field_name'] as $key) {
-                $value = is_array($row) ? (string) ($row[$key] ?? '') : '';
-                if ($value !== '') {
-                    /* translators: %s: the stored ACF field value */
-                    $out[$value] = sprintf(__('%s (ACF inactive)', 'meta-conductor'), $value);
+        // Both kinds: the term list's ACF rows and *Set a field from a related post*.
+        foreach ([OptionRuleStorage::KIND_TERM, OptionRuleStorage::KIND_FORMAT] as $kind) {
+            foreach ((array) (is_array($stored) ? ($stored[$kind] ?? []) : []) as $row) {
+                foreach (['acf_field_name', 'reverse_acf_field_name'] as $key) {
+                    $value = is_array($row) ? (string) ($row[$key] ?? '') : '';
+                    if ($value !== '') {
+                        /* translators: %s: the stored ACF field value */
+                        $out[$value] = sprintf(__('%s (ACF inactive)', 'meta-conductor'), $value);
+                    }
                 }
             }
         }
@@ -677,11 +679,8 @@ class ConfigHelpers {
         }
 
         $fields_cache = [];
-        $post_types   = get_post_types(['public' => true], 'objects');
-        unset($post_types['attachment']);
-
-        foreach ($post_types as $post_type) {
-            foreach ((array) acf_get_field_groups(['post_type' => $post_type->name]) as $group) {
+        foreach (self::format_post_type_options() as $post_type => $post_type_label) {
+            foreach ((array) acf_get_field_groups(['post_type' => $post_type]) as $group) {
                 foreach ((array) acf_get_fields($group['key']) as $field) {
                     $key = (string) ($field['key'] ?? '');
                     if ($key !== '' && ($field['type'] ?? '') === 'repeater') {
@@ -700,7 +699,7 @@ class ConfigHelpers {
                     }
                     $fields_cache[$key]['label'] = sprintf('%s (%s)', $field['label'] ?? $field['name'], $field['name'] ?? '')
                         . ((string) ($group['title'] ?? '') !== '' ? ' — ' . $group['title'] : '');
-                    $fields_cache[$key]['types'][] = $post_type->label;
+                    $fields_cache[$key]['types'][] = $post_type_label;
                 }
             }
         }
@@ -744,12 +743,9 @@ class ConfigHelpers {
             return $placeholder_row;
         }
 
-        $cache      = [];
-        $post_types = get_post_types(['public' => true], 'objects');
-        unset($post_types['attachment']);
-
-        foreach ($post_types as $post_type) {
-            foreach ((array) acf_get_field_groups(['post_type' => $post_type->name]) as $group) {
+        $cache = [];
+        foreach (self::format_post_type_options() as $post_type => $post_type_label) {
+            foreach ((array) acf_get_field_groups(['post_type' => $post_type]) as $group) {
                 foreach ((array) acf_get_fields($group['key']) as $field) {
                     $key = (string) ($field['key'] ?? '');
                     if ($key === '' || in_array($field['type'] ?? '', self::NON_VALUE_TYPES, true)) {
@@ -757,7 +753,7 @@ class ConfigHelpers {
                     }
                     $cache[$key]['label'] ??= sprintf('%s (%s)', $field['label'] ?? $field['name'], $field['name'] ?? '')
                         . ((string) ($group['title'] ?? '') !== '' ? ' — ' . $group['title'] : '');
-                    $cache[$key]['types'][] = $post_type->label;
+                    $cache[$key]['types'][] = $post_type_label;
                 }
             }
         }
@@ -782,23 +778,20 @@ class ConfigHelpers {
             return [];
         }
 
-        $cache      = [];
-        $post_types = get_post_types(['public' => true], 'objects');
-        unset($post_types['attachment']);
-
-        foreach ($post_types as $post_type) {
-            foreach ((array) acf_get_field_groups(['post_type' => $post_type->name]) as $group) {
+        $groups = [];
+        foreach (self::format_post_type_options() as $post_type => $post_type_label) {
+            foreach ((array) acf_get_field_groups(['post_type' => $post_type]) as $group) {
                 $key = (string) ($group['key'] ?? '');
                 if ($key === '') {
                     continue;
                 }
-                $cache[$key]['title'] ??= (string) ($group['title'] ?? $key);
-                $cache[$key]['types'][] = $post_type->label;
+                $groups[$key]['title'] ??= (string) ($group['title'] ?? $key);
+                $groups[$key]['types'][] = $post_type_label;
             }
         }
 
         $options = [];
-        foreach ($cache as $key => $entry) {
+        foreach ($groups as $key => $entry) {
             $options[$key] = sprintf(
                 /* translators: 1: field group title, 2: post types it is shown on */
                 __('Field group: %1$s [%2$s]', 'meta-conductor'),
