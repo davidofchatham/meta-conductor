@@ -11,6 +11,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Title, slug and field patterns can read another post: `{parent:...}` reads the parent post, `{refs:<field>:...}` reads the first post an ACF relationship or post-object field names. *(Added)*
 - A parent edit now updates its children's computed titles, slugs and fields. *(Added)*
+- A new *Set a field from a related post* rule copies a field's value, or a whole ACF field group, from a post's parent or from a post an ACF relationship field names. *(Added)*
+- An Owning *Set terms from a related post* rule with an ACF relationship keeps a post's terms when all of its sources are unpublished. *(Changed)*
 
 ### Added
 
@@ -19,6 +21,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - One hop: a prefix inside another resolves empty. `refs` names the ACF field by its name alone, so use a field name no other group shares and write a field inside an ACF Group by its group-qualified name. A deleted or trashed related post is skipped. A pattern on a repeater subfield resolves both prefixes empty. No status gate applies: a draft or private source is read like a published one, so its value can appear in a public title, slug or field.
   - `{parent:slug}` is unchanged for existing rules.
 - **Parent edits reach their children.** When a title, slug or field pattern reads `{parent:...}`, saving the parent (or changing its terms) re-runs the rule on its children, and their children in turn. A site with no `{parent:...}` pattern does no child lookup. `refs` does not fan out: a post that a `refs` token reads does not update the posts that read it, so they refresh when saved or through *Apply to Existing Posts*, and a bulk run can leave one stale until a second run.
+- **Set a field from a related post.** A new rule in the *Format & Transform* list copies a field's value from a related post onto the post being saved, as the raw stored value, so a list of posts, an image or a whole repeater arrives intact.
+  - The *Relationship* is the parent post (copied down to its children) or, while ACF is active, an ACF relationship or post-object field with the same holder and direction options as *Set terms from a related post*. The source is one ACF field (picked by field key), a plain meta key, or a whole ACF field group copied into the same group on the receiving post, with the group's fields read when the rule runs. *Copy into* defaults to *Same*; another ACF field must be the same field type, and a plain meta key matching an ACF field is written through ACF. A meta key starting with `_` is refused.
+  - The claim is per field: *Contributing* (the default) writes a value the source holds and never clears, *Owning* keeps the target equal to the source including when it is empty, and *Deferring* fills only an empty target. Only one source counts: the first related post holding a value, in the field's own order when pulling and in the reverse field's order (else lowest post ID) when pushing. A source that fails the rule's *Post status* limit counts as absent, and a post with no eligible source keeps its value under every claim, so a draft source, a root post and a post detached from its parent are all left alone.
+  - Saving a source updates the posts that read it, and theirs in turn. Removing a post from the field that listed it, or deleting its source, clears the value only under Owning. A rule with the ACF relationship stays saved while ACF is off, runs nothing and says it requires ACF. A bidirectional ACF field that links posts of one type gets a notice that two posts can source each other.
+  - A rule that writes a field another rule also writes, on an overlapping post type, gets the collision notice, and every field of a group copy counts. A Deferring copy's collision shows as a lower-level notice. *Apply to Existing Posts* runs the rule, and its preview lists the fields a group copy would write and shows list values as JSON.
 
 ### Changed
 
