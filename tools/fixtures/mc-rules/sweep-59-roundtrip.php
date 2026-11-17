@@ -135,6 +135,10 @@ foreach (['source_field', 'source_meta', 'copy_target', 'target_meta'] as $key) 
 $back_out = RepeaterField::sanitize([array_merge($meta_row, ['source_field' => 'field_mc_cp_text', 'copy_target' => 'field_mc_cp_display'])], $field['args'])[0] ?? [];
 $note('a stale meta name is dropped once the select picks an ACF field',
     !array_key_exists('source_meta', $back_out) && !array_key_exists('target_meta', $back_out) && ($back_out['copy_target'] ?? '') === 'field_mc_cp_display');
+// Group mode (FW-5 07): the group key rides in `source_field`; Copy into stays (ignored).
+$group_row = array_merge($copy_row, ['source_field' => 'group_mc_copy_group', 'copy_target' => '']);
+$group_out = RepeaterField::sanitize([$group_row], $field['args'])[0] ?? [];
+$note("group copy row 'source_field' survives sanitize", ($group_out['source_field'] ?? '(DROPPED)') === 'group_mc_copy_group');
 $note('copy row carries no pattern-rule or title/slug keys',
     array_intersect(['target_field', 'pattern', 'output', 'title_pattern', 'post_type'], array_keys($copy_out)) === []);
 

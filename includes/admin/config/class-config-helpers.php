@@ -770,6 +770,47 @@ class ConfigHelpers {
     }
 
     /**
+     * The group choices of the copy source select (FW-5 group mode): every ACF
+     * field group shown on a public post type, keyed by GROUP key, labelled
+     * with its title and the post types it is shown on. Never a target: a group
+     * source writes into the same group.
+     *
+     * @return array<string,string> group key => label (no placeholder).
+     */
+    public static function acf_group_options(): array {
+        if (!function_exists('acf_get_field_groups')) {
+            return [];
+        }
+
+        $cache      = [];
+        $post_types = get_post_types(['public' => true], 'objects');
+        unset($post_types['attachment']);
+
+        foreach ($post_types as $post_type) {
+            foreach ((array) acf_get_field_groups(['post_type' => $post_type->name]) as $group) {
+                $key = (string) ($group['key'] ?? '');
+                if ($key === '') {
+                    continue;
+                }
+                $cache[$key]['title'] ??= (string) ($group['title'] ?? $key);
+                $cache[$key]['types'][] = $post_type->label;
+            }
+        }
+
+        $options = [];
+        foreach ($cache as $key => $entry) {
+            $options[$key] = sprintf(
+                /* translators: 1: field group title, 2: post types it is shown on */
+                __('Field group: %1$s [%2$s]', 'meta-conductor'),
+                $entry['title'],
+                implode(', ', array_unique($entry['types']))
+            );
+        }
+
+        return $options;
+    }
+
+    /**
      * The target picker's ACF choices: the source list's fields (no
      * placeholder) with each field's TYPE in the label. A static select cannot
      * follow the row's source, so the author matches types by the label and the
@@ -830,6 +871,19 @@ class ConfigHelpers {
         $field = \acf_get_field($key);
 
         return is_array($field) ? (string) ($field['label'] ?? '') : '';
+    }
+
+    /**
+     * A field group's title from its key, or '' when it no longer resolves.
+     */
+    public static function acf_group_title(string $key): string {
+        if ($key === '' || !function_exists('acf_get_field_group')) {
+            return '';
+        }
+
+        $group = \acf_get_field_group($key);
+
+        return is_array($group) ? (string) ($group['title'] ?? '') : '';
     }
 
     /**

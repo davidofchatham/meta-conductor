@@ -61,12 +61,14 @@ class FieldFromRelatedPostHandler extends UnifiedHandlerBase {
             return null;
         }
 
+        $group       = $descriptor->source_group($rule);
         $source_key  = $descriptor->source_key($rule);
         $source_meta = $descriptor->source_meta($rule);
         $target      = $descriptor->target($rule);
         $post_type   = (string) ($data['post_type'] ?? '');
         // Empty `post_types` is "none", not "all" — see the descriptor.
-        if (($source_key === '' && $source_meta === '') || $target === null
+        if (($group === '' && $source_key === '' && $source_meta === '')
+            || ($group === '' && $target === null)
             || !in_array($post_type, (array) ($rule['post_types'] ?? []), true)) {
             return null;
         }
@@ -82,6 +84,49 @@ class FieldFromRelatedPostHandler extends UnifiedHandlerBase {
             return null;
         }
 
+        // Group mode: every top-level member of the group, read live, copied
+        // into the same field on the receiving post. Each member is its own
+        // claim slot, so an empty one decides nothing about the others.
+        if ($group !== '') {
+            $applied = false;
+            foreach ($this->group_members($group) as $member) {
+                $next = $this->copy_slot($data, $post_id, $rule, $post_type, $eligible[0], $member, '', ['key' => $member, 'name' => '']);
+                if ($next !== null) {
+                    $data    = $next;
+                    $applied = true;
+                }
+            }
+
+            return $applied ? $data : null;
+        }
+
+        return $this->copy_slot($data, $post_id, $rule, $post_type, $eligible[0], $source_key, $source_meta, $target);
+    }
+
+    /**
+     * The keys of a group's top-level value-holding fields, read now.
+     *
+     * @return string[]
+     */
+    private function group_members(string $group_key): array {
+        $keys = [];
+        foreach ((array) \acf_get_fields($group_key) as $field) {
+            $key = (string) ($field['key'] ?? '');
+            if ($key !== '' && !in_array($field['type'] ?? '', ConfigHelpers::NON_VALUE_TYPES, true)) {
+                $keys[] = $key;
+            }
+        }
+
+        return $keys;
+    }
+
+    /**
+     * One field slot: read the source, apply the claim, set the cell.
+     *
+     * @param array{key:string,name:string}|null $target
+     * @return array|null `$data` with the cell set, or null when the slot does not apply.
+     */
+    private function copy_slot(array $data, int $post_id, array $rule, string $post_type, int $source_post, string $source_key, string $source_meta, ?array $target): ?array {
         // An ACF target must exist, be shown on the receiving type (this is what
         // *Same* needs too) and, when it is not the source itself, have the
         // source's field type. A meta target is its name, written by MetaWriter.
@@ -102,8 +147,8 @@ class FieldFromRelatedPostHandler extends UnifiedHandlerBase {
         }
 
         $value = $source_key !== ''
-            ? \get_field($source_key, $eligible[0], false)
-            : \get_post_meta($eligible[0], $source_meta, true);
+            ? \get_field($source_key, $source_post, false)
+            : \get_post_meta($source_post, $source_meta, true);
         $empty = self::is_empty($value);
         $claim = (string) ($rule['conflict_handling'] ?? 'merge');
 

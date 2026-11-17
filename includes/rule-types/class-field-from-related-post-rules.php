@@ -34,6 +34,9 @@ final class FieldFromRelatedPostRules extends RuleType {
     /** The `source_field` / `copy_target` value that means "a plain meta key". */
     public const META = '@meta';
 
+    /** ACF's own prefix on a field group key; a `source_field` starting with it names a group. */
+    private const GROUP_PREFIX = 'group_';
+
     public function type(): string {
         return 'field_from_related_post';
     }
@@ -72,7 +75,18 @@ final class FieldFromRelatedPostRules extends RuleType {
     public function source_key(array $rule): string {
         $key = trim((string) ($rule['source_field'] ?? ''));
 
-        return $key === self::META ? '' : $key;
+        return $key === self::META || str_starts_with($key, self::GROUP_PREFIX) ? '' : $key;
+    }
+
+    /**
+     * The ACF field GROUP key when the source is a whole group (group mode), else
+     * ''. ACF prefixes every group key `group_` and every field key `field_`, so
+     * the one `source_field` select holds both without a marker of our own.
+     */
+    public function source_group(array $rule): string {
+        $key = trim((string) ($rule['source_field'] ?? ''));
+
+        return str_starts_with($key, self::GROUP_PREFIX) ? $key : '';
     }
 
     public function is_meta_source(array $rule): bool {
@@ -98,6 +112,11 @@ final class FieldFromRelatedPostRules extends RuleType {
      * @return array{key:string,name:string}|null
      */
     public function target(array $rule): ?array {
+        // Group mode has no single target: every member goes to the same group.
+        if ($this->source_group($rule) !== '') {
+            return null;
+        }
+
         $pick = trim((string) ($rule['copy_target'] ?? ''));
 
         if ($pick === '') {
@@ -153,9 +172,12 @@ final class FieldFromRelatedPostRules extends RuleType {
             $name = __('Untitled copy-from-related-post rule', 'meta-conductor');
         }
 
+        $group = $this->source_group($row);
         $field = $this->is_meta_source($row)
             ? trim((string) ($row['source_meta'] ?? ''))
-            : ConfigHelpers::acf_field_label($this->source_key($row));
+            : ($group !== ''
+                ? ConfigHelpers::acf_group_title($group)
+                : ConfigHelpers::acf_field_label($this->source_key($row)));
 
         return $name
             . ' — ' . sprintf(
@@ -207,12 +229,12 @@ final class FieldFromRelatedPostRules extends RuleType {
                 'id'          => 'source_field',
                 'type'        => 'select',
                 'label'       => __('Field to copy', 'meta-conductor'),
-                'description' => __('The ACF field copied from the parent post, as the raw stored value — a list of posts, an image or a whole repeater arrives intact. Each option lists the post types its field group is shown on; the copy only runs on a post type that shows the field. The rule remembers the field itself, so renaming it in ACF does not break the rule. Only top-level fields are listed.', 'meta-conductor'),
+                'description' => __('The ACF field copied from the parent post, as the raw stored value — a list of posts, an image or a whole repeater arrives intact. Each option lists the post types its field group is shown on; the copy only runs on a post type that shows the field. The rule remembers the field itself, so renaming it in ACF does not break the rule. Only top-level fields are listed. Choosing a field group instead copies every top-level field of the group into the same group on the receiving post, including fields added to the group later; Copy into is then ignored.', 'meta-conductor'),
                 'default'     => '',
                 'required'    => true,
                 'columns'     => 12,
                 'args'        => [
-                    'options' => self::with_meta_option(ConfigHelpers::acf_source_field_options()),
+                    'options' => self::with_meta_option(ConfigHelpers::acf_source_field_options()) + ConfigHelpers::acf_group_options(),
                 ],
             ],
             self::meta_name_field('source_meta', 'source_field', __('Meta key to copy', 'meta-conductor'), __('The plain post meta key read from the parent. When the key has several values only the first is copied. A key starting with an underscore is refused.', 'meta-conductor')),

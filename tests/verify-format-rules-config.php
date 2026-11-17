@@ -132,6 +132,11 @@ if (!function_exists('acf_get_fields')) {
         return $parent === 'group_a' ? array_values($GLOBALS['h12_acf_fields']) : ($GLOBALS['h12_acf_subfields'][$parent] ?? []);
     }
 }
+if (!function_exists('acf_get_field_group')) {
+    function acf_get_field_group($key) {
+        return $key === 'group_a' ? ['key' => 'group_a', 'title' => 'Group A'] : false;
+    }
+}
 if (!function_exists('acf_get_field')) {
     function acf_get_field($key) {
         foreach ($GLOBALS['h12_acf_subfields'] as $subs) {
@@ -417,9 +422,25 @@ $check('every key the copy handler reads survives a save',
 $check('pattern and title/slug mechanics are not offered on a copy row',
     !array_intersect(['target_field', 'pattern', 'output', 'title_pattern', 'slug_pattern', 'post_type'], $visible_copy));
 $check('the copy source select offers every value-holding top-level field, by key, with its group and post types',
-    array_keys($by_id['source_field']['args']['options']) === ['', '@meta', 'field_a', 'field_b', 'field_c', 'field_d']
+    array_slice(array_keys($by_id['source_field']['args']['options']), 0, 6) === ['', '@meta', 'field_a', 'field_b', 'field_c', 'field_d']
     && $by_id['source_field']['args']['options']['field_c'] === 'Friends (friends) — Group A [MC Items]'
     && !empty($by_id['source_field']['required']));
+// Group mode (FW-5 07): a whole field group is a source too, offered after the
+// fields; it is never a target (the target is forced to the same group).
+$check('the copy source select also offers each field group, by group key, after the fields',
+    array_keys($by_id['source_field']['args']['options']) === ['', '@meta', 'field_a', 'field_b', 'field_c', 'field_d', 'group_a']
+    && $by_id['source_field']['args']['options']['group_a'] === 'Field group: Group A [MC Items]');
+$grp = \BWS\MetaConductor\RuleTypes\Registry::get('field_from_related_post');
+$group_row = ['source_field' => 'group_a', 'copy_target' => 'field_b', 'post_types' => ['mc_item']];
+$check('a group source is a group, not a field key, and has no single target',
+    $grp->source_group($group_row) === 'group_a'
+    && $grp->source_key($group_row) === ''
+    && $grp->target($group_row) === null
+    && $grp->target_key($group_row) === null
+    && $grp->source_group(['source_field' => 'field_a']) === ''
+    && $grp->source_group(['source_field' => '@meta']) === '');
+$check('a group row is titled by its group',
+    str_contains($grp->row_title(['name' => 'G'] + $group_row), 'Copy Group A from parent'));
 $check('Same needs the field\'s group shown on the receiving post type',
     ConfigHelpers::acf_field_shown_on('field_a', 'mc_item') === true
     && ConfigHelpers::acf_field_shown_on('field_a', 'page') === false

@@ -110,6 +110,9 @@ function bws_fixture_mc_rules_register_types() {
  *   mc_cp_display — text, written by a later pattern rule from mc_cp_text.
  *   mc_cp_list    — relationship → mc_item, the array-valued copy.
  *
+ * group_mc_copy_group (mc_section) — group-mode source (FW-5 07):
+ *   mc_gp_one, mc_gp_two — text members; mc_gp_rows — repeater (cell), one value.
+ *
  * group_mc_section_fields (mc_section):
  *   mc_related_items — relationship → mc_item (related_post_terms holder field).
  *   mc_primary_item  — post_object → mc_item (pull/post_object variant, sweep-time).
@@ -303,6 +306,31 @@ function bws_fixture_mc_rules_register_acf() {
 					'type'          => 'relationship',
 					'post_type'     => array( 'mc_item' ),
 					'return_format' => 'id',
+				),
+			),
+		)
+	);
+
+	// Group-mode source (FW-5 07): two text members and a repeater, all on
+	// mc_section. The sweep adds a further member at run time.
+	acf_add_local_field_group(
+		array(
+			'key'      => 'group_mc_copy_group',
+			'title'    => 'MC Copy Group',
+			'location' => array(
+				array( array( 'param' => 'post_type', 'operator' => '==', 'value' => 'mc_section' ) ),
+			),
+			'fields'   => array(
+				array( 'key' => 'field_mc_gp_one', 'name' => 'mc_gp_one', 'label' => 'GP One', 'type' => 'text' ),
+				array( 'key' => 'field_mc_gp_two', 'name' => 'mc_gp_two', 'label' => 'GP Two', 'type' => 'text' ),
+				array(
+					'key'        => 'field_mc_gp_rows',
+					'name'       => 'mc_gp_rows',
+					'label'      => 'GP Rows',
+					'type'       => 'repeater',
+					'sub_fields' => array(
+						array( 'key' => 'field_mc_gp_cell', 'name' => 'cell', 'label' => 'Cell', 'type' => 'text' ),
+					),
 				),
 			),
 		)

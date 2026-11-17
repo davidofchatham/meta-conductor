@@ -33,6 +33,9 @@
  *   L  ACF-named     a meta target whose name matches an ACF field ends with
  *                    ACF's field-key reference intact.
  *   M  refusal       a `_`-prefixed meta key writes nothing, source or target.
+ *   N  group mode    (07) a field group copies every member into the same group,
+ *                    a repeater as one value, a member added later without
+ *                    re-saving the rule; each member is its own claim slot.
  *
  * Every temp post is deleted and the fixture's rules restored afterward, pass or
  * fail. Check `wp post list --post_type=mc_item --fields=ID,post_name` after
@@ -316,7 +319,56 @@ try {
 	$pass = mc_assert( 'M a _-prefixed target writes nothing', get_post_meta( $c, '_mc_pm_written', true ), '' ) && $pass;
 	delete_post_meta( $p, 'mc_pm_src' );
 	delete_post_meta( $p, '_mc_pm_private' );
+
+	// --- N. group mode (07) --------------------------------------------------
+	$grp_rule = function ( $claim ) {
+		return array_merge( mcfp_copy( $claim ), array( 'source_field' => 'group_mc_copy_group', 'copy_target' => '' ) );
+	};
+	$rows_val = array( array( 'field_mc_gp_cell' => 'r1' ), array( 'field_mc_gp_cell' => 'r2' ) );
+	$gp_rows  = function ( $id ) {
+		clean_post_cache( $id );
+		$v = get_field( 'field_mc_gp_rows', $id, false );
+		return is_array( $v ) ? array_values( array_map( function ( $r ) { return $r['field_mc_gp_cell'] ?? null; }, $v ) ) : $v;
+	};
+	$gp_meta = function ( $id, $name ) {
+		clean_post_cache( $id );
+		return get_post_meta( $id, $name, true );
+	};
+
+	mcfp_author( array( $grp_rule( 'merge' ) ) );
+	mcfp_set( $p, 'field_mc_gp_one', 'g1' );
+	mcfp_set( $p, 'field_mc_gp_two', 'g2' );
+	mcfp_set( $p, 'field_mc_gp_rows', $rows_val );
+	mcfp_save( $c );
+	$pass = mc_assert( 'N every member copies', array( $gp_meta( $c, 'mc_gp_one' ), $gp_meta( $c, 'mc_gp_two' ) ), array( 'g1', 'g2' ) ) && $pass;
+	$pass = mc_assert( 'N a repeater member copies as one value', $gp_rows( $c ), array( 'r1', 'r2' ) ) && $pass;
+
+	// A member added after the rule was saved is copied on the next pass.
+	acf_add_local_field( array(
+		'key'    => 'field_mc_gp_late',
+		'name'   => 'mc_gp_late',
+		'label'  => 'GP Late',
+		'type'   => 'text',
+		'parent' => 'group_mc_copy_group',
+	) );
+	mcfp_set( $p, 'field_mc_gp_late', 'late' );
+	mcfp_save( $c );
+	$pass = mc_assert( 'N a member added later is copied without re-saving the rule', $gp_meta( $c, 'mc_gp_late' ), 'late' ) && $pass;
+
+	// Contributing: an empty member is left alone.
+	mcfp_set( $p, 'field_mc_gp_two', '' );
+	mcfp_save( $c );
+	$pass = mc_assert( 'N Contributing leaves an empty member\'s target alone', $gp_meta( $c, 'mc_gp_two' ), 'g2' ) && $pass;
+	$pass = mc_assert( 'N …and the other members still copy', $gp_meta( $c, 'mc_gp_one' ), 'g1' ) && $pass;
+
+	// Owning: an empty member clears only that member.
+	mcfp_author( array( $grp_rule( 'replace' ) ) );
+	mcfp_save( $c );
+	$pass = mc_assert( 'N Owning clears the empty member', $gp_meta( $c, 'mc_gp_two' ), '' ) && $pass;
+	$pass = mc_assert( 'N …and only that one', array( $gp_meta( $c, 'mc_gp_one' ), $gp_meta( $c, 'mc_gp_late' ) ), array( 'g1', 'late' ) ) && $pass;
+	$pass = mc_assert( 'N …the repeater stays', $gp_rows( $c ), array( 'r1', 'r2' ) ) && $pass;
 } finally {
+	acf_remove_local_field( 'field_mc_gp_late' );
 	foreach ( array_reverse( $ids ) as $id ) {
 		wp_delete_post( $id, true );
 	}
