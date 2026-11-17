@@ -62,7 +62,7 @@ There is deliberately **no "in flight" section**. Moving an item between section
 
 New rule types, and new capabilities or behavior on an existing one.
 
-#### FW-1 — `acf_relationship_rules`: ACF Post Relationship Manager
+#### FW-1 — ACF Post Relationship Manager
 
 Set a post's `post_parent` from a populated ACF relationship or post-object field — or set the referenced posts' parent to this one, depending on direction. Distinct from the `acf` relationship of `terms_from_related_post`: same data source, different output (a real WP hierarchy edge instead of taxonomy terms).
 
@@ -74,15 +74,15 @@ Open: circular-reference prevention, and how multi-post-type configs behave.
 
 Blocked by: —  •  Interacts with: FW-61 (closed)
 
-#### FW-3 — `time_based_rules`: Temporal State Rule
+#### FW-3 — Temporal State Rule
 
 Evolve the binary Date Window rule (in-window → apply, out → remove, fixed date-only window typed on the rule) into one rule expressing before/during/after auto-tagging across a datetime window, with boundaries readable from per-post ACF/meta fields — including a single combined `datetime` value as Pie Calendar stores — plus "trigger X time before/after a date". Ships a **Pie Calendar source preset** (start/end/all-day meta keys pre-filled) and honors an **all-day boolean field** as a boundary-time override.
 
 Detail home: `.scratch/plans/temporal-rule.md` (scoping + open questions). Domain vocab: [CONTEXT.md](../CONTEXT.md).
 
-Model decision: build the storage shape and handler as the **general** model, not a fixed before/during/after machine. A rule holds optional **boundaries** and a list of **actions**, each an `{interval, overlap, applied term}` scoped to a **phase**, with per-boundary **offsets** and **fallback durations**. The 0.x UI generates only a constrained subset (fixed phase slots plus about-to-start / just-started / about-to-end / just-ended presets); a later release exposes a free action builder writing the same `actions[]`. The storage shape is the hard-to-change contract, so the builder then needs no migration; the cost is handler complexity (within-phase stack/replace, phase reconciliation) the shipped UI does not exercise. Storage stays Options (`time_based_rules`, canonical-shape adapter, no dot-notation). Two such rules naming one term over overlapping post types may fight, which is a collision (architecture.md invariant 19). **Rejected:** a fixed 3-state model with migration later (migrating live user data is the expensive, error-prone path); deferring about-to-start/end to the post-1.0 builder (drops a feature wanted now); provenance (architecture.md invariant 19, *Rejected: provenance*).
+Model decision: build the storage shape and handler as the **general** model, not a fixed before/during/after machine. A rule holds optional **boundaries** and a list of **actions**, each an `{interval, overlap, applied term}` scoped to a **phase**, with per-boundary **offsets** and **fallback durations**. The 0.x UI generates only a constrained subset (fixed phase slots plus about-to-start / just-started / about-to-end / just-ended presets); a later release exposes a free action builder writing the same `actions[]`. The storage shape is the hard-to-change contract, so the builder then needs no migration; the cost is handler complexity (within-phase stack/replace, phase reconciliation) the shipped UI does not exercise. Storage stays Options (canonical-shape adapter, no dot-notation). Two such rules naming one term over overlapping post types may fight, which is a collision (architecture.md invariant 19). **Rejected:** a fixed 3-state model with migration later (migrating live user data is the expensive, error-prone path); deferring about-to-start/end to the post-1.0 builder (drops a feature wanted now); provenance (architecture.md invariant 19, *Rejected: provenance*).
 
-Progress: Scoping. Absorbs the "post expires N after its date field" pattern and the previously-planned `date_based_taxonomy_rules`, folded in rather than built as a separate type. Storage settled: Options, normalized through the canonical-shape adapter, no dot-notation — **not** gated on CPT and not migrating to CPT (see *Model decision* above). Since the ordered list shipped in 0.8.0 this is a `type` within `term_rules`, not its own array.
+Progress: Scoping. Absorbs the "post expires N after its date field" pattern and the previously planned date-based taxonomy rule, folded in rather than built as a separate type. Storage settled: Options, normalized through the canonical-shape adapter, no dot-notation — **not** gated on CPT and not migrating to CPT (see *Model decision* above). Since the ordered list shipped in 0.8.0 this is a `type` within `term_rules`, not its own array.
 
 Open: the dispatcher contract is already met by the Date Window rule it evolves: since #61 that handler exposes `apply_to_post()`, registers no hooks of its own, and its cron sweep (`expired_rule_posts()`) only selects candidate posts and hands them to the dispatcher ([architecture.md](architecture.md) invariant 17). Keep it that way — the before/during/after states add boundaries the sweep must select on, not a second write path.
 
@@ -90,7 +90,7 @@ Before closing: move the *Model decision* and its **Rejected** list out of this 
 
 Blocked by: —  •  Interacts with: FW-9, FW-25, FW-37
 
-#### FW-6 — `body_class_rules`: Document classes from terms/fields
+#### FW-6 — Document classes from terms/fields
 
 Let an editor declare the `body_class` branching that themes routinely hand-roll (`is-event`, `season-2026`, `status-cancelled`). The rule declares a source — taxonomy, term, or field value — and a class template; the handler hooks `body_class` and probably `post_class`, rendering through `Tokens\TokenEngine` under `OutputPolicy::slug()`.
 
@@ -100,11 +100,11 @@ Detail home: none. Raised 2026-08-12 in the cross-rule composition session.
 
 Progress: Not started. Partly settled by [architecture.md](architecture.md) invariant 18: *rendered* is a value on the **effect kind** axis ([CONTEXT.md](../CONTEXT.md) → *Effect kind*) and sits last in the derived cross-kind order — it reads terms and fields and is written by nothing, so it is a pure sink.
 
-Open: **a rendered effect behaves differently from every rule type built so far.** It is computed per request and never persisted, so: (a) **no claim question** — nothing is stored, so nothing can strand or need reconciling; (b) **no sweep** — it recomputes on every render, so even an ambient basis needs no cron; (c) **no collision in the stored sense** — two rules emitting classes simply both emit, since the target is a list the theme concatenates. Given (c), it is genuinely open whether it needs an ordered list at all: with no collisions possible there is nothing for an author to sequence. Storage is Options; the list is TBD — its own `display_rules`, or a `type` within `format_rules` even though it neither formats nor transforms stored data.
+Open: **a rendered effect behaves differently from every rule type built so far.** It is computed per request and never persisted, so: (a) **no claim question** — nothing is stored, so nothing can strand or need reconciling; (b) **no sweep** — it recomputes on every render, so even an ambient basis needs no cron; (c) **no collision in the stored sense** — two rules emitting classes simply both emit, since the target is a list the theme concatenates. Given (c), it is genuinely open whether it needs an ordered list at all: with no collisions possible there is nothing for an author to sequence. Storage is Options; the list is TBD — its own list, or a `type` within `format_rules` even though it neither formats nor transforms stored data.
 
 Blocked by: —  •  Interacts with: FW-13
 
-#### FW-7 — `term_provisioning_rules`: Create a term per post, then apply it
+#### FW-7 — Create a term per post, then apply it
 
 A CPT whose posts each need a matching term so *other* content can be tagged against them — every `team` post gets a `team` term, and player posts are tagged with it via the team relationship. Today that is hand-maintained and drifts the moment a post is renamed or added. For each post passing the filter gate, ensure a term exists in the target taxonomy (name/slug derived from the post, likely rendered through `Tokens\TokenEngine`), then apply it to related posts over a configured relation.
 
@@ -118,15 +118,15 @@ Open: ⚠️ **a genuinely new effect shape.** Every rule type so far writes a *
 
 Blocked by: `decision:claim semantics over term existence`  •  Interacts with: FW-5 (closed)
 
-#### FW-8 — `terms_from_acting_user`: User-Based Term Setting / Restriction
+#### FW-8 — Set terms from the acting user: User-Based Term Setting / Restriction
 
-Preset terms in a taxonomy when a targeted user (role or ID) starts a new post. Absorbs the preset half of the standalone plugin `bws-user-based-terms`; its lock half is [FW-54](#fw-54--terms_from_acting_user-lock-and-editor-surface) and its edit-access half is [FW-55](#fw-55--terms_from_acting_user-term-granted-edit-access). Label **Set terms from the acting user**, id `terms_from_acting_user` (FW-63's scheme, settled 2026-11-12). One type carries all three rows: the lock is a claim option on it (FW-54) and the edit-access grant is a subfield (FW-55), never a second type, because the name follows the axes and claim is not one of them.
+Preset terms in a taxonomy when a targeted user (role or ID) starts a new post. Absorbs the preset half of the standalone plugin `bws-user-based-terms`; its lock half is [FW-54](#fw-54--set-terms-from-the-acting-user-lock-and-editor-surface) and its edit-access half is [FW-55](#fw-55--set-terms-from-the-acting-user-term-granted-edit-access). Label **Set terms from the acting user**; the id is left unassigned until it is built (2026-11-17), so none is committed to in docs. One type carries all three rows: the lock is a claim option on it (FW-54) and the edit-access grant is a subfield (FW-55), never a second type, because the name follows the axes and claim is not one of them.
 
 Axes: basis **ambient** (the acting user, not the post), effect target **terms**, claim *deferring*. The rule's status gate is fixed to `auto-draft`, so it fires once, on the new-post screen, and never re-seeds.
 
 Detail home: `.scratch/plans/ubt-merger.md` (reassessment, port scope, migration). Storage rationale: [storage-model.md](storage-model.md).
 
-Progress: Not started. Storage settled: Options, type `terms_from_acting_user` within `term_rules` (named `user_based_rules` until 2026-11-12). Reassessed 2026-11-02 against UBT 1.0.3: the preset needs no editor JS, REST route or ACF load filter, because the dispatcher writes it at the auto-draft insert and every editor reads stored state. UBT's merge layer and `priority` are not ported; user-specific rows sit above role rows, so "override" is deferring plus list order. A pass with no matching user stands down and never removes. UBT retires when this ships, for sites with only unlocked rules; migration is manual re-entry, with a field-mapping table in the readme upgrade note.
+Progress: Not started. Storage settled: Options, a type within `term_rules`. Reassessed 2026-11-02 against UBT 1.0.3: the preset needs no editor JS, REST route or ACF load filter, because the dispatcher writes it at the auto-draft insert and every editor reads stored state. UBT's merge layer and `priority` are not ported; user-specific rows sit above role rows, so "override" is deferring plus list order. A pass with no matching user stands down and never removes. UBT retires when this ships, for sites with only unlocked rules; migration is manual re-entry, with a field-mapping table in the readme upgrade note.
 
 Open: a testbed sweep must confirm, before build, that the dispatcher fires on an auto-draft and that categories are vacant at that stage. A direct REST or programmatic create has no auto-draft stage and gets no preset; a `wp_insert_post` capture is the upgrade path if that matters. The Apply page does nothing for this type.
 
@@ -217,7 +217,7 @@ Detail home: [CONTEXT.md](../CONTEXT.md) → *Jurisdiction* for the law it must 
 
 Progress: Not started. `ConfigHelpers::claim_field()` already exists and is id-agnostic, so adding the control is cheap. The ordered rule list shipped in 0.8.0, so the configs are already one repeater with `conditions`-gated subfields — the claim field would be gated on rule `type`, and the "building it twice" concern that deferred this is now resolved.
 
-Open: ⚠️ **constrained by the jurisdiction law** (CONTEXT.md → *Jurisdiction*) — *owning requires a statically enumerable jurisdiction*. `time_based` and `related` qualify (one configured target term each), so owning↔contributing is a genuine choice for them. `hierarchical` does **not**: its derivable set is data-dependent, which is why it already buys the forbidden cell with `_bws_auto_terms` provenance meta — offering it *owning* would need that meta generalized or a silent widening to the whole taxonomy. `level_restriction` is restricting by construction with no meaningful alternative. So this is **not one uniform dropdown**; it is a per-rule-type legality question, and that is the real work.
+Open: ⚠️ **constrained by the jurisdiction law** (CONTEXT.md → *Jurisdiction*) — *owning requires a statically enumerable jurisdiction*. `terms_from_date_window` and `terms_from_trigger_term` qualify (one configured target term each), so owning↔contributing is a genuine choice for them. `hierarchical` does **not**: its derivable set is data-dependent, which is why it already buys the forbidden cell with `_bws_auto_terms` provenance meta — offering it *owning* would need that meta generalized or a silent widening to the whole taxonomy. `level_restriction` is restricting by construction with no meaningful alternative. So this is **not one uniform dropdown**; it is a per-rule-type legality question, and that is the real work.
 
 Blocked by: —  •  Interacts with: FW-3, FW-8, FW-12, FW-24, FW-28, FW-54, FW-66
 
@@ -266,7 +266,7 @@ Blocked by: `decision:the real use cases still need them after v1`  •  Interac
 
 #### FW-52 — Split the title/slug rule into a title rule and a slug rule
 
-Separate `title_slug_rules` into a title type and a slug type in `format_rules`, the slug rule reading the title rule's output through the `$data` seam in list order. Today one row couples them: `{default_slug}` is `sanitize_title()` of the computed title, a title-only row renames the slug implicitly, and a row is a lookup keyed by `post_type` where the first match wins, so a second row on one type never runs. Splitting lets a slug-only rule (flat URL, disambiguation) and a title rule scope independently.
+Separate `title_slug_from_pattern` into a title type and a slug type in `format_rules`, the slug rule reading the title rule's output through the `$data` seam in list order. Today one row couples them: `{default_slug}` is `sanitize_title()` of the computed title, a title-only row renames the slug implicitly, and a row is a lookup keyed by `post_type` where the first match wins, so a second row on one type never runs. Splitting lets a slug-only rule (flat URL, disambiguation) and a title rule scope independently.
 
 Axes: as the title/slug rule — basis **intrinsic**, effect target **field**, claim `fields|title_slug` split into a title claim and a slug claim.
 
@@ -284,11 +284,11 @@ Blocked by: —  •  Interacts with: FW-36, FW-47, FW-51 (closed)
 
 ---
 
-#### FW-54 — `terms_from_acting_user` lock and editor surface
+#### FW-54 — Set terms from the acting user: lock and editor surface
 
 Lock a targeted user's taxonomy to the rule's exact terms, with the editor UI that makes the lock honest: locked controls in the Classic, Block, ACF and ACFE editors, validation, and a display-time preset. Absorbs UBT's lock variant and its open tickets 10 (a locked field is not locked on screen) and 11 (a rule edit does not reach existing posts).
 
-Axes: basis **ambient**, effect target **terms**, claim *owning* — the rule's terms are the value, forced on every write ([CONTEXT.md](../CONTEXT.md) → *restricting-the-editor is not a separate claim*). Not a second type (settled 2026-11-12): a *Lock* claim option on FW-8's `terms_from_acting_user` row, which also lifts that row's fixed `auto-draft` gate. The verb is *Set* whatever the claim, so a preset and a lock cannot carry different names.
+Axes: basis **ambient**, effect target **terms**, claim *owning* — the rule's terms are the value, forced on every write ([CONTEXT.md](../CONTEXT.md) → *restricting-the-editor is not a separate claim*). Not a second type (settled 2026-11-12): a *Lock* claim option on FW-8's row, which also lifts that row's fixed `auto-draft` gate. The verb is *Set* whatever the claim, so a preset and a lock cannot carry different names.
 
 Detail home: `.scratch/plans/ubt-merger.md` → *Lock and editor surface*.
 
@@ -298,7 +298,7 @@ Open: lock mechanism per renderer; the native tag box's delete buttons reappeari
 
 Blocked by: `row:FW-8`  •  Interacts with: FW-8, FW-25, FW-55
 
-#### FW-55 — `terms_from_acting_user` term-granted edit access
+#### FW-55 — Set terms from the acting user: term-granted edit access
 
 Let a user matched by a rule edit and delete other people's posts that hold one of the rule's terms, without an Editor role. The post is treated as the user's own, so their role is the ceiling. Additive, so nothing is locked out. Replaces the retired deny-only FW-53.
 
@@ -306,7 +306,7 @@ Axes: basis **ambient**. An **access** grant through `map_meta_cap` on `edit_pos
 
 Detail home: `.scratch/plans/ubt-merger.md` → *Edit access*.
 
-Progress: Not started. Settled 2026-11-03: a default-off subfield on a `terms_from_acting_user` row, reusing the row's user match and terms, independent of the preset. The name mismatch is accepted (2026-11-12): a row with the preset off and only the grant on is still labeled "Set terms from the acting user". A separate type would need a persisted kind list that access grants do not have (don't #6) and would duplicate the user match; revisit only if grant-only rows turn out to be common, since splitting a type that is not yet built costs nothing. The grant maps to the post type's own-post caps, so the role is the ceiling (publish included when the role has it). Any term on the post counts, whoever set it; the readme warns that a rule which tags posts also grants access to them. The row must name at least one post type. Matching is any-of, descendants covered. Read-only from `runtime_hooks()`, so no retention guard: removing your term from a post ends your access to it.
+Progress: Not started. Settled 2026-11-03: a default-off subfield on a FW-8 row, reusing the row's user match and terms, independent of the preset. The name mismatch is accepted (2026-11-12): a row with the preset off and only the grant on is still labeled "Set terms from the acting user". A separate type would need a persisted kind list that access grants do not have (don't #6) and would duplicate the user match; revisit only if grant-only rows turn out to be common, since splitting a type that is not yet built costs nothing. The grant maps to the post type's own-post caps, so the role is the ceiling (publish included when the role has it). Any term on the post counts, whoever set it; the readme warns that a rule which tags posts also grants access to them. The row must name at least one post type. Matching is any-of, descendants covered. Read-only from `runtime_hooks()`, so no retention guard: removing your term from a post ends your access to it.
 
 Open: granted drafts and pending posts are probably absent from the list table for a user without `edit_others_posts` (inferred from `WP_Query`, not run); confirm on the testbed, then add a `pre_get_posts` widening in the first cut. Granted published posts already list. REST follows the `edit_post` meta cap (core checks the primitive only on author and sticky changes). Quick edit and bulk edit are unchecked.
 
@@ -478,7 +478,7 @@ Every handler carries a `validate_rule_internal()`, and `UnifiedHandlerBase` wra
 
 Detail home: none. Surfaced fixing [#52](https://github.com/davidofchatham/meta-conductor/issues/52), where the validator's own term resolution was too lax; tightening it changed no live behavior precisely because nothing calls it.
 
-Progress: Not started. The validators themselves are live code and are kept correct — #52 tightened `related`'s — but their only caller today is the #52 sweep step (the RuleEngine path that also called them was deleted as dead code). The base default checks `enabled` only, so the types without an override (`hierarchical_level_restriction`, `terms_from_related_post`, `time_based`) validate nothing type-specific.
+Progress: Not started. The validators themselves are live code and are kept correct — #52 tightened `related`'s — but their only caller today is the #52 sweep step (the RuleEngine path that also called them was deleted as dead code). The base default checks `enabled` only, so the types without an override (`restrict_terms_by_level`, `terms_from_related_post`, `terms_from_date_window`) validate nothing type-specific.
 
 Open:
 
@@ -534,7 +534,7 @@ Progress: Not started. The pairwise advisory shipped in 0.8.0: equal effect targ
 
 Open: defining reach once for **every** effect kind, not just terms. FW-4 supplies the first non-term effect with a field target (one slot per field or repeater subfield), so reach can now be defined over terms, title/slug and fields. Also whether to consult the claim, since two purely contributing rules cannot actually fight. The term side has no severity at all; whether a Deferring or Contributing term rule should contend at lower severity, as a Deferring field copy now does, belongs with this redesign. With the repeater as the ordering UI, the result is advisory only: components no longer decide which rules get ordering control.
 
-Blocked by: — (`code:the only effect kinds are term and title/slug` cleared 2026-10-16: the `field_transformation_rules` descriptor adds a field effect, built for FW-4)  •  Interacts with: FW-4 (closed), FW-12, FW-39 (closed), FW-47, FW-59
+Blocked by: — (`code:the only effect kinds are term and title/slug` cleared 2026-10-16: the `field_from_pattern` descriptor adds a field effect, built for FW-4)  •  Interacts with: FW-4 (closed), FW-12, FW-39 (closed), FW-47, FW-59
 
 #### FW-35 — Diagnostics page rework, and whether to log
 
@@ -683,7 +683,7 @@ Detail home: none. Upstream #13 is closed; this is plain implementation work now
 
 Progress: **Converting opportunistically as each config class is touched.** Done: `level_restriction.include_ancestors` (0.6.0 — the gate itself was then retired in 0.8.0/#32 once the flag gained one meaning in every mode); the whole ordered term-rule repeater (0.8.0/#57), where the `type` select gates every type-specific subfield.
 
-Open: remaining description-text workarounds to convert — `related_rules.trigger_term_id` / `.trigger_taxonomy` (operator on the `trigger` select), and `title_slug`'s "Only used when…" subfields. The hierarchical `expansion_behavior` + help-text pair is gone; #16 collapsed it into one outcome selector.
+Open: remaining description-text workarounds to convert — `terms_from_trigger_term.trigger_term_id` / `.trigger_taxonomy` (operator on the `trigger` select), and `title_slug`'s "Only used when…" subfields. The hierarchical `expansion_behavior` + help-text pair is gone; #16 collapsed it into one outcome selector.
 
 Blocked by: —  •  Interacts with: —
 
@@ -830,7 +830,7 @@ Shipped or cut items retire here, densely — a closed item is read in bulk and 
 | FW-44 | Orphaned separators around empty tokens | With FW-4. `Tokens\TokenEngine` drops the punctuation around a middle or bracketed empty token, porting the rules (not the code) of the `{{join}}` tag's template mode; edge gaps keep the old reading. No gate: existing titles correct on their next format pass (CHANGELOG *Changed*). The golden table was regenerated deliberately. | [#80](https://github.com/davidofchatham/meta-conductor/pull/80), 2026-10-22; [design-history/field-transformation.md](design-history/field-transformation.md) → *Separator cleanup* |
 | FW-48 | Retire this repo's ADRs into the architecture anchors | Each ADR's decision and rejected alternatives moved to the anchor that owns the code fact: [architecture.md](architecture.md) invariants 17–19, *The ordered rule repeaters* and *Effect-kind rule lists*, the [CONTEXT.md](../CONTEXT.md) *Claim* and *Jurisdiction* entries, and the FW-3 row. `docs/adr/` is now a redirect map with the bar for any future ADR; live citations were repointed to the anchors. | [#82](https://github.com/davidofchatham/meta-conductor/pull/82), 2026-11-02 |
 | FW-51 | Flat URLs for hierarchical post types, and a general slug disambiguation ladder | Collision avoidance on the title/slug rule is an ordered ladder of rung tokens (`slug_escalation` + `escalation_placement`, replacing `date_escalation` and `date_field`) walked by the pure `SlugLadder`, with `{mod_*}` and `{parent:slug}` tokens added to the engine; a one-shot upgrade rewrites stored rows. A `flat_urls` option serves a hierarchical type's posts at `/base/child/` through a `request` filter and `post_type_link`, makes `post_name` unique per type with reserved names numbered, 301s the nested form only when its ancestor chain matches, and raises an advisory notice for existing duplicate names. Read-time hooks are a descriptor fact (`runtime_hooks()`, [architecture.md invariant 20](architecture.md)). Spec and decision record: [design-history/flat-urls-slug-ladder.md](design-history/flat-urls-slug-ladder.md). Left out, additive if wanted: a slot token and a "don't splice dates" toggle for mid-slug placement; a whole-chain `{ancestors:slug}` token for types deeper than one level; slug-rename redirects on hierarchical types stay FW-36. The title/slug split is FW-52. | [#81](https://github.com/davidofchatham/meta-conductor/pull/81), 2026-11-02 |
-| FW-53 | `user_based_rules` edit-scope: edit only posts holding your terms | Deny-only scoping needed an Editor role to reach other people's posts, which left untagged posts, other post types and the rest of the role open; the strict variant locked users out of their legacy untagged posts. FW-55 grants access instead of restricting it. | Retired 2026-11-03, superseded by [FW-55](#fw-55--terms_from_acting_user-term-granted-edit-access) |
+| FW-53 | `user_based_rules` edit-scope: edit only posts holding your terms | Deny-only scoping needed an Editor role to reach other people's posts, which left untagged posts, other post types and the rest of the role open; the strict variant locked users out of their legacy untagged posts. FW-55 grants access instead of restricting it. | Retired 2026-11-03, superseded by [FW-55](#fw-55--set-terms-from-the-acting-user-term-granted-edit-access) |
 | FW-56 | Multiple taxonomies per rule | A row of a type that reads the shared `taxonomy` field may name a list; `project_kind_rules()` expands it to one scalar row per taxonomy on read, so no handler sees an array ([architecture.md → A row names several taxonomies](architecture.md#a-row-names-several-taxonomies-fw-56)). The Apply page offers one entry per stored row, and a stored scalar is rewritten as a one-element list on admin load because the multi-select would otherwise blank it on the next save. FW-57 inherits the stored-row choice; FW-59 still owns exact-duplicate detection. | [#86](https://github.com/davidofchatham/meta-conductor/pull/86), 2026-11-11 |
 | FW-61 | Set terms from a related post: merge propagation and Related Post Terms | Ships in one release with FW-14 and FW-63, with no tag between them. `propagation` and `related_post_terms` are one rule type, `terms_from_related_post`, whose **relationship** option is `parent` or `acf`. The relationship graph (holder, direction, dependents, sources, the reverse-lookup tiers, the sever capture) left the old ACF handler for a `Relationships\` module with a parent and an ACF implementation ([architecture.md → The relationship module](architecture.md#the-relationship-module)). `post_types` scopes the receiving post for both relationships; the parent is gated on `post_status` only. One `conflict_handling` claim replaces `keep_in_sync` (`true` → `replace`, `false` or absent → `merge`), and Deferring is new on ACF rows. ACF rows now read and write the taxonomy mirror fields as well as the native store. `Storage\RelatedPostMergeMigration` rewrites both old types in place from `check_version()` on `admin_init`, behind its own schema flag, order and whole field references kept, the claim key rewritten and `relationship` added; there is no read-time fallback. **The migration, its harness and its flag option are deleted one minor release after it ships.** Checked by the full testbed sweep list before and after (identical results except the config round-trip sweep, which asserts the new type's visibility, and a new mirror-field sweep) and by a dev swap on the Site H clone (seven rows converted in place, field references whole, rules apply, rolled back with `--live`). Follow-ups: [FW-65](#fw-65--move-the-hierarchy-and-trigger-term-rules-onto-the-relationship-module), [FW-66](#fw-66--unify-removal-across-relationships). | [#89](https://github.com/davidofchatham/meta-conductor/pull/89), 2026-11-13; [design-history/related-post-terms-merge.md](design-history/related-post-terms-merge.md) |
 | FW-62 | Cross-post tokens for pattern rules | Title/slug and field-from-pattern rules read another post through two relation prefixes in `Tokens\TokenEngine`: `{parent:<inner>}` through the parent relationship and `{refs:<field>:<inner>}` through an ACF Relationship or Post Object field (first related post, in field order, holding a scalar value; trashed posts skipped). `<inner>` is any unprefixed token plus a prefix-only `{slug}`; one hop; `{parent:slug}` output unchanged. `TokenSourceInterface` gained one read, `related()`. The format pass gained `fan_out()` ([architecture.md](architecture.md) invariant 18): with an enabled `{parent:…}` rule, a saved post queues its children of the covered post types, so grandchildren follow; it declares and never writes. `refs` is pull-only. Pinned by H13 and H17 contract cases and three testbed sweeps. Follow-ups: [FW-67](#fw-67--source-status-gate-for-cross-post-tokens), [FW-68](#fw-68--fan-out-and-reverse-direction-for-refs-tokens), [FW-69](#fw-69--cross-post-tokens-in-repeater-row-patterns); FW-5 widens the fan-out hook. | [#90](https://github.com/davidofchatham/meta-conductor/pull/90), 2026-11-13, unreleased; [design-history/cross-post-tokens.md](design-history/cross-post-tokens.md) |
