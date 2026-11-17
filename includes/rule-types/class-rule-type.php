@@ -188,6 +188,22 @@ abstract class RuleType {
     abstract public function target_key(array $rule): ?string;
 
     /**
+     * Every effect target a row writes — `target_key()` for a row with one, more
+     * for a row that writes a SET (a group copy: one field per member).
+     *
+     * This, not `target_key()`, is what the collision scan and the Apply report
+     * read, so a type with a set overrides it and keeps `target_key()` null.
+     *
+     * @param array $rule Projected row.
+     * @return string[] Empty ⇒ nothing resolvable yet.
+     */
+    public function target_keys(array $rule): array {
+        $key = $this->target_key($rule);
+
+        return $key === null ? [] : [$key];
+    }
+
+    /**
      * The post types a row WRITES — not the ones it looks at.
      *
      * Empty ⇒ every post type, which keeps both readers permissive in the

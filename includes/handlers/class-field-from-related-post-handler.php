@@ -171,7 +171,7 @@ class FieldFromRelatedPostHandler extends UnifiedHandlerBase {
         // claim slot, so an empty one decides nothing about the others.
         if ($group !== '') {
             $applied = false;
-            foreach ($this->group_members($group) as $member) {
+            foreach ($descriptor->group_members($group) as $member) {
                 $next = $this->copy_slot($data, $post_id, $rule, $post_type, $eligible, $member, '', ['key' => $member, 'name' => '']);
                 if ($next !== null) {
                     $data    = $next;
@@ -183,23 +183,6 @@ class FieldFromRelatedPostHandler extends UnifiedHandlerBase {
         }
 
         return $this->copy_slot($data, $post_id, $rule, $post_type, $eligible, $source_key, $source_meta, $target);
-    }
-
-    /**
-     * The keys of a group's top-level value-holding fields, read now.
-     *
-     * @return string[]
-     */
-    private function group_members(string $group_key): array {
-        $keys = [];
-        foreach ((array) \acf_get_fields($group_key) as $field) {
-            $key = (string) ($field['key'] ?? '');
-            if ($key !== '' && !in_array($field['type'] ?? '', ConfigHelpers::NON_VALUE_TYPES, true)) {
-                $keys[] = $key;
-            }
-        }
-
-        return $keys;
     }
 
     /**

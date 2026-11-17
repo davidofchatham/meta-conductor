@@ -186,6 +186,45 @@ final class FieldFromRelatedPostRules extends RuleType {
     }
 
     /**
+     * A group copy writes every member of the group, so it names each by the same
+     * `field|<key>` a single-field rule does; any other row, its one target. The
+     * members are read live (ACF may have added one since the rule was saved),
+     * through the same `group_members()` the handler copies from, so the
+     * collision scan and the Apply report agree with what the pass writes.
+     */
+    public function target_keys(array $rule): array {
+        $group = $this->source_group($rule);
+        if ($group === '') {
+            return parent::target_keys($rule);
+        }
+        if ((array) ($rule['post_types'] ?? []) === []) {
+            return [];
+        }
+
+        return array_map(static fn(string $key): string => 'field|' . $key, $this->group_members($group));
+    }
+
+    /**
+     * The keys of a group's top-level value-holding fields, read now.
+     *
+     * @return string[] Empty when ACF cannot resolve the group.
+     */
+    public function group_members(string $group_key): array {
+        if (!function_exists('acf_get_fields')) {
+            return [];
+        }
+        $keys = [];
+        foreach ((array) \acf_get_fields($group_key) as $field) {
+            $key = (string) ($field['key'] ?? '');
+            if ($key !== '' && !in_array($field['type'] ?? '', ConfigHelpers::NON_VALUE_TYPES, true)) {
+                $keys[] = $key;
+            }
+        }
+
+        return $keys;
+    }
+
+    /**
      * The checked `post_types`; `['']` when none, which intersects nothing,
      * rather than [], which would claim every post type — see
      * `FieldFromPatternRules::written_post_types()`.

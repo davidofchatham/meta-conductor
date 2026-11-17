@@ -44,7 +44,7 @@ $GLOBALS['mc_hooks'] = [];
 if (!function_exists('add_action')) { function add_action($h, $cb = null, $p = 10, $n = 1) { $GLOBALS['mc_hooks'][] = $h; } }
 if (!function_exists('add_filter')) { function add_filter($h, $cb = null, $p = 10, $n = 1) { $GLOBALS['mc_hooks'][] = $h; } }
 if (!function_exists('is_wp_error')) { function is_wp_error($t) { return false; } }
-if (!function_exists('get_option'))    { function get_option($n, $d = false) { return $d; } }
+if (!function_exists('get_option'))    { function get_option($n, $d = false) { return $GLOBALS['mc_options'][$n] ?? $d; } }
 if (!function_exists('update_option')) { function update_option($n, $v, $a = null) { return true; } }
 // The REAL inverse of esc_html. `row_title` is stored already escaped (the
 // repeater's title_template renders raw), so the detector has to decode it —
@@ -96,6 +96,21 @@ if (!function_exists('acf_get_field')) {
             'field_mc_rp' => ['key' => 'field_mc_rp', 'label' => 'Position',   'name' => 'pos',  'parent' => 'field_mc_r'],
         ];
         return $fields[$key] ?? false;
+    }
+}
+
+// Group membership by group key: two value fields and a tab (no value, so never a
+// member), plus a group holding one field a copy row also targets.
+if (!function_exists('acf_get_fields')) {
+    function acf_get_fields($group) {
+        $groups = [
+            'group_mc_ab' => [
+                ['key' => 'field_mc_a', 'type' => 'text'],
+                ['key' => 'field_mc_tab', 'type' => 'tab'],
+                ['key' => 'field_mc_b', 'type' => 'text'],
+            ],
+        ];
+        return $groups[$group] ?? false;
     }
 }
 
@@ -666,6 +681,94 @@ $check('a row rule naming its own subfield is a self-reference',
     $self->self_references($rr(['pattern' => '{meta:pos} {meta:line}'])) && !$self->self_references($rr()));
 $check('the row title names the subfield and repeater',
     str_contains($self->row_title($rr(['name' => 'Roster line'])), 'Line') && str_contains($self->row_title($rr(['name' => 'Roster line'])), 'Roster'));
+
+// --- 10d. The field copy rule: one ACF field, or a whole group (FW-5 10). ----
+
+$cp = fn(array $over = []) => $over + [
+    'type' => 'field_from_related_post', 'enabled' => true, 'relationship' => 'parent',
+    'post_types' => ['mc_item'], 'source_field' => 'field_mc_a', 'row_title' => 'Copy',
+];
+$grp = fn(array $over = []) => $cp($over + ['source_field' => 'group_mc_ab', 'row_title' => 'Copy group']);
+
+$cp_pair = $scan($KIND_FORMAT, [$cp(), $cp(['row_title' => 'Copy (second)'])]);
+$check('two copy rows on one field and post type collide, with the order message',
+    count($cp_pair) === 1 && $codes($cp_pair) === ['shared_target'] && !isset($cp_pair[0]['severity']));
+$check('and name the field by its label',
+    str_contains(CollisionDetector::message($cp_pair[0]), 'the “Display name” field'));
+$check('copy rows on disjoint post types do not collide',
+    $scan($KIND_FORMAT, [$cp(), $cp(['post_types' => ['mc_section']])]) === []);
+$check('two copies of different fields do not collide',
+    $scan($KIND_FORMAT, [$cp(), $cp(['source_field' => 'field_mc_b'])]) === []);
+$check('Copy into counts: another source copied INTO the same field collides',
+    count($scan($KIND_FORMAT, [$cp(), $cp(['source_field' => 'field_mc_b', 'copy_target' => 'field_mc_a'])])) === 1);
+$check('a copy row and a Computed field row on one field collide',
+    count($scan($KIND_FORMAT, [$cp(), $cf()])) === 1);
+$check('a plain-meta copy collides with another copy of the same meta key only',
+    count($scan($KIND_FORMAT, [
+        $cp(['source_field' => '@meta', 'source_meta' => 'k']),
+        $cp(['source_field' => '@meta', 'source_meta' => 'k']),
+    ])) === 1
+    && $scan($KIND_FORMAT, [
+        $cp(['source_field' => '@meta', 'source_meta' => 'k']),
+        $cp(['source_field' => '@meta', 'source_meta' => 'j']),
+    ]) === []);
+$check('a copy row with no post type checked is unfinished, not colliding',
+    $scan($KIND_FORMAT, [$cp(['post_types' => []]), $cp()]) === []);
+
+$check('a group copy resolves one target per value member and none for a tab',
+    $desc('field_from_related_post')->target_keys($grp()) === ['field|field_mc_a', 'field|field_mc_b']);
+$check('a single-field copy resolves exactly its one target',
+    $desc('field_from_related_post')->target_keys($cp()) === ['field|field_mc_a']);
+$check('a group copy still has no single target key',
+    $desc('field_from_related_post')->target_key($grp()) === null);
+$check('an unknown group, or no post type, resolves nothing',
+    $desc('field_from_related_post')->target_keys($grp(['source_field' => 'group_gone'])) === []
+    && $desc('field_from_related_post')->target_keys($grp(['post_types' => []])) === []);
+
+$gm = $scan($KIND_FORMAT, [$grp(), $cf(['target_field' => 'field_mc_b'])]);
+$check('a group copy collides with a single-field rule on one of its members',
+    count($gm) === 1 && $pairs($gm) === [[0, 1]]
+    && str_contains(CollisionDetector::message($gm[0]), 'the “Sort name” field'));
+$check('and with a single-field copy of a member',
+    count($scan($KIND_FORMAT, [$cp(['source_field' => 'field_mc_b']), $grp()])) === 1);
+$check('a group copy does not collide with a rule on a field outside the group',
+    $scan($KIND_FORMAT, [$grp(), $cf(['target_field' => 'field_mc_r'])]) === []);
+$check('a group copy on disjoint post types does not collide',
+    $scan($KIND_FORMAT, [$grp(), $cf(['post_types' => ['mc_section']])]) === []);
+$gg = $scan($KIND_FORMAT, [$grp(), $grp(['row_title' => 'Copy group (second)'])]);
+$check('two group copies warn once per shared field',
+    count($gg) === 2 && $pairs($gg) === [[0, 1], [0, 1]]);
+$check('a group copy never collides with itself', $scan($KIND_FORMAT, [$grp()]) === []);
+$check('a disabled group copy does not collide',
+    $scan($KIND_FORMAT, [$grp(['enabled' => false]), $cf()]) === []);
+
+$df = $scan($KIND_FORMAT, [$cf(), $cp(['conflict_handling' => 'skip'])]);
+$check('a Deferring copy collides at the lower severity, naming itself first',
+    $codes($df) === ['deferring_field'] && ($df[0]['severity'] ?? '') === 'low' && $df[0]['a']['index'] === 1 && $df[0]['b']['index'] === 0);
+$check('and the sentence says it only fills an empty field',
+    str_contains(CollisionDetector::message($df[0]), 'only fills') && str_contains(CollisionDetector::message($df[0]), 'Display name'));
+$check('a Deferring group copy collides at the lower severity too',
+    ($scan($KIND_FORMAT, [$grp(['conflict_handling' => 'skip']), $cf()])[0]['severity'] ?? '') === 'low');
+$check('an Owning or Contributing copy stays at the normal severity',
+    !isset($scan($KIND_FORMAT, [$cf(), $cp(['conflict_handling' => 'replace'])])[0]['severity'])
+    && !isset($scan($KIND_FORMAT, [$cf(), $cp(['conflict_handling' => 'merge'])])[0]['severity']));
+$check('a Deferring TERM rule is not demoted (the term side has no severity)',
+    !isset($scan($KIND_TERM, [
+        ['type' => 'terms_from_related_post', 'taxonomy' => 'mc_topic', 'conflict_handling' => 'skip', 'post_types' => ['mc_item']],
+        ['type' => 'terms_from_related_post', 'taxonomy' => 'mc_topic', 'post_types' => ['mc_item']],
+    ])[0]['severity']));
+
+// A low finding renders in its own softer notice; the others keep the warning.
+$GLOBALS['mc_options'][CollisionDetector::OPTION_NAME] = [$KIND_FORMAT => array_merge($cp_pair, $df)];
+$sec = array_column(CollisionDetector::section($KIND_FORMAT)['fields'], 'args', 'id');
+$check('the section splits normal and low findings into a warning and an info notice',
+    ($sec[$KIND_FORMAT . '_collision_notice']['variant'] ?? '') === 'warning'
+    && ($sec[$KIND_FORMAT . '_collision_notice_low']['variant'] ?? '') === 'info');
+$GLOBALS['mc_options'][CollisionDetector::OPTION_NAME] = [$KIND_FORMAT => $df];
+$sec = array_column(CollisionDetector::section($KIND_FORMAT)['fields'], 'args', 'id');
+$check('a list of only low findings has no warning notice',
+    !isset($sec[$KIND_FORMAT . '_collision_notice']) && isset($sec[$KIND_FORMAT . '_collision_notice_low']));
+unset($GLOBALS['mc_options']);
 
 // --- 11. The section both tabs render. --------------------------------------
 

@@ -421,22 +421,22 @@ final class ExistingPostsApplier {
         $include = !$choice['all'] && $choice['kind'] === FormatDispatcher::KIND ? $choice['fingerprint'] : null;
         $names   = [];
         foreach (RuleChoice::pass_rows(StorageFactory::get_instance()->get_kind_rules(FormatDispatcher::KIND), $include) as $rule) {
-            $key = Registry::get((string) ($rule['type'] ?? ''))?->target_key($rule);
-            if ($key === null) {
-                continue;
-            }
-            if (str_starts_with($key, 'row|')) {
-                [$repeater, $sub] = explode('|', substr($key, strlen('row|')), 2);
-                $repeater         = ConfigHelpers::acf_field_name($repeater);
-                $sub              = ConfigHelpers::acf_field_name($sub);
-                $name             = $repeater !== '' && $sub !== '' ? $repeater . '[].' . $sub : '';
-            } elseif (str_starts_with($key, 'field|')) {
-                $name = ConfigHelpers::acf_field_name(substr($key, strlen('field|')));
-            } else {
-                continue;
-            }
-            if ($name !== '') {
-                $names[] = $name;
+            // A group copy names one field per member, which is why this reads
+            // the set, not the one key.
+            foreach (Registry::get((string) ($rule['type'] ?? ''))?->target_keys($rule) ?? [] as $key) {
+                if (str_starts_with($key, 'row|')) {
+                    [$repeater, $sub] = explode('|', substr($key, strlen('row|')), 2);
+                    $repeater         = ConfigHelpers::acf_field_name($repeater);
+                    $sub              = ConfigHelpers::acf_field_name($sub);
+                    $name             = $repeater !== '' && $sub !== '' ? $repeater . '[].' . $sub : '';
+                } elseif (str_starts_with($key, 'field|')) {
+                    $name = ConfigHelpers::acf_field_name(substr($key, strlen('field|')));
+                } else {
+                    continue;
+                }
+                if ($name !== '') {
+                    $names[] = $name;
+                }
             }
         }
 

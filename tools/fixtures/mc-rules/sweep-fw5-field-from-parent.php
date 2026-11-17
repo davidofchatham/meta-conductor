@@ -49,7 +49,9 @@
 
 require_once __DIR__ . '/sweep-lib.php';
 
+use BWS\MetaConductor\Admin\CollisionDetector;
 use BWS\MetaConductor\Core\ExistingPostsApplier;
+use BWS\MetaConductor\Core\FormatDispatcher;
 use BWS\MetaConductor\Core\RuleChoice;
 use BWS\MetaConductor\Core\TermDispatcher;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
@@ -367,6 +369,20 @@ try {
 	$pass = mc_assert( 'N Owning clears the empty member', $gp_meta( $c, 'mc_gp_two' ), '' ) && $pass;
 	$pass = mc_assert( 'N …and only that one', array( $gp_meta( $c, 'mc_gp_one' ), $gp_meta( $c, 'mc_gp_late' ) ), array( 'g1', 'late' ) ) && $pass;
 	$pass = mc_assert( 'N …the repeater stays', $gp_rows( $c ), array( 'r1', 'r2' ) ) && $pass;
+
+	// --- O. collisions and the Apply report on a group (10) -----------------
+	$on_member = array_merge( mcfp_pattern(), array( 'target_field' => 'field_mc_gp_one' ) );
+	$found     = CollisionDetector::detect( OptionRuleStorage::KIND_FORMAT, OptionRuleStorage::project_kind_rules( array( $grp_rule( 'merge' ), $on_member ) ) );
+	$pass      = mc_assert( 'O a group copy collides with a rule on one member, once', count( $found ), 1 ) && $pass;
+	$pass      = mc_assert( 'O the finding names the member', str_contains( CollisionDetector::message( $found[0] ), 'GP One' ), true ) && $pass;
+	$soft      = CollisionDetector::detect( OptionRuleStorage::KIND_FORMAT, OptionRuleStorage::project_kind_rules( array( $on_member, $grp_rule( 'skip' ) ) ) );
+	$pass      = mc_assert( 'O a Deferring group copy collides at the lower severity', $soft[0]['severity'] ?? '', 'low' ) && $pass;
+	$other     = array_merge( mcfp_pattern(), array( 'target_field' => MCFP_DISPLAY ) );
+	$pass      = mc_assert( 'O a rule outside the group does not collide', CollisionDetector::detect( OptionRuleStorage::KIND_FORMAT, OptionRuleStorage::project_kind_rules( array( $grp_rule( 'merge' ), $other ) ) ), array() ) && $pass;
+
+	mcfp_author( array( $grp_rule( 'merge' ) ) );
+	$names = ( new ReflectionMethod( ExistingPostsApplier::class, 'field_names' ) )->invoke( null, array( 'all' => true, 'kind' => FormatDispatcher::KIND, 'fingerprint' => '' ) );
+	$pass  = mc_assert( 'O the Apply report lists every member a group copy writes', $names, array( 'mc_gp_one', 'mc_gp_two', 'mc_gp_rows', 'mc_gp_late' ) ) && $pass;
 } finally {
 	acf_remove_local_field( 'field_mc_gp_late' );
 	foreach ( array_reverse( $ids ) as $id ) {
