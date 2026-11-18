@@ -328,6 +328,7 @@ update_option( $mc_option, $mc_settings );
 if ( isset( $mc_storage ) && method_exists( $mc_storage, 'clear_cache' ) ) {
 	$mc_storage->clear_cache();
 }
+mc_refresh_collisions();
 $log( 'rules written: ' . implode( ', ', array_map(
 	function ( $t, $r ) {
 		return $t . '×' . count( $r );

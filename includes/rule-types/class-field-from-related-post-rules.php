@@ -259,16 +259,13 @@ final class FieldFromRelatedPostRules extends RuleType {
 
     /**
      * Schema:
-     *   {name} — Copy {field_label} {from parent|to related posts|from related posts} ({claim}){ (Post type)}
-     *   e.g. "Venue address — Copy Address from parent (contributing) (MC Items)"
+     *   Copy {field_label} {from parent|to related posts|from related posts} ({claim}){ (Post type)}
+     *   e.g. "Copy Address from parent (contributing) (MC Items)"
+     *
+     * Assembled from the mechanics, like every other term-list title: the rule
+     * carries no name of its own.
      */
     public function row_title(array $row): string {
-        $name = trim((string) ($row['name'] ?? ''));
-
-        if ($name === '') {
-            $name = __('Untitled copy-from-related-post rule', 'meta-conductor');
-        }
-
         $group = $this->source_group($row);
         $field = $this->is_meta_source($row)
             ? trim((string) ($row['source_meta'] ?? ''))
@@ -284,15 +281,13 @@ final class FieldFromRelatedPostRules extends RuleType {
             default                                   => __('from related posts', 'meta-conductor'),
         };
 
-        return $name
-            . ' — ' . sprintf(
-                /* translators: 1: field label, 2: "from parent" / "to related posts" / "from related posts", 3: claim name */
-                __('Copy %1$s %2$s (%3$s)', 'meta-conductor'),
-                $field !== '' ? $field : __('a field', 'meta-conductor'),
-                $from,
-                Labels::claim_label($row['conflict_handling'] ?? 'merge')
-            )
-            . Labels::scope_label((array) ($row['post_types'] ?? []));
+        return sprintf(
+            /* translators: 1: field label, 2: "from parent" / "to related posts" / "from related posts", 3: claim name */
+            __('Copy %1$s %2$s (%3$s)', 'meta-conductor'),
+            $field !== '' ? $field : __('a field', 'meta-conductor'),
+            $from,
+            Labels::claim_label($row['conflict_handling'] ?? 'merge')
+        ) . Labels::scope_label((array) ($row['post_types'] ?? []));
     }
 
     /**
@@ -330,19 +325,6 @@ final class FieldFromRelatedPostRules extends RuleType {
      */
     public function subfields(): array {
         $fields = [
-            [
-                // The author's own label for the row; the row-title snapshot
-                // reads it. Own to this type here because the Auto-Set list's
-                // shared frame has no `name`.
-                'id'       => 'name',
-                'type'     => 'text',
-                'label'    => __('Rule name', 'meta-conductor'),
-                'required' => true,
-                'columns'  => 12,
-                'args'     => [
-                    'placeholder' => __('e.g. Season label from team', 'meta-conductor'),
-                ],
-            ],
             ...ConfigHelpers::acf_relationship_subfields(),
             [
                 // Which related post a copy reads, said once the ACF
@@ -423,17 +405,18 @@ final class FieldFromRelatedPostRules extends RuleType {
         }
 
         $graph = new AcfRelationship();
+        $self  = new self();
         $names = [];
         foreach (StorageFactory::get_instance()->get_rules('field_from_related_post', ['enabled' => true]) as $row) {
             if (($row['relationship'] ?? '') === 'acf' && $graph->loops_on_one_type($row)) {
-                $names[] = (string) ($row['name'] ?? '') !== '' ? (string) $row['name'] : __('(unnamed rule)', 'meta-conductor');
+                $names[] = $self->row_title($row);
             }
         }
         if ($names === []) {
             return null;
         }
 
-        // A rule name is author text and `html` content interpolates `{word}`.
+        // A title carries author text (an ACF field label) and `html` content interpolates `{word}`.
         $list = implode(', ', array_map(static fn(string $n): string => str_replace(['{', '}'], ['&#123;', '&#125;'], esc_html($n)), $names));
 
         return [

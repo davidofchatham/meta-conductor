@@ -145,8 +145,8 @@ class FormatRulesConfig {
     }
 
     /**
-     * The row's subfields: the shared frame, then the title/slug group, then
-     * the row-title snapshot.
+     * The row's subfields: the identity frame, each type's own group, then the
+     * limits (heading and post types), then the row-title snapshot.
      *
      * Order matters to the author, not to storage — `type` leads because
      * nothing else in the row means anything until it is picked.
@@ -154,9 +154,20 @@ class FormatRulesConfig {
      * @return array[]
      */
     private static function subfields(): array {
+        $shared = [];
+        foreach (self::shared_subfields() as $field) {
+            $shared[$field['id']] = $field;
+        }
+
+        // The limits close the row, after what each type does. The heading rides
+        // `post_types`' gate, so it shows exactly where the control it heads does.
         return array_merge(
-            self::shared_subfields(),
+            [$shared['type'], $shared['enabled'], $shared['name']],
             ConfigHelpers::type_subfields(self::types()),
+            [
+                ConfigHelpers::limits_heading(['conditions' => $shared['post_types']['conditions']]),
+                $shared['post_types'],
+            ],
             [
                 [
                     // Snapshot row title, assembled at save by

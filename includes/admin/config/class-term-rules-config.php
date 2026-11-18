@@ -177,8 +177,9 @@ class TermRulesConfig {
     }
 
     /**
-     * The row's subfields: what every rule shares, then each descriptor's
-     * own `subfields()` gated to its type, then the shared tail.
+     * The row's subfields: identity and subject, each descriptor's own
+     * `subfields()` gated to its type, the target term, the claim, then the
+     * limits (heading, scope, status, and a descriptor's own `limit` group).
      *
      * The parent relationship has no group of its own — every field propagation
      * ever had is a shared one, which is the clearest evidence the unification
@@ -191,9 +192,20 @@ class TermRulesConfig {
      * @return array[]
      */
     private static function subfields(): array {
+        $shared = [];
+        foreach (self::shared_subfields() as $field) {
+            $shared[$field['id']] = $field;
+        }
+        $pick   = static fn(string ...$ids): array => array_map(static fn(string $id): array => $shared[$id], $ids);
+        $groups = ConfigHelpers::type_subfield_groups(self::types());
+
+        // What the rule does comes before what it is limited to: the row reads
+        // identity, subject, source or trigger, effect, claim, then limits.
+        // Placement only; every gate is stamped by the descriptors, so moving a
+        // field here never changes where it shows.
         return array_merge(
-            self::shared_subfields(),
-            ConfigHelpers::type_subfields(self::types()),
+            $pick('type', 'enabled', 'taxonomy', 'hierarchical_taxonomy_note', 'acf_taxonomy_note'),
+            $groups['body'],
             [
                 // Shared by the related-term rule and the date window, and
                 // AFTER the type groups so it reads below each one's trigger
@@ -212,6 +224,12 @@ class TermRulesConfig {
                         'options'  => ConfigHelpers::all_term_options(),
                     ],
                 ],
+            ],
+            $groups['result'],
+            $pick('conflict_handling', 'field_copy_claim_note'),
+            $pick('limits_heading', 'post_types', 'hierarchical_post_type_note', 'post_status', 'acf_status_note', 'field_copy_status_note'),
+            $groups['limit'],
+            [
                 // Snapshot row title (V11/§I.label). Not user-editable;
                 // assembled at save by WireframeBootstrap::snapshot_term_rule_labels.
                 // Declared so {row_title} resolves — and declared ONCE for
@@ -335,6 +353,10 @@ class TermRulesConfig {
                     'content' => '<p>' . esc_html__('Terms are copied within each chosen taxonomy, by ID — the same taxonomy on both ends of the relationship.', 'meta-conductor') . '</p>',
                 ],
             ],
+            // The heading for the limits block. UNGATED like `post_status`, the
+            // one limit every type shows, and it carries no value, so nothing
+            // can be dropped by it. Plain variant: a heading, not a note.
+            ConfigHelpers::limits_heading(),
             // Gated to the types that read it: every type here since FW-61 04,
             // where the ACF relationship took it as an optional narrowing of the
             // receiving post (empty = no extra narrowing). Every type that

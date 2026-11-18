@@ -85,7 +85,11 @@ $note('sanitize keeps every row', count($sanitized) === count($rows));
 
 // Keys the handler READS per live type — these must survive a save unchanged.
 $must_survive = [
-    'terms_from_trigger_term'            => ['type', 'enabled', 'trigger_type', 'trigger_term_id',
+    // Each trigger picker shows for its own Trigger choice (FW-22), so the two
+    // choices are checked apart: a `term` row keeps its term, a `taxonomy` row its taxonomy.
+    'terms_from_trigger_term/term'       => ['type', 'enabled', 'trigger_type', 'trigger_term_id',
+                                   'target_term_id', 'bidirectional', 'post_types', 'post_status'],
+    'terms_from_trigger_term/taxonomy'   => ['type', 'enabled', 'trigger_type',
                                    'trigger_taxonomy', 'target_term_id', 'bidirectional',
                                    'post_types', 'post_status'],
     // FW-61: the merged type, per relationship. `relationship` is its own
@@ -105,6 +109,9 @@ foreach ($rows as $i => $row) {
     $type = $row['type'] ?? '';
     if ($type === 'terms_from_related_post') {
         $type .= '/' . ($row['relationship'] ?? '');
+    }
+    if ($type === 'terms_from_trigger_term') {
+        $type .= '/' . ($row['trigger_type'] ?? '');
     }
     if (!isset($must_survive[$type])) {
         continue;
@@ -153,6 +160,21 @@ if ($acf_rows) {
     foreach (['type', 'enabled', 'relationship', 'taxonomy', 'conflict_handling', 'post_status'] as $kept) {
         $note("flip acf→parent keeps '$kept'",
             array_key_exists($kept, $flipped) || !array_key_exists($kept, $acf_rows[0]));
+    }
+}
+
+// The other deliberate drop (FW-22): flip a trigger row between its two choices and
+// the picker that no longer applies goes, nothing the rule still reads with it.
+$trigger_rows = array_values(array_filter($rows, static fn($r) => ($r['type'] ?? '') === 'terms_from_trigger_term'));
+foreach (['term' => ['taxonomy', 'trigger_term_id'], 'taxonomy' => ['term', 'trigger_taxonomy']] as $from => [$to, $gone]) {
+    $src = current(array_filter($trigger_rows, static fn($r) => ($r['trigger_type'] ?? '') === $from));
+    if (!$src) {
+        continue;
+    }
+    $flipped = RepeaterField::sanitize([array_merge($src, ['trigger_type' => $to])], $field['args'])[0] ?? [];
+    $note("flip trigger $from→$to drops '$gone'", !array_key_exists($gone, $flipped));
+    foreach (['type', 'enabled', 'target_term_id', 'bidirectional'] as $kept) {
+        $note("flip trigger $from→$to keeps '$kept'", array_key_exists($kept, $flipped) || !array_key_exists($kept, $src));
     }
 }
 

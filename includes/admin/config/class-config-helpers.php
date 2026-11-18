@@ -23,6 +23,13 @@ if (!defined('ABSPATH')) {
 class ConfigHelpers {
 
     /**
+     * A `when` value (see `gate()`) meaning "the sibling field holds something",
+     * not "equals this". No select or radio stores it, so it cannot collide
+     * with a real value.
+     */
+    public const NOT_EMPTY = '@not_empty';
+
+    /**
      * The Apply page's admin slug. Here rather than on ApplyPage so the rule
      * tabs can link to it without config depending on the page controller.
      */
@@ -138,7 +145,9 @@ class ConfigHelpers {
 
     /**
      * `type_gate()` plus an optional second dimension: a `[field => value, …]`
-     * map, every pair of which must hold (`equals`). A type with several
+     * map, every pair of which must hold (`equals`, or `is_not_empty` when the
+     * value is `NOT_EMPTY`, for a control that only means something once a
+     * sibling text field holds a value). A type with several
      * relationships gates a control on `relationship` this way, so no
      * hand-written type list appears and a flip of that value drops the control
      * on save exactly as a change of `type` does.
@@ -157,7 +166,9 @@ class ConfigHelpers {
 
         $rules = [$gate];
         foreach ($when as $field => $value) {
-            $rules[] = ['field' => (string) $field, 'operator' => 'equals', 'value' => $value];
+            $rules[] = $value === self::NOT_EMPTY
+                ? ['field' => (string) $field, 'operator' => 'is_not_empty']
+                : ['field' => (string) $field, 'operator' => 'equals', 'value' => $value];
         }
 
         return ['all' => $rules];
@@ -226,6 +237,36 @@ class ConfigHelpers {
      * @return array[]
      */
     public static function type_subfields(array $types): array {
+        return array_map(static function (array $field): array {
+            unset($field['group']);
+            return $field;
+        }, self::tagged_type_subfields($types));
+    }
+
+    /**
+     * `type_subfields()` split by where each field sits in the row: a
+     * descriptor's `group` says `result` (below the shared target term it
+     * qualifies) or `limit` (with the scope limits); everything else is `body`.
+     * Placement only: a field's gate is the same wherever it lands. The marker
+     * is stripped, so Wireframe never sees it.
+     *
+     * @param string[] $types Stored type keys, in registry order.
+     * @return array{body:array[],result:array[],limit:array[]}
+     */
+    public static function type_subfield_groups(array $types): array {
+        $groups = ['body' => [], 'result' => [], 'limit' => []];
+
+        foreach (self::tagged_type_subfields($types) as $field) {
+            $group = (string) ($field['group'] ?? 'body');
+            unset($field['group']);
+            $groups[isset($groups[$group]) ? $group : 'body'][] = $field;
+        }
+
+        return $groups;
+    }
+
+    /** `type_subfields()` before the `group` marker is stripped. */
+    private static function tagged_type_subfields(array $types): array {
         $fields  = [];
         $merged  = [];
         $readers = [];
@@ -502,6 +543,31 @@ class ConfigHelpers {
         }
 
         return $options;
+    }
+
+    /**
+     * The "Limits" heading that opens the scope controls at the foot of a rule
+     * row (post types, statuses, filters), so a long row reads as what the rule
+     * does, then what it is limited to.
+     *
+     * An `html` field carries no value, so nothing can be dropped by it; its
+     * `conditions` only decide whether the heading shows. Plain variant, so it
+     * is not a note box, and an `h3`: Wireframe's `html` field styles `strong`
+     * at a barely heavier weight than body text (it reads as plain text), `h5`
+     * and `h6` as the small uppercase field labels, and `h3` at the section-title
+     * size and weight, which is what sets it apart from the labels below.
+     *
+     * @param array $overrides Per-call field-definition overrides (e.g. `conditions`).
+     */
+    public static function limits_heading(array $overrides = []): array {
+        return array_merge([
+            'id'      => 'limits_heading',
+            'type'    => 'html',
+            'columns' => 12,
+            'args'    => [
+                'content' => '<h3>' . esc_html__('Limits', 'meta-conductor') . '</h3>',
+            ],
+        ], $overrides);
     }
 
     /**

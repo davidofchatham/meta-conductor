@@ -97,14 +97,19 @@ final class TermsFromTriggerTermRules extends RuleType {
                 ],
             ],
             [
-                // Both trigger fields stay visible for the whole type rather
-                // than gating on trigger_type: a within-row gate on a sibling
-                // radio would DROP the hidden field's value at sanitize, and
-                // flipping the trigger back would find the old value gone.
+                // Each trigger field shows for its own Trigger choice (FW-22).
+                // A within-row gate on a sibling radio DROPS the hidden field's
+                // value at sanitize, so flipping the radio and saving discards
+                // the other field's pick; flipping back finds it empty. That is
+                // the price of a short form, and it is stated in the CHANGELOG.
+                // A row with no `trigger_type` at all is inert (the handler
+                // accepts only `term` or `taxonomy`), and the radio's default
+                // is `term`, so a saved form always carries one.
                 'id'          => 'trigger_term_id',
+                'when'        => ['trigger_type' => 'term'],
                 'type'        => 'select',
                 'label'       => __('Trigger term', 'meta-conductor'),
-                'description' => __('Used when Trigger is "Specific term". Rule fires if post has any of the listed terms.', 'meta-conductor'),
+                'description' => __('The rule fires if the post has any of the listed terms.', 'meta-conductor'),
                 'default'     => '',
                 'columns'     => 12,
                 'args'        => [
@@ -114,9 +119,10 @@ final class TermsFromTriggerTermRules extends RuleType {
             ],
             [
                 'id'          => 'trigger_taxonomy',
+                'when'        => ['trigger_type' => 'taxonomy'],
                 'type'        => 'select',
                 'label'       => __('Trigger taxonomy', 'meta-conductor'),
-                'description' => __('Used when Trigger is "Any term from taxonomy".', 'meta-conductor'),
+                'description' => __('The rule fires if the post has any term from this taxonomy.', 'meta-conductor'),
                 'default'     => '',
                 'columns'     => 12,
                 'args'        => [
@@ -125,6 +131,7 @@ final class TermsFromTriggerTermRules extends RuleType {
             ],
             [
                 'id'          => 'bidirectional',
+                'group'       => 'result',
                 'type'        => 'toggle',
                 'label'       => __('Bidirectional', 'meta-conductor'),
                 // Wording follows the #61 conversion: the applier recomputes

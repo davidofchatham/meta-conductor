@@ -125,6 +125,7 @@ final class TermsFromDateWindowRules extends RuleType {
         return [
             [
                 'id'          => 'filter_taxonomies',
+                'group'       => 'limit',
                 'type'        => 'checkboxes',
                 'label'       => __('Filter by taxonomies (optional)', 'meta-conductor'),
                 'description' => __('Only apply to posts with terms in these taxonomies. Leave empty for all posts.', 'meta-conductor'),
@@ -135,6 +136,7 @@ final class TermsFromDateWindowRules extends RuleType {
             ],
             [
                 'id'          => 'filter_terms',
+                'group'       => 'limit',
                 'type'        => 'select',
                 'label'       => __('Filter by specific terms (optional)', 'meta-conductor'),
                 'description' => __('Only apply to posts with these terms. Leave empty to use taxonomy filter only.', 'meta-conductor'),
