@@ -256,6 +256,8 @@ foreach ($subfields as $s) {
                 (($c['field'] ?? '') === 'relationship' && in_array($c['value'] ?? null, ['parent', 'acf'], true))
                 // The field copy's meta-name boxes show while their select picks "a plain meta key".
                 || (in_array($c['field'] ?? '', ['source_field', 'copy_target'], true) && ($c['value'] ?? null) === '@meta')
+                // The trigger rule's two pickers show for their own Trigger choice (FW-22).
+                || (($c['field'] ?? '') === 'trigger_type' && in_array($c['value'] ?? null, ['term', 'taxonomy'], true))
             )) {
             $gated_ok = false;
             break 2;
@@ -417,6 +419,9 @@ $check('the row reads identity, subject, source, effect, claim, then limits',
         'conflict_handling', 'limits_heading', 'post_types', 'post_status', 'filter_taxonomies', 'filter_terms', 'row_title']));
 $check('the date window\'s own filters are limits, below the shared ones',
     $in_order(['start_date', 'end_date', 'target_term_id', 'limits_heading', 'post_status', 'filter_taxonomies']));
+$check('each trigger picker is gated to the type and its own Trigger choice',
+    $gate_of('trigger_term_id') === ConfigHelpers::gate(['terms_from_trigger_term'], ['trigger_type' => 'term'])
+    && $gate_of('trigger_taxonomy') === ConfigHelpers::gate(['terms_from_trigger_term'], ['trigger_type' => 'taxonomy']));
 $check('a trigger rule reads trigger, target term, then what happens when the trigger is gone',
     $in_order(['trigger_type', 'trigger_taxonomy', 'target_term_id', 'bidirectional', 'limits_heading']));
 $check('every field-copy note stays under its control with the limits moved',
@@ -515,9 +520,15 @@ $expected_visible = [
     ],
     // A LIVE type (#58). A subfield missing here is a live rule's value
     // silently dropped on the next settings save.
-    'terms_from_trigger_term' => [
+    // Each picker shows for its own Trigger choice, so each is its own scenario.
+    'terms_from_trigger_term/term' => [
         'type', 'enabled', 'limits_heading', 'post_types', 'post_status',
-        'trigger_type', 'trigger_term_id', 'trigger_taxonomy',
+        'trigger_type', 'trigger_term_id',
+        'target_term_id', 'bidirectional', 'row_title',
+    ],
+    'terms_from_trigger_term/taxonomy' => [
+        'type', 'enabled', 'limits_heading', 'post_types', 'post_status',
+        'trigger_type', 'trigger_taxonomy',
         'target_term_id', 'bidirectional', 'row_title',
     ],
 ];
@@ -530,6 +541,9 @@ foreach ($TYPES as $type) {
             $scenarios["$type/parent+meta"] = [$type, ['relationship' => 'parent', 'source_field' => '@meta', 'copy_target' => '@meta']];
         }
         $scenarios["$type/acf"] = [$type, ['relationship' => 'acf']];
+    } elseif ($type === 'terms_from_trigger_term') {
+        $scenarios["$type/term"]     = [$type, ['trigger_type' => 'term']];
+        $scenarios["$type/taxonomy"] = [$type, ['trigger_type' => 'taxonomy']];
     } else {
         $scenarios[$type] = [$type, []];
     }
