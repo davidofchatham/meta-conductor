@@ -128,11 +128,11 @@ final class ExistingPostsApplier {
 
         $deadline = microtime(true) + (float) apply_filters('meta_conductor_apply_time_box', self::TIME_BOX);
         $done     = true;
-        $fields   = self::field_names($choice);
+        $fields   = self::field_names($choice, $row);
 
         try {
             if ($row !== null) {
-                if ($choice['kind'] === FormatDispatcher::KIND) {
+                if (FormatDispatcher::owns((string) ($row['type'] ?? ''))) {
                     FormatDispatcher::include_row($choice['fingerprint']);
                 } else {
                     TermDispatcher::include_row($choice['fingerprint']);
@@ -235,7 +235,7 @@ final class ExistingPostsApplier {
             'note'    => '',
         ];
 
-        if ($row !== null && $choice['kind'] === OptionRuleStorage::KIND_TERM) {
+        if ($row !== null && TermDispatcher::owns((string) ($row['type'] ?? ''))) {
             foreach (array_slice(array_reverse($post_ids), 0, self::PREVIEW_POSTS) as $post_id) {
                 $result['posts'][] = [
                     'post_id'   => $post_id,
@@ -415,13 +415,14 @@ final class ExistingPostsApplier {
      * rule's target is `repeater[].subfield`, which `snapshot()` expands per post
      * to the rows that post holds.
      *
-     * @param array $choice A decoded `RuleChoice`.
+     * @param array      $choice A decoded `RuleChoice`.
+     * @param array|null $row    The chosen row, null for "All enabled rules".
      * @return string[]
      */
-    private static function field_names(array $choice): array {
-        $include = !$choice['all'] && $choice['kind'] === FormatDispatcher::KIND ? $choice['fingerprint'] : null;
+    private static function field_names(array $choice, ?array $row): array {
+        $include = $row !== null && FormatDispatcher::owns((string) ($row['type'] ?? '')) ? $choice['fingerprint'] : null;
         $names   = [];
-        foreach (RuleChoice::pass_rows(StorageFactory::get_instance()->get_kind_rules(FormatDispatcher::KIND), $include) as $rule) {
+        foreach (FormatDispatcher::pass_rows($include) as $rule) {
             // A group copy names one field per member, which is why this reads
             // the set, not the one key.
             foreach (Registry::get((string) ($rule['type'] ?? ''))?->target_keys($rule) ?? [] as $key) {

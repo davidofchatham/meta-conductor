@@ -703,45 +703,49 @@ $cp = fn(array $over = []) => $over + [
 ];
 $grp = fn(array $over = []) => $cp($over + ['source_field' => 'group_mc_ab', 'row_title' => 'Copy group']);
 
-$cp_pair = $scan($KIND_FORMAT, [$cp(), $cp(['row_title' => 'Copy (second)'])]);
+// The copy is authored in the Auto-Set list (it runs in the format pass), so it
+// collides with other copies in THAT list's scan. It is not in the Format &
+// Transform list, so it is no longer compared with a Computed field rule: they
+// can write one field, and the plugin no longer says so (FW-5 placement; the
+// order it asked the author to set between them is gone with the shared list).
+$cp_pair = $scan($KIND_TERM, [$cp(), $cp(['row_title' => 'Copy (second)'])]);
 $check('two copy rows on one field and post type collide, with the order message',
     count($cp_pair) === 1 && $codes($cp_pair) === ['shared_target'] && !isset($cp_pair[0]['severity']));
 $check('and name the field by its label',
     str_contains(CollisionDetector::message($cp_pair[0]), 'the “Display name” field'));
 $check('copy rows on disjoint post types do not collide',
-    $scan($KIND_FORMAT, [$cp(), $cp(['post_types' => ['mc_section']])]) === []);
+    $scan($KIND_TERM, [$cp(), $cp(['post_types' => ['mc_section']])]) === []);
 $check('two copies of different fields do not collide',
-    $scan($KIND_FORMAT, [$cp(), $cp(['source_field' => 'field_mc_b'])]) === []);
+    $scan($KIND_TERM, [$cp(), $cp(['source_field' => 'field_mc_b'])]) === []);
 $check('Copy into counts: another source copied INTO the same field collides',
-    count($scan($KIND_FORMAT, [$cp(), $cp(['source_field' => 'field_mc_b', 'copy_target' => 'field_mc_a'])])) === 1);
-$check('a copy row and a Computed field row on one field collide',
-    count($scan($KIND_FORMAT, [$cp(), $cf()])) === 1);
+    count($scan($KIND_TERM, [$cp(), $cp(['source_field' => 'field_mc_b', 'copy_target' => 'field_mc_a'])])) === 1);
+$check('a copy row and a Computed field row on one field are in different lists: neither list reports it',
+    $scan($KIND_TERM, [$cp()]) === [] && $scan($KIND_FORMAT, [$cf()]) === []);
+$check('a copy row is not collided with a term rule: they write different targets',
+    $scan($KIND_TERM, [$cp(), ['type' => 'terms_from_related_post', 'relationship' => 'parent', 'enabled' => true, 'taxonomy' => 'mc_topic', 'post_types' => ['mc_item']]]) === []);
 $check('a plain-meta copy collides with another copy of the same meta key only',
-    count($scan($KIND_FORMAT, [
+    count($scan($KIND_TERM, [
         $cp(['source_field' => '@meta', 'source_meta' => 'k']),
         $cp(['source_field' => '@meta', 'source_meta' => 'k']),
     ])) === 1
-    && $scan($KIND_FORMAT, [
+    && $scan($KIND_TERM, [
         $cp(['source_field' => '@meta', 'source_meta' => 'k']),
         $cp(['source_field' => '@meta', 'source_meta' => 'j']),
     ]) === []);
 // A meta name that matches an ACF field is written through ACF, so it is that field.
 $to_meta = fn(string $name, array $over = []) => $cp(['source_field' => '@meta', 'source_meta' => 'k', 'copy_target' => '@meta', 'target_meta' => $name] + $over);
-$check('a plain-meta copy into an ACF field\'s name collides with a rule on that field',
-    count($scan($KIND_FORMAT, [$to_meta('display_name'), $cf()])) === 1
-    && count($scan($KIND_FORMAT, [$cf(), $to_meta('display_name')])) === 1);
-$check('and with a copy of that field by key, and names it by the field\'s label',
-    count($ma = $scan($KIND_FORMAT, [$to_meta('display_name'), $cp()])) === 1
+$check('a plain-meta copy into an ACF field\'s name collides with a copy of that field by key, and names it by the field\'s label',
+    count($ma = $scan($KIND_TERM, [$to_meta('display_name'), $cp()])) === 1
     && str_contains(CollisionDetector::message($ma[0]), 'the “Display name” field'));
-$check('a plain-meta copy into a name no ACF field answers to collides with no field rule',
-    $scan($KIND_FORMAT, [$to_meta('plain_name'), $cf()]) === []
-    && $scan($KIND_FORMAT, [$to_meta('sort_name'), $cf()]) === []);
+$check('a plain-meta copy into a name no ACF field answers to collides with no field copy',
+    $scan($KIND_TERM, [$to_meta('plain_name'), $cp()]) === []
+    && $scan($KIND_TERM, [$to_meta('sort_name'), $cp()]) === []);
 $check('a plain-meta copy still collides with a plain-meta copy of the same name',
-    count($scan($KIND_FORMAT, [$to_meta('plain_name'), $to_meta('plain_name')])) === 1);
+    count($scan($KIND_TERM, [$to_meta('plain_name'), $to_meta('plain_name')])) === 1);
 $check('a Deferring plain-meta copy into an ACF name collides at the lower severity',
-    ($scan($KIND_FORMAT, [$cf(), $to_meta('display_name', ['conflict_handling' => 'skip'])])[0]['severity'] ?? '') === 'low');
+    ($scan($KIND_TERM, [$cp(), $to_meta('display_name', ['conflict_handling' => 'skip'])])[0]['severity'] ?? '') === 'low');
 $check('a copy row with no post type checked is unfinished, not colliding',
-    $scan($KIND_FORMAT, [$cp(['post_types' => []]), $cp()]) === []);
+    $scan($KIND_TERM, [$cp(['post_types' => []]), $cp()]) === []);
 
 $check('a group copy resolves one target per value member and none for a tab',
     $desc('field_from_related_post')->target_keys($grp()) === ['field|field_mc_a', 'field|field_mc_b']);
@@ -753,33 +757,31 @@ $check('an unknown group, or no post type, resolves nothing',
     $desc('field_from_related_post')->target_keys($grp(['source_field' => 'group_gone'])) === []
     && $desc('field_from_related_post')->target_keys($grp(['post_types' => []])) === []);
 
-$gm = $scan($KIND_FORMAT, [$grp(), $cf(['target_field' => 'field_mc_b'])]);
-$check('a group copy collides with a single-field rule on one of its members',
+$gm = $scan($KIND_TERM, [$grp(), $cp(['source_field' => 'field_mc_b'])]);
+$check('a group copy collides with a single-field copy of one of its members',
     count($gm) === 1 && $pairs($gm) === [[0, 1]]
     && str_contains(CollisionDetector::message($gm[0]), 'the “Sort name” field'));
-$check('and with a single-field copy of a member',
-    count($scan($KIND_FORMAT, [$cp(['source_field' => 'field_mc_b']), $grp()])) === 1);
-$check('a group copy does not collide with a rule on a field outside the group',
-    $scan($KIND_FORMAT, [$grp(), $cf(['target_field' => 'field_mc_r'])]) === []);
+$check('a group copy does not collide with a copy of a field outside the group',
+    $scan($KIND_TERM, [$grp(), $cp(['source_field' => 'field_mc_r'])]) === []);
 $check('a group copy on disjoint post types does not collide',
-    $scan($KIND_FORMAT, [$grp(), $cf(['post_types' => ['mc_section']])]) === []);
-$gg = $scan($KIND_FORMAT, [$grp(), $grp(['row_title' => 'Copy group (second)'])]);
+    $scan($KIND_TERM, [$grp(), $cp(['source_field' => 'field_mc_b', 'post_types' => ['mc_section']])]) === []);
+$gg = $scan($KIND_TERM, [$grp(), $grp(['row_title' => 'Copy group (second)'])]);
 $check('two group copies warn once per shared field',
     count($gg) === 2 && $pairs($gg) === [[0, 1], [0, 1]]);
-$check('a group copy never collides with itself', $scan($KIND_FORMAT, [$grp()]) === []);
+$check('a group copy never collides with itself', $scan($KIND_TERM, [$grp()]) === []);
 $check('a disabled group copy does not collide',
-    $scan($KIND_FORMAT, [$grp(['enabled' => false]), $cf()]) === []);
+    $scan($KIND_TERM, [$grp(['enabled' => false]), $cp()]) === []);
 
-$df = $scan($KIND_FORMAT, [$cf(), $cp(['conflict_handling' => 'skip'])]);
+$df = $scan($KIND_TERM, [$cp(), $cp(['conflict_handling' => 'skip'])]);
 $check('a Deferring copy collides at the lower severity, naming itself first',
     $codes($df) === ['deferring_field'] && ($df[0]['severity'] ?? '') === 'low' && $df[0]['a']['index'] === 1 && $df[0]['b']['index'] === 0);
 $check('and the sentence says it only fills an empty field',
     str_contains(CollisionDetector::message($df[0]), 'only fills') && str_contains(CollisionDetector::message($df[0]), 'Display name'));
 $check('a Deferring group copy collides at the lower severity too',
-    ($scan($KIND_FORMAT, [$grp(['conflict_handling' => 'skip']), $cf()])[0]['severity'] ?? '') === 'low');
+    ($scan($KIND_TERM, [$grp(['conflict_handling' => 'skip']), $cp()])[0]['severity'] ?? '') === 'low');
 $check('an Owning or Contributing copy stays at the normal severity',
-    !isset($scan($KIND_FORMAT, [$cf(), $cp(['conflict_handling' => 'replace'])])[0]['severity'])
-    && !isset($scan($KIND_FORMAT, [$cf(), $cp(['conflict_handling' => 'merge'])])[0]['severity']));
+    !isset($scan($KIND_TERM, [$cp(), $cp(['conflict_handling' => 'replace'])])[0]['severity'])
+    && !isset($scan($KIND_TERM, [$cp(), $cp(['conflict_handling' => 'merge'])])[0]['severity']));
 $check('a Deferring TERM rule is not demoted (the term side has no severity)',
     !isset($scan($KIND_TERM, [
         ['type' => 'terms_from_related_post', 'taxonomy' => 'mc_topic', 'conflict_handling' => 'skip', 'post_types' => ['mc_item']],
@@ -787,15 +789,15 @@ $check('a Deferring TERM rule is not demoted (the term side has no severity)',
     ])[0]['severity']));
 
 // A low finding renders in its own softer notice; the others keep the warning.
-$GLOBALS['mc_options'][CollisionDetector::OPTION_NAME] = [$KIND_FORMAT => array_merge($cp_pair, $df)];
-$sec = array_column(CollisionDetector::section($KIND_FORMAT)['fields'], 'args', 'id');
+$GLOBALS['mc_options'][CollisionDetector::OPTION_NAME] = [$KIND_TERM => array_merge($cp_pair, $df)];
+$sec = array_column(CollisionDetector::section($KIND_TERM)['fields'], 'args', 'id');
 $check('the section splits normal and low findings into a warning and an info notice',
-    ($sec[$KIND_FORMAT . '_collision_notice']['variant'] ?? '') === 'warning'
-    && ($sec[$KIND_FORMAT . '_collision_notice_low']['variant'] ?? '') === 'info');
-$GLOBALS['mc_options'][CollisionDetector::OPTION_NAME] = [$KIND_FORMAT => $df];
-$sec = array_column(CollisionDetector::section($KIND_FORMAT)['fields'], 'args', 'id');
+    ($sec[$KIND_TERM . '_collision_notice']['variant'] ?? '') === 'warning'
+    && ($sec[$KIND_TERM . '_collision_notice_low']['variant'] ?? '') === 'info');
+$GLOBALS['mc_options'][CollisionDetector::OPTION_NAME] = [$KIND_TERM => $df];
+$sec = array_column(CollisionDetector::section($KIND_TERM)['fields'], 'args', 'id');
 $check('a list of only low findings has no warning notice',
-    !isset($sec[$KIND_FORMAT . '_collision_notice']) && isset($sec[$KIND_FORMAT . '_collision_notice_low']));
+    !isset($sec[$KIND_TERM . '_collision_notice']) && isset($sec[$KIND_TERM . '_collision_notice_low']));
 unset($GLOBALS['mc_options']);
 
 // --- 11. The section both tabs render. --------------------------------------

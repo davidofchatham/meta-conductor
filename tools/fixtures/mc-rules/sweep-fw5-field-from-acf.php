@@ -68,7 +68,7 @@ function mcfa_row( $claim, $pull, $tier1 = true, array $statuses = array() ) {
 }
 
 function mcfa_author( array $rows ) {
-	mc_write_ordered_rules( $rows, OptionRuleStorage::KIND_FORMAT );
+	mc_write_split_rules( $rows );
 }
 
 function mcfa_drain() {

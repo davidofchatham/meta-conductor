@@ -15,7 +15,8 @@ if (!defined('ABSPATH')) {
 /**
  * Ordered list of every rule type's descriptor.
  *
- * ORDER IS MEANINGFUL: it is the type-select order and the order fixture
+ * ORDER IS MEANINGFUL: it is the type-select order (the two related-post types
+ * sit together, as they appear together in the Auto-Set list) and the order fixture
  * tooling authors by-type rules in. It is never the order a pass runs rows in
  * — that is the authored kind-list order, which storage never re-sorts.
  *
@@ -30,6 +31,7 @@ final class Registry {
      */
     private const DESCRIPTORS = [
         TermsFromRelatedPostRules::class,
+        FieldFromRelatedPostRules::class,
         TermsFromDateWindowRules::class,
         TermsFromTriggerTermRules::class,
         TermsFromTermHierarchyRules::class,
@@ -37,7 +39,6 @@ final class Registry {
         RestrictTermCountRules::class,
         TitleSlugFromPatternRules::class,
         FieldFromPatternRules::class,
-        FieldFromRelatedPostRules::class,
     ];
 
     /**

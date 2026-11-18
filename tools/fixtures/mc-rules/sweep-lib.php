@@ -191,6 +191,43 @@ if ( ! function_exists( 'mc_write_ordered_rules' ) ) {
 	}
 }
 
+if ( ! function_exists( 'mc_write_split_rules' ) ) {
+	/**
+	 * Write a MIXED ordered row list, each row to the persisted list its TYPE is
+	 * authored in (`RuleType::kind()`), the order kept within each list.
+	 *
+	 * For a sweep whose rows span the two lists: a field copy is authored in the
+	 * Auto-Set list (`term_rules`) but runs in the format pass beside the pattern
+	 * rules, so one `mc_write_ordered_rules( $rows, 'format' )` can no longer
+	 * express it. BOTH lists are rewritten, so a list this call names no row for
+	 * is emptied, not left holding the last scenario's rows.
+	 *
+	 * @param array[] $rows Rows carrying `type`.
+	 * @return int Rows written.
+	 */
+	function mc_write_split_rules( array $rows ) {
+		$storage = \BWS\MetaConductor\Storage\OptionRuleStorage::class;
+		$lists   = array(
+			$storage::KIND_TERM   => array(),
+			$storage::KIND_FORMAT => array(),
+		);
+
+		foreach ( $rows as $row ) {
+			$kind = ( new $storage() )->get_kind_for_type( (string) ( $row['type'] ?? '' ) );
+			if ( '' === $kind ) {
+				throw new \RuntimeException( 'mc_write_split_rules: unknown rule type "' . ( $row['type'] ?? '' ) . '".' );
+			}
+			$lists[ $kind ][] = $row;
+		}
+
+		foreach ( $lists as $kind => $kind_rows ) {
+			mc_write_ordered_rules( $kind_rows, $kind );
+		}
+
+		return count( $rows );
+	}
+}
+
 if ( ! function_exists( 'mc_isolate' ) ) {
 	/**
 	 * Keep only $keep_types' rules enabled; empty every OTHER seeded rule type.

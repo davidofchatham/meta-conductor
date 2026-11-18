@@ -48,7 +48,8 @@ foreach ($rows as $row) {
     $by_type[$row['type'] ?? ''][] = $row;
 }
 
-$note('term_rules carries all 11 fixture term-kind rows', count($rows) === 11);
+// 11 term rules, plus the seeded DISABLED field copy, which is authored in this list.
+$note('term_rules carries all 11 fixture term rules and the disabled field copy', count($rows) === 12);
 $note('2 related rows present',  count($by_type['terms_from_trigger_term'] ?? []) === 2);
 // One merged type carries both relationships (FW-61): the parent row and the two
 // ACF rows share `terms_from_related_post`.

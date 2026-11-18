@@ -12,7 +12,7 @@
 
 return array(
 	'blueprint'   => 'mc-rules',
-	'version'     => 16, // 16: mc_peer_sections, a same-type ACF-bidirectional field on mc_section (FW-5 09); no seeded data changes. 15: group_mc_copy_group (mc_section) for FW-5 group mode; no seeded data changes. 14: group_mc_copy_fields (mc_section) for the FW-5 copy rule; no seeded data changes. 13: the ACF-reference rows are terms_from_related_post with relationship=acf and a claim in place of keep_in_sync (FW-61 04). 12: propagation baseline is now terms_from_related_post with relationship=parent (FW-61 03). 11: Term count limit baseline (disabled, non-default max_terms/per_level so a round-trip drop shows). 10: title_slug fixture rule uses the slug_escalation ladder (FW-51 02). 9: hierarchical mc_flat type + two parent/child pairs for the flat-URL sweep (FW-51). 8: roster-style repeater mc_cf_roster in group_mc_computed_fields (FW-4 06 row targets). 7: Computed field rule (FW-4) — group_mc_computed_fields (text sources, text + wysiwyg targets), the item-computed subject, and a field_from_pattern baseline. 6: ACF field-identity decoy (#25) — group_mc_decoy_fields declares a SECOND `mc_related_items` relationship field on mc_section, pointing at a different target post type, so bare-name resolution is provably wrong and key resolution provably right. 5: related_post_terms reverse-field coverage — explicit reverse (mc_parent_section, tier 1) on the existing rule + a native-bidi pair (mc_bidi_items/mc_bidi_sections on section-bidi/item-bidi, mc_flag, tier 2) for the #43 dependent-end sever. 4: section-child independent term moved native→ACF field (both channels agree; propagation ACF-merge no longer clobbers it). 3: item-solo-a/b clobber-free subjects. 2: composes_on two-key shape. 1: initial.
+	'version'     => 17, // 17: a DISABLED field_from_related_post row (inert in every other sweep; it shows the type in the Auto-Set tab and gives the round-trip sweeps a persisted row). 16: mc_peer_sections, a same-type ACF-bidirectional field on mc_section (FW-5 09); no seeded data changes. 15: group_mc_copy_group (mc_section) for FW-5 group mode; no seeded data changes. 14: group_mc_copy_fields (mc_section) for the FW-5 copy rule; no seeded data changes. 13: the ACF-reference rows are terms_from_related_post with relationship=acf and a claim in place of keep_in_sync (FW-61 04). 12: propagation baseline is now terms_from_related_post with relationship=parent (FW-61 03). 11: Term count limit baseline (disabled, non-default max_terms/per_level so a round-trip drop shows). 10: title_slug fixture rule uses the slug_escalation ladder (FW-51 02). 9: hierarchical mc_flat type + two parent/child pairs for the flat-URL sweep (FW-51). 8: roster-style repeater mc_cf_roster in group_mc_computed_fields (FW-4 06 row targets). 7: Computed field rule (FW-4) — group_mc_computed_fields (text sources, text + wysiwyg targets), the item-computed subject, and a field_from_pattern baseline. 6: ACF field-identity decoy (#25) — group_mc_decoy_fields declares a SECOND `mc_related_items` relationship field on mc_section, pointing at a different target post type, so bare-name resolution is provably wrong and key resolution provably right. 5: related_post_terms reverse-field coverage — explicit reverse (mc_parent_section, tier 1) on the existing rule + a native-bidi pair (mc_bidi_items/mc_bidi_sections on section-bidi/item-bidi, mc_flag, tier 2) for the #43 dependent-end sever. 4: section-child independent term moved native→ACF field (both channels agree; propagation ACF-merge no longer clobbers it). 3: item-solo-a/b clobber-free subjects. 2: composes_on two-key shape. 1: initial.
 	// Family-standard shape — matches layout-states and view-structures.
 	// bin/seed-all.sh --only builds its dependency graph from this.
 	'composes_on' => array(
@@ -326,6 +326,23 @@ return array(
 				'target_field' => 'field_mc_cf_display',
 				'pattern'      => '{meta:mc_cf_first} {meta:mc_cf_last}',
 				'output'       => 'text',
+			),
+		),
+
+		// FW-5 — Set a field from a related post. DISABLED on purpose: an enabled
+		// copy would fire in every other sweep and write mc_section posts. It is
+		// stored in the Auto-Set list (the type's `kind()`) and would run in the
+		// format pass, so a sweep that wants it live authors its own row.
+		'field_from_related_post' => array(
+			array(
+				'enabled'           => false,
+				'name'              => 'MC copy field from parent',
+				'post_types'        => array( 'mc_section' ),
+				'relationship'      => 'parent',
+				'source_field'      => 'field_mc_cp_text',
+				'copy_target'       => '',
+				'conflict_handling' => 'merge',
+				'post_status'       => array(),
 			),
 		),
 	),

@@ -22,7 +22,7 @@
 
 require_once __DIR__ . '/sweep-lib.php';
 
-use BWS\MetaConductor\Admin\Config\FormatRulesConfig;
+use BWS\MetaConductor\Admin\Config\TermRulesConfig;
 use BWS\MetaConductor\Core\TermDispatcher;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 use BWS\MetaConductor\Storage\StorageFactory;
@@ -59,7 +59,7 @@ function mcoff_meta( $id, $name ) {
 }
 
 mc_isolate( array() );
-mc_write_ordered_rules( array(), OptionRuleStorage::KIND_FORMAT );
+mc_write_split_rules( array() );
 
 $ids  = array();
 $pass = true;
@@ -81,20 +81,20 @@ try {
 		'source_field'     => 'field_mc_cp_text',
 		'copy_target'      => '',
 	) );
-	mc_write_ordered_rules( array( $acf_row ), OptionRuleStorage::KIND_FORMAT );
+	mc_write_split_rules( array( $acf_row ) );
 	mcoff_save( $c );
 	mcoff_save( $p );
 	$pass = mc_assert( 'A an acf row copies nothing with ACF off (Owning keeps the child\'s value)', mcoff_meta( $c, 'mc_cp_text' ), 'own' ) && $pass;
-	$stored = StorageFactory::get_instance()->get_kind_rules( OptionRuleStorage::KIND_FORMAT )[0] ?? array();
+	$stored = StorageFactory::get_instance()->get_kind_rules( OptionRuleStorage::KIND_TERM )[0] ?? array();
 	$pass   = mc_assert( 'A …and the stored row keeps its settings', array( $stored['relationship'] ?? '', $stored['source_field'] ?? '' ), array( 'acf', 'field_mc_cp_text' ) ) && $pass;
 
 	// --- B. a parent row naming an ACF field is idle -------------------------
-	mc_write_ordered_rules( array( mcoff_copy( array( 'source_field' => 'field_mc_cp_text', 'copy_target' => '' ) ) ), OptionRuleStorage::KIND_FORMAT );
+	mc_write_split_rules( array( mcoff_copy( array( 'source_field' => 'field_mc_cp_text', 'copy_target' => '' ) ) ) );
 	mcoff_save( $c );
 	$pass = mc_assert( 'B a parent row with an ACF field source copies nothing with ACF off', mcoff_meta( $c, 'mc_cp_text' ), 'own' ) && $pass;
 
 	// --- C. plain meta to plain meta still runs ------------------------------
-	mc_write_ordered_rules( array( mcoff_copy( array() ) ), OptionRuleStorage::KIND_FORMAT );
+	mc_write_split_rules( array( mcoff_copy( array() ) ) );
 	mcoff_save( $c );
 	$pass = mc_assert( 'C a parent row on plain meta copies with ACF off', mcoff_meta( $c, 'mc_off_dst' ), 'from-parent' ) && $pass;
 	update_post_meta( $p, 'mc_off_src', 'edited' );
@@ -104,8 +104,8 @@ try {
 	// --- D. a save keeps the stored row's type -------------------------------
 	// The options come from what is stored, so store the rows the save carries.
 	$tgt_row = mcoff_copy( array( 'copy_target' => 'field_mc_cp_display' ) );
-	mc_write_ordered_rules( array( $acf_row, $tgt_row ), OptionRuleStorage::KIND_FORMAT );
-	$field = current( array_filter( FormatRulesConfig::section()['fields'], static fn( $f ) => ( $f['id'] ?? '' ) === 'format_rules' ) );
+	mc_write_split_rules( array( $acf_row, $tgt_row ) );
+	$field = current( array_filter( TermRulesConfig::section()['fields'], static fn( $f ) => ( $f['id'] ?? '' ) === 'term_rules' ) );
 	$out   = RepeaterField::sanitize( array( $acf_row + array( 'row_title' => 'x' ) ), $field['args'] )[0] ?? array();
 	$pass  = mc_assert( 'D a stored acf row keeps its type and relationship through a save', array( $out['type'] ?? '(DROPPED)', $out['relationship'] ?? '(DROPPED)' ), array( 'field_from_related_post', 'acf' ) ) && $pass;
 	// Every ACF value is kept as itself: the pickers list nothing while ACF is

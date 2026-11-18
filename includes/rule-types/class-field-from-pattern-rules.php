@@ -177,9 +177,9 @@ final class FieldFromPatternRules extends RuleType {
     }
 
     /**
-     * `post_types` is the scope shared with *Set a field from a related post*
-     * (`FormatRulesConfig` declares it once, gated by `readers()`): checkboxes
-     * like the term list's. These rules compose in list order, so unlike title
+     * `post_types` is this type's own scope in the format list
+     * (`FormatRulesConfig` declares it, gated by `readers()`): checkboxes like
+     * the term list's. These rules compose in list order, so unlike title
      * & slug (first match per post type) one rule may cover several types.
      * Unlike the term list, none checked means NOTHING, not every type — a
      * field write on a type whose ACF group lacks the field would store orphan

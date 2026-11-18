@@ -24,6 +24,7 @@
  */
 
 use BWS\MetaConductor\Admin\Config\FormatRulesConfig;
+use BWS\MetaConductor\Admin\Config\TermRulesConfig;
 use BWS\MetaConductor\Admin\WireframeBootstrap;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 use BWS\MetaConductor\Storage\StorageFactory;
@@ -52,7 +53,8 @@ $rows     = $settings[OptionRuleStorage::KIND_FORMAT] ?? [];
 
 $note('format_rules is populated', !empty($rows));
 // The format list holds title/slug rules and, since FW-4, Computed field rules.
-$format_types = ['title_slug_from_pattern', 'field_from_pattern', 'field_from_related_post'];
+// (The field copy is authored in the Auto-Set list; section 3 covers it.)
+$format_types = ['title_slug_from_pattern', 'field_from_pattern'];
 $note('every format row is a known format rule type',
     array_diff(array_column($rows, 'type'), $format_types) === []);
 $note('the legacy title_slug_from_pattern array is gone from storage (#66)',
@@ -112,9 +114,29 @@ $note('every sanitized row is still typed',
     array_column($sanitized, 'type') === array_column($rows, 'type'));
 
 // ── 3. A Set a field from a related post row (FW-5 04). ─────────────────────
-// The manifest baseline carries no row of this type (it would be live in every
-// other sweep), so one is built here and run through the same sanitizer. Every
-// key the handler reads must come back; a wrong gate drops one silently.
+// The manifest seeds one DISABLED row of this type (disabled so no other sweep
+// sees it fire); the cases below build further rows and run them through the
+// same sanitizer. Every key the handler reads must come back; a wrong gate drops
+// one silently.
+//
+// The type is authored in the Auto-Set list, so the sanitizer runs over THAT
+// list's repeater: `$field` is rebound to it for the rest of the sweep.
+
+$field = current(array_filter(TermRulesConfig::section()['fields'], static fn($f) => ($f['id'] ?? '') === OptionRuleStorage::KIND_TERM));
+
+// The seeded row, as the admin loads it.
+$seeded_copy = current(array_filter(
+    $settings[OptionRuleStorage::KIND_TERM] ?? [],
+    static fn($r) => ($r['type'] ?? '') === 'field_from_related_post'
+));
+$note('the seeded copy row is in the Auto-Set list, disabled', is_array($seeded_copy) && ($seeded_copy['enabled'] ?? true) === false);
+$note('the seeded copy row carries a repaired title with the disabled marker',
+    is_array($seeded_copy) && str_contains((string) ($seeded_copy['row_title'] ?? ''), '[Disabled]'));
+$seeded_out = RepeaterField::sanitize([$seeded_copy ?: []], $field['args'])[0] ?? [];
+foreach (['type', 'enabled', 'name', 'post_types', 'relationship', 'source_field', 'conflict_handling'] as $key) {
+    $note("seeded copy row '$key' survives sanitize", is_array($seeded_copy) && ($seeded_out[$key] ?? '(DROPPED)') == ($seeded_copy[$key] ?? null));
+}
+$note('the format list holds no copy row', !in_array('field_from_related_post', array_column($rows, 'type'), true));
 
 $copy_row = [
     'type' => 'field_from_related_post', 'enabled' => true, 'name' => 'Copy probe',
@@ -141,6 +163,32 @@ $group_out = RepeaterField::sanitize([$group_row], $field['args'])[0] ?? [];
 $note("group copy row 'source_field' survives sanitize", ($group_out['source_field'] ?? '(DROPPED)') === 'group_mc_copy_group');
 $note('copy row carries no pattern-rule or title/slug keys',
     array_intersect(['target_field', 'pattern', 'output', 'title_pattern', 'post_type'], array_keys($copy_out)) === []);
+
+// The relationship block is ONE set of controls for both related-post types
+// (merged by ConfigHelpers::type_subfields()). An acf row of each type, saved in
+// the same list, must keep every relationship value: a second declaration of an
+// id would be hidden whenever the first shows, and drop the value.
+// The field selects drop a value that is not one of their options, so the values
+// are a seeded acf row's own (a made-up one would fail for that reason alone).
+$seeded_acf = current(array_filter(
+    $settings[OptionRuleStorage::KIND_TERM] ?? [],
+    static fn($r) => ($r['relationship'] ?? '') === 'acf' && !empty($r['acf_field_name']) && !empty($r['reverse_acf_field_name'])
+));
+$note('the seeded term list holds an acf row with both relationship fields to borrow values from', is_array($seeded_acf));
+$acf_keys  = [
+    'relationship'           => 'acf',
+    'acf_field_name'         => (string) ($seeded_acf['acf_field_name'] ?? ''),
+    'holder_role'            => 'target',
+    'reverse_acf_field_name' => (string) ($seeded_acf['reverse_acf_field_name'] ?? ''),
+];
+$acf_copy  = array_merge($copy_row, $acf_keys);
+$acf_terms = array_merge(['type' => 'terms_from_related_post', 'enabled' => true, 'taxonomy' => ['mc_topic'], 'conflict_handling' => 'merge', 'row_title' => 'y'], $acf_keys);
+$both_out  = RepeaterField::sanitize([$acf_copy, $acf_terms], $field['args']);
+foreach (['copy' => 0, 'terms' => 1] as $which => $i) {
+    foreach (array_keys($acf_keys) as $key) {
+        $note("acf $which row '$key' survives sanitize in a list holding both", ($both_out[$i][$key] ?? '(DROPPED)') === $acf_keys[$key]);
+    }
+}
 
 echo $fail ? "\nSWEEP-59 FAIL: " . count($fail) . " failed\n" : "\nSWEEP-59 OK\n";
 exit($fail ? 1 : 0);

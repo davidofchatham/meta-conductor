@@ -213,21 +213,59 @@ class ConfigHelpers {
      * visible on a type that did not declare it (RuleType::subfields()). `when`
      * is the descriptor's input and is stripped: Wireframe never sees it.
      *
+     * One id is one control. Two types that declare an IDENTICAL subfield (the
+     * relationship block the two related-post types share) get it ONCE, at the
+     * first declarer's position, gated to every declarer: types whose `when` is
+     * equal share one `in` gate and the rest are joined by `any`. Declared
+     * twice, one copy would be hidden whenever the other shows, and Wireframe
+     * drops a hidden subfield's value on save. A same-id declaration that is NOT
+     * identical is kept as a second entry, so H11's unique-id check fails on it
+     * instead of the config guessing which wording wins.
+     *
      * @param string[] $types Stored type keys, in registry order.
      * @return array[]
      */
     public static function type_subfields(array $types): array {
-        $fields = [];
+        $fields  = [];
+        $merged  = [];
+        $readers = [];
+
         foreach ($types as $type) {
             foreach (Registry::get($type)->subfields() as $field) {
                 $when = (array) ($field['when'] ?? []);
                 unset($field['when']);
-                $field['conditions'] = self::gate([$type], $when);
-                $fields[]            = $field;
+                $id = (string) ($field['id'] ?? '');
+
+                if ($id !== '' && isset($merged[$id]) && $merged[$id]['body'] === $field) {
+                    $w = json_encode($when);
+                    if (isset($readers[$id][$w])) {
+                        $readers[$id][$w]['types'][] = $type;
+                    } else {
+                        $readers[$id][$w] = ['types' => [$type], 'when' => $when];
+                    }
+                    continue;
+                }
+
+                $key = $id !== '' && !isset($merged[$id]) ? $id : $id . '#' . count($fields);
+                if ($id !== '' && !isset($merged[$id])) {
+                    $merged[$id] = ['body' => $field];
+                }
+                $readers[$key][json_encode($when)] = ['types' => [$type], 'when' => $when];
+                $fields[]                          = ['key' => $key, 'field' => $field];
             }
         }
 
-        return $fields;
+        $out = [];
+        foreach ($fields as ['key' => $key, 'field' => $field]) {
+            $clauses = [];
+            foreach ($readers[$key] as $group) {
+                $clauses[] = self::gate($group['types'], $group['when']);
+            }
+            $field['conditions'] = count($clauses) === 1 ? $clauses[0] : ['any' => $clauses];
+            $out[]               = $field;
+        }
+
+        return $out;
     }
 
     /**
@@ -535,17 +573,18 @@ class ConfigHelpers {
      * the ACF-off notice, `acf_field_name`, `holder_role`,
      * `reverse_acf_field_name`, in that order.
      *
-     * The STRUCTURE is shared (ids, `when` gates, defaults, `required`,
-     * `columns`, option keys) so the two cannot drift: a drifted gate is a
-     * condition-hidden subfield that drops on save (architecture.md → *The
-     * ordered rule repeaters*). The COPY is the type's own, passed in verbatim
-     * so each call site keeps its strings literal for translation, and so
-     * none can carry a bare `{word}` (H12).
+     * The two types sit in ONE repeater (the Auto-Set list), so these are ONE
+     * set of subfields, not two: a stored value has a single control, and two
+     * declarations of one id would leave one of them hidden and dropping the
+     * value on save (architecture.md → *The ordered rule repeaters*). Both
+     * descriptors return this block and `type_subfields()` merges the identical
+     * declarations into one gated to both types. The wording is therefore the
+     * shared wording; what is specific to a type goes in a note gated to that
+     * type. No bare `{word}` in any string (H12).
      *
-     * @param array{parent_option:string,field_description:string,holder_label:string,holder_description:string,reverse_description:string} $copy
      * @return array[]
      */
-    public static function acf_relationship_subfields(array $copy): array {
+    public static function acf_relationship_subfields(): array {
         $acf = ['relationship' => 'acf'];
 
         $fields = [
@@ -559,7 +598,7 @@ class ConfigHelpers {
                 'columns'     => 12,
                 'args'        => [
                     'options' => [
-                        'parent' => $copy['parent_option'],
+                        'parent' => __('Parent post — a post takes the value from its parent', 'meta-conductor'),
                         'acf'    => AcfRelationship::is_available()
                             ? __('ACF relationship field — posts joined by a relationship or post-object field', 'meta-conductor')
                             : __('ACF relationship field — requires ACF, which is not active', 'meta-conductor'),
@@ -588,7 +627,7 @@ class ConfigHelpers {
                 'id'          => 'acf_field_name',
                 'type'        => 'select',
                 'label'       => __('Monitored relationship field', 'meta-conductor'),
-                'description' => $copy['field_description'],
+                'description' => __('The post-object or relationship field connecting the two posts. Watched at both ends — a change to either post re-syncs. The post type that OWNS this field is the "field holder"; "Source" below decides which end the value is copied from. Each option names its field group, so two fields sharing a name can be told apart. ⚠ Only top-level relationship/post-object fields are listed — fields nested inside an ACF Group, Repeater, or Flexible Content container are not shown and are not currently supported.', 'meta-conductor'),
                 'default'     => '',
                 'required'    => true,
                 'columns'     => 12,
@@ -600,8 +639,8 @@ class ConfigHelpers {
             [
                 'id'          => 'holder_role',
                 'type'        => 'radio',
-                'label'       => $copy['holder_label'],
-                'description' => $copy['holder_description'],
+                'label'       => __('Source (copied from)', 'meta-conductor'),
+                'description' => __('Which end is authoritative — its terms or field value are copied to the other end. The trigger is ambient (a change at either end re-syncs); this decides direction.', 'meta-conductor'),
                 'default'     => 'source',
                 'columns'     => 12,
                 'when'        => $acf,
@@ -616,7 +655,7 @@ class ConfigHelpers {
                 'id'          => 'reverse_acf_field_name',
                 'type'        => 'select',
                 'label'       => __('Reverse relationship field (optional)', 'meta-conductor'),
-                'description' => $copy['reverse_description'],
+                'description' => __('The inverse relationship field on the other end, if any. Speeds the reverse lookup and, in a push, orders the sources. Leave blank to auto-detect ACF bidirectional fields. ⚠ Only top-level relationship/post-object fields are listed — group/repeater/flexible-content-nested fields are not shown or supported. ⚠ With neither an explicit reverse field nor a detectable bidirectional field, the reverse lookup falls back to an unindexed query on every save — slow on large sites. Set this (or use an ACF bidirectional field) to avoid it.', 'meta-conductor'),
                 'default'     => '',
                 'columns'     => 12,
                 'when'        => $acf,

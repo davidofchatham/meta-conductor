@@ -243,7 +243,7 @@ $check('every rule type maps to its kind', array_map(
     'term_rules',
     'format_rules',
     'format_rules',
-    'format_rules',
+    'term_rules', // field_from_related_post: authored in the Auto-Set list, run by the format pass
 ]);
 $check('an unknown type maps to no kind', $storage->get_kind_for_type('nope_rules') === '');
 $check('an unknown kind reads as empty, not a fatal', $storage->get_kind_rules('nope') === []);
@@ -258,18 +258,36 @@ $migrated = array_merge(
 );
 $check('every config-migrated type is a known type',
     array_diff($migrated, $all_types) === []);
-$check('the term kind reports its migrated types — all six',
+$check('the term kind reports its migrated types — all seven',
     OptionRuleStorage::migrated_types_for_kind(OptionRuleStorage::KIND_TERM) === [
         'terms_from_related_post',
+        'field_from_related_post',
         'terms_from_date_window',
         'terms_from_trigger_term',
         'terms_from_term_hierarchy',
         'restrict_terms_by_level',
         'restrict_term_count',
     ]);
-$check('the format kind reports its migrated type (#59)',
+$check('the format kind reports its migrated types (#59)',
     OptionRuleStorage::migrated_types_for_kind(OptionRuleStorage::KIND_FORMAT)
-        === ['title_slug_from_pattern', 'field_from_pattern', 'field_from_related_post']);
+        === ['title_slug_from_pattern', 'field_from_pattern']);
+
+// A field copy is stored, read and addressed in the Auto-Set list, in the order
+// the author gave it — which is the list's order, not the order its pass runs in.
+$mixed = $storage_over([
+    OptionRuleStorage::KIND_TERM => [
+        ['type' => 'terms_from_term_hierarchy', 'taxonomy' => 'category', 'name' => 'first'],
+        ['type' => 'field_from_related_post', 'post_types' => ['event'], 'relationship' => 'parent', 'name' => 'copy'],
+        ['type' => 'terms_from_related_post', 'taxonomy' => 'category', 'name' => 'last'],
+    ],
+]);
+$check('a field copy reads back from the term list in authored order',
+    array_column($mixed->get_kind_rules(OptionRuleStorage::KIND_TERM), 'name') === ['first', 'copy', 'last']);
+$check('and get_rules() finds it by type there, with its own per-type id',
+    array_column($mixed->get_rules('field_from_related_post'), 'id') === [0]
+    && array_column($mixed->get_rules('field_from_related_post'), 'name') === ['copy']);
+$check('and the format list holds none of it',
+    $mixed->get_kind_rules(OptionRuleStorage::KIND_FORMAT) === []);
 
 // =============================================================================
 // 4. THE READ — projection, normalization, and the per-type `id`.

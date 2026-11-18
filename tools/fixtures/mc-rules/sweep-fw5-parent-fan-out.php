@@ -59,7 +59,7 @@ function mcff_copy( array $overrides = array() ) {
 }
 
 function mcff_author( array $rows ) {
-	mc_write_ordered_rules( $rows, OptionRuleStorage::KIND_FORMAT );
+	mc_write_split_rules( $rows );
 }
 
 function mcff_drain() {
