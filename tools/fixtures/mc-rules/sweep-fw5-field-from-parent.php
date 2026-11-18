@@ -8,7 +8,9 @@
  * made here and deleted after; the fixture's own posts are never written. The
  * source is `mc_cp_text` (text) and `mc_cp_list` (relationship, an array-valued
  * field); `mc_cp_display` is the target of a later pattern rule. One rule list
- * is authored per step through sweep-lib's `mc_write_ordered_rules()`.
+ * is authored per step through sweep-lib's `mc_write_split_rules()`: a copy row
+ * lands in the Auto-Set list and a pattern row in the Format & Transform list,
+ * and the format pass runs the Auto-Set list's rows first.
  *
  *   A  Contributing  a child takes the parent's non-empty value, overwrites its
  *                    own, and is NEVER cleared by an empty parent.
@@ -100,7 +102,7 @@ function mcfp_pattern() {
 }
 
 function mcfp_author( array $rows ) {
-	mc_write_ordered_rules( $rows, OptionRuleStorage::KIND_FORMAT );
+	mc_write_split_rules( $rows );
 }
 
 function mcfp_drain() {
@@ -233,7 +235,7 @@ try {
 	$pass = mc_assert( 'F a relationship list copies intact', mcfp_list( $c ), $list ) && $pass;
 
 	mcfp_set( $c, MCFP_LIST, array() );
-	$choice  = RuleChoice::encode( OptionRuleStorage::KIND_FORMAT, 0, StorageFactory::get_instance()->get_kind_rules( OptionRuleStorage::KIND_FORMAT )[0] );
+	$choice  = RuleChoice::encode( OptionRuleStorage::KIND_TERM, 0, StorageFactory::get_instance()->get_kind_rules( OptionRuleStorage::KIND_TERM )[0] );
 	$preview = ExistingPostsApplier::preview( $choice );
 	$shown   = null;
 	foreach ( (array) ( $preview['sample'] ?? array() ) as $entry ) {
@@ -262,8 +264,8 @@ try {
 	$pass = mc_assert( 'H before the rule the children are empty', array( mcfp_text( $c2 ), mcfp_text( $c3 ) ), array( '', '' ) ) && $pass;
 
 	mcfp_author( array( mcfp_copy( 'merge' ) ) );
-	$rows   = StorageFactory::get_instance()->get_kind_rules( OptionRuleStorage::KIND_FORMAT );
-	$result = ExistingPostsApplier::run_batch( RuleChoice::encode( OptionRuleStorage::KIND_FORMAT, 0, $rows[0] ) );
+	$rows   = StorageFactory::get_instance()->get_kind_rules( OptionRuleStorage::KIND_TERM );
+	$result = ExistingPostsApplier::run_batch( RuleChoice::encode( OptionRuleStorage::KIND_TERM, 0, $rows[0] ) );
 	WP_CLI::log( '[sweep] bulk: ' . wp_json_encode( array_intersect_key( $result, array_flip( array( 'status', 'processed', 'total', 'changed' ) ) ) ) );
 	mcfp_drain();
 	$pass = mc_assert( 'H Apply to Existing Posts backfills the children', array( mcfp_text( $c2 ), mcfp_text( $c3 ) ), array( 'P8', 'P8' ) ) && $pass;
@@ -376,27 +378,29 @@ try {
 	$pass = mc_assert( 'N …the repeater stays', $gp_rows( $c ), array( 'r1', 'r2' ) ) && $pass;
 
 	// --- O. collisions and the Apply report on a group (10) -----------------
-	$on_member = array_merge( mcfp_pattern(), array( 'target_field' => 'field_mc_gp_one' ) );
-	$found     = CollisionDetector::detect( OptionRuleStorage::KIND_FORMAT, OptionRuleStorage::project_kind_rules( array( $grp_rule( 'merge' ), $on_member ) ) );
+	// A copy collides with other COPIES (one list); it is no longer compared with
+	// a pattern rule on the same field, which lives in the other list.
+	$on_member = mcfp_copy( 'merge', 'field_mc_gp_one' );
+	$found     = CollisionDetector::detect( OptionRuleStorage::KIND_TERM, OptionRuleStorage::project_kind_rules( array( $grp_rule( 'merge' ), $on_member ) ) );
 	$pass      = mc_assert( 'O a group copy collides with a rule on one member, once', count( $found ), 1 ) && $pass;
 	$pass      = mc_assert( 'O the finding names the member', str_contains( CollisionDetector::message( $found[0] ), 'GP One' ), true ) && $pass;
-	$soft      = CollisionDetector::detect( OptionRuleStorage::KIND_FORMAT, OptionRuleStorage::project_kind_rules( array( $on_member, $grp_rule( 'skip' ) ) ) );
+	$soft      = CollisionDetector::detect( OptionRuleStorage::KIND_TERM, OptionRuleStorage::project_kind_rules( array( $on_member, $grp_rule( 'skip' ) ) ) );
 	$pass      = mc_assert( 'O a Deferring group copy collides at the lower severity', $soft[0]['severity'] ?? '', 'low' ) && $pass;
-	$other     = array_merge( mcfp_pattern(), array( 'target_field' => MCFP_DISPLAY ) );
-	$pass      = mc_assert( 'O a rule outside the group does not collide', CollisionDetector::detect( OptionRuleStorage::KIND_FORMAT, OptionRuleStorage::project_kind_rules( array( $grp_rule( 'merge' ), $other ) ) ), array() ) && $pass;
+	$other     = mcfp_copy( 'merge', MCFP_DISPLAY );
+	$pass      = mc_assert( 'O a rule outside the group does not collide', CollisionDetector::detect( OptionRuleStorage::KIND_TERM, OptionRuleStorage::project_kind_rules( array( $grp_rule( 'merge' ), $other ) ) ), array() ) && $pass;
 
 	mcfp_author( array( $grp_rule( 'merge' ) ) );
-	$names = ( new ReflectionMethod( ExistingPostsApplier::class, 'field_names' ) )->invoke( null, array( 'all' => true, 'kind' => FormatDispatcher::KIND, 'fingerprint' => '' ) );
+	$names = ( new ReflectionMethod( ExistingPostsApplier::class, 'field_names' ) )->invoke( null, array( 'all' => true, 'kind' => OptionRuleStorage::KIND_TERM, 'fingerprint' => '' ), null );
 	$pass  = mc_assert( 'O the Apply report lists every member a group copy writes', $names, array( 'mc_gp_one', 'mc_gp_two', 'mc_gp_rows', 'mc_gp_late' ) ) && $pass;
 
 	// --- P. a plain-meta target shows in the Apply report -------------------
 	mcfp_author( array( array_merge( mcfp_copy( 'replace' ), $meta ) ) );
-	$names = ( new ReflectionMethod( ExistingPostsApplier::class, 'field_names' ) )->invoke( null, array( 'all' => true, 'kind' => FormatDispatcher::KIND, 'fingerprint' => '' ) );
+	$names = ( new ReflectionMethod( ExistingPostsApplier::class, 'field_names' ) )->invoke( null, array( 'all' => true, 'kind' => OptionRuleStorage::KIND_TERM, 'fingerprint' => '' ), null );
 	$pass  = mc_assert( 'P the Apply report lists a plain-meta target by its name', $names, array( 'mc_pm_dst' ) ) && $pass;
 
 	add_post_meta( $p, 'mc_pm_src', 'report-me' );
 	delete_post_meta( $c, 'mc_pm_dst' );
-	$choice  = RuleChoice::encode( OptionRuleStorage::KIND_FORMAT, 0, StorageFactory::get_instance()->get_kind_rules( OptionRuleStorage::KIND_FORMAT )[0] );
+	$choice  = RuleChoice::encode( OptionRuleStorage::KIND_TERM, 0, StorageFactory::get_instance()->get_kind_rules( OptionRuleStorage::KIND_TERM )[0] );
 	$preview = ExistingPostsApplier::preview( $choice );
 	$shown   = null;
 	foreach ( (array) ( $preview['sample'] ?? array() ) as $entry ) {
@@ -409,10 +413,10 @@ try {
 
 	// --- Q. a meta name that matches an ACF field collides with a rule on it -
 	$to_acf_name = array_merge( mcfp_copy( 'replace' ), $meta, array( 'target_meta' => 'mc_cp_display' ) );
-	$found       = CollisionDetector::detect( OptionRuleStorage::KIND_FORMAT, OptionRuleStorage::project_kind_rules( array( $to_acf_name, mcfp_pattern() ) ) );
+	$found       = CollisionDetector::detect( OptionRuleStorage::KIND_TERM, OptionRuleStorage::project_kind_rules( array( $to_acf_name, mcfp_copy( 'replace', MCFP_DISPLAY ) ) ) );
 	$pass        = mc_assert( 'Q a plain-meta copy into an ACF field\'s name collides with a rule on that field', count( $found ), 1 ) && $pass;
 	$plain_name  = array_merge( $to_acf_name, array( 'target_meta' => 'mc_pm_no_such_field' ) );
-	$pass        = mc_assert( 'Q a name no ACF field answers to does not', CollisionDetector::detect( OptionRuleStorage::KIND_FORMAT, OptionRuleStorage::project_kind_rules( array( $plain_name, mcfp_pattern() ) ) ), array() ) && $pass;
+	$pass        = mc_assert( 'Q a name no ACF field answers to does not', CollisionDetector::detect( OptionRuleStorage::KIND_TERM, OptionRuleStorage::project_kind_rules( array( $plain_name, mcfp_pattern() ) ) ), array() ) && $pass;
 
 	// --- R. Owning copies an empty list as a list (the source's value) -------
 	mcfp_author( array( mcfp_copy( 'replace', MCFP_LIST ) ) );

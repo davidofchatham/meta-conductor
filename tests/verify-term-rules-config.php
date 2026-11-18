@@ -250,9 +250,13 @@ foreach ($subfields as $s) {
             $has_type_clause = true;
             $gate_covers     = array_merge($gate_covers, $c['value']);
         } elseif (!is_array($c)
-            || ($c['field'] ?? '') !== 'relationship'
             || ($c['operator'] ?? '') !== 'equals'
-            || !in_array($c['value'] ?? null, ['parent', 'acf'], true)) {
+            || !(
+                // The related-post types' second dimension.
+                (($c['field'] ?? '') === 'relationship' && in_array($c['value'] ?? null, ['parent', 'acf'], true))
+                // The field copy's meta-name boxes show while their select picks "a plain meta key".
+                || (in_array($c['field'] ?? '', ['source_field', 'copy_target'], true) && ($c['value'] ?? null) === '@meta')
+            )) {
             $gated_ok = false;
             break 2;
         }
@@ -271,12 +275,20 @@ $check('the descriptors\' `when` never reaches Wireframe',
 // --- Claim comes from the shared builder, not re-authored inline. -----------
 // The 0.8.0 claim vocabulary (CONTEXT.md → Claim) must not regress in the collapse.
 
+// The control is shared by the two related-post types, so its option wording is
+// type-neutral (what each claim means for a field is the field copy's note); the
+// vocabulary and the stored values are the builder's.
 $claim    = $by_id['conflict_handling'] ?? [];
 $expected = ConfigHelpers::claim_field('child', ['id' => 'conflict_handling']);
 $check('claim subfield exists',        !empty($claim));
-$check('claim options are the builder\'s',
-    ($claim['args']['options'] ?? null) === $expected['args']['options']);
-$check('claim label is the builder\'s', ($claim['label'] ?? null) === $expected['label']);
+$check('claim options store the builder\'s values, in its order',
+    array_keys($claim['args']['options'] ?? []) === array_keys($expected['args']['options']));
+$check('every claim option leads with the shared claim vocabulary word',
+    count(array_filter(
+        $claim['args']['options'] ?? [],
+        fn($label, $value) => str_starts_with($label, ucfirst(ConfigHelpers::claim_name($value)) . ':'),
+        ARRAY_FILTER_USE_BOTH
+    )) === 3);
 $check('claim default is the builder\'s', ($claim['default'] ?? null) === $expected['default']);
 
 // --- Vocabularies that live in more than one file must agree. ---------------
@@ -348,12 +360,36 @@ $check('the note actually says hierarchical',
 // is the descriptor's own declaration (`when` / `shared_field_when`), never a
 // hand-written list. A control wrongly gated drops its value on save.
 
-foreach (['acf_field_name', 'holder_role', 'reverse_acf_field_name', 'acf_taxonomy_note', 'acf_status_note'] as $acf_only) {
+foreach (['acf_taxonomy_note', 'acf_status_note'] as $acf_only) {
     $check("'$acf_only' gates on the merged type AND relationship = acf",
         $gate_of($acf_only) === ConfigHelpers::gate(['terms_from_related_post'], ['relationship' => 'acf']));
 }
-$check('the relationship select is ungated beyond the type (both relationships read it)',
-    $gate_of('relationship') === ConfigHelpers::gate(['terms_from_related_post']));
+// The relationship block is declared by BOTH related-post descriptors and must
+// exist ONCE: one control per stored value, gated to both types (a second copy
+// would be hidden whenever the first shows, and drop the value on save).
+$RELATED = ['terms_from_related_post', 'field_from_related_post'];
+foreach (['acf_field_name', 'holder_role', 'reverse_acf_field_name'] as $acf_only) {
+    $check("'$acf_only' is declared once and gates on both related-post types AND relationship = acf",
+        count(array_keys($ids, $acf_only, true)) === 1
+        && $gate_of($acf_only) === ConfigHelpers::gate($RELATED, ['relationship' => 'acf']));
+}
+$check('the relationship select is declared once, ungated beyond the type (both relationships read it, both types)',
+    count(array_keys($ids, 'relationship', true)) === 1
+    && $gate_of('relationship') === ConfigHelpers::gate($RELATED));
+$check('the field copy\'s own subfields are gated to it alone',
+    $gate_of('name') === ConfigHelpers::gate(['field_from_related_post'])
+    && $gate_of('source_field') === ConfigHelpers::gate(['field_from_related_post'])
+    && $gate_of('copy_target') === ConfigHelpers::gate(['field_from_related_post'])
+    && $gate_of('source_meta') === ConfigHelpers::gate(['field_from_related_post'], ['source_field' => '@meta'])
+    && $gate_of('target_meta') === ConfigHelpers::gate(['field_from_related_post'], ['copy_target' => '@meta']));
+$check('the note that says what the shared controls mean for a field copy shows for that type alone',
+    $gate_of('field_copy_note') === ConfigHelpers::gate(['field_from_related_post'])
+    && ($by_id['field_copy_note']['type'] ?? '') === 'html');
+$check('the field copy declares no claim or status of its own — it reads the shared ones',
+    !isset($by_id['conflict_handling']['conditions']['value'])
+    || in_array('field_from_related_post', $by_id['conflict_handling']['conditions']['value'], true));
+$check('post_status stays the one ungated shared control',
+    !isset($by_id['post_status']['conditions']));
 $check('the claim is shared by both relationships, so it has no relationship condition',
     ($gate_of('conflict_handling')['field'] ?? '') === 'type'
     && in_array('terms_from_related_post', $gate_of('conflict_handling')['value'] ?? [], true));
@@ -365,7 +401,7 @@ $check('the relationship select always offers parent and acf', array_keys($rel_o
 $check('without ACF the acf option is labeled "requires ACF" and a stored acf row shows the notice',
     function_exists('acf_get_field')
     || (str_contains($rel_options['acf'], 'requires ACF') && isset($by_id['acf_required_note'])
-        && $gate_of('acf_required_note') === ConfigHelpers::gate(['terms_from_related_post'], ['relationship' => 'acf'])));
+        && $gate_of('acf_required_note') === ConfigHelpers::gate($RELATED, ['relationship' => 'acf'])));
 $check('the claim help says Contributing withdraws a lost term on a parent relationship',
     str_contains($by_id['conflict_handling']['description'] ?? '', 'parent relationship')
     && str_contains($by_id['conflict_handling']['description'] ?? '', 'Contributing'));
@@ -407,6 +443,23 @@ $expected_visible = [
         'post_types', 'post_status', 'acf_status_note', 'conflict_handling', 'relationship',
         'acf_field_name', 'holder_role', 'reverse_acf_field_name', 'row_title',
     ], function_exists('acf_get_field') ? [] : ['acf_required_note']),
+    // The field copy (FW-5), authored in this list but run by the format pass.
+    // `source_meta` / `target_meta` show only while their select picks a plain
+    // meta key, so each is its own scenario.
+    'field_from_related_post/parent' => [
+        'type', 'enabled', 'name', 'relationship', 'post_types', 'post_status',
+        'conflict_handling', 'field_copy_note', 'source_field', 'copy_target', 'row_title',
+    ],
+    'field_from_related_post/parent+meta' => [
+        'type', 'enabled', 'name', 'relationship', 'post_types', 'post_status',
+        'conflict_handling', 'field_copy_note', 'source_field', 'source_meta',
+        'copy_target', 'target_meta', 'row_title',
+    ],
+    'field_from_related_post/acf' => array_merge([
+        'type', 'enabled', 'name', 'relationship', 'post_types', 'post_status',
+        'conflict_handling', 'field_copy_note', 'source_field', 'copy_target',
+        'acf_field_name', 'holder_role', 'reverse_acf_field_name', 'row_title',
+    ], function_exists('acf_get_field') ? [] : ['acf_required_note']),
     'terms_from_date_window' => [
         'type', 'enabled', 'post_types', 'post_status',
         'filter_taxonomies', 'filter_terms', 'start_date', 'end_date',
@@ -438,9 +491,12 @@ $expected_visible = [
 
 $scenarios = [];
 foreach ($TYPES as $type) {
-    if ($type === 'terms_from_related_post') {
+    if (in_array($type, $RELATED, true)) {
         $scenarios["$type/parent"] = [$type, ['relationship' => 'parent']];
-        $scenarios["$type/acf"]    = [$type, ['relationship' => 'acf']];
+        if ($type === 'field_from_related_post') {
+            $scenarios["$type/parent+meta"] = [$type, ['relationship' => 'parent', 'source_field' => '@meta', 'copy_target' => '@meta']];
+        }
+        $scenarios["$type/acf"] = [$type, ['relationship' => 'acf']];
     } else {
         $scenarios[$type] = [$type, []];
     }

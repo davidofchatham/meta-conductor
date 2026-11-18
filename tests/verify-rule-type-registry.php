@@ -51,6 +51,7 @@ $check = function (string $name, bool $cond) use (&$fail, &$total) {
 $expected = [
     OptionRuleStorage::KIND_TERM => [
         'terms_from_related_post',
+        'field_from_related_post',
         'terms_from_date_window',
         'terms_from_trigger_term',
         'terms_from_term_hierarchy',
@@ -60,10 +61,29 @@ $expected = [
     OptionRuleStorage::KIND_FORMAT => [
         'title_slug_from_pattern',
         'field_from_pattern',
-        'field_from_related_post',
     ],
 ];
-$expected_flat = array_merge(...array_values($expected));
+// The type-select order across both lists: the related-post pair adjacent.
+$expected_flat = [
+    'terms_from_related_post',
+    'field_from_related_post',
+    'terms_from_date_window',
+    'terms_from_trigger_term',
+    'terms_from_term_hierarchy',
+    'restrict_terms_by_level',
+    'restrict_term_count',
+    'title_slug_from_pattern',
+    'field_from_pattern',
+];
+// The pass that RUNS each type: the list it is authored in, except for the one
+// type authored beside the term rules that writes through the format seam.
+$expected_pass = array_fill_keys($expected_flat, null);
+foreach ($expected as $list => $types) {
+    foreach ($types as $type) {
+        $expected_pass[$type] = $list;
+    }
+}
+$expected_pass['field_from_related_post'] = OptionRuleStorage::KIND_FORMAT;
 
 $all = Registry::all();
 
@@ -90,6 +110,22 @@ foreach (OptionRuleStorage::all_types() as $type) {
     }
 }
 $check('an unknown type has no descriptor', Registry::get('nope_rules') === null);
+
+// pass() is the executor, kind() the list. They differ for exactly one type, and
+// each dispatcher owns exactly the types whose pass() it runs (never kind()).
+foreach ($expected_pass as $type => $pass) {
+    $check("$type: pass() is $pass", Registry::get($type)->pass() === $pass);
+}
+$check('exactly one type is authored in a list its pass does not run',
+    array_keys(array_filter($all, fn($d) => $d->pass() !== $d->kind())) === ['field_from_related_post']);
+$check('the field copy is a term-list row run by the format pass',
+    Registry::get('field_from_related_post')->kind() === OptionRuleStorage::KIND_TERM
+    && Registry::get('field_from_related_post')->pass() === OptionRuleStorage::KIND_FORMAT);
+foreach ($expected_flat as $type) {
+    $check("$type: owned by exactly the dispatcher its pass names",
+        \BWS\MetaConductor\Core\TermDispatcher::owns($type) === ($expected_pass[$type] === OptionRuleStorage::KIND_TERM)
+        && \BWS\MetaConductor\Core\FormatDispatcher::owns($type) === ($expected_pass[$type] === OptionRuleStorage::KIND_FORMAT));
+}
 
 // --- 3. Each descriptor is complete. ----------------------------------------
 

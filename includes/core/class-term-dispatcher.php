@@ -257,14 +257,15 @@ class TermDispatcher {
     }
 
     /**
-     * Whether a pass of this kind executes this rule type — its descriptor's
-     * `kind()`. False for a type with no descriptor.
+     * Whether this pass executes this rule type — its descriptor's `pass()`,
+     * not its `kind()`: a row in the Auto-Set list may run in the other pass.
+     * False for a type with no descriptor.
      *
      * @param string $rule_type Rule type key.
      * @return bool
      */
     public static function owns(string $rule_type): bool {
-        return Registry::get($rule_type)?->kind() === self::KIND;
+        return Registry::get($rule_type)?->pass() === self::KIND;
     }
 
     /**
@@ -505,7 +506,7 @@ class TermDispatcher {
      * One full ordered pass over one entity.
      *
      * Every enabled rule of this kind, in AUTHORED order, each recomputing from
-     * live state. A row of another kind's type is skipped (`owns()`). A row
+     * live state. A row another pass owns is skipped (`owns()`). A row
      * whose type has no descriptor is skipped and logged (`Registry::known()`).
      *
      * The lock is taken for the whole pass and released in `finally`, so a

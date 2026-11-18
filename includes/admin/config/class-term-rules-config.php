@@ -1,7 +1,10 @@
 <?php
 /**
- * The ordered term-rule list — one repeater for every rule whose effect is
- * "terms on a post" (architecture.md → The ordered rule repeaters, spec #53 §2, ticket #57).
+ * The Auto-Set & Restrict list — one repeater for every rule that sets terms,
+ * restricts terms, or mirrors a field in from a related post (architecture.md →
+ * The ordered rule repeaters, spec #53 §2, ticket #57). Its persisted key is
+ * `term_rules` and the constant is `KIND_TERM`, names that predate the field
+ * copy: they name the LIST, which is wider than "terms" (FW-5 placement; renaming is FW-72).
  *
  * Replaces the per-type sections that used to be spread across the Auto-Set
  * and Restrict tabs. One list, authored order, each row carrying its own
@@ -26,6 +29,16 @@
  *      the same mechanism. That is correct behavior (a parent-relationship rule's
  *      claim is meaningless on a date-window rule) but it is silent, so the
  *      `type` select says so in its own description.
+ *
+ * ## One list, two passes
+ *
+ * `field_from_related_post` is authored here, beside *Set terms from a related
+ * post*, but its descriptor's `pass()` is the format pass: it writes through
+ * the `$data` seam. So the order of this list is real among the rows of one
+ * pass and meaningless across the two (terms first, then fields and titles);
+ * the type's note says so. The two related-post types share one relationship
+ * block, merged by `ConfigHelpers::type_subfields()`, and the shared
+ * `post_types`, claim and `post_status` controls.
  *
  * ## Which types live here
  *
@@ -54,6 +67,7 @@
 namespace BWS\MetaConductor\Admin\Config;
 
 use BWS\MetaConductor\Admin\CollisionDetector;
+use BWS\MetaConductor\RuleTypes\FieldFromRelatedPostRules;
 use BWS\MetaConductor\RuleTypes\Registry;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 
@@ -137,26 +151,28 @@ class TermRulesConfig {
     public static function section(): array {
         return [
             'id'          => 'term_rules',
-            'title'       => __('Term rules, in order', 'meta-conductor'),
-            'description' => __('Every rule that sets or restricts terms on a post, in the order they run. Drag a rule up to let it act before the ones below it.', 'meta-conductor'),
-            'fields'      => [
+            'title'       => __('Rules, in order', 'meta-conductor'),
+            'description' => __('Every rule that sets or restricts terms on a post, or copies a field in from a related post, in the order they run. Drag a rule up to let it act before the ones below it. A field copy runs after the term rules and before the Format & Transform rules, so its order matters only among the field copies.', 'meta-conductor'),
+            'fields'      => array_values(array_filter([
+                // Null off the settings screen and when nothing is flagged.
+                FieldFromRelatedPostRules::loop_notice(),
                 [
                     'id'    => OptionRuleStorage::KIND_TERM,
                     'type'  => 'repeater',
-                    'label' => __('Term rules', 'meta-conductor'),
+                    'label' => __('Auto-Set & Restrict rules', 'meta-conductor'),
                     'args'  => [
                         'sortable'       => true,
                         'collapsible'    => true,
                         'collapsed'      => true,
                         'duplicate_row'  => true,
-                        'add_label'      => __('Add term rule', 'meta-conductor'),
-                        'empty_message'  => __('No term rules configured.', 'meta-conductor'),
+                        'add_label'      => __('Add rule', 'meta-conductor'),
+                        'empty_message'  => __('No rules configured.', 'meta-conductor'),
                         'title_template' => '{row_title}',
                         'subfields'      => self::subfields(),
                     ],
                 ],
                 ConfigHelpers::apply_page_note('term_rules_apply_note'),
-            ],
+            ])),
         ];
     }
 
@@ -324,7 +340,10 @@ class TermRulesConfig {
             // receiving post (empty = no extra narrowing). Every type that
             // reads the value is inside the gate, so nothing loses its scope.
             ConfigHelpers::post_types_field([
-                'conditions' => self::readers('post_types'),
+                'conditions'  => self::readers('post_types'),
+                // Type-neutral: the term rules treat none as every post type,
+                // a field copy treats it as nothing (its note says so).
+                'description' => __('Leave all unchecked to apply to every post type, unless the rule type\'s note below says otherwise.', 'meta-conductor'),
             ]),
             [
                 'id'         => 'hierarchical_post_type_note',
@@ -367,9 +386,32 @@ class TermRulesConfig {
             // have a claim fixed in code (#54 is where that gets stated).
             ConfigHelpers::claim_field('child', [
                 'id'          => 'conflict_handling',
-                'description' => __('What this rule does about terms the receiving post already has. Owning removes them on the next save or re-apply, not at edit time. Contributing only adds, except on a parent relationship, where it also withdraws a term the parent just lost.', 'meta-conductor'),
+                'label'       => __('Claim', 'meta-conductor'),
+                'description' => __('What this rule does about a value the receiving post already has. For terms, Owning removes the others on the next save or re-apply, not at edit time, and Contributing only adds, except on a parent relationship, where it also withdraws a term the parent just lost. A field copy\'s note says what each claim means for the field.', 'meta-conductor'),
                 'conditions'  => self::readers('conflict_handling'),
+                // One control for every type that reads it, so the wording is
+                // the shared wording; a type's own meaning is its note.
+                'args'        => [
+                    'options' => [
+                        'replace' => __('Owning: only what this rule sets is allowed here; anything else is removed', 'meta-conductor'),
+                        'merge'   => __('Contributing: add what this rule sets, leave everything else alone', 'meta-conductor'),
+                        'skip'    => __('Deferring: add only if the receiving post has nothing there yet', 'meta-conductor'),
+                    ],
+                ],
             ]),
+            [
+                // The field copy's reading of the three shared controls above
+                // (post types, claim, statuses). An `html` note carries no
+                // value, so gating it to the type that reads it loses nothing.
+                'id'         => 'field_copy_note',
+                'type'       => 'html',
+                'columns'    => 12,
+                'conditions' => self::readers('field_copy_note'),
+                'args'       => [
+                    'variant' => 'info',
+                    'content' => FieldFromRelatedPostRules::copy_note(),
+                ],
+            ],
         ];
     }
 }

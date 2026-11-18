@@ -174,7 +174,7 @@ $subfields = $field['args']['subfields'];
 
 // --- The repeater is bound to the persisted kind list. ----------------------
 
-$check('the format kind has its migrated types (#59)', $TYPES === ['title_slug_from_pattern', 'field_from_pattern', 'field_from_related_post']);
+$check('the format kind has its migrated types (#59)', $TYPES === ['title_slug_from_pattern', 'field_from_pattern']);
 $check('repeater binds the format kind list', $field['id'] === $KIND);
 $check('repeater is sortable (order is authored)', !empty($field['args']['sortable']));
 $check('row title template resolves the snapshot', $field['args']['title_template'] === '{row_title}');
@@ -230,9 +230,12 @@ foreach (['type', 'enabled', 'name', 'row_title'] as $shared) {
 $check('post_type is a single-value select, gated to title & slug',
     ($by_id['post_type']['type'] ?? '') === 'select'
     && ($by_id['post_type']['conditions']['value'] ?? null) === ['title_slug_from_pattern']);
-$check('post_types is a checkboxes list, shared by the two field rules and no one else',
+$check('post_types is a checkboxes list, read by the computed field rule and no one else',
     ($by_id['post_types']['type'] ?? '') === 'checkboxes'
-    && ($by_id['post_types']['conditions']['value'] ?? null) === ['field_from_pattern', 'field_from_related_post']);
+    && ($by_id['post_types']['conditions']['value'] ?? null) === ['field_from_pattern']);
+$check('the field copy is not in this list: it is authored in the Auto-Set list and run by this pass',
+    !isset($by_id['source_field']) && !isset($by_id['copy_target']) && !isset($by_id['relationship'])
+    && !in_array('field_from_related_post', $TYPES, true));
 $check('the computed field scope drops attachment and has no placeholder row',
     array_keys($by_id['post_types']['args']['options']) === ['post', 'page', 'mc_item']);
 $check('the computed field scope says none checked does nothing',
@@ -314,10 +317,6 @@ $expected_visible = [
     'field_from_pattern' => [
         'type', 'enabled', 'name', 'post_types',
         'target_field', 'pattern', 'output', 'row_title',
-    ],
-    'field_from_related_post' => [
-        'type', 'enabled', 'name', 'post_types',
-        'relationship', 'source_field', 'copy_target', 'conflict_handling', 'post_status', 'row_title',
     ],
 ];
 
@@ -412,6 +411,17 @@ $check('the output select offers text (the default) and html',
 
 // Set a field from a related post (FW-5 04). The handler's read contract, stated
 // apart from the visible-set above for the same reason.
+//
+// The type is AUTHORED in the Auto-Set list (it mirrors a value in) and only RUN
+// by the format pass, so its schema lives in `TermRulesConfig`'s repeater. These
+// checks need this file's ACF fixtures, so they stay here and read that repeater:
+// `$by_id` / `$subfields` point at it until the block ends. (H11 pins the gates.)
+$fmt_by_id     = $by_id;
+$fmt_subfields = $subfields;
+$term_repeater = current(array_filter(TermRulesConfig::section()['fields'], fn($f) => ($f['id'] ?? '') === OptionRuleStorage::KIND_TERM));
+$subfields     = $term_repeater['args']['subfields'];
+$by_id         = [];
+foreach ($subfields as $s) { $by_id[$s['id']] = $s; }
 $visible_copy = [];
 foreach ($subfields as $s) {
     if (Conditions::evaluate($s['conditions'] ?? null, ['type' => 'field_from_related_post'])) {
@@ -529,6 +539,8 @@ $check('a _-prefixed or empty meta name leaves the row unfinished at run time to
     && $copy->source_meta(['source_field' => '@meta', 'source_meta' => '']) === '');
 $check('a meta source is not an ACF key',
     $copy->source_key(['source_field' => '@meta']) === '' && $copy->is_meta_source(['source_field' => '@meta']));
+$by_id     = $fmt_by_id;
+$subfields = $fmt_subfields;
 // An untyped row (freshly added) shows the shared frame only.
 $untyped = [];
 foreach ($subfields as $s) {
@@ -576,18 +588,22 @@ $check('an unnamed computed field row is named rather than left blank',
 $check('a computed field row naming several post types lists them all',
     $title(['type' => 'field_from_pattern', 'name' => 'Display line', 'post_types' => ['mc_item', 'page'], 'target_field' => 'field_a'])
         === 'Display line — Display name (MC Items, Pages)');
+// The copy row is a row of the Auto-Set list, so its title is baked by that list's snapshot.
+$term_title = fn(array $row) => preg_replace('/^#\d+ /', '', WireframeBootstrap::snapshot_term_rule_labels(
+    [OptionRuleStorage::KIND_TERM => [$row]]
+)[OptionRuleStorage::KIND_TERM][0]['row_title']);
 $check('a copy row title names the field, the claim and the post type',
-    $title(['type' => 'field_from_related_post', 'name' => 'Venue', 'post_types' => ['mc_item'], 'source_field' => 'field_a', 'conflict_handling' => 'replace'])
+    $term_title(['type' => 'field_from_related_post', 'name' => 'Venue', 'post_types' => ['mc_item'], 'source_field' => 'field_a', 'conflict_handling' => 'replace'])
         === 'Venue — Copy Display name from parent (owning) (MC Items)');
 $copy_acf = ['type' => 'field_from_related_post', 'name' => 'Venue', 'post_types' => ['mc_item'], 'source_field' => 'field_a', 'conflict_handling' => 'replace', 'relationship' => 'acf'];
 $check('an acf copy row titles its direction: a push goes to related posts, a pull comes from them',
-    $title($copy_acf + ['holder_role' => 'source']) === 'Venue — Copy Display name to related posts (owning) (MC Items)'
-    && $title($copy_acf + ['holder_role' => 'target']) === 'Venue — Copy Display name from related posts (owning) (MC Items)'
-    && str_contains($title($copy_acf), 'from related posts'));
+    $term_title($copy_acf + ['holder_role' => 'source']) === 'Venue — Copy Display name to related posts (owning) (MC Items)'
+    && $term_title($copy_acf + ['holder_role' => 'target']) === 'Venue — Copy Display name from related posts (owning) (MC Items)'
+    && str_contains($term_title($copy_acf), 'from related posts'));
 $check('a copy row with no claim stored reads as contributing',
-    str_contains($title(['type' => 'field_from_related_post', 'name' => 'Venue', 'source_field' => 'field_a']), '(contributing)'));
+    str_contains($term_title(['type' => 'field_from_related_post', 'name' => 'Venue', 'source_field' => 'field_a']), '(contributing)'));
 $check('an unnamed copy row is named rather than left blank',
-    str_starts_with($title(['type' => 'field_from_related_post', 'post_types' => ['mc_item']]), 'Untitled copy-from-related-post rule'));
+    str_starts_with($term_title(['type' => 'field_from_related_post', 'post_types' => ['mc_item']]), 'Untitled copy-from-related-post rule'));
 // The uniform marker the term list gained in #57 — the whole reason the live
 // {name} template was replaced by a snapshot.
 $check('a disabled row carries the uniform prefix',

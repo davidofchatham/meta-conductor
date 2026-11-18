@@ -6,6 +6,8 @@ Build notes, recorded at lift: the write helper shipped as `Core\MetaWriter` and
 
 Status: built in [#91](https://github.com/davidofchatham/meta-conductor/pull/91), unreleased.
 
+Placement amended 2026-11-18, before release: the type is authored in the **Auto-Set & Restrict** list (`term_rules`), not the format list, and still runs in the format pass. The author's grouping is rules that mirror a value in versus rules that reformat what the post already holds. Story 35 does not hold as written: the copy can no longer be ordered among the format rules, because the format pass runs the Auto-Set list's rows first, so the copy always precedes a pattern rule; and the collision check no longer compares a copy with a pattern rule on one field (they are in different lists). The write path, applier seam, fan-out and everything else below stand. The stories and decisions below are left as written. See [architecture.md → A list is not a pass](../architecture.md#a-list-is-not-a-pass).
+
 Design settled in the 2026-11-11 grilling session and amended in the 2026-11-16 one; the `FW-5` row in docs/future-work.md carried the same decisions. Follow-ups cut from this spec: FW-71 (clear on detach, as an Owning option on both relationship rule types). Repeater-subfield targets are out of v1 and get a row only when a use case appears.
 
 ## Problem Statement

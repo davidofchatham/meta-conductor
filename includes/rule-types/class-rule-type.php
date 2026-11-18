@@ -38,12 +38,32 @@ abstract class RuleType {
     abstract public function type(): string;
 
     /**
-     * The kind list the type lives in: `OptionRuleStorage::KIND_TERM` or
-     * `KIND_FORMAT`.
+     * The persisted rule LIST the type is authored and stored in:
+     * `OptionRuleStorage::KIND_TERM` (the Auto-Set & Restrict list) or
+     * `KIND_FORMAT` (the Format & Transform list). Everything that handles the
+     * list as a list — storage, the repeater configs, the collision scan, the
+     * Apply picker — keys on this.
      *
      * @return string
      */
     abstract public function kind(): string;
+
+    /**
+     * The PASS that executes rows of this type: `KIND_TERM` (`TermDispatcher`)
+     * or `KIND_FORMAT` (`FormatDispatcher`). Everything that runs rows keys on
+     * this, never on `kind()`.
+     *
+     * The two coincide for every type but one. `field_from_related_post` is
+     * authored in the Auto-Set list (it mirrors a value in) but writes through
+     * the format pass's `$data` seam, so it is a `KIND_TERM` list row with a
+     * `KIND_FORMAT` pass. Order is authored among the rows of one pass; across
+     * the two passes it is fixed: terms, then fields and titles.
+     *
+     * @return string
+     */
+    public function pass(): string {
+        return $this->kind();
+    }
 
     /**
      * Author-facing label, as the `type` select shows it.

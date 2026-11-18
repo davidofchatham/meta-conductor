@@ -34,9 +34,11 @@
  *   8. The time-based cron sweep is still registered — outside the handler,
  *      which registers nothing — and ENQUEUES rather than removing
  *      terms itself: a provocation names entities, a pass decides their fate.
- *   9. Each pass runs exactly its own kind: `owns()` asks the descriptor's
- *      `kind()`, the pass filters through it, and no dispatcher keeps a
- *      hand-written type list.
+ *   9. Each pass runs exactly its own types: `owns()` asks the descriptor's
+ *      `pass()` (not `kind()`: the field copy is authored in the Auto-Set list
+ *      and run by the format pass), the pass filters through it, no dispatcher
+ *      keeps a hand-written type list, the format pass reads its rows from
+ *      BOTH lists, and the Apply path keys on the pass, never on the list.
  *  10. Cross-entity rules DECLARE their reach and the pass enqueues it: the
  *      `fan_out()` seam exists on the base, the pass marks what it returns
  *      dirty, and a handler that overrides it writes only the post it
@@ -83,14 +85,17 @@
 $root   = dirname(__DIR__);
 $errors = [];
 
-// Which types belong to each kind is the registry's answer (FW-39) — load it
-// rather than regex-read a list. Declaring the descriptors executes nothing.
+// Which types each PASS runs is the registry's answer (FW-39) — load it rather
+// than regex-read a list. Declaring the descriptors executes nothing. By pass(),
+// not kind(): the field copy sits in the Auto-Set list and runs in the format
+// pass, so every format-applier guard below must cover it.
 define('ABSPATH', $root . '/');
 define('BWS_META_CONDUCTOR_PATH', $root . '/');
 require $root . '/autoload.php';
-$kind_types = static fn(string $kind): array => array_keys(
-    \BWS\MetaConductor\RuleTypes\Registry::of_kind($kind)
-);
+$kind_types = static fn(string $pass): array => array_keys(array_filter(
+    \BWS\MetaConductor\RuleTypes\Registry::all(),
+    static fn($d): bool => $d->pass() === $pass
+));
 
 $dispatcher_file = $root . '/includes/core/class-term-dispatcher.php';
 if (!is_file($dispatcher_file)) {
@@ -594,8 +599,8 @@ foreach (
     $dsrc  = $strip_comments((string) file_get_contents($file));
     $owns  = $method_body($dsrc, 'owns');
     $pass  = $method_body($dsrc, $class === 'TermDispatcher' ? 'run_pass' : 'compute');
-    if ($owns === null || !preg_match('/Registry::get\(.*->kind\(\)\s*===\s*self::KIND/s', $owns)) {
-        $errors[] = "$class::owns() does not ask the registry for the type's kind — which types a pass runs must be derived from the descriptors (FW-39).";
+    if ($owns === null || !preg_match('/Registry::get\(.*->pass\(\)\s*===\s*self::KIND/s', $owns)) {
+        $errors[] = "$class::owns() does not ask the registry for the type's pass() — which types a pass runs must be derived from the descriptors (FW-39), and by the PASS, not the list a type is authored in.";
     }
     if ($pass === null || !preg_match('/self::owns\(/', $pass)) {
         $errors[] = "$class's pass does not filter its rows through self::owns() — a row of the other kind's type would reach this kind's applier seam.";
@@ -603,6 +608,30 @@ foreach (
     if (preg_match('/const\s+(?:CONVERTED_TYPES|UNCONVERTED_TYPES|CAPTURE_HOOKS|CAPTURE_QUEUE_TYPES)\b/', $dsrc, $lm)) {
         $errors[] = "$class declares a hand-kept type list ($lm[0]) — capture and ownership facts live on the descriptors (FW-39 ticket 11).";
     }
+}
+
+// The format pass runs the rows of BOTH persisted lists that it owns, the
+// Auto-Set list's first. Reading only its own list would silently drop the field
+// copy, which is authored in the other one.
+$fmt_src = $strip_comments((string) file_get_contents($root . '/includes/core/class-format-dispatcher.php'));
+$rows_fn = $method_body($fmt_src, 'pass_rows');
+if ($rows_fn === null
+    || !preg_match('/KIND_TERM\s*,\s*OptionRuleStorage::KIND_FORMAT/', $rows_fn)
+    || !preg_match('/self::owns\(/', $rows_fn)
+) {
+    $errors[] = 'FormatDispatcher::pass_rows() does not read BOTH persisted lists (Auto-Set first) and filter to the types it owns — a field copy is authored in the Auto-Set list and would never run.';
+}
+$ordered_fn = $method_body($fmt_src, 'ordered_rules');
+if ($ordered_fn === null || !preg_match('/self::pass_rows\(/', $ordered_fn)) {
+    $errors[] = 'FormatDispatcher::ordered_rules() does not go through pass_rows() — the format pass would read one list only.';
+}
+
+// The Apply path decides which dispatcher a chosen row belongs to by the row's
+// TYPE (owns()), never by the list the choice names: a field copy is chosen from
+// the Auto-Set list and must be previewed, included and reported by the format pass.
+$apply_src = $strip_comments((string) file_get_contents($root . '/includes/core/class-existing-posts-applier.php'));
+if (preg_match('/\$choice\[\s*\'kind\'\s*\]\s*[=!]==?\s*(?:FormatDispatcher::KIND|OptionRuleStorage::KIND_)/', $apply_src)) {
+    $errors[] = "ExistingPostsApplier compares the choice's list to a pass constant — a row's pass is FormatDispatcher::owns()/TermDispatcher::owns() of its type, because the list it is authored in is not the pass that runs it.";
 }
 
 // --- 10. The declared fan-out ----------------------------------------------

@@ -184,8 +184,8 @@ JS);
         ];
 
         foreach ([
-            OptionRuleStorage::KIND_TERM   => [__('Term rules', 'meta-conductor'), $term_rows],
-            OptionRuleStorage::KIND_FORMAT => [__('Format rules', 'meta-conductor'), $format_rows],
+            OptionRuleStorage::KIND_TERM   => [__('Auto-Set & Restrict', 'meta-conductor'), $term_rows],
+            OptionRuleStorage::KIND_FORMAT => [__('Format & Transform', 'meta-conductor'), $format_rows],
         ] as $kind => [$group, $rows]) {
             foreach (array_values($rows) as $position => $row) {
                 // The snapshot is escaped HTML; the select renders text.

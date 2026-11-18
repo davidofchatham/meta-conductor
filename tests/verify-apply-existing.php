@@ -282,22 +282,27 @@ $check('options: placeholder, All enabled rules, term rows, then format rows',
 $check('every row value decodes back to its own row',
     RuleChoice::resolve(RuleChoice::decode($values[3]), $terms) === $terms[1]);
 $check('a disabled row is prefixed (disabled), its stored marker dropped and entities decoded',
-    $options[$values[3]] === 'Term rules: #2 (disabled) Tags & more');
+    $options[$values[3]] === 'Auto-Set & Restrict: #2 (disabled) Tags & more');
 $check('an enabled row carries its kind and position',
-    $options[$values[2]] === 'Term rules: #1 H1'
-    && $options[$values[5]] === 'Format rules: #1 T1 (Posts)');
+    $options[$values[2]] === 'Auto-Set & Restrict: #1 H1'
+    && $options[$values[5]] === 'Format & Transform: #1 T1 (Posts)');
 $check('a stale stored position is replaced by the real one',
     ApplyPage::choice_options([], [['type' => 'title_slug_from_pattern', 'row_title' => '#9 X']] )[RuleChoice::encode($KIND_FORMAT, 0, ['type' => 'title_slug_from_pattern', 'row_title' => '#9 X'])]
-    === 'Format rules: #1 X');
+    === 'Format & Transform: #1 X');
 $check('an untitled row is labeled by its type',
-    in_array('Format rules: #1 title_slug_from_pattern', ApplyPage::choice_options([], [['type' => 'title_slug_from_pattern']]), true));
+    in_array('Format & Transform: #1 title_slug_from_pattern', ApplyPage::choice_options([], [['type' => 'title_slug_from_pattern']]), true));
 $cf_titled = ['type' => 'field_from_pattern', 'row_title' => '#2 Display — Display name (Books)', 'post_types' => ['book']];
 $check('a Computed field rule is offered in the format group with its own row title',
-    in_array('Format rules: #2 Display — Display name (Books)', ApplyPage::choice_options([], [$formats[0], $cf_titled]), true));
+    in_array('Format & Transform: #2 Display — Display name (Books)', ApplyPage::choice_options([], [$formats[0], $cf_titled]), true));
 $check('and its value decodes back to its own row',
     RuleChoice::resolve(RuleChoice::decode(RuleChoice::encode($KIND_FORMAT, 1, $cf_titled)), [$formats[0], $cf_titled]) === $cf_titled);
+$copy_row = ['type' => 'field_from_related_post', 'row_title' => '#1 Season — Copy a field from parent (Contributing)'];
+$check('a field copy is offered with the Auto-Set rows it is authored among, though it runs in the format pass',
+    in_array('Auto-Set & Restrict: #1 Season — Copy a field from parent (Contributing)', ApplyPage::choice_options([$copy_row], []), true));
+$check('and its value names the list it is stored in, which is where the stale check re-reads it',
+    str_starts_with(RuleChoice::encode($KIND_TERM, 0, $copy_row), 'term_rules:0:'));
 $check('a row with no descriptor is marked in the dropdown',
-    in_array('Term rules: #1 (unknown type) nope_rules', ApplyPage::choice_options([['type' => 'nope_rules']], []), true));
+    in_array('Auto-Set & Restrict: #1 (unknown type) nope_rules', ApplyPage::choice_options([['type' => 'nope_rules']], []), true));
 
 // --- 7. FW-56: a multi-taxonomy row is ONE choice. --------------------------
 //

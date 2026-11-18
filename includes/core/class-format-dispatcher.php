@@ -99,7 +99,7 @@ if (!defined('ABSPATH')) {
  */
 class FormatDispatcher {
 
-    /** The effect kind this dispatcher owns. One dispatcher per kind (#64). */
+    /** The pass this dispatcher runs, and its lock key. One dispatcher per pass (#64). */
     public const KIND = OptionRuleStorage::KIND_FORMAT;
 
     /**
@@ -170,14 +170,42 @@ class FormatDispatcher {
     }
 
     /**
-     * Whether a pass of this kind executes this rule type — its descriptor's
-     * `kind()`. False for a type with no descriptor.
+     * Whether this pass executes this rule type — its descriptor's `pass()`,
+     * not its `kind()`: a field copy is authored in the Auto-Set list and runs
+     * here. False for a type with no descriptor.
      *
      * @param string $rule_type Rule type key.
      * @return bool
      */
     public static function owns(string $rule_type): bool {
-        return Registry::get($rule_type)?->kind() === self::KIND;
+        return Registry::get($rule_type)?->pass() === self::KIND;
+    }
+
+    /**
+     * The rows this pass runs, in order: the enabled ones, plus the included
+     * row if any.
+     *
+     * Rows come from BOTH persisted lists, filtered to the types this pass
+     * owns. The Auto-Set list's rows go first: that is the fixed cross-pass
+     * order (a copied value is there for a pattern to read), and within each
+     * list the order is the author's.
+     *
+     * @param string|null $include Fingerprint of a disabled row to run anyway.
+     * @return array[] Rows carrying `type`.
+     */
+    public static function pass_rows(?string $include): array {
+        $storage = StorageFactory::get_instance();
+        $rows    = [];
+
+        foreach ([OptionRuleStorage::KIND_TERM, OptionRuleStorage::KIND_FORMAT] as $list) {
+            foreach (RuleChoice::pass_rows($storage->get_kind_rules($list), $include) as $row) {
+                if (self::owns((string) ($row['type'] ?? ''))) {
+                    $rows[] = $row;
+                }
+            }
+        }
+
+        return $rows;
     }
 
     /**
@@ -666,15 +694,12 @@ class FormatDispatcher {
     }
 
     /**
-     * The enabled rules of this kind, plus the included row if any, in
-     * authored order.
+     * The enabled rules this pass runs, plus the included row if any. See
+     * `pass_rows()` for the order.
      *
      * @return array[] Rows carrying `type`.
      */
     private function ordered_rules(): array {
-        return RuleChoice::pass_rows(
-            StorageFactory::get_instance()->get_kind_rules(self::KIND),
-            self::$included
-        );
+        return self::pass_rows(self::$included);
     }
 }

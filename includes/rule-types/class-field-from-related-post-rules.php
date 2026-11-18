@@ -23,8 +23,10 @@ if (!defined('ABSPATH')) {
 
 /**
  * Copies one ACF field's raw value from a related post onto the receiving post.
- * A format-kind row beside the pattern rules: the handler returns the value in
- * the seam's data array and the dispatcher writes it.
+ * Authored in the Auto-Set & Restrict list beside *Set terms from a related
+ * post* (both mirror a value in from another post) but executed by the format
+ * pass: the handler returns the value in the seam's data array and the
+ * dispatcher writes it. `kind()` is the list, `pass()` the executor.
  *
  * Source and target are each an ACF field (by key) or a plain meta key. The
  * target is *Same* (the source's own field or meta name) unless the author picks
@@ -50,6 +52,15 @@ final class FieldFromRelatedPostRules extends RuleType {
     }
 
     public function kind(): string {
+        return OptionRuleStorage::KIND_TERM;
+    }
+
+    /**
+     * Runs in the format pass, so it writes through the `$data` seam and the
+     * dispatcher's one write site. The Auto-Set list's rows go first in that
+     * pass, so a pattern rule reads the value this one just copied.
+     */
+    public function pass(): string {
         return OptionRuleStorage::KIND_FORMAT;
     }
 
@@ -300,11 +311,20 @@ final class FieldFromRelatedPostRules extends RuleType {
     }
 
     /**
-     * `post_types` is the format list's shared scope (see
-     * `FieldFromPatternRules::reads_shared_fields()`).
+     * The shared scope and claim, plus the note that says what they mean here.
+     * The Auto-Set list's scope offers every public post type, attachment
+     * included, where the format list drops it; a copy scoped to
+     * media is accepted, not refused.
+     *
+     * `post_types` and `conflict_handling` are the Auto-Set list's shared
+     * subfields, and `post_status` its ungated one. The controls are shared; the
+     * semantics are this type's, and `field_copy_note` states them (none checked
+     * means NOTHING, not every type; the claim is on the field; the status is
+     * the source's). A type that reads a shared value must be in its gate or the
+     * value drops on save (architecture.md → *The ordered rule repeaters*).
      */
     public function reads_shared_fields(): array {
-        return ['post_types'];
+        return ['post_types', 'conflict_handling', 'field_copy_note'];
     }
 
     /**
@@ -323,13 +343,20 @@ final class FieldFromRelatedPostRules extends RuleType {
      */
     public function subfields(): array {
         $fields = [
-            ...ConfigHelpers::acf_relationship_subfields([
-                'parent_option'       => __('Parent post — a post takes the field from its parent', 'meta-conductor'),
-                'field_description'   => __('The post-object or relationship field connecting the two posts. The post type that OWNS this field is the "field holder"; "Source" below decides which end the value is copied from. Only one related post counts as the source: the first one that holds a value, taken in the order the field lists its posts (pull), or in the order the reverse field lists them, else by ascending post ID (push). Each option names its field group, so two fields sharing a name can be told apart. ⚠ Only top-level relationship/post-object fields are listed.', 'meta-conductor'),
-                'holder_label'        => __('Source (field copied from)', 'meta-conductor'),
-                'holder_description'  => __('Which end is authoritative — its value is copied to the other end. The trigger is ambient (a change at either end re-syncs); this decides direction.', 'meta-conductor'),
-                'reverse_description' => __('The inverse relationship field on the other end, if any. Speeds the reverse lookup and, in a push, orders the sources. Leave blank to auto-detect ACF bidirectional fields. ⚠ With neither an explicit reverse field nor a detectable bidirectional field, the reverse lookup falls back to an unindexed query on every save — slow on large sites. Set this (or use an ACF bidirectional field) to avoid it.', 'meta-conductor'),
-            ]),
+            [
+                // The author's own label for the row; the row-title snapshot
+                // reads it. Own to this type here because the Auto-Set list's
+                // shared frame has no `name`.
+                'id'       => 'name',
+                'type'     => 'text',
+                'label'    => __('Rule name', 'meta-conductor'),
+                'required' => true,
+                'columns'  => 12,
+                'args'     => [
+                    'placeholder' => __('e.g. Season label from team', 'meta-conductor'),
+                ],
+            ],
+            ...ConfigHelpers::acf_relationship_subfields(),
             [
                 'id'          => 'source_field',
                 'type'        => 'select',
@@ -358,24 +385,31 @@ final class FieldFromRelatedPostRules extends RuleType {
                 ],
             ],
             self::meta_name_field('target_meta', 'copy_target', __('Meta key to write', 'meta-conductor'), __('The plain post meta key written on the receiving post. A key starting with an underscore is refused.', 'meta-conductor')),
-            ConfigHelpers::claim_field('post', [
-                'id'          => 'conflict_handling',
-                'label'       => __('Claim on the field', 'meta-conductor'),
-                'description' => __('Owning makes the field always equal the parent\'s, including empty. Contributing writes a value the parent holds and never clears. Deferring fills the field only while it is empty. A post with no eligible parent is always left alone.', 'meta-conductor'),
-                'args'        => [
-                    'options' => [
-                        'replace' => __('Owning: the field always equals the parent\'s, including when the parent\'s is empty', 'meta-conductor'),
-                        'merge'   => __('Contributing: copy the parent\'s value when it has one, never clear', 'meta-conductor'),
-                        'skip'    => __('Deferring: copy only into a field that is empty', 'meta-conductor'),
-                    ],
-                ],
-            ]),
-            ConfigHelpers::post_status_field([
-                'description' => __('The status the source must have: a parent (or, with an ACF field, a related post) that does not have one of the checked statuses is ignored and the receiving post keeps its value. With the parent, the receiving post must have one of them too. Leave all unchecked to apply to every status.', 'meta-conductor'),
-            ]),
         ];
 
         return $fields;
+    }
+
+    /**
+     * What the Auto-Set list's shared scope, claim and status controls mean
+     * for a field copy. Declared once by the term config's `field_copy_note`
+     * (an `html` note carries no value, so it is gated to the types that read
+     * it) and read from here so the wording lives with the type.
+     *
+     * No bare `{word}` (H12): `html` content interpolates `{word}` against the
+     * row.
+     */
+    public static function copy_note(): string {
+        $items = [
+            __('Post types: check at least one. None checked means the rule does nothing, not every post type, because a field written on a post type whose ACF group lacks it would be stored as orphan meta.', 'meta-conductor'),
+            __('Claim: Owning makes the field always equal the source\'s value, including when that is empty. Contributing copies a value the source holds and never clears. Deferring fills the field only while it is empty. A post with no eligible source is always left alone.', 'meta-conductor'),
+            __('Post statuses: the source must have one of the checked statuses, or it is ignored and the receiving post keeps its value. With the parent, the receiving post must have one of them too.', 'meta-conductor'),
+            __('Source: with an ACF relationship only one related post counts, the first that holds a value, taken in the order the field lists its posts (pull), or in the order the reverse field lists them, else by ascending post ID (push).', 'meta-conductor'),
+        ];
+
+        return '<p><strong>' . esc_html__('Set a field from a related post', 'meta-conductor') . '</strong></p><ul style="margin:4px 0 0 18px;list-style:disc;">'
+            . implode('', array_map(static fn(string $i): string => '<li>' . esc_html($i) . '</li>', $items))
+            . '</ul>';
     }
 
     /**
@@ -441,7 +475,7 @@ final class FieldFromRelatedPostRules extends RuleType {
 
         $stored = get_option(OptionRuleStorage::OPTION_NAME, []);
         $out    = [];
-        foreach ((array) (is_array($stored) ? ($stored[OptionRuleStorage::KIND_FORMAT] ?? []) : []) as $row) {
+        foreach ((array) (is_array($stored) ? ($stored[OptionRuleStorage::KIND_TERM] ?? []) : []) as $row) {
             $value = is_array($row) ? trim((string) ($row[$field] ?? '')) : '';
             if ($value !== '' && $value !== self::META) {
                 /* translators: %s: the stored ACF field or group key */

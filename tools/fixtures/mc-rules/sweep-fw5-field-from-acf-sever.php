@@ -79,7 +79,7 @@ function mcfs_shown( $item ) {
 }
 
 mc_isolate( array() );
-mc_write_ordered_rules( array(), OptionRuleStorage::KIND_FORMAT );
+mc_write_split_rules( array() );
 
 $ids  = array();
 $pass = true;
@@ -90,7 +90,7 @@ try {
 		case 'sever-merge':
 		case 'sever-skip':
 			$claim = array( 'sever-replace' => 'replace', 'sever-merge' => 'merge', 'sever-skip' => 'skip' )[ $step ];
-			mc_write_ordered_rules( array( mcfs_push( $claim ) ), OptionRuleStorage::KIND_FORMAT );
+			mc_write_split_rules( array( mcfs_push( $claim ) ) );
 			$s    = mcfs_post( 'mc_section', 'FW5 sever S' );
 			$item = mcfs_post( 'mc_item', 'FW5 sever Item' );
 			$ids  = array( $s, $item );
@@ -103,7 +103,7 @@ try {
 			break;
 
 		case 'delete':
-			mc_write_ordered_rules( array( mcfs_push( 'replace' ) ), OptionRuleStorage::KIND_FORMAT );
+			mc_write_split_rules( array( mcfs_push( 'replace' ) ) );
 			$s    = mcfs_post( 'mc_section', 'FW5 delete S' );
 			$item = mcfs_post( 'mc_item', 'FW5 delete Item' );
 			$ids  = array( $item );
@@ -125,7 +125,7 @@ try {
 			$b['holder_role']    = 'target';
 			$b['copy_target']    = '@meta';
 			$b['target_meta']    = 'mc_fw5_other';
-			mc_write_ordered_rules( array( mcfs_push( 'replace' ), $b ), OptionRuleStorage::KIND_FORMAT );
+			mc_write_split_rules( array( mcfs_push( 'replace' ), $b ) );
 			$s    = mcfs_post( 'mc_section', 'FW5 other S' );
 			$item = mcfs_post( 'mc_item', 'FW5 other Item' );
 			$ids  = array( $s, $item );
@@ -152,7 +152,7 @@ try {
 				'target_meta'       => 'mc_fw5_cycle',
 				'conflict_handling' => 'replace',
 			);
-			mc_write_ordered_rules( array( $row ), OptionRuleStorage::KIND_FORMAT );
+			mc_write_split_rules( array( $row ) );
 			$a   = mcfs_post( 'mc_section', 'FW5 cycle A' );
 			$b2  = mcfs_post( 'mc_section', 'FW5 cycle B' );
 			$ids = array( $a, $b2 );

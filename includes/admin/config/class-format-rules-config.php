@@ -31,9 +31,9 @@
  * it, including the post-type scope: `title_slug_from_pattern` owns a SCALAR
  * `post_type` select (the format pass is first-match-wins per rule type, so
  * the value is a lookup key into a table keyed by post type), whereas the
- * rules that compose in list order (`field_from_pattern`,
- * `field_from_related_post`) share one `post_types` checkboxes list, gated by
- * `ConfigHelpers::readers()` from their `reads_shared_fields()`. The two are
+ * rule that composes in list order (`field_from_pattern`) has a `post_types`
+ * checkboxes list, gated by `ConfigHelpers::readers()` from its
+ * `reads_shared_fields()`. The two are
  * different questions, which is why they are two subfields and not one.
  *
  * The stored `type` value is the rule type's id verbatim (`title_slug_from_pattern`),
@@ -51,7 +51,6 @@ namespace BWS\MetaConductor\Admin\Config;
 
 use BWS\MetaConductor\Admin\CollisionDetector;
 use BWS\MetaConductor\Admin\DuplicateNameNotice;
-use BWS\MetaConductor\RuleTypes\FieldFromRelatedPostRules;
 use BWS\MetaConductor\RuleTypes\Registry;
 use BWS\MetaConductor\Storage\OptionRuleStorage;
 
@@ -125,7 +124,6 @@ class FormatRulesConfig {
                 ConfigHelpers::token_reference_field(),
                 // Null off the settings screen and when nothing is duplicated.
                 DuplicateNameNotice::field(),
-                FieldFromRelatedPostRules::loop_notice(),
                 [
                     'id'    => OptionRuleStorage::KIND_FORMAT,
                     'type'  => 'repeater',
