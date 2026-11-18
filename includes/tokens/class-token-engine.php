@@ -81,6 +81,42 @@ final class TokenEngine {
     }
 
     /**
+     * Whether the pattern has tokens and EVERY one is a cross-post token
+     * (`parent:<inner>`, `refs:<field>:<inner>`) whose related post the status
+     * gate holds back (`GatedTokenSource`, FW-67). The caller skips such a
+     * pattern and leaves what it would have written alone.
+     *
+     * Only the gate counts. Literals are ignored; an own-post token, a bound
+     * variable, a malformed token and a cross-post token with nothing related
+     * (or with a published source that just has no value) are all USABLE, so a
+     * pattern holding one still renders, dropping the held-back tokens like any
+     * empty token. Reads `related()` only, one relationship read per cross-post
+     * token, so a caller that gates and then renders reads each twice.
+     */
+    public static function all_gated(string $pattern, TokenSourceInterface $source): bool {
+        $tokens = self::tokens($pattern);
+        if (!$tokens) return false;
+
+        foreach ($tokens as $token) {
+            [$kind, $arg] = self::split($token);
+            if ($arg === null || $arg === '') return false;
+
+            if ($kind === 'parent') {
+                $related = $source->related('parent');
+            } elseif ($kind === 'refs') {
+                [$field, $inner] = array_pad(explode(':', $arg, 2), 2, '');
+                if ($field === '' || $inner === '') return false;
+                $related = $source->related('refs', $field);
+            } else {
+                return false;
+            }
+
+            if (!$related instanceof GatedTokenSource) return false;
+        }
+        return true;
+    }
+
+    /**
      * The field names a pattern reads — the argument of every `meta:` and
      * `date_<part>:` token, in order, repeats included.
      *

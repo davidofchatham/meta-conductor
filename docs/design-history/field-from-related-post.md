@@ -128,7 +128,7 @@ A good test here drives real saves and relationship edits through the dispatcher
 - Field-config compatibility checks beyond field type.
 - Child → parent copying on the parent relationship.
 - Token-declared `refs` fan-out and reverse direction: FW-68.
-- A status gate on cross-post tokens: FW-67.
+- A status gate on cross-post tokens: FW-67, since shipped.
 - Fixing FW-11's unindexed tier-3 reverse lookup; this rule uses it as the term side does, with the same config warning.
 
 ## Further Notes

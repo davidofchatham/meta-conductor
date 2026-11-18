@@ -554,6 +554,42 @@ $check('post source: no parent, a parent that is gone, or a relation it lacks, i
     $pt([])->related('parent') === null && $pt(['post_parent' => 0])->related('parent') === null
     && $pt(['post_parent' => 99])->related('parent') === null && $pt(['post_parent' => 7])->related('nope') === null);
 $check('post source: its own slug is the row post_name', $pt(['post_name' => 'mine'])->slug() === 'mine' && $pt([])->slug() === '');
+// --- Source status gate (FW-67). ------------------------------------------------
+// A related post that is not published is a GATED source: `related()` answers a
+// `GatedTokenSource` that says nothing, so the token renders empty, and the engine can
+// tell "held back" from "nothing related" (null). Expected values are worked by hand.
+$gated = \BWS\MetaConductor\Tokens\GatedTokenSource::class;
+$GLOBALS['mc_slugs'] += [21 => 'draft-parent', 22 => 'pending-parent', 23 => 'private-parent', 24 => 'trash-parent', 25 => 'scheduled-parent'];
+$GLOBALS['mc_status'] += [21 => 'draft', 22 => 'pending', 23 => 'private', 24 => 'trash', 25 => 'future'];
+foreach ([21 => 'draft', 22 => 'pending', 23 => 'private', 24 => 'trash', 25 => 'future'] as $pid => $status) {
+    $rel = $pt(['post_parent' => $pid])->related('parent');
+    $check("post source: a $status parent is gated, and answers nothing",
+        $rel instanceof $gated && $rel->slug() === '' && $rel->field('x') === '' && $rel->terms('t') === []
+        && $rel->published() === null && $rel->modified() === null && $rel->related('parent') === null);
+}
+$check('post source: a published parent is not gated', !($pt(['post_parent' => 7])->related('parent') instanceof $gated));
+$check('post source: a parent that is gone is no source, not a gated one', $pt(['post_parent' => 99])->related('parent') === null);
+// `all_gated()`: true when the pattern has tokens and EVERY one is a cross-post token whose
+// source is held back. Literals never count; an own, bound or merely empty token is usable.
+$held      = new \BWS\MetaConductor\Tokens\GatedTokenSource();
+$open      = new FakeTokenSource(['name' => 'Harbor Light'], [], null, null, 'harbor-light');
+$gsrc      = new FakeTokenSource(['a' => 'Alpha'], [], null, null, '', ['parent' => $held, 'refs:venue' => $held, 'refs:open' => $open]);
+$ag        = static fn(string $p, ?TokenSourceInterface $s = null) => TokenEngine::all_gated($p, $s ?? $gsrc);
+$check('all_gated: a held-back parent token', $ag('{parent:slug}') && $ag('{parent:meta:name}'));
+$check('all_gated: a held-back refs token', $ag('{refs:venue:slug}'));
+$check('all_gated: several tokens, all held back', $ag('{parent:slug} / {refs:venue:meta:x} {parent:pub_year}'));
+$check('all_gated: literals around the tokens do not count', $ag('Event: {parent:slug}-{refs:venue:slug}!'));
+$check('all_gated: one own token makes it usable', !$ag('{meta:a} {parent:slug}') && !$ag('{parent:slug} {pub_year}'));
+$check('all_gated: one open cross-post token makes it usable', !$ag('{parent:slug} {refs:open:meta:name}'));
+$check('all_gated: a bound variable counts as usable', !$ag('{default_title} {parent:slug}'));
+$check('all_gated: no related post is not held back', !$ag('{parent:slug}', new FakeTokenSource(['a' => 'Alpha'])) && !$ag('{refs:none:slug}'));
+$check('all_gated: a pure literal, an empty pattern and a malformed token are not',
+    !$ag('Event') && !$ag('') && !$ag('{parent}') && !$ag('{refs:venue}') && !$ag('{refs::slug}') && !$ag('{nope:x}'));
+$check('all_gated: a repeater row resolves no relation, so is never held back',
+    !TokenEngine::all_gated('{parent:slug}', new \BWS\MetaConductor\Tokens\RowTokenSource($msrc ?? $gsrc, ['first' => 'Ada'])));
+$check('a held-back token renders empty and drops its separator',
+    TokenEngine::render('{meta:a} / {parent:slug}', $gsrc, $title) === 'Alpha' && TokenEngine::render('{parent:slug}', $gsrc, $title) === ''
+    && TokenEngine::render('{refs:venue:slug} - {meta:a}', $gsrc, $title) === 'Alpha');
 
 // `refs` reads the ACF field through AcfRelationship (the term rules' own read): related IDs in
 // the field's order, a post that is gone or trashed is skipped.
@@ -566,12 +602,23 @@ $refs_slugs = static fn(string $f) => $pt([])->related('refs', $f)?->slug();
 $check('post source: refs follows the field in its own order, first slug wins', $refs_slugs('venue') === 'stone-hall');
 $check('post source: refs over a single Post Object value', $refs_slugs('one') === 'quay-room');
 $check('post source: refs skips a trashed post', $refs_slugs('bin') === 'quay-room');
+// FW-67: only a PUBLISHED related post is read. When every related post is held back the
+// field is a gated source; one published post among them still wins, in field order.
+$GLOBALS['mc_status'] += [21 => 'draft'];
+$GLOBALS['mc_acf'][1] += ['draftonly' => [21], 'trashonly' => [13], 'mixedgated' => [21, 13], 'draftfirst' => [21, 12], 'draftgone' => [21, 99]];
+$refs_rel = static fn(string $f) => $pt([])->related('refs', $f);
+$check('post source: refs over only held-back posts is a gated source',
+    $refs_rel('draftonly') instanceof $gated && $refs_rel('trashonly') instanceof $gated && $refs_rel('mixedgated') instanceof $gated
+    && $refs_rel('draftonly')->slug() === '');
+$check('post source: refs skips a held-back post for the next published one', $refs_slugs('draftfirst') === 'quay-room');
+$check('post source: refs with a held-back post and a deleted one is gated, a deleted one alone is no source',
+    $refs_rel('draftgone') instanceof $gated && $refs_rel('gone') === null);
+$check('post source: refs over published posts is not gated', !($refs_rel('venue') instanceof $gated));
 $check('post source: refs with an empty field, a deleted post, an unknown field or no field is no source',
     $refs_slugs('blank') === null && $refs_slugs('gone') === null && $refs_slugs('nope') === null && $refs_slugs('') === null);
 $check('post source: refs over a post with no id is no source', (new \BWS\MetaConductor\Tokens\PostTokenSource(0, []))->related('refs', 'venue') === null);
 
 // --- Report. ----------------------------------------------------------------
-
 if ($fail) {
     fwrite(STDERR, "\nTOKEN-ENGINE FAIL — " . count($fail) . "/$total assertions failed:\n");
     foreach (array_slice($fail, 0, 40) as $f) {

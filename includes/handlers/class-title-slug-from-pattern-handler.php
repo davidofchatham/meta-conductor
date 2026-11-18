@@ -162,9 +162,15 @@ class TitleSlugFromPatternHandler extends UnifiedHandlerBase {
         $source = new PostTokenSource($post_id, (array) $post);
 
         // --- Title ---
+        // A pattern whose every token reads a source the status gate holds back
+        // (FW-67) is left out: the title or slug it would have built stays as it
+        // is, instead of being written from literals alone.
+        $title_held = !empty($rule['title_pattern']) && TokenEngine::all_gated($rule['title_pattern'], $source);
+        $slug_held  = !empty($rule['slug_pattern']) && TokenEngine::all_gated($rule['slug_pattern'], $source);
+
         $new_title     = $current_title; // default: unchanged
         $default_title = $current_title;
-        if (!empty($rule['title_pattern'])) {
+        if (!empty($rule['title_pattern']) && !$title_held) {
             $default_title = $this->resolve_default_title($post_id, $post, $rule, $source);
             $new_title = $this->render($rule['title_pattern'], $source, false, $default_title,
                                        $this->pattern_uses_default_title($rule['title_pattern']));
@@ -177,10 +183,12 @@ class TitleSlugFromPatternHandler extends UnifiedHandlerBase {
         $new_slug     = null;
         $default_slug = sanitize_title($new_title);
         if (!empty($rule['slug_pattern'])) {
-            $built = $this->render($rule['slug_pattern'], $source, true, $new_title,
-                                   $this->slug_keeps_default($rule));
-            $new_slug = $this->apply_slug_mode($built, $default_slug, $rule['slug_mode'] ?? 'prefix', $rule['slug_pattern'] ?? '');
-        } elseif (!empty($rule['title_pattern'])) {
+            if (!$slug_held) {
+                $built = $this->render($rule['slug_pattern'], $source, true, $new_title,
+                                       $this->slug_keeps_default($rule));
+                $new_slug = $this->apply_slug_mode($built, $default_slug, $rule['slug_mode'] ?? 'prefix', $rule['slug_pattern'] ?? '');
+            }
+        } elseif (!empty($rule['title_pattern']) && !$title_held) {
             $new_slug = $default_slug; // implicit: derive slug from computed title
         }
 

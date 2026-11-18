@@ -79,9 +79,17 @@ class FieldFromPatternHandler extends UnifiedHandlerBase {
             return null;
         }
 
+        // Every token reads a source the status gate holds back (FW-67): the field
+        // keeps its value rather than being written from literals alone. Null,
+        // not `$data`: this row does not apply, so a later row for the same field may.
+        $source = new PostTokenSource($post_id, $data, $name);
+        if (TokenEngine::all_gated($pattern, $source)) {
+            return null;
+        }
+
         $data['fields'][$name]     = TokenEngine::render(
             $pattern,
-            new PostTokenSource($post_id, $data, $name),
+            $source,
             self::policy($rule),
             ['default_title' => (string) ($data['post_title'] ?? '')]
         );

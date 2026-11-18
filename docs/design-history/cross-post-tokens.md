@@ -90,7 +90,7 @@ Also run the full static-gate loop (all `tests/*.php`) before any commit, plus H
 
 ## Out of Scope
 
-- A source status gate (draft, pending, private, trashed): FW-67. v1 reads the source whatever its status, as `{parent:slug}` does, with one exception: `refs` skips a trashed related post (ticket 02 acceptance; kept by decision 2026-11-13). `{parent:…}` has no trash skip.
+- A source status gate (draft, pending, private, trashed): FW-67, since shipped (only a published source is read; see architecture.md, Relation prefixes). v1 reads the source whatever its status, as `{parent:slug}` does, with one exception: `refs` skips a trashed related post (ticket 02 acceptance; kept by decision 2026-11-13). `{parent:…}` has no trash skip.
 - Fan-out for `refs` and the reverse direction (the source holds the field): FW-68, which needs FW-11's reverse lookup.
 - Cross-post tokens in repeater-row patterns: FW-69.
 - Chains of relations (grandparent, nested `refs`).

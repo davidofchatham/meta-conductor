@@ -81,18 +81,31 @@ final class PostTokenSource implements TokenSourceInterface {
         if ($relation !== 'parent' || $this->post_id <= 0) return null;
         $ids  = (new ParentRelationship())->sources_of($this->post_id, []);
         $post = $ids ? get_post($ids[0]) : null;
-        return $post ? new self($ids[0], (array) $post) : null;
+        if (!$post) return null;
+        return $post->post_status === 'publish' ? new self($ids[0], (array) $post) : new GatedTokenSource();
     }
 
-    /** The related posts' sources in the field's order; a post that is gone or trashed is not one. */
+    /**
+     * The related posts' sources in the field's order. Only a published post is
+     * read (FW-67); a post that is gone is not a source at all. When posts exist
+     * but none is published the field answers a `GatedTokenSource`, so the engine
+     * can tell "held back" from "nothing related".
+     */
     private function refs(string $field): ?TokenSourceInterface {
         if ($this->post_id <= 0 || $field === '') return null;
         $ids = (new AcfRelationship())->sources_of($this->post_id, ['holder_role' => 'target', 'acf_field_name' => $field]);
         $members = [];
+        $held    = false;
         foreach ($ids as $id) {
             $post = get_post($id);
-            if ($post && $post->post_status !== 'trash') $members[] = new self($id, (array) $post);
+            if (!$post) continue;
+            if ($post->post_status === 'publish') {
+                $members[] = new self($id, (array) $post);
+            } else {
+                $held = true;
+            }
         }
-        return $members ? new FirstOfTokenSource($members) : null;
+        if ($members) return new FirstOfTokenSource($members);
+        return $held ? new GatedTokenSource() : null;
     }
 }
