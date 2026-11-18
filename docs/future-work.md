@@ -745,6 +745,22 @@ Open:
 
 Blocked by: —  •  Interacts with: FW-4 (closed), FW-23
 
+#### FW-73 — Pick the rule type at Add time, then fix it
+
+On both ordered rule lists the **Rule type** select stays editable after a row is configured, and changing it clears the settings that belonged to the old type. Replace it with a type chosen when the row is added (a menu or per-type add choices) that is fixed afterward, so a rule is added or removed, never overwritten.
+
+Detail home: none; this row carries it. The mechanics: Wireframe's repeater has one Add button (`add_label`, `add_row`, `max_rows`) and no add-time picker, and its only `readonly` is capability-based and static per field (`AccessResolver`), so there is no "readonly once the row is saved" condition either. Hiding the select with a condition is not an option: `type` is deliberately ungated, because a condition-hidden subfield drops on save (CLAUDE.md don't #3, *The ordered rule repeaters*). One repeater per type would break the single ordered cross-type list.
+
+Progress: Not started. Raised 2026-11-18 while reading the type-change warning on the Rule type description.
+
+Open:
+
+- **Upstream request.** An `add_choices` arg on the repeater whose pick seeds the new row's `type`, preferred over a `readonly_when` condition because it has one clear trigger and no "is this row configured yet?" ambiguity. Drafted by us and filed by the maintainer of this repo; build the PR only if upstream agrees (same route as FW-23 Gap A).
+- **Wrong pick.** With the select fixed, the recovery is delete and re-add. Decide whether that is acceptable or the type stays editable until first save.
+- **Existing rows.** Rows saved before the change keep their stored `type`; nothing to migrate, since the stored shape does not change.
+
+Blocked by: `code:Wireframe's repeater has no add-time picker or conditional readonly`  •  Interacts with: FW-23, FW-45
+
 ---
 
 ### Infrastructure and testing
