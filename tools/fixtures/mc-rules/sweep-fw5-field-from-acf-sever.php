@@ -18,7 +18,7 @@
  * fail. Check `wp post list --post_type=mc_item --fields=ID,post_name` after.
  *
  * Usage:  wp eval-file .../sweep-fw5-field-from-acf-sever.php <step>
- * Prereq: mc-rules seeded (v16+).
+ * Prereq: mc-rules seeded (v17+).
  *
  * @package Meta_Conductor
  */

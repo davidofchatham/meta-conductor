@@ -114,14 +114,29 @@ $note('every sanitized row is still typed',
     array_column($sanitized, 'type') === array_column($rows, 'type'));
 
 // ── 3. A Set a field from a related post row (FW-5 04). ─────────────────────
-// The manifest baseline carries no row of this type (it would be live in every
-// other sweep), so one is built here and run through the same sanitizer. Every
-// key the handler reads must come back; a wrong gate drops one silently.
+// The manifest seeds one DISABLED row of this type (disabled so no other sweep
+// sees it fire); the cases below build further rows and run them through the
+// same sanitizer. Every key the handler reads must come back; a wrong gate drops
+// one silently.
 //
 // The type is authored in the Auto-Set list, so the sanitizer runs over THAT
 // list's repeater: `$field` is rebound to it for the rest of the sweep.
 
 $field = current(array_filter(TermRulesConfig::section()['fields'], static fn($f) => ($f['id'] ?? '') === OptionRuleStorage::KIND_TERM));
+
+// The seeded row, as the admin loads it.
+$seeded_copy = current(array_filter(
+    $settings[OptionRuleStorage::KIND_TERM] ?? [],
+    static fn($r) => ($r['type'] ?? '') === 'field_from_related_post'
+));
+$note('the seeded copy row is in the Auto-Set list, disabled', is_array($seeded_copy) && ($seeded_copy['enabled'] ?? true) === false);
+$note('the seeded copy row carries a repaired title with the disabled marker',
+    is_array($seeded_copy) && str_contains((string) ($seeded_copy['row_title'] ?? ''), '[Disabled]'));
+$seeded_out = RepeaterField::sanitize([$seeded_copy ?: []], $field['args'])[0] ?? [];
+foreach (['type', 'enabled', 'name', 'post_types', 'relationship', 'source_field', 'conflict_handling'] as $key) {
+    $note("seeded copy row '$key' survives sanitize", is_array($seeded_copy) && ($seeded_out[$key] ?? '(DROPPED)') == ($seeded_copy[$key] ?? null));
+}
+$note('the format list holds no copy row', !in_array('field_from_related_post', array_column($rows, 'type'), true));
 
 $copy_row = [
     'type' => 'field_from_related_post', 'enabled' => true, 'name' => 'Copy probe',

@@ -128,23 +128,24 @@ switch ( $step ) {
 		// The fixture is a deliberate torture set, so the expected list is
 		// spelled out in full rather than counted. Positions are the authored
 		// kind-list order (KIND_TYPES order after the restore's rebuild):
-		//   0 propagation(mc_topic, mc_section)   5 time_based[2](archived)
-		//   1 acf-ref[0](mc_topic, any)           6 related[0](featured, bidi)
-		//   2 acf-ref[1](mc_flag,  any)           7 related[1](featured)
-		//   3 time_based[0](featured)             8 hierarchical(mc_topic)
-		//   4 time_based[1](archived)             9 level-restriction(mc_topic)
+		//   0 propagation(mc_topic, mc_section)   6 time_based[2](archived)
+		//   1 acf-ref[0](mc_topic, any)           7 related[0](featured, bidi)
+		//   2 acf-ref[1](mc_flag,  any)           8 related[1](featured)
+		//   3 field copy (disabled: no finding)   9 hierarchical(mc_topic)
+		//   4 time_based[0](featured)            10 level-restriction(mc_topic)
+		//   5 time_based[1](archived)
 		$a(
 			'§65a seeded term-rule collisions, in full',
 			mc65_summary( $found ),
 			array(
 				'0-1:shared_target',        // propagation × acf-ref, mc_topic
-				'1-8:shared_target',        // acf-ref × hierarchy, mc_topic
-				'1-9:shared_target',        // acf-ref × level restriction
-				'3-6:shared_term_cancels',  // date window × bidirectional related
-				'3-7:shared_target',        // date window × add-only related
-				'4-5:shared_term_cancels',  // #69's pair
-				'6-7:shared_target',        // the two related rules, one target
-				'8-9:ancestors_stripped',   // #51's pair
+				'1-10:shared_target',       // acf-ref × level restriction (sorted as strings)
+				'1-9:shared_target',        // acf-ref × hierarchy, mc_topic
+				'4-7:shared_term_cancels',  // date window × bidirectional related
+				'4-8:shared_target',        // date window × add-only related
+				'5-6:shared_term_cancels',  // #69's pair
+				'7-8:shared_target',        // the two related rules, one target
+				'9-10:ancestors_stripped',  // #51's pair
 			)
 		);
 

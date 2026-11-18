@@ -51,7 +51,8 @@ $posts       = array_keys( $m['posts'] );
 $owned_types = $m['defines']['post_types'];
 $owned_tax   = $m['defines']['taxonomies'];
 
-// The 8 rule-type keys of bws_meta_conductor_settings (OptionRuleStorage).
+// The rule types the manifest seeds a baseline for (OptionRuleStorage). The
+// field copy's baseline is DISABLED, so no other sweep sees it fire.
 $valid_types = array(
 	'terms_from_term_hierarchy',
 	'terms_from_related_post',
@@ -61,6 +62,7 @@ $valid_types = array(
 	'restrict_term_count',
 	'title_slug_from_pattern',
 	'field_from_pattern',
+	'field_from_related_post',
 );
 
 // ── composes_on: family-standard two-key shape.

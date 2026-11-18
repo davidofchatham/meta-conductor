@@ -14,6 +14,7 @@ Requirements source: [`../handler-fixture-matrix.md`](../handler-fixture-matrix.
   `mc_flag`, ACF group `group_mc_fields`, option keys inside
   `bws_meta_conductor_settings` only.
 - core-structures content serves as **negative controls** — see verify.php.
+- **The seeded `field_from_related_post` row is DISABLED** (blueprint v17). An enabled copy would fire in every other sweep and write `mc_section` posts. It sits in the Auto-Set list (its `kind()`), where it shows as `[Disabled]` and gives the round-trip sweeps a persisted row; a sweep that wants a live copy authors its own through `mc_write_split_rules()`.
 - **Isolation invariant: every seeded rule pins `post_types` to mc_* types.**
   Empty `post_types` on a parent-relationship rule resolves to ALL hierarchical public
   types (incl. `page`) and would rewrite GBDTE matrix pages. Never seed that.
