@@ -42,12 +42,12 @@ Rules are authored as two ordered lists — one for rules that write terms, one 
 Title, slug and field patterns can read a value from a related post.
 
 * `{parent:<inner>}` reads the post's parent, for example `{parent:meta:address}`, `{parent:term:category}` or `{parent:slug}`.
-* `{refs:<field>:<inner>}` reads the first post the ACF field names, in the field's own order, that has a value for the inner token, for example `{refs:venue:meta:season}`. A related post that is deleted or in the trash is skipped.
+* `{refs:<field>:<inner>}` reads the first post the ACF field names, in the field's own order, that has a value for the inner token, for example `{refs:venue:meta:season}`. A related post that is deleted or not published is skipped.
 * The inner token is any token that works on the post itself (`meta:`, `term:`, `terms:`, the date tokens), plus `{slug}`, the related post's own slug. `{slug}` means something only behind a prefix and is empty on its own.
 * One hop only: a prefix inside another prefix resolves empty.
 * `refs` takes the ACF field's name only. Give the field a name no other field group uses, since two groups sharing a bare name are ambiguous, and write a field inside an ACF Group by its group-qualified name.
 * A pattern on a repeater subfield resolves both prefixes empty.
-* No status gate applies: a draft or private related post is read like a published one, so its value can appear in a public title, slug or field. Do not point a token at a value you want kept private. Values are read as stored on the related post.
+* Only a published related post is read. A parent or `refs` post that is a draft, pending, scheduled, private or in the trash reads as empty, so its value never lands in a public title, slug or field, and the token drops out like any empty token. A pattern whose every token is held back this way is skipped: the title, slug or field keeps what it has. A parent's children update when it publishes; a `refs` receiver updates when it is next saved. Values are read as stored on the related post.
 * Editing a parent updates its children, and their children, automatically. Editing a post a `refs` token reads does not update the posts that read it: they refresh when saved or when you run *Apply to Existing Posts*, and a bulk run can leave one stale until a second run.
 
 == Copying a field from a related post ==
@@ -70,6 +70,7 @@ The *Set a field from a related post* rule, in the *Auto-Set & Restrict* list be
 = Unreleased =
 
 **New rule type: *Set a field from a related post*.** Nothing changes for existing rules. See *Copying a field from a related post* above.
+**A `{parent:...}` or `{refs:...}` token now reads only a published related post.** This includes `{parent:slug}`, which used to read the parent whatever its status. A token behind a draft, pending, scheduled, private or trashed post is empty and drops out, and a pattern whose every token is held back is skipped, so the title, slug or field keeps its value. A rule that relied on reading a draft or private parent stops writing until that parent is published; a parent's children update when it does. A *Collision avoidance* rung that uses `{parent:slug}` is empty while the parent is unpublished. See *Cross-post tokens* above.
 
 **A *Set terms from a related post* rule with an ACF relationship no longer empties a post whose sources are all unpublished.** A source that fails the rule's *Post status* limit now counts as absent, so an Owning rule whose related posts are all drafts leaves the post's terms alone instead of clearing them. If only some of the related posts are unpublished, the post still takes the terms of the published ones, as before. Removing a link still clears the post's terms under an Owning rule. Nothing is converted on update.
 

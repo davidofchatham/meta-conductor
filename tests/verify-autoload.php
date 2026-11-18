@@ -98,6 +98,7 @@ $classes = [
     'BWS\\MetaConductor\\Tokens\\PostTokenSource',
     'BWS\\MetaConductor\\Tokens\\RowTokenSource',
     'BWS\\MetaConductor\\Tokens\\FirstOfTokenSource',
+    'BWS\\MetaConductor\\Tokens\\GatedTokenSource',
     'BWS\\MetaConductor\\Tokens\\OutputPolicy',
     'BWS\\MetaConductor\\Tokens\\SlugLadder',
     'BWS\\MetaConductor\\Tokens\\FlatSlug',
