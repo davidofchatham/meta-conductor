@@ -552,7 +552,10 @@ class ConfigHelpers {
      *
      * An `html` field carries no value, so nothing can be dropped by it; its
      * `conditions` only decide whether the heading shows. Plain variant, so it
-     * reads as a heading and not as a note.
+     * is not a note box, and an `h3`: Wireframe's `html` field styles `strong`
+     * at a barely heavier weight than body text (it reads as plain text), `h5`
+     * and `h6` as the small uppercase field labels, and `h3` at the section-title
+     * size and weight, which is what sets it apart from the labels below.
      *
      * @param array $overrides Per-call field-definition overrides (e.g. `conditions`).
      */
@@ -562,7 +565,7 @@ class ConfigHelpers {
             'type'    => 'html',
             'columns' => 12,
             'args'    => [
-                'content' => '<p><strong>' . esc_html__('Limits', 'meta-conductor') . '</strong></p>',
+                'content' => '<h3>' . esc_html__('Limits', 'meta-conductor') . '</h3>',
             ],
         ], $overrides);
     }
