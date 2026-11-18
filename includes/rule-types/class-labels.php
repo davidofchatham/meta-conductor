@@ -102,20 +102,28 @@ final class Labels {
     }
 
     /**
-     * Comma-joined term labels for a list of term ids.
+     * Term labels for a list of term ids, grouped so each taxonomy label
+     * appears once: "Tax A: x, y; Tax B: z". Groups keep first-appearance
+     * order. A single term reads the same as `term_label()`.
      *
      * @param int[] $ids
-     * @return string Unescaped, comma-joined label; '' if nothing resolves.
+     * @return string Unescaped label; '' if nothing resolves.
      */
     public static function trigger_terms_label(array $ids): string {
-        $labels = [];
+        $groups = []; // taxonomy label => term names
         foreach ($ids as $id) {
-            $label = self::term_label($id);
-            if ($label !== '') {
-                $labels[] = $label;
+            $term = (int) $id > 0 ? \get_term((int) $id) : null;
+            if (!$term || \is_wp_error($term)) {
+                continue;
             }
+            $groups[self::taxonomy_label($term->taxonomy)][] = $term->name;
         }
-        return implode(', ', $labels);
+
+        $parts = [];
+        foreach ($groups as $tax => $names) {
+            $parts[] = ($tax !== '' ? $tax . ': ' : '') . implode(', ', $names);
+        }
+        return implode('; ', $parts);
     }
 
     /**

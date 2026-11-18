@@ -42,6 +42,7 @@ if (!function_exists('get_post_type_object')) {
 $GLOBALS['__terms'] = [
     9 => (object) ['term_id' => 9, 'name' => 'Grandchild ii', 'taxonomy' => 'shaker'],
     5 => (object) ['term_id' => 5, 'name' => 'Term A',        'taxonomy' => 'breaker'],
+    6 => (object) ['term_id' => 6, 'name' => 'Term B',        'taxonomy' => 'breaker'],
 ];
 if (!function_exists('get_term')) {
     function get_term($id, $tax = '') { return $GLOBALS['__terms'][(int) $id] ?? false; }
@@ -98,6 +99,15 @@ $t = $title([
 $check('filter terms clause', str_contains($t, 'with Breakers: Term A'));
 $check('terms win over taxonomy', !str_contains($t, 'any'));
 
+// Case 3b: several terms share a taxonomy label once; groups join with "; ".
+$t = $title([
+    'enabled' => true, 'post_types' => [], 'target_term_id' => ['9'],
+    'start_date' => '2026-05-26', 'end_date' => '2026-05-27',
+    'filter_terms' => ['5', '9', '6'],
+]);
+$check('same-taxonomy terms grouped', str_contains($t, 'with Breakers: Term A, Term B; Shakers: Grandchild ii'));
+$check('taxonomy label not repeated', substr_count($t, 'Breakers') === 1);
+
 // Case 4: filter by taxonomy only.
 $t = $title([
     'enabled' => true, 'post_types' => [], 'target_term_id' => ['9'],
@@ -117,7 +127,7 @@ $check('disabled prefix first', str_starts_with($t, '[Disabled] '));
 $u = WireframeBootstrap::snapshot_term_rule_labels(['other' => 1]);
 $check('non-rule payload untouched', $u === ['other' => 1]);
 
-$total = 11;
+$total = 13;
 if ($fail) {
     fwrite(STDERR, "\nTIME-BASED-LABELS FAIL — " . count($fail) . "/$total failed:\n");
     foreach ($fail as $f) { fwrite(STDERR, "  \xE2\x9C\x97 $f\n"); }

@@ -37,6 +37,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **A trigger-term rule shows only the picker its *Trigger* choice needs.** *Trigger term* shows for *Specific term* and *Trigger taxonomy* for *Any term from taxonomy*, and the "Used when Trigger is…" help text is gone. Flipping the *Trigger* and saving discards the other picker's value, so flipping back finds it empty.
 - **A title & slug rule shows *Slug mode* only once a slug pattern is typed, and *Collision avoidance — where to add them* only once collision tokens are.** The "Only used when a slug pattern is set" help text is gone. Clearing the pattern, or the tokens, and saving discards the dependent choice, so typing one again starts from the default (*Prefix*, *Suffix*). Neither affects a rule that has them filled in.
 
+- **A rule title names each taxonomy once.** Where a *Set terms from a trigger term* trigger or a date window's *Filter by specific terms* lists several terms, the terms of one taxonomy now share one label, as in *Teams: Varsity, JV, Prep*, instead of repeating it for every term. Terms from different taxonomies are separated by a semicolon. Display only: no stored value or rule behavior changes.
+
 ## [0.11.1] — 2026-11-13
 
 ### Fixed
