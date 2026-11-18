@@ -157,6 +157,10 @@ final class TitleSlugFromPatternRules extends RuleType {
             ],
             [
                 'id'          => 'slug_mode',
+                // Shows once a slug pattern is typed: the handler reads it only
+                // then, and a blank pattern derives the slug from the title.
+                // Clearing the pattern and saving drops a chosen mode (FW-22).
+                'when'        => ['slug_pattern' => ConfigHelpers::NOT_EMPTY],
                 'type'        => 'select',
                 'label'       => __('Slug mode', 'meta-conductor'),
                 // NO BARE `{token}` IN A DESCRIPTION. Wireframe interpolates a
@@ -168,7 +172,7 @@ final class TitleSlugFromPatternRules extends RuleType {
                 // descriptions are unaffected. `placeholder` and the `html`
                 // field's `content` are passed through raw and are safe. H12
                 // fails on any bare `{word}` in a description on either config.
-                'description' => __('How the slug pattern combines with the default slug. Only used when a slug pattern is set. Automatically forced to Replace when the pattern contains the default-slug token.', 'meta-conductor'),
+                'description' => __('How the slug pattern combines with the default slug. Automatically forced to Replace when the pattern contains the default-slug token.', 'meta-conductor'),
                 'default'     => 'prefix',
                 'columns'     => 12,
                 'args'        => [
@@ -202,6 +206,9 @@ final class TitleSlugFromPatternRules extends RuleType {
             ],
             [
                 'id'          => 'escalation_placement',
+                // Shows once collision tokens are typed: with none there is no
+                // ladder to place. Clearing them and saving drops the choice (FW-22).
+                'when'        => ['slug_escalation' => ConfigHelpers::NOT_EMPTY],
                 'type'        => 'select',
                 'label'       => __('Collision avoidance — where to add them', 'meta-conductor'),
                 'description' => __('Where parts other than dates go. A date always goes beside the date already in the slug; with none there, it follows this setting too.', 'meta-conductor'),

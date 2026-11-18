@@ -693,9 +693,9 @@ Wireframe 1.0.6 (#13) added the conditions DSL to repeater subfields client-side
 
 Detail home: none. Upstream #13 is closed; this is plain implementation work now.
 
-Progress: **Converting opportunistically as each config class is touched.** Done: `level_restriction.include_ancestors` (0.6.0 — the gate itself was then retired in 0.8.0/#32 once the flag gained one meaning in every mode); the whole ordered term-rule repeater (0.8.0/#57), where the `type` select gates every type-specific subfield; `terms_from_trigger_term.trigger_term_id` / `.trigger_taxonomy` on the `trigger_type` radio (unreleased), which accepts that flipping the radio and saving drops the other picker's value.
+Progress: **Converting opportunistically as each config class is touched.** Done: `level_restriction.include_ancestors` (0.6.0 — the gate itself was then retired in 0.8.0/#32 once the flag gained one meaning in every mode); the whole ordered term-rule repeater (0.8.0/#57), where the `type` select gates every type-specific subfield; `terms_from_trigger_term.trigger_term_id` / `.trigger_taxonomy` on the `trigger_type` radio (unreleased), which accepts that flipping the radio and saving drops the other picker's value; `title_slug_from_pattern.slug_mode` on a non-empty `slug_pattern` and `.escalation_placement` on non-empty `slug_escalation` (unreleased), via `ConfigHelpers::NOT_EMPTY` in a descriptor's `when`, where clearing the text field and saving drops the dependent choice.
 
-Open: remaining description-text workarounds to convert — `title_slug`'s "Only used when…" subfields. The hierarchical `expansion_behavior` + help-text pair is gone; #16 collapsed it into one outcome selector.
+Open: none known. Convert any new "Used when…" description-text workaround as its config is touched. The hierarchical `expansion_behavior` + help-text pair is gone; #16 collapsed it into one outcome selector.
 
 Blocked by: —  •  Interacts with: —
 

@@ -283,6 +283,9 @@ foreach ($subfields as $s) {
             }
             $has_type_clause = true;
             $gate_covers     = array_merge($gate_covers, $c['value']);
+        } elseif (is_array($c) && ($c['operator'] ?? '') === 'is_not_empty'
+            && in_array($c['field'] ?? '', ['slug_pattern', 'slug_escalation'], true)) {
+            // The slug mode and the collision placement show once their text field holds something (FW-22).
         } elseif (!is_array($c)
             || !in_array($c['field'] ?? '', ['source_field', 'copy_target', 'relationship'], true)
             || ($c['operator'] ?? '') !== 'equals'
@@ -297,6 +300,9 @@ foreach ($subfields as $s) {
     }
 }
 $check('every type-specific subfield gates on `type` with `in` + real types, plus at most a meta-pick `equals`', $gated_ok);
+$check('slug mode and placement are gated to the type and their own text field being filled',
+    ($by_id['slug_mode']['conditions'] ?? null) === ConfigHelpers::gate(['title_slug_from_pattern'], ['slug_pattern' => ConfigHelpers::NOT_EMPTY])
+    && ($by_id['escalation_placement']['conditions'] ?? null) === ConfigHelpers::gate(['title_slug_from_pattern'], ['slug_escalation' => ConfigHelpers::NOT_EMPTY]));
 $check('every offered type owns at least one gated subfield',
     empty(array_diff($TYPES, array_unique($gate_covers))));
 // A `not_in` gate is indistinguishable from no gate while there is one type,
@@ -309,9 +315,21 @@ $check('no subfield uses not_in',
 // a stored value dropped on the next settings save.
 
 $expected_visible = [
+    // Slug mode shows once a slug pattern is typed and the placement once collision
+    // tokens are (FW-22), so each is its own scenario.
     'title_slug_from_pattern' => [
         'type', 'enabled', 'name', 'post_type',
+        'title_pattern', 'slug_pattern',
+        'slug_escalation', 'slug_escalation_tokens', 'flat_urls', 'row_title',
+    ],
+    'title_slug_from_pattern+pattern' => [
+        'type', 'enabled', 'name', 'post_type',
         'title_pattern', 'slug_pattern', 'slug_mode',
+        'slug_escalation', 'slug_escalation_tokens', 'flat_urls', 'row_title',
+    ],
+    'title_slug_from_pattern+tokens' => [
+        'type', 'enabled', 'name', 'post_type',
+        'title_pattern', 'slug_pattern',
         'slug_escalation', 'slug_escalation_tokens', 'escalation_placement', 'flat_urls', 'row_title',
     ],
     'field_from_pattern' => [
@@ -320,19 +338,27 @@ $expected_visible = [
     ],
 ];
 
+$fmt_scenarios = [];
 foreach ($TYPES as $type) {
+    $fmt_scenarios[$type] = [$type, []];
+    if ($type === 'title_slug_from_pattern') {
+        $fmt_scenarios["$type+pattern"] = [$type, ['slug_pattern' => '{pub_year}']];
+        $fmt_scenarios["$type+tokens"]  = [$type, ['slug_escalation' => '{pub_year}']];
+    }
+}
+foreach ($fmt_scenarios as $name => [$type, $row]) {
     $visible = [];
     foreach ($subfields as $s) {
-        if (Conditions::evaluate($s['conditions'] ?? null, ['type' => $type])) {
+        if (Conditions::evaluate($s['conditions'] ?? null, ['type' => $type] + $row)) {
             $visible[] = $s['id'];
         }
     }
 
     sort($visible);
-    $want = $expected_visible[$type] ?? [];
+    $want = $expected_visible[$name] ?? [];
     sort($want);
 
-    $check("visible subfields for '$type' are exactly what it needs", $visible === $want);
+    $check("visible subfields for '$name' are exactly what it needs", $visible === $want);
 }
 
 // Stated separately from the set above, because the set can be edited to match
@@ -342,7 +368,7 @@ $handler_reads = ['enabled', 'post_type', 'title_pattern', 'slug_pattern',
                   'slug_mode', 'slug_escalation', 'escalation_placement', 'flat_urls'];
 $visible_title_slug = [];
 foreach ($subfields as $s) {
-    if (Conditions::evaluate($s['conditions'] ?? null, ['type' => 'title_slug_from_pattern'])) {
+    if (Conditions::evaluate($s['conditions'] ?? null, ['type' => 'title_slug_from_pattern', 'slug_pattern' => 'x', 'slug_escalation' => 'y'])) {
         $visible_title_slug[] = $s['id'];
     }
 }
@@ -373,9 +399,10 @@ $check('flat_urls carries the type gate and nothing else',
 // The ladder fields (FW-51 02) ride the same gate as every title/slug field —
 // never one on the shared frame, which would delete them on a type that is not
 // title & slug, and (with one type) on the only type there is.
-$check('the ladder fields carry the type gate and nothing else',
-    ($by_id['slug_escalation']['conditions'] ?? null) === ['field' => 'type', 'operator' => 'in', 'value' => ['title_slug_from_pattern']]
-    && ($by_id['escalation_placement']['conditions'] ?? null) === ['field' => 'type', 'operator' => 'in', 'value' => ['title_slug_from_pattern']]);
+// The placement shows once tokens are typed (FW-22), so its gate adds that and
+// is asserted with the slug mode's above.
+$check('the ladder tokens field carries the type gate and nothing else',
+    ($by_id['slug_escalation']['conditions'] ?? null) === ['field' => 'type', 'operator' => 'in', 'value' => ['title_slug_from_pattern']]);
 $check('slug_escalation is a text field with the year placeholder and an Available tokens table',
     ($by_id['slug_escalation']['type'] ?? '') === 'text'
     && ($by_id['slug_escalation']['args']['placeholder'] ?? '') === '{pub_year}'

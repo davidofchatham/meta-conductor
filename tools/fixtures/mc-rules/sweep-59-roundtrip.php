@@ -88,6 +88,25 @@ $sanitized = RepeaterField::sanitize($rows, $field['args']);
 
 $note('sanitize keeps every row', count($sanitized) === count($rows));
 
+// FW-22: the slug mode and the collision placement show once their text field holds
+// something. Clearing it and saving drops the dependent value, and nothing else.
+$ts_row = current(array_filter($rows, static fn($r) => ($r['type'] ?? '') === 'title_slug_from_pattern'));
+if ($ts_row && !empty($ts_row['slug_pattern']) && !empty($ts_row['slug_escalation'])) {
+    $ts_out = RepeaterField::sanitize([$ts_row], $field['args'])[0] ?? [];
+    foreach (['slug_pattern', 'slug_mode', 'slug_escalation', 'escalation_placement'] as $key) {
+        $note("seeded title/slug row '$key' survives sanitize", !array_key_exists($key, $ts_row) || ($ts_out[$key] ?? '(DROPPED)') == $ts_row[$key]);
+    }
+    $no_pattern = RepeaterField::sanitize([array_merge($ts_row, ['slug_pattern' => '', 'slug_mode' => 'suffix'])], $field['args'])[0] ?? [];
+    $note('a blank slug pattern drops the slug mode and keeps the rest', !array_key_exists('slug_mode', $no_pattern)
+        && ($no_pattern['title_pattern'] ?? null) == ($ts_row['title_pattern'] ?? null)
+        && ($no_pattern['slug_escalation'] ?? null) == $ts_row['slug_escalation']);
+    $no_tokens = RepeaterField::sanitize([array_merge($ts_row, ['slug_escalation' => '', 'escalation_placement' => 'prefix'])], $field['args'])[0] ?? [];
+    $note('blank collision tokens drop the placement and keep the rest', !array_key_exists('escalation_placement', $no_tokens)
+        && ($no_tokens['slug_pattern'] ?? null) == $ts_row['slug_pattern']);
+} else {
+    $note('the seeded title/slug row has a slug pattern and collision tokens', false);
+}
+
 // Keys the format handlers READ — these must survive a save unchanged. The
 // last three are the Computed field rule's, stored by ACF field KEY.
 $must_survive = ['type', 'enabled', 'post_type', 'post_types', 'title_pattern', 'slug_pattern',

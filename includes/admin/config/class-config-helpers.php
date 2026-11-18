@@ -23,6 +23,13 @@ if (!defined('ABSPATH')) {
 class ConfigHelpers {
 
     /**
+     * A `when` value (see `gate()`) meaning "the sibling field holds something",
+     * not "equals this". No select or radio stores it, so it cannot collide
+     * with a real value.
+     */
+    public const NOT_EMPTY = '@not_empty';
+
+    /**
      * The Apply page's admin slug. Here rather than on ApplyPage so the rule
      * tabs can link to it without config depending on the page controller.
      */
@@ -138,7 +145,9 @@ class ConfigHelpers {
 
     /**
      * `type_gate()` plus an optional second dimension: a `[field => value, …]`
-     * map, every pair of which must hold (`equals`). A type with several
+     * map, every pair of which must hold (`equals`, or `is_not_empty` when the
+     * value is `NOT_EMPTY`, for a control that only means something once a
+     * sibling text field holds a value). A type with several
      * relationships gates a control on `relationship` this way, so no
      * hand-written type list appears and a flip of that value drops the control
      * on save exactly as a change of `type` does.
@@ -157,7 +166,9 @@ class ConfigHelpers {
 
         $rules = [$gate];
         foreach ($when as $field => $value) {
-            $rules[] = ['field' => (string) $field, 'operator' => 'equals', 'value' => $value];
+            $rules[] = $value === self::NOT_EMPTY
+                ? ['field' => (string) $field, 'operator' => 'is_not_empty']
+                : ['field' => (string) $field, 'operator' => 'equals', 'value' => $value];
         }
 
         return ['all' => $rules];
