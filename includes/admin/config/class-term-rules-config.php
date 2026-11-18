@@ -355,6 +355,17 @@ class TermRulesConfig {
                     'content' => '<p>' . esc_html__('A parent relationship needs a parent/child tree, so it only acts on hierarchical post types. Scoping this rule to a flat post type matches nothing.', 'meta-conductor') . '</p>',
                 ],
             ],
+            [
+                // What the scope above means for a field copy: none checked is NOTHING.
+                'id'         => 'field_copy_post_types_note',
+                'type'       => 'html',
+                'columns'    => 12,
+                'conditions' => self::readers('field_copy_post_types_note'),
+                'args'       => [
+                    'variant' => 'info',
+                    'content' => '<p>' . FieldFromRelatedPostRules::copy_note('post_types') . '</p>',
+                ],
+            ],
             // The config half of #23: every type in this list now gets the
             // publication-status gate that only the ACF-reference rule had.
             // Enforcement is UnifiedHandlerBase::should_process_post, which
@@ -376,6 +387,17 @@ class TermRulesConfig {
                     'content' => '<p>' . esc_html__('For this rule type the status limit applies to the posts terms are copied FROM: only source posts with these statuses contribute terms.', 'meta-conductor') . '</p>',
                 ],
             ],
+            [
+                // What the status limit above means for a field copy: it is the SOURCE's.
+                'id'         => 'field_copy_status_note',
+                'type'       => 'html',
+                'columns'    => 12,
+                'conditions' => self::readers('field_copy_status_note'),
+                'args'       => [
+                    'variant' => 'info',
+                    'content' => '<p>' . FieldFromRelatedPostRules::copy_note('post_status') . '</p>',
+                ],
+            ],
             // Claim is SUPPLIED BY THE SHARED BUILDER, never re-authored here
             // — the 0.8.0 claim vocabulary (CONTEXT.md → Claim) has to stay one map
             // behind the dropdowns and the row titles alike (#53 §6). The
@@ -387,7 +409,7 @@ class TermRulesConfig {
             ConfigHelpers::claim_field('child', [
                 'id'          => 'conflict_handling',
                 'label'       => __('Claim', 'meta-conductor'),
-                'description' => __('What this rule does about a value the receiving post already has. For terms, Owning removes the others on the next save or re-apply, not at edit time, and Contributing only adds, except on a parent relationship, where it also withdraws a term the parent just lost. A field copy\'s note says what each claim means for the field.', 'meta-conductor'),
+                'description' => __('What this rule does about a value the receiving post already has. For terms, Owning removes the others on the next save or re-apply, not at edit time, and Contributing only adds, except on a parent relationship, where it also withdraws a term the parent just lost. A field copy\'s note below says what each claim means for the field.', 'meta-conductor'),
                 'conditions'  => self::readers('conflict_handling'),
                 // One control for every type that reads it, so the wording is
                 // the shared wording; a type's own meaning is its note.
@@ -400,16 +422,14 @@ class TermRulesConfig {
                 ],
             ]),
             [
-                // The field copy's reading of the three shared controls above
-                // (post types, claim, statuses). An `html` note carries no
-                // value, so gating it to the type that reads it loses nothing.
-                'id'         => 'field_copy_note',
+                // What the claim above means for a field copy.
+                'id'         => 'field_copy_claim_note',
                 'type'       => 'html',
                 'columns'    => 12,
-                'conditions' => self::readers('field_copy_note'),
+                'conditions' => self::readers('field_copy_claim_note'),
                 'args'       => [
                     'variant' => 'info',
-                    'content' => FieldFromRelatedPostRules::copy_note(),
+                    'content' => '<p>' . FieldFromRelatedPostRules::copy_note('claim') . '</p>',
                 ],
             ],
         ];

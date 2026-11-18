@@ -681,7 +681,7 @@ Row titles are a **save-time snapshot** (`row_title`, rendered by `title_templat
 
 What that costs, accepted deliberately (FW-5 placement):
 
-- *Order across the two lists is fixed, not authored.* The format pass reads its rows from both lists, the Auto-Set list's first (`FormatDispatcher::pass_rows()`), so a copied value is there for a pattern rule to read. An author can no longer put a copy after a pattern rule, and a copy's position among the term rules means nothing: only its position among the other copies does. The type's own `field_copy_note` says so.
+- *Order across the two lists is fixed, not authored.* The format pass reads its rows from both lists, the Auto-Set list's first (`FormatDispatcher::pass_rows()`), so a copied value is there for a pattern rule to read. An author can no longer put a copy after a pattern rule, and a copy's position among the term rules means nothing: only its position among the other copies does. The type's notes under its controls (`field_copy_*_note`) say what each shared control means for a copy.
 - *A copy and a Computed field rule on one field are not compared.* The collision scan is per list (invariant 19), so it reports copy-versus-copy and pattern-versus-pattern and never the pair. The copy always runs first, so the pattern rule has the last word. A cross-list scan is FW-34's reach work.
 - *The shared controls carry the shared wording.* Post types, claim and post status are the Auto-Set list's own shared subfields, so the copy reads them rather than declaring a second `post_types` (an id declared twice drops its value on save). What differs for a field, notably that no post type checked means nothing and not every type, is a note gated to the type.
 

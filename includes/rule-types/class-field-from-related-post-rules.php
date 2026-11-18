@@ -318,13 +318,20 @@ final class FieldFromRelatedPostRules extends RuleType {
      *
      * `post_types` and `conflict_handling` are the Auto-Set list's shared
      * subfields, and `post_status` its ungated one. The controls are shared; the
-     * semantics are this type's, and `field_copy_note` states them (none checked
-     * means NOTHING, not every type; the claim is on the field; the status is
-     * the source's). A type that reads a shared value must be in its gate or the
+     * semantics are this type's, and a note under each control states them
+     * (`field_copy_post_types_note`: none checked means NOTHING, not every type;
+     * `field_copy_claim_note`: the claim is on the field; `field_copy_status_note`:
+     * the status is the source's). A type that reads a shared value must be in its gate or the
      * value drops on save (architecture.md → *The ordered rule repeaters*).
      */
     public function reads_shared_fields(): array {
-        return ['post_types', 'conflict_handling', 'field_copy_note'];
+        return [
+            'post_types',
+            'conflict_handling',
+            'field_copy_post_types_note',
+            'field_copy_status_note',
+            'field_copy_claim_note',
+        ];
     }
 
     /**
@@ -357,6 +364,18 @@ final class FieldFromRelatedPostRules extends RuleType {
                 ],
             ],
             ...ConfigHelpers::acf_relationship_subfields(),
+            [
+                // Which related post a copy reads, said once the ACF
+                // relationship is chosen. A parent has exactly one source.
+                'id'      => 'field_copy_source_note',
+                'type'    => 'html',
+                'columns' => 12,
+                'when'    => ['relationship' => 'acf'],
+                'args'    => [
+                    'variant' => 'info',
+                    'content' => '<p>' . self::copy_note('source') . '</p>',
+                ],
+            ],
             [
                 'id'          => 'source_field',
                 'type'        => 'select',
@@ -391,25 +410,25 @@ final class FieldFromRelatedPostRules extends RuleType {
     }
 
     /**
-     * What the Auto-Set list's shared scope, claim and status controls mean
-     * for a field copy. Declared once by the term config's `field_copy_note`
-     * (an `html` note carries no value, so it is gated to the types that read
-     * it) and read from here so the wording lives with the type.
+     * What the Auto-Set list's shared scope, status and claim controls mean for
+     * a field copy, one text per control, escaped. Each is shown as an `html`
+     * note directly under the control it explains (the term config's
+     * `field_copy_*_note`, gated to this type through `reads_shared_fields()`),
+     * and `source` under the ACF relationship block (`subfields()`), so the
+     * wording lives with the type and the help sits next to the control.
      *
      * No bare `{word}` (H12): `html` content interpolates `{word}` against the
      * row.
+     *
+     * @param string $which `post_types`, `post_status`, `claim` or `source`.
      */
-    public static function copy_note(): string {
-        $items = [
-            __('Post types: check at least one. None checked means the rule does nothing, not every post type, because a field written on a post type whose ACF group lacks it would be stored as orphan meta.', 'meta-conductor'),
-            __('Claim: Owning makes the field always equal the source\'s value, including when that is empty. Contributing copies a value the source holds and never clears. Deferring fills the field only while it is empty. A post with no eligible source is always left alone.', 'meta-conductor'),
-            __('Post statuses: the source must have one of the checked statuses, or it is ignored and the receiving post keeps its value. With the parent, the receiving post must have one of them too.', 'meta-conductor'),
-            __('Source: with an ACF relationship only one related post counts, the first that holds a value, taken in the order the field lists its posts (pull), or in the order the reverse field lists them, else by ascending post ID (push).', 'meta-conductor'),
-        ];
-
-        return '<p><strong>' . esc_html__('Set a field from a related post', 'meta-conductor') . '</strong></p><ul style="margin:4px 0 0 18px;list-style:disc;">'
-            . implode('', array_map(static fn(string $i): string => '<li>' . esc_html($i) . '</li>', $items))
-            . '</ul>';
+    public static function copy_note(string $which): string {
+        return esc_html(match ($which) {
+            'post_types'  => __('For this rule type, check at least one. None checked means the rule does nothing, not every post type, because a field written on a post type whose ACF group lacks it would be stored as orphan meta.', 'meta-conductor'),
+            'post_status' => __('For this rule type the status limit applies to the source: it must have one of the checked statuses, or it is ignored and the receiving post keeps its value. With a parent relationship, the receiving post must have one of them too.', 'meta-conductor'),
+            'claim'       => __('For a field: Owning makes the field always equal the source\'s value, including when that is empty. Contributing copies a value the source holds and never clears. Deferring fills the field only while it is empty. A post with no eligible source is always left alone.', 'meta-conductor'),
+            'source'      => __('Only one related post counts: the first that holds a value, taken in the order the field lists its posts (pull), or in the order the reverse field lists them, else by ascending post ID (push).', 'meta-conductor'),
+        });
     }
 
     /**
