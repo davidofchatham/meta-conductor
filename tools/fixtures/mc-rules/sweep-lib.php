@@ -67,6 +67,23 @@ if ( ! function_exists( 'mc_sweep_clear_cache' ) ) {
 	}
 }
 
+if ( ! function_exists( 'mc_refresh_collisions' ) ) {
+	/**
+	 * Recompute the persisted collision notice from what is stored now.
+	 *
+	 * The notice (`bws_mc_collision_warnings`) is a snapshot taken at admin save,
+	 * and the writers here bypass that save, so a seed or restore leaves the last
+	 * snapshot describing rules that are gone. Called only where the rules reach a
+	 * BASELINE (seed, mc_restore), not on every write: a sweep that authors a list
+	 * mid-run asserts on the snapshot itself (sweep-65).
+	 */
+	function mc_refresh_collisions() {
+		if ( class_exists( '\\BWS\\MetaConductor\\Admin\\CollisionDetector' ) ) {
+			\BWS\MetaConductor\Admin\CollisionDetector::refresh();
+		}
+	}
+}
+
 if ( ! function_exists( 'mc_fan_in' ) ) {
 	/**
 	 * Regroup TYPE-KEYED rules into the two ordered kind lists, KIND_TYPES
@@ -308,6 +325,7 @@ if ( ! function_exists( 'mc_restore' ) ) {
 		}
 
 		mc_write_rule_types( $resolved );
+		mc_refresh_collisions();
 
 		foreach ( $reset_post_ids as $pid ) {
 			mc_reset_subject( (int) $pid );
