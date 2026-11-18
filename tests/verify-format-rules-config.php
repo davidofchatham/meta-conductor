@@ -238,8 +238,8 @@ $check('the field copy is not in this list: it is authored in the Auto-Set list 
     && !in_array('field_from_related_post', $TYPES, true));
 $check('the computed field scope drops attachment and has no placeholder row',
     array_keys($by_id['post_types']['args']['options']) === ['post', 'page', 'mc_item']);
-$check('the computed field scope says none checked does nothing',
-    str_contains(strtolower($by_id['post_types']['description'] ?? ''), 'does nothing'));
+$check('the computed field scope says none checked is every post type that shows the field',
+    str_contains(strtolower($by_id['post_types']['description'] ?? ''), 'leave all unchecked'));
 $check('post_type is required', !empty($by_id['post_type']['required']));
 $check('the post-type select drops attachment',
     !array_key_exists('attachment', $by_id['post_type']['args']['options']));

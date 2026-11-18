@@ -236,8 +236,8 @@ $check('one Computed field rule reaches every post type it names',
     $types([['post_types' => ['book', 'page']] + $cf]) === ['book', 'page']);
 $check('beside a term rule, the reach is the union of each rule\'s own',
     $types([$cf, ['type' => 'terms_from_term_hierarchy', 'post_types' => ['page' => true]]]) === ['book', 'page']);
-$check('a Computed field rule with no post type reaches no real type, never every type',
-    $types([['post_types' => []] + $cf]) === ['']);
+$check('a Computed field rule with no post type reaches every type, as the term rules do',
+    $types([['post_types' => []] + $cf]) === null);
 $check('a Computed field rule reaches the default statuses', $reach($cf) === $default);
 
 // --- 5. Disabled-row override (dispatcher pass rows). -----------------------

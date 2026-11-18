@@ -25,7 +25,7 @@
  *   wp eval-file .../sweep-computed-field.php disabled   # a disabled rule writes nothing
  *   wp eval-file .../sweep-computed-field.php other      # a post outside the rule's post types is untouched
  *   wp eval-file .../sweep-computed-field.php multi-type # one rule naming two post types writes both, and only those
- *   wp eval-file .../sweep-computed-field.php no-types   # a rule with no post type checked writes nothing anywhere
+ *   wp eval-file .../sweep-computed-field.php no-types   # a rule with no post type checked writes where its field is shown
  *   wp eval-file .../sweep-computed-field.php save       # an editor-shaped save computes the field
  *   wp eval-file .../sweep-computed-field.php s1         # bare update_field(), let shutdown drain
  *   wp eval-file .../sweep-computed-field.php s2         # assert what s1's shutdown did
@@ -350,8 +350,8 @@ switch ( $step ) {
 		mcf_pass( $subject );
 		mcf_pass( $control );
 
-		mc_assert( '§71d  no post type checked: the subject is untouched', mcf_meta( $subject, 'mc_cf_display' ), null );
-		mc_assert( '§71e  no post type checked: no other post type is written either', mcf_meta( $control, 'mc_cf_display' ), null );
+		mc_assert( '§71d  no post type checked: the subject (its field group is shown) is written', mcf_meta( $subject, 'mc_cf_display' ), 'Ada Lovelace' );
+		mc_assert( '§71e  ...and a post type whose groups do not show the field is not', mcf_meta( $control, 'mc_cf_display' ), null );
 		break;
 
 	case 'save':

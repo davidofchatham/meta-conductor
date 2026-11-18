@@ -93,10 +93,13 @@ class FieldFromRelatedPostHandler extends UnifiedHandlerBase {
         $source_meta = $descriptor->source_meta($rule);
         $target      = $descriptor->target($rule);
         $post_type   = (string) ($data['post_type'] ?? '');
-        // Empty `post_types` is "none", not "all" — see the descriptor.
+        // Empty `post_types` is every public post type but attachment
+        // (`ConfigHelpers::scope_reaches()`). An ACF target still has to be shown
+        // on the receiving type (`copy_slot()`), so it is never written where its
+        // group is not; a plain meta key goes wherever the scope reaches.
         if (($group === '' && $source_key === '' && $source_meta === '')
             || ($group === '' && $target === null)
-            || !in_array($post_type, (array) ($rule['post_types'] ?? []), true)) {
+            || !ConfigHelpers::scope_reaches($descriptor->written_post_types($rule), $post_type)) {
             return null;
         }
 

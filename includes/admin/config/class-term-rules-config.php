@@ -341,9 +341,7 @@ class TermRulesConfig {
             // reads the value is inside the gate, so nothing loses its scope.
             ConfigHelpers::post_types_field([
                 'conditions'  => self::readers('post_types'),
-                // Type-neutral: the term rules treat none as every post type,
-                // a field copy treats it as nothing (its note says so).
-                'description' => __('Leave all unchecked to apply to every post type, unless the rule type\'s note below says otherwise.', 'meta-conductor'),
+                'description' => __('Leave all unchecked to apply to every post type.', 'meta-conductor'),
             ]),
             [
                 'id'         => 'hierarchical_post_type_note',
@@ -353,17 +351,6 @@ class TermRulesConfig {
                 'args'       => [
                     'variant' => 'info',
                     'content' => '<p>' . esc_html__('A parent relationship needs a parent/child tree, so it only acts on hierarchical post types. Scoping this rule to a flat post type matches nothing.', 'meta-conductor') . '</p>',
-                ],
-            ],
-            [
-                // What the scope above means for a field copy: none checked is NOTHING.
-                'id'         => 'field_copy_post_types_note',
-                'type'       => 'html',
-                'columns'    => 12,
-                'conditions' => self::readers('field_copy_post_types_note'),
-                'args'       => [
-                    'variant' => 'info',
-                    'content' => '<p>' . FieldFromRelatedPostRules::copy_note('post_types') . '</p>',
                 ],
             ],
             // The config half of #23: every type in this list now gets the

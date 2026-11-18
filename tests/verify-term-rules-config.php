@@ -383,13 +383,12 @@ $check('the field copy\'s own subfields are gated to it alone',
     && $gate_of('source_meta') === ConfigHelpers::gate(['field_from_related_post'], ['source_field' => '@meta'])
     && $gate_of('target_meta') === ConfigHelpers::gate(['field_from_related_post'], ['copy_target' => '@meta']));
 $check('each note that says what a shared control means for a field copy shows for that type alone, as html',
-    array_reduce(['field_copy_post_types_note', 'field_copy_status_note', 'field_copy_claim_note'], fn($ok, $id) =>
+    array_reduce(['field_copy_status_note', 'field_copy_claim_note'], fn($ok, $id) =>
         $ok && $gate_of($id) === ConfigHelpers::gate(['field_from_related_post']) && ($by_id[$id]['type'] ?? '') === 'html', true));
 $check('the field copy\'s source note shows on its ACF relationship alone',
     $gate_of('field_copy_source_note') === ConfigHelpers::gate(['field_from_related_post'], ['relationship' => 'acf']));
 $check('each field-copy note sits directly under the control it explains',
-    array_search('field_copy_post_types_note', $ids, true) > array_search('post_types', $ids, true)
-    && array_search('field_copy_status_note', $ids, true) > array_search('post_status', $ids, true)
+    array_search('field_copy_status_note', $ids, true) > array_search('post_status', $ids, true)
     && array_search('field_copy_claim_note', $ids, true) > array_search('conflict_handling', $ids, true));
 $check('the field copy declares no claim or status of its own — it reads the shared ones',
     !isset($by_id['conflict_handling']['conditions']['value'])
@@ -453,16 +452,16 @@ $expected_visible = [
     // `source_meta` / `target_meta` show only while their select picks a plain
     // meta key, so each is its own scenario.
     'field_from_related_post/parent' => [
-        'type', 'enabled', 'name', 'relationship', 'post_types', 'field_copy_post_types_note', 'post_status', 'field_copy_status_note',
+        'type', 'enabled', 'name', 'relationship', 'post_types', 'post_status', 'field_copy_status_note',
         'conflict_handling', 'field_copy_claim_note', 'source_field', 'copy_target', 'row_title',
     ],
     'field_from_related_post/parent+meta' => [
-        'type', 'enabled', 'name', 'relationship', 'post_types', 'field_copy_post_types_note', 'post_status', 'field_copy_status_note',
+        'type', 'enabled', 'name', 'relationship', 'post_types', 'post_status', 'field_copy_status_note',
         'conflict_handling', 'field_copy_claim_note', 'source_field', 'source_meta',
         'copy_target', 'target_meta', 'row_title',
     ],
     'field_from_related_post/acf' => array_merge([
-        'type', 'enabled', 'name', 'relationship', 'post_types', 'field_copy_post_types_note', 'post_status', 'field_copy_status_note',
+        'type', 'enabled', 'name', 'relationship', 'post_types', 'post_status', 'field_copy_status_note',
         'conflict_handling', 'field_copy_claim_note', 'field_copy_source_note', 'source_field', 'copy_target',
         'acf_field_name', 'holder_role', 'reverse_acf_field_name', 'row_title',
     ], function_exists('acf_get_field') ? [] : ['acf_required_note']),

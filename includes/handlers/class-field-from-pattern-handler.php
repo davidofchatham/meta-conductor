@@ -46,22 +46,27 @@ class FieldFromPatternHandler extends UnifiedHandlerBase {
      *                    ACF no longer resolves, or ACF inactive.
      */
     public function apply_to_data(array $data, int $post_id, array $rule): ?array {
-        if (!Registry::for_handler(static::class)->available()) {
-            return null;
-        }
-
-        $pattern = (string) ($rule['pattern'] ?? '');
-        // Empty `post_types` is "none", not "all" — see the descriptor.
-        if ($pattern === ''
-            || !in_array($data['post_type'] ?? '', (array) ($rule['post_types'] ?? []), true)) {
-            return null;
-        }
-
         $descriptor = Registry::for_handler(static::class);
+        if (!$descriptor->available()) {
+            return null;
+        }
+
+        $pattern   = (string) ($rule['pattern'] ?? '');
+        $post_type = (string) ($data['post_type'] ?? '');
+        // Empty `post_types` is every public type but attachment
+        // (`ConfigHelpers::scope_reaches()`). Left open, the rule writes only
+        // where the field's group is shown, or the value would be stored as
+        // orphan meta; a checked type is the author's say-so.
+        $scope = $descriptor->written_post_types($rule);
+        if ($pattern === '' || !ConfigHelpers::scope_reaches($scope, $post_type)) {
+            return null;
+        }
+        $shown = static fn(string $key): bool => $scope !== [] || ConfigHelpers::acf_field_shown_on($key, $post_type);
+
         if ($descriptor->is_row_rule($rule)) {
             $row = $descriptor->row_target($rule);
 
-            return $row === null ? null : $this->apply_to_rows($data, $post_id, $row, $rule, $pattern);
+            return $row === null || !$shown($row['repeater']) ? null : $this->apply_to_rows($data, $post_id, $row, $rule, $pattern);
         }
 
         $key = trim((string) ($rule['target_field'] ?? ''));
@@ -70,7 +75,7 @@ class FieldFromPatternHandler extends UnifiedHandlerBase {
         }
 
         $name = ConfigHelpers::acf_field_name($key);
-        if ($name === '') {
+        if ($name === '' || !$shown($key)) {
             return null;
         }
 

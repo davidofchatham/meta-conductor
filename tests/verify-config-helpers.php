@@ -69,6 +69,18 @@ if (!function_exists('get_post_types')) {
     }
 }
 
+// One post type of each kind the open-scope test cares about.
+if (!function_exists('get_post_type_object')) {
+    function get_post_type_object($slug) {
+        $registry = [
+            'post'       => (object) ['public' => true],
+            'attachment' => (object) ['public' => true],
+            'internal'   => (object) ['public' => false],
+        ];
+        return $registry[$slug] ?? null;
+    }
+}
+
 // Fake taxonomy registry — the placeholder/no-placeholder split is shared with
 // the post-type accessors, so both sides of label_options() are exercised.
 if (!function_exists('get_taxonomies')) {
@@ -124,6 +136,15 @@ $check('post-type opts include flat post', isset($a_opts['post']));
 $check('post-type opts include page',      isset($a_opts['page']));
 $check('post-type opts include dept',      isset($a_opts['dept']));
 $check('checkbox opts have no placeholder', !array_key_exists('', $a_opts));
+
+// A field rule's scope: a checked list is the author's say-so, none checked is
+// every public type but attachment.
+$check('scope_reaches: a checked list reaches exactly its types',
+    ConfigHelpers::scope_reaches(['attachment'], 'attachment') && !ConfigHelpers::scope_reaches(['post'], 'page'));
+$check('scope_reaches: none checked reaches a public type',
+    ConfigHelpers::scope_reaches([], 'post'));
+$check('scope_reaches: none checked never reaches attachment, a non-public type or an unknown one',
+    !ConfigHelpers::scope_reaches([], 'attachment') && !ConfigHelpers::scope_reaches([], 'internal') && !ConfigHelpers::scope_reaches([], 'gone'));
 
 // The placeholder half of the collapsed loop: a SELECT gets a leading empty
 // row, and it must come first (it is the field's default rendering).

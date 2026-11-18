@@ -228,12 +228,11 @@ class FormatRulesConfig {
             ],
             // Every type that reads it is inside the gate (descriptors'
             // `reads_shared_fields()`), so none loses its scope on save. None
-            // checked means NOTHING for these rules, not every type — a field
-            // write on a type whose ACF group lacks the field would store
-            // orphan meta. The attachment type is not offered.
+            // checked is every offered type, and the handler then writes only
+            // where the field's group is shown. The attachment type is not offered.
             ConfigHelpers::post_types_field([
                 'label'       => __('Post types', 'meta-conductor'),
-                'description' => __('The post types this rule writes to. Check at least one — a rule with none checked does nothing.', 'meta-conductor'),
+                'description' => __('The post types this rule writes to. Leave all unchecked to write to every post type that shows the field.', 'meta-conductor'),
                 'conditions'  => ConfigHelpers::readers(self::types(), 'post_types'),
                 'args'        => [
                     'options' => ConfigHelpers::format_post_type_options(),

@@ -14,8 +14,10 @@
  *   B  post types    a child of a post type outside the row's `post_types` is
  *                    not named, and its value is not written.
  *   C  zero cost     with no enabled row of the type `fan_out()` names nothing
- *                    and runs no query; a disabled row and a row with no
- *                    post type are the same; the row back, C is named again.
+ *                    and runs no query; a disabled row is the same; the row
+ *                    back, C is named again. A row with no post type checked
+ *                    names a child of every type, and still writes none whose
+ *                    field group is not shown (the `page`).
  *
  * Every temp post is deleted and the fixture's rules restored afterward, pass or
  * fail. Check `wp post list --post_type=mc_item --fields=ID,post_name` after
@@ -126,7 +128,6 @@ try {
 	foreach ( array(
 		'no row'          => array(),
 		'a disabled row'  => array( mcff_copy( array( 'enabled' => false ) ) ),
-		'no post type'    => array( mcff_copy( array( 'post_types' => array() ) ) ),
 	) as $label => $rows ) {
 		mcff_author( $rows );
 		$fd->fan_out( $p ); // warm the rule read; the second call must be free
@@ -134,6 +135,17 @@ try {
 		$pass   = mc_assert( "C {$label}: fan_out() names nothing", $fd->fan_out( $p ), array() ) && $pass;
 		$pass   = mc_assert( "C {$label}: …and runs no query", $wpdb->num_queries - $before, 0 ) && $pass;
 	}
+	// No post type checked is every type: the page child is named too, and still
+	// not written, because its field group is not shown on a page.
+	mcff_author( array( mcff_copy( array( 'post_types' => array() ) ) ) );
+	$named = $fd->fan_out( $p );
+	$want  = array( $c, $page );
+	sort( $named );
+	sort( $want );
+	$pass = mc_assert( 'C no post type checked: a child of every type is named', $named, $want ) && $pass;
+	mcff_edit( $p, 'P4' );
+	$pass = mc_assert( 'C …and the page, whose group does not show the field, is not written', mcff_text( $page ), 'page-own' ) && $pass;
+	$pass = mc_assert( 'C …while the section child follows', mcff_text( $c ), 'P4' ) && $pass;
 	mcff_author( array( mcff_copy() ) );
 	$pass = mc_assert( 'C the row back: the child is named', $fd->fan_out( $p ), array( $c ) ) && $pass;
 	$pass = mc_assert( 'C …and the grandchild through the child', $fd->fan_out( $c ), array( $g ) ) && $pass;

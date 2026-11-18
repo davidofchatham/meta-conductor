@@ -536,9 +536,9 @@ seven type-keyed arrays → two ordered per-effect-kind lists — all hit severa
       and the ACF-reference rule has no `post_types` subfield (#58) and writes
       its *dependent* end — unconstrained under `holder_role=source`, exactly as
       `dependent_post_type()` reports it. Empty means every post type, so the
-      test over-reports and never under-reports. The exception is a Computed
-      field row with no post type checked, which writes nothing: its target key
-      is null, so it is half-authored rather than a collision.
+      test over-reports and never under-reports. That holds for a field copy and
+      a Computed field row with no post type checked too: each covers every
+      public post type but attachment, and writes only where its field is shown.
     - **Targets must be EQUAL, not nested.** A taxonomy-wide rule is not paired
       with a term rule whose term lives in that taxonomy, and the claim axis is
       not consulted at all. Both pairings are real, and both belong to the
@@ -683,7 +683,7 @@ What that costs, accepted deliberately (FW-5 placement):
 
 - *Order across the two lists is fixed, not authored.* The format pass reads its rows from both lists, the Auto-Set list's first (`FormatDispatcher::pass_rows()`), so a copied value is there for a pattern rule to read. An author can no longer put a copy after a pattern rule, and a copy's position among the term rules means nothing: only its position among the other copies does. The type's notes under its controls (`field_copy_*_note`) say what each shared control means for a copy.
 - *A copy and a Computed field rule on one field are not compared.* The collision scan is per list (invariant 19), so it reports copy-versus-copy and pattern-versus-pattern and never the pair. The copy always runs first, so the pattern rule has the last word. A cross-list scan is FW-34's reach work.
-- *The shared controls carry the shared wording.* Post types, claim and post status are the Auto-Set list's own shared subfields, so the copy reads them rather than declaring a second `post_types` (an id declared twice drops its value on save). What differs for a field, notably that no post type checked means nothing and not every type, is a note gated to the type.
+- *The shared controls carry the shared wording.* Post types, claim and post status are the Auto-Set list's own shared subfields, so the copy reads them rather than declaring a second `post_types` (an id declared twice drops its value on save). What differs for a field is a note gated to the type under the claim and the status control. The scope needs none: no post type checked is every public post type but attachment, as on the term rules, and an ACF target is written only where its group is shown.
 
 The names are the debt: `KIND_TERM` / `term_rules` name a list that now holds a field type, and "kind" has meant list, pass and effect class by turns. They were left alone because the stored key is live data for other types; FW-72 tracks the rename.
 

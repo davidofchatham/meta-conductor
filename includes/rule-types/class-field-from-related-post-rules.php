@@ -210,11 +210,10 @@ final class FieldFromRelatedPostRules extends RuleType {
     /**
      * One field, by its ACF field KEY — the `field|` scheme the pattern rule
      * uses, so two rules writing one field are order-decided and collide — or
-     * `meta|<name>` for a plain meta key. A row with no post type checked is
-     * unfinished: the handler skips it.
+     * `meta|<name>` for a plain meta key.
      */
     public function target_key(array $rule): ?string {
-        $target = (array) ($rule['post_types'] ?? []) === [] ? null : $this->target($rule);
+        $target = $this->target($rule);
         if ($target === null) {
             return null;
         }
@@ -233,9 +232,6 @@ final class FieldFromRelatedPostRules extends RuleType {
         $group = $this->source_group($rule);
         if ($group === '') {
             return parent::target_keys($rule);
-        }
-        if ((array) ($rule['post_types'] ?? []) === []) {
-            return [];
         }
 
         return array_map(static fn(string $key): string => 'field|' . $key, $this->group_members($group));
@@ -259,17 +255,6 @@ final class FieldFromRelatedPostRules extends RuleType {
         }
 
         return $keys;
-    }
-
-    /**
-     * The checked `post_types`; `['']` when none, which intersects nothing,
-     * rather than [], which would claim every post type — see
-     * `FieldFromPatternRules::written_post_types()`.
-     */
-    public function written_post_types(array $rule): array {
-        $types = array_values(array_filter(array_map('strval', (array) ($rule['post_types'] ?? []))));
-
-        return $types ?: [''];
     }
 
     /**
@@ -318,17 +303,12 @@ final class FieldFromRelatedPostRules extends RuleType {
      *
      * `post_types` and `conflict_handling` are the Auto-Set list's shared
      * subfields, and `post_status` its ungated one. The controls are shared; the
-     * semantics are this type's, and a note under each control states them
-     * (`field_copy_post_types_note`: none checked means NOTHING, not every type;
-     * `field_copy_claim_note`: the claim is on the field; `field_copy_status_note`:
-     * the status is the source's). A type that reads a shared value must be in its gate or the
-     * value drops on save (architecture.md → *The ordered rule repeaters*).
+     * semantics are this type's, and a note under the claim and the status control states them (`field_copy_claim_note`: the claim is on the field; `field_copy_status_note`: the status is the source's). The scope needs no note: none checked is every public post type but attachment, as on the term rules, and an ACF target is still written only where its group is shown. A type that reads a shared value must be in its gate or the value drops on save (architecture.md → *The ordered rule repeaters*).
      */
     public function reads_shared_fields(): array {
         return [
             'post_types',
             'conflict_handling',
-            'field_copy_post_types_note',
             'field_copy_status_note',
             'field_copy_claim_note',
         ];
@@ -420,11 +400,10 @@ final class FieldFromRelatedPostRules extends RuleType {
      * No bare `{word}` (H12): `html` content interpolates `{word}` against the
      * row.
      *
-     * @param string $which `post_types`, `post_status`, `claim` or `source`.
+     * @param string $which `post_status`, `claim` or `source`.
      */
     public static function copy_note(string $which): string {
         return esc_html(match ($which) {
-            'post_types'  => __('For this rule type, check at least one. None checked means the rule does nothing, not every post type, because a field written on a post type whose ACF group lacks it would be stored as orphan meta.', 'meta-conductor'),
             'post_status' => __('For this rule type the status limit applies to the source: it must have one of the checked statuses, or it is ignored and the receiving post keeps its value. With a parent relationship, the receiving post must have one of them too.', 'meta-conductor'),
             'claim'       => __('For a field: Owning makes the field always equal the source\'s value, including when that is empty. Contributing copies a value the source holds and never clears. Deferring fills the field only while it is empty. A post with no eligible source is always left alone.', 'meta-conductor'),
             'source'      => __('Only one related post counts: the first that holds a value, taken in the order the field lists its posts (pull), or in the order the reverse field lists them, else by ascending post ID (push).', 'meta-conductor'),

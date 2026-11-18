@@ -963,6 +963,25 @@ class ConfigHelpers {
     }
 
     /**
+     * Whether a field rule reaches a post type, given its `written_post_types()`.
+     * A non-empty list is the author's say-so; an empty one (none checked) is
+     * every public post type except attachment, the one the format list never
+     * offers. The handlers then also ask whether the target field is shown there.
+     *
+     * @param string[] $scope     The row's `written_post_types()`; `[]` = none checked.
+     * @param string   $post_type Receiving post type.
+     */
+    public static function scope_reaches(array $scope, string $post_type): bool {
+        if ($scope !== []) {
+            return in_array($post_type, $scope, true);
+        }
+
+        $object = get_post_type_object($post_type);
+
+        return $object !== null && !empty($object->public) && $post_type !== 'attachment';
+    }
+
+    /**
      * Whether an ACF field's group is shown (by its location rules) on a post
      * type — what *Same* needs before a copy may write a field onto a post.
      *

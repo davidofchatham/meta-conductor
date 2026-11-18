@@ -634,8 +634,8 @@ $check('a different target field is independent',
     $scan($KIND_FORMAT, [$cf(), $cf(['target_field' => 'field_mc_b'])]) === []);
 $check('disjoint post types are independent',
     $scan($KIND_FORMAT, [$cf(), $cf(['post_types' => ['mc_section']])]) === []);
-$check('two rows on one field with NO post type checked are half-authored, not colliding',
-    $scan($KIND_FORMAT, [$cf(['post_types' => []]), $cf(['post_types' => []])]) === []);
+$check('two rows on one field with NO post type checked cover every type, so they collide',
+    count($scan($KIND_FORMAT, [$cf(['post_types' => []]), $cf(['post_types' => []])])) === 1);
 $check('overlapping post type lists collide',
     count($scan($KIND_FORMAT, [$cf(['post_types' => ['mc_item', 'page']]), $cf(['post_types' => ['page', 'mc_section']])])) === 1);
 $check('a blank target field collides with nothing',
@@ -744,8 +744,8 @@ $check('a plain-meta copy still collides with a plain-meta copy of the same name
     count($scan($KIND_TERM, [$to_meta('plain_name'), $to_meta('plain_name')])) === 1);
 $check('a Deferring plain-meta copy into an ACF name collides at the lower severity',
     ($scan($KIND_TERM, [$cp(), $to_meta('display_name', ['conflict_handling' => 'skip'])])[0]['severity'] ?? '') === 'low');
-$check('a copy row with no post type checked is unfinished, not colliding',
-    $scan($KIND_TERM, [$cp(['post_types' => []]), $cp()]) === []);
+$check('a copy row with no post type checked covers every post type, so it collides with a scoped one',
+    count($scan($KIND_TERM, [$cp(['post_types' => []]), $cp()])) === 1);
 
 $check('a group copy resolves one target per value member and none for a tab',
     $desc('field_from_related_post')->target_keys($grp()) === ['field|field_mc_a', 'field|field_mc_b']);
@@ -753,9 +753,9 @@ $check('a single-field copy resolves exactly its one target',
     $desc('field_from_related_post')->target_keys($cp()) === ['field|field_mc_a']);
 $check('a group copy still has no single target key',
     $desc('field_from_related_post')->target_key($grp()) === null);
-$check('an unknown group, or no post type, resolves nothing',
+$check('an unknown group resolves nothing, and no post type checked does not change what a copy writes',
     $desc('field_from_related_post')->target_keys($grp(['source_field' => 'group_gone'])) === []
-    && $desc('field_from_related_post')->target_keys($grp(['post_types' => []])) === []);
+    && $desc('field_from_related_post')->target_keys($grp(['post_types' => []])) === ['field|field_mc_a', 'field|field_mc_b']);
 
 $gm = $scan($KIND_TERM, [$grp(), $cp(['source_field' => 'field_mc_b'])]);
 $check('a group copy collides with a single-field copy of one of its members',

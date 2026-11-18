@@ -283,8 +283,7 @@ class FormatDispatcher {
      * The enabled rows that copy from a related post, each with the graph it
      * walks (FW-5 05): `[Relationship, row]` pairs. A row declares its own
      * dependents, so a source edit reaches the posts that read it with no
-     * `{parent:…}` token in play. A row that writes no post type is left out
-     * (`written_post_types()` is `['']`: nothing for the lookup to find).
+     * `{parent:…}` token in play.
      *
      * Memoized against the rows it scanned, like `parent_token_post_types()`.
      *

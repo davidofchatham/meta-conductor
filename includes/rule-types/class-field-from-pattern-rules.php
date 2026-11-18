@@ -100,16 +100,9 @@ final class FieldFromPatternRules extends RuleType {
      * title/slug rule owns: that one is first-match-wins by post type, whereas
      * two rules on one field are order-decided (the later write wins). A row
      * rule's target is one subfield of one repeater, `row|<repeater>|<subfield>`;
-     * a repeater with no subfield picked yet is unfinished, not a target. So is
-     * a row with no post type checked: the handler skips it, and without the
-     * null two such rows on one field would be reported as colliding (their
-     * written types are both `['']`, which overlap).
+     * a repeater with no subfield picked yet is unfinished, not a target.
      */
     public function target_key(array $rule): ?string {
-        if ((array) ($rule['post_types'] ?? []) === []) {
-            return null;
-        }
-
         if ($this->is_row_rule($rule)) {
             $row = $this->row_target($rule);
 
@@ -120,18 +113,6 @@ final class FieldFromPatternRules extends RuleType {
         $key = $this->leaf_key($rule);
 
         return $key === '' ? null : 'field|' . $key;
-    }
-
-    /**
-     * The checked `post_types`. A row with none checked applies to nothing (the
-     * handler skips it), so it yields `['']` — which intersects nothing — rather
-     * than [], which would claim every post type; see
-     * `TitleSlugFromPatternRules::written_post_types()`.
-     */
-    public function written_post_types(array $rule): array {
-        $types = array_values(array_filter(array_map('strval', (array) ($rule['post_types'] ?? []))));
-
-        return $types ?: [''];
     }
 
     /**
@@ -181,9 +162,9 @@ final class FieldFromPatternRules extends RuleType {
      * (`FormatRulesConfig` declares it, gated by `readers()`): checkboxes like
      * the term list's. These rules compose in list order, so unlike title
      * & slug (first match per post type) one rule may cover several types.
-     * Unlike the term list, none checked means NOTHING, not every type — a
-     * field write on a type whose ACF group lacks the field would store orphan
-     * meta. The attachment type is not offered (see
+     * None checked means every type the list offers, as on the term list; the
+     * handler then writes only where the target field's group is shown, so no
+     * orphan meta is stored. The attachment type is not offered (see
      * `ConfigHelpers::format_post_type_options()`).
      */
     public function reads_shared_fields(): array {
