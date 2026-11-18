@@ -226,6 +226,36 @@ class ConfigHelpers {
      * @return array[]
      */
     public static function type_subfields(array $types): array {
+        return array_map(static function (array $field): array {
+            unset($field['group']);
+            return $field;
+        }, self::tagged_type_subfields($types));
+    }
+
+    /**
+     * `type_subfields()` split by where each field sits in the row: a
+     * descriptor's `group` says `result` (below the shared target term it
+     * qualifies) or `limit` (with the scope limits); everything else is `body`.
+     * Placement only: a field's gate is the same wherever it lands. The marker
+     * is stripped, so Wireframe never sees it.
+     *
+     * @param string[] $types Stored type keys, in registry order.
+     * @return array{body:array[],result:array[],limit:array[]}
+     */
+    public static function type_subfield_groups(array $types): array {
+        $groups = ['body' => [], 'result' => [], 'limit' => []];
+
+        foreach (self::tagged_type_subfields($types) as $field) {
+            $group = (string) ($field['group'] ?? 'body');
+            unset($field['group']);
+            $groups[isset($groups[$group]) ? $group : 'body'][] = $field;
+        }
+
+        return $groups;
+    }
+
+    /** `type_subfields()` before the `group` marker is stripped. */
+    private static function tagged_type_subfields(array $types): array {
         $fields  = [];
         $merged  = [];
         $readers = [];
@@ -502,6 +532,28 @@ class ConfigHelpers {
         }
 
         return $options;
+    }
+
+    /**
+     * The "Limits" heading that opens the scope controls at the foot of a rule
+     * row (post types, statuses, filters), so a long row reads as what the rule
+     * does, then what it is limited to.
+     *
+     * An `html` field carries no value, so nothing can be dropped by it; its
+     * `conditions` only decide whether the heading shows. Plain variant, so it
+     * reads as a heading and not as a note.
+     *
+     * @param array $overrides Per-call field-definition overrides (e.g. `conditions`).
+     */
+    public static function limits_heading(array $overrides = []): array {
+        return array_merge([
+            'id'      => 'limits_heading',
+            'type'    => 'html',
+            'columns' => 12,
+            'args'    => [
+                'content' => '<p><strong>' . esc_html__('Limits', 'meta-conductor') . '</strong></p>',
+            ],
+        ], $overrides);
     }
 
     /**

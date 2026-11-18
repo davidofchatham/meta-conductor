@@ -125,6 +125,7 @@ final class TermsFromTriggerTermRules extends RuleType {
             ],
             [
                 'id'          => 'bidirectional',
+                'group'       => 'result',
                 'type'        => 'toggle',
                 'label'       => __('Bidirectional', 'meta-conductor'),
                 // Wording follows the #61 conversion: the applier recomputes

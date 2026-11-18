@@ -133,20 +133,22 @@ $note('the seeded copy row is in the Auto-Set list, disabled', is_array($seeded_
 $note('the seeded copy row carries a repaired title with the disabled marker',
     is_array($seeded_copy) && str_contains((string) ($seeded_copy['row_title'] ?? ''), '[Disabled]'));
 $seeded_out = RepeaterField::sanitize([$seeded_copy ?: []], $field['args'])[0] ?? [];
-foreach (['type', 'enabled', 'name', 'post_types', 'relationship', 'source_field', 'conflict_handling'] as $key) {
+foreach (['type', 'enabled', 'post_types', 'relationship', 'source_field', 'conflict_handling'] as $key) {
     $note("seeded copy row '$key' survives sanitize", is_array($seeded_copy) && ($seeded_out[$key] ?? '(DROPPED)') == ($seeded_copy[$key] ?? null));
 }
 $note('the format list holds no copy row', !in_array('field_from_related_post', array_column($rows, 'type'), true));
 
 $copy_row = [
-    'type' => 'field_from_related_post', 'enabled' => true, 'name' => 'Copy probe',
+    'type' => 'field_from_related_post', 'enabled' => true,
     'post_types' => ['mc_section'], 'relationship' => 'parent', 'source_field' => 'field_mc_cp_text',
     'copy_target' => '', 'conflict_handling' => 'replace', 'post_status' => ['publish'], 'row_title' => 'x',
 ];
 $copy_out = RepeaterField::sanitize([$copy_row], $field['args'])[0] ?? [];
-foreach (['type', 'enabled', 'name', 'post_types', 'relationship', 'source_field', 'copy_target', 'conflict_handling', 'post_status'] as $key) {
+foreach (['type', 'enabled', 'post_types', 'relationship', 'source_field', 'copy_target', 'conflict_handling', 'post_status'] as $key) {
     $note("copy row '$key' survives sanitize", ($copy_out[$key] ?? '(DROPPED)') == $copy_row[$key]);
 }
+$copy_named = RepeaterField::sanitize([$copy_row + ['name' => 'stale']], $field['args'])[0] ?? [];
+$note('a stored copy-row name is dropped: the control is gone and the title is assembled', !array_key_exists('name', $copy_named));
 // Plain meta on both ends (FW-5 06): the two names must survive while their select picks the meta choice.
 $meta_row = array_merge($copy_row, ['source_field' => '@meta', 'source_meta' => 'mc_pm_src', 'copy_target' => '@meta', 'target_meta' => 'mc_pm_dst']);
 $meta_out = RepeaterField::sanitize([$meta_row], $field['args'])[0] ?? [];

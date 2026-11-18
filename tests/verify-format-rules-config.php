@@ -315,7 +315,7 @@ $expected_visible = [
         'slug_escalation', 'slug_escalation_tokens', 'escalation_placement', 'flat_urls', 'row_title',
     ],
     'field_from_pattern' => [
-        'type', 'enabled', 'name', 'post_types',
+        'type', 'enabled', 'name', 'limits_heading', 'post_types',
         'target_field', 'pattern', 'output', 'row_title',
     ],
 ];
@@ -541,6 +541,15 @@ $check('a meta source is not an ACF key',
     $copy->source_key(['source_field' => '@meta']) === '' && $copy->is_meta_source(['source_field' => '@meta']));
 $by_id     = $fmt_by_id;
 $subfields = $fmt_subfields;
+// The limits close the row: the heading, then Post types, after everything a
+// type does, and the heading shows only where Post types does.
+$fmt_ids = array_column($subfields, 'id');
+$check('the Format row ends with its limits: heading, then Post types, then the snapshot',
+    array_slice($fmt_ids, -3) === ['limits_heading', 'post_types', 'row_title']);
+$check('the limits heading rides Post types\' gate, so Title & Slug shows none',
+    ($fmt_by_id['limits_heading']['conditions'] ?? null) === ($fmt_by_id['post_types']['conditions'] ?? false)
+    && !Conditions::evaluate($fmt_by_id['limits_heading']['conditions'] ?? null, ['type' => 'title_slug_from_pattern'])
+    && Conditions::evaluate($fmt_by_id['limits_heading']['conditions'] ?? null, ['type' => 'field_from_pattern']));
 // An untyped row (freshly added) shows the shared frame only.
 $untyped = [];
 foreach ($subfields as $s) {
@@ -593,17 +602,17 @@ $term_title = fn(array $row) => preg_replace('/^#\d+ /', '', WireframeBootstrap:
     [OptionRuleStorage::KIND_TERM => [$row]]
 )[OptionRuleStorage::KIND_TERM][0]['row_title']);
 $check('a copy row title names the field, the claim and the post type',
-    $term_title(['type' => 'field_from_related_post', 'name' => 'Venue', 'post_types' => ['mc_item'], 'source_field' => 'field_a', 'conflict_handling' => 'replace'])
-        === 'Venue — Copy Display name from parent (owning) (MC Items)');
-$copy_acf = ['type' => 'field_from_related_post', 'name' => 'Venue', 'post_types' => ['mc_item'], 'source_field' => 'field_a', 'conflict_handling' => 'replace', 'relationship' => 'acf'];
+    $term_title(['type' => 'field_from_related_post', 'post_types' => ['mc_item'], 'source_field' => 'field_a', 'conflict_handling' => 'replace'])
+        === 'Copy Display name from parent (owning) (MC Items)');
+$copy_acf = ['type' => 'field_from_related_post', 'post_types' => ['mc_item'], 'source_field' => 'field_a', 'conflict_handling' => 'replace', 'relationship' => 'acf'];
 $check('an acf copy row titles its direction: a push goes to related posts, a pull comes from them',
-    $term_title($copy_acf + ['holder_role' => 'source']) === 'Venue — Copy Display name to related posts (owning) (MC Items)'
-    && $term_title($copy_acf + ['holder_role' => 'target']) === 'Venue — Copy Display name from related posts (owning) (MC Items)'
+    $term_title($copy_acf + ['holder_role' => 'source']) === 'Copy Display name to related posts (owning) (MC Items)'
+    && $term_title($copy_acf + ['holder_role' => 'target']) === 'Copy Display name from related posts (owning) (MC Items)'
     && str_contains($term_title($copy_acf), 'from related posts'));
 $check('a copy row with no claim stored reads as contributing',
-    str_contains($term_title(['type' => 'field_from_related_post', 'name' => 'Venue', 'source_field' => 'field_a']), '(contributing)'));
-$check('an unnamed copy row is named rather than left blank',
-    str_starts_with($term_title(['type' => 'field_from_related_post', 'post_types' => ['mc_item']]), 'Untitled copy-from-related-post rule'));
+    str_contains($term_title(['type' => 'field_from_related_post', 'source_field' => 'field_a']), '(contributing)'));
+$check('a copy row with no field yet still reads as a title, and a stored name is ignored',
+    $term_title(['type' => 'field_from_related_post', 'name' => 'Venue', 'post_types' => ['mc_item']]) === 'Copy a field from parent (contributing) (MC Items)');
 // The uniform marker the term list gained in #57 — the whole reason the live
 // {name} template was replaced by a snapshot.
 $check('a disabled row carries the uniform prefix',

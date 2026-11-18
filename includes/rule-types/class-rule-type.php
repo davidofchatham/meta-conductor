@@ -164,7 +164,11 @@ abstract class RuleType {
      * `when` (`[field => value, …]`, as `shared_field_when()`), which the config
      * strips and turns into a second gate beside the type; a value-carrying
      * subfield that is `when`-gated drops on save whenever the condition fails,
-     * which is the point. Ids must be unique
+     * which is the point. A subfield may also carry a `group` that says where
+     * it sits in the row, never whether it shows: `body` (the default, in
+     * declaration order), `result` (below the shared target term it qualifies),
+     * or `limit` (with the scope limits, below them). The config strips it;
+     * see `ConfigHelpers::type_subfield_groups()`. Ids must be unique
      * across the whole kind repeater (H11/H12), so a field two types read is
      * a shared one, declared by the config and listed in
      * `reads_shared_fields()`, not here.

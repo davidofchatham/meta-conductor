@@ -183,7 +183,7 @@ $check('type select warns that changing it clears the old type\'s settings',
 $by_id = [];
 foreach ($subfields as $s) { $by_id[$s['id']] = $s; }
 
-foreach (['type', 'enabled', 'post_status', 'row_title'] as $shared) {
+foreach (['type', 'enabled', 'limits_heading', 'post_status', 'row_title'] as $shared) {
     $check("shared subfield '$shared' exists",      isset($by_id[$shared]));
     $check("shared subfield '$shared' is ungated",  !isset($by_id[$shared]['conditions']));
 }
@@ -233,7 +233,7 @@ $leaves = function ($c) use (&$leaves): array {
     return [$c];
 };
 
-$ungated = ['type', 'enabled', 'post_status', 'row_title'];
+$ungated = ['type', 'enabled', 'limits_heading', 'post_status', 'row_title'];
 $gated_ok = true;
 $gate_covers = [];
 foreach ($subfields as $s) {
@@ -377,8 +377,7 @@ $check('the relationship select is declared once, ungated beyond the type (both 
     count(array_keys($ids, 'relationship', true)) === 1
     && $gate_of('relationship') === ConfigHelpers::gate($RELATED));
 $check('the field copy\'s own subfields are gated to it alone',
-    $gate_of('name') === ConfigHelpers::gate(['field_from_related_post'])
-    && $gate_of('source_field') === ConfigHelpers::gate(['field_from_related_post'])
+    $gate_of('source_field') === ConfigHelpers::gate(['field_from_related_post'])
     && $gate_of('copy_target') === ConfigHelpers::gate(['field_from_related_post'])
     && $gate_of('source_meta') === ConfigHelpers::gate(['field_from_related_post'], ['source_field' => '@meta'])
     && $gate_of('target_meta') === ConfigHelpers::gate(['field_from_related_post'], ['copy_target' => '@meta']));
@@ -398,6 +397,35 @@ $check('post_status stays the one ungated shared control',
 $check('the claim is shared by both relationships, so it has no relationship condition',
     ($gate_of('conflict_handling')['field'] ?? '') === 'type'
     && in_array('terms_from_related_post', $gate_of('conflict_handling')['value'] ?? [], true));
+
+// --- Order: what a rule does comes before what it is limited to. -------------
+// Placement only (every gate is the descriptor's), but it is the whole point of
+// the reorder, so it is pinned: identity, subject, source or trigger, effect,
+// claim, then the limits block under its heading, a descriptor's own limits last.
+$pos = fn(string $id) => array_search($id, $ids, true);
+$in_order = function (array $chain) use ($pos): bool {
+    $last = -1;
+    foreach ($chain as $id) {
+        $p = $pos($id);
+        if ($p === false || $p <= $last) { return false; }
+        $last = $p;
+    }
+    return true;
+};
+$check('the row reads identity, subject, source, effect, claim, then limits',
+    $in_order(['type', 'enabled', 'taxonomy', 'relationship', 'source_field', 'target_term_id',
+        'conflict_handling', 'limits_heading', 'post_types', 'post_status', 'filter_taxonomies', 'filter_terms', 'row_title']));
+$check('the date window\'s own filters are limits, below the shared ones',
+    $in_order(['start_date', 'end_date', 'target_term_id', 'limits_heading', 'post_status', 'filter_taxonomies']));
+$check('a trigger rule reads trigger, target term, then what happens when the trigger is gone',
+    $in_order(['trigger_type', 'trigger_taxonomy', 'target_term_id', 'bidirectional', 'limits_heading']));
+$check('every field-copy note stays under its control with the limits moved',
+    $pos('field_copy_status_note') > $pos('post_status') && $pos('field_copy_claim_note') > $pos('conflict_handling'));
+$check('a field copy carries no rule name of its own', !isset($by_id['name']));
+$check('the limits heading is a value-free html field',
+    ($by_id['limits_heading']['type'] ?? '') === 'html' && !isset($by_id['limits_heading']['conditions']));
+$check('the descriptors\' placement markers never reach Wireframe',
+    array_filter($subfields, fn($s) => isset($s['group'])) === []);
 
 // Both options stay stored whatever is installed; an unavailable one is only
 // labeled, because a vanishing option would drop the stored value on save.
@@ -440,11 +468,11 @@ if (!function_exists('acf_get_field_groups')) {
 // hidden, so each value gets its own exact set.
 $expected_visible = [
     'terms_from_related_post/parent' => [
-        'type', 'enabled', 'taxonomy', 'hierarchical_post_type_note',
+        'type', 'enabled', 'limits_heading', 'taxonomy', 'hierarchical_post_type_note',
         'post_types', 'post_status', 'conflict_handling', 'relationship', 'row_title',
     ],
     'terms_from_related_post/acf' => array_merge([
-        'type', 'enabled', 'taxonomy', 'acf_taxonomy_note',
+        'type', 'enabled', 'limits_heading', 'taxonomy', 'acf_taxonomy_note',
         'post_types', 'post_status', 'acf_status_note', 'conflict_handling', 'relationship',
         'acf_field_name', 'holder_role', 'reverse_acf_field_name', 'row_title',
     ], function_exists('acf_get_field') ? [] : ['acf_required_note']),
@@ -452,43 +480,43 @@ $expected_visible = [
     // `source_meta` / `target_meta` show only while their select picks a plain
     // meta key, so each is its own scenario.
     'field_from_related_post/parent' => [
-        'type', 'enabled', 'name', 'relationship', 'post_types', 'post_status', 'field_copy_status_note',
+        'type', 'enabled', 'limits_heading', 'relationship', 'post_types', 'post_status', 'field_copy_status_note',
         'conflict_handling', 'field_copy_claim_note', 'source_field', 'copy_target', 'row_title',
     ],
     'field_from_related_post/parent+meta' => [
-        'type', 'enabled', 'name', 'relationship', 'post_types', 'post_status', 'field_copy_status_note',
+        'type', 'enabled', 'limits_heading', 'relationship', 'post_types', 'post_status', 'field_copy_status_note',
         'conflict_handling', 'field_copy_claim_note', 'source_field', 'source_meta',
         'copy_target', 'target_meta', 'row_title',
     ],
     'field_from_related_post/acf' => array_merge([
-        'type', 'enabled', 'name', 'relationship', 'post_types', 'post_status', 'field_copy_status_note',
+        'type', 'enabled', 'limits_heading', 'relationship', 'post_types', 'post_status', 'field_copy_status_note',
         'conflict_handling', 'field_copy_claim_note', 'field_copy_source_note', 'source_field', 'copy_target',
         'acf_field_name', 'holder_role', 'reverse_acf_field_name', 'row_title',
     ], function_exists('acf_get_field') ? [] : ['acf_required_note']),
     'terms_from_date_window' => [
-        'type', 'enabled', 'post_types', 'post_status',
+        'type', 'enabled', 'limits_heading', 'post_types', 'post_status',
         'filter_taxonomies', 'filter_terms', 'start_date', 'end_date',
         'target_term_id', 'row_title',
     ],
     'terms_from_term_hierarchy' => [
-        'type', 'enabled', 'taxonomy', 'hierarchical_taxonomy_note',
+        'type', 'enabled', 'limits_heading', 'taxonomy', 'hierarchical_taxonomy_note',
         'post_types', 'post_status',
         'inheritance_behavior', 'inheritance_depth', 'row_title',
     ],
     'restrict_terms_by_level' => [
-        'type', 'enabled', 'taxonomy', 'hierarchical_taxonomy_note',
+        'type', 'enabled', 'limits_heading', 'taxonomy', 'hierarchical_taxonomy_note',
         'post_types', 'post_status',
         'restriction_mode', 'include_ancestors', 'row_title',
     ],
     // No hierarchical_taxonomy_note: a cap means the same on a flat taxonomy.
     'restrict_term_count' => [
-        'type', 'enabled', 'taxonomy', 'post_types', 'post_status',
+        'type', 'enabled', 'limits_heading', 'taxonomy', 'post_types', 'post_status',
         'max_terms', 'per_level', 'row_title',
     ],
     // A LIVE type (#58). A subfield missing here is a live rule's value
     // silently dropped on the next settings save.
     'terms_from_trigger_term' => [
-        'type', 'enabled', 'post_types', 'post_status',
+        'type', 'enabled', 'limits_heading', 'post_types', 'post_status',
         'trigger_type', 'trigger_term_id', 'trigger_taxonomy',
         'target_term_id', 'bidirectional', 'row_title',
     ],
@@ -542,7 +570,7 @@ foreach ($subfields as $s) {
     }
 }
 $check('an untyped row shows only the shared frame',
-    $untyped === ['type', 'enabled', 'post_status', 'row_title']);
+    $untyped === ['type', 'enabled', 'limits_heading', 'post_status', 'row_title']);
 
 // --- The save path: the repeater's list IS the stored shape (#66). ---------
 //
