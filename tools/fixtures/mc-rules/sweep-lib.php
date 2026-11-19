@@ -331,8 +331,31 @@ if ( ! function_exists( 'mc_restore' ) ) {
 			mc_reset_subject( (int) $pid );
 		}
 
+		mc_reset_post_names();
+
 		WP_CLI::log( '[sweep] rules + relationship fields restored'
 			. ( $reset_post_ids ? ' + reset ' . count( $reset_post_ids ) . ' subject(s)' : '' ) );
+	}
+}
+
+if ( ! function_exists( 'mc_reset_post_names' ) ) {
+	/**
+	 * Put every manifest post's post_name back to its seeded value.
+	 *
+	 * item-alpha carries mc_event_date and a live title_slug rule, so ANY real save
+	 * rewrites its slug to mc-item-alpha-<date>, and a later sweep's "post_name
+	 * intact" check then fails for a reason that has nothing to do with it. A direct
+	 * write on purpose: wp_update_post() would run the rule and rename it again.
+	 */
+	function mc_reset_post_names() {
+		global $wpdb;
+		foreach ( mc_sweep_manifest()['posts'] as $key => $def ) {
+			$pid = mc_pid( $key );
+			if ( $pid && get_post_field( 'post_name', $pid ) !== $def['post_name'] ) {
+				$wpdb->update( $wpdb->posts, array( 'post_name' => $def['post_name'] ), array( 'ID' => $pid ) );
+				clean_post_cache( $pid );
+			}
+		}
 	}
 }
 

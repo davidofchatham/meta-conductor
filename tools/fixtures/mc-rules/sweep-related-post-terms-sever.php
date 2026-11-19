@@ -48,14 +48,16 @@
  * CLEANUP TRAP: several steps save item-alpha, which carries mc_event_date and
  * a live title_slug rule, so its slug is rewritten to mc-item-alpha-<date>. The
  * next seed then can't find it by name and inserts a DUPLICATE (README, "Never
- * look up a fixture post with get_posts"). After a sweep cycle, delete the
- * extra alpha and reset #94's post_name to mc-item-alpha before reseeding, or
- * verify.php will fail on the copy count.
+ * look up a fixture post with get_posts"). Each step now ends with
+ * mc_reset_post_names(), so the slug is back to mc-item-alpha afterward. Don't
+ * reset it with wp_update_post() / `wp post update`: that save runs the rule and
+ * renames it again.
  *
  * See handler-fixture-matrix.md §4.
  */
 
 require_once __DIR__ . '/lookup.php';
+require_once __DIR__ . '/sweep-lib.php';
 
 $step = $args[0] ?? 'state';
 
@@ -351,6 +353,10 @@ switch ( $step ) {
 			$show( $l, $i, 'mc_flag' );
 		}
 }
+
+// Every step may have saved item-alpha; undo the slug rewrite so the next sweep,
+// or the next seed, starts from the manifest name (see CLEANUP TRAP above).
+mc_reset_post_names();
 
 if ( $fail ) {
 	WP_CLI::error( sprintf( '%s: %d passed, %d FAILED', $step, $ok, count( $fail ) ) );

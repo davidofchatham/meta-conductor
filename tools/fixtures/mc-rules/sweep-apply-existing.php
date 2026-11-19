@@ -470,6 +470,13 @@ switch ( $step ) {
 	case 'rpt':
 		$beta   = mc_pid( 'item-beta' );
 		$holder = mc_pid( 'section-holder' );
+		// The step asserts the dependent takes the SOURCE's terms, so the source must
+		// have the seeded ones. An earlier sweep can leave the holder empty, and an
+		// empty source makes the assertion pass-through and the report empty. Set
+		// before the snapshot so the final restore keeps the seeded state.
+		mcae_quiet( function () use ( $holder ) {
+			mcae_set_topics( $holder, array( mc_tid( 'topic-coastal' ), mc_tid( 'topic-east' ) ) );
+		} );
 		$snap   = mcae_snapshot();
 
 		mcae_author( array(
