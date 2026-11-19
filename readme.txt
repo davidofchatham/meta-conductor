@@ -4,7 +4,7 @@ Tags: taxonomy, meta, acf, automation, hierarchical
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 0.11.1
+Stable tag: 0.12.0
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -67,7 +67,7 @@ The *Set a field from a related post* rule, in the *Auto-Set & Restrict* list be
 
 == Upgrade Notes ==
 
-= Unreleased =
+= 0.12.0 =
 
 **New rule type: *Set a field from a related post*.** Nothing changes for existing rules. See *Copying a field from a related post* above.
 **A `{parent:...}` or `{refs:...}` token now reads only a published related post.** This includes `{parent:slug}`, which used to read the parent whatever its status. A token behind a draft, pending, scheduled, private or trashed post is empty and drops out, and a pattern whose every token is held back is skipped, so the title, slug or field keeps its value. A rule that relied on reading a draft or private parent stops writing until that parent is published; a parent's children update when it does. A *Collision avoidance* rung that uses `{parent:slug}` is empty while the parent is unpublished. See *Cross-post tokens* above.
