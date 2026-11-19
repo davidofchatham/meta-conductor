@@ -135,6 +135,8 @@ reseed to clean up after a behavior sweep.
 
 Cron scenarios: `bin/wp.sh <site> cron event run bws_taxonomy_manager_cleanup`.
 
+**Running many steps fast.** Each `wp eval-file` pays about three seconds of WP-CLI bootstrap, which is most of a step. `run-sweep.php` boots once and forks a child per step, so every step is still its own request (own memos, queue and `shutdown` flush) and only the database is shared: `wp eval-file .../run-sweep.php sweep-term-count.php flat tree-on restore --allow-root`, with `-` as the step for a sweep file that takes none. Steps run in the order given, so list them in the order the sweep's header documents (the order of `case` labels in the file is not always that order). A step that fails or dies fails the run, and the run still goes on to the next step. On the full suite (167 steps) it took about 2.5 minutes against about 9.5 for one eval per step, with identical per-step results. The one-eval-per-step form stays the reference when a result looks wrong: the children inherit state that was built at bootstrap (the parent clears the object cache, but not anything a plugin holds in a static or singleton), so a sweep that depends on that state at boot could in principle differ.
+
 ### sweep-lib.php — helper library
 
 `sweep-lib.php` collapses the per-eval boilerplate. Load it at the top of a
