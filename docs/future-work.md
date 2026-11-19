@@ -209,7 +209,7 @@ Blocked by: —  •  Interacts with: FW-10
 
 #### FW-25 — Authorable claim on every rule type
 
-Only `terms_from_related_post` lets the author choose a claim, on both its relationships. `terms_from_date_window` and `terms_from_trigger_term` are hardcoded **owning** (they remove their target term when the trigger stops holding), `terms_from_term_hierarchy` is contributing, `restrict_terms_by_level` restricting and `title_slug_from_pattern` owning. This item is about letting the author *change* it.
+Only `terms_from_related_post` lets the author choose a claim, on both its relationships. `terms_from_date_window` is hardcoded **owning** (it removes its target term when the trigger stops holding), `terms_from_term_hierarchy` is contributing, `restrict_terms_by_level` restricting and `title_slug_from_pattern` owning. `terms_from_trigger_term` already has an author-set owning/contributing choice, its `bidirectional` toggle, which is FW-75. This item is about letting the author *change* it.
 
 Axes: no change to basis or effect target — this is the **claim** axis becoming author-set where it is currently hardcoded.
 
@@ -217,9 +217,23 @@ Detail home: [CONTEXT.md](../CONTEXT.md) → *Jurisdiction* for the law it must 
 
 Progress: Not started. `ConfigHelpers::claim_field()` already exists and is id-agnostic, so adding the control is cheap. The ordered rule list shipped in 0.8.0, so the configs are already one repeater with `conditions`-gated subfields — the claim field would be gated on rule `type`, and the "building it twice" concern that deferred this is now resolved.
 
-Open: ⚠️ **constrained by the jurisdiction law** (CONTEXT.md → *Jurisdiction*) — *owning requires a statically enumerable jurisdiction*. `terms_from_date_window` and `terms_from_trigger_term` qualify (one configured target term each), so owning↔contributing is a genuine choice for them. `hierarchical` does **not**: its derivable set is data-dependent, which is why it already buys the forbidden cell with `_bws_auto_terms` provenance meta — offering it *owning* would need that meta generalized or a silent widening to the whole taxonomy. `level_restriction` is restricting by construction with no meaningful alternative. So this is **not one uniform dropdown**; it is a per-rule-type legality question, and that is the real work.
+Open: ⚠️ **constrained by the jurisdiction law** (CONTEXT.md → *Jurisdiction*) — *owning requires a statically enumerable jurisdiction*. `terms_from_date_window` and `terms_from_trigger_term` qualify (one configured target term each), so owning↔contributing is a genuine choice for them; the trigger-term half is FW-75. `hierarchical` does **not**: its derivable set is data-dependent, which is why it already buys the forbidden cell with `_bws_auto_terms` provenance meta — offering it *owning* would need that meta generalized or a silent widening to the whole taxonomy. `level_restriction` is restricting by construction with no meaningful alternative. So this is **not one uniform dropdown**; it is a per-rule-type legality question, and that is the real work.
 
-Blocked by: —  •  Interacts with: FW-3, FW-8, FW-12, FW-24, FW-28, FW-54, FW-66
+Blocked by: —  •  Interacts with: FW-3, FW-8, FW-12, FW-24, FW-28, FW-54, FW-66, FW-75
+
+#### FW-75 — Trigger-term `bidirectional` as a claim control
+
+`terms_from_trigger_term` has an author-set claim in everything but name: its `bidirectional` toggle, off for contributing (add only), on for owning (remove the target whenever no trigger term is present). Fold it into the claim control the other rule types use, so one rule type does not carry a private spelling of the same axis.
+
+Axes: no change to basis or effect target — this is the **claim** axis, a rename of an existing control, not a new behavior.
+
+Detail home: [CONTEXT.md](../CONTEXT.md) → *Claim*; the toggle is declared in `includes/rule-types/class-terms-from-trigger-term-rules.php`.
+
+Progress: Not started. `terms_from_trigger_term` is **live on a real site**, so the live-rule-type schema rule applies: the stored `bidirectional` key either migrates to the claim value (`true` → owning, `false` → contributing) or stays as the stored key with the control relabeled over it. A migration must keep the live-state removal semantics shipped in the Unreleased CHANGELOG exactly (absent trigger ⇒ remove).
+
+Open: **migrate the key or relabel it.** Relabeling is cheaper and loses nothing while the type offers only those two claims; it stops being enough if FW-25 gives the type a third. Settle it with FW-25's per-type legality question. The collision detector's `removes()` and the handler read `bidirectional` directly and follow whichever is chosen.
+
+Blocked by: —  •  Interacts with: FW-25, FW-28
 
 #### FW-36 — Slug-change safety for format rules
 
