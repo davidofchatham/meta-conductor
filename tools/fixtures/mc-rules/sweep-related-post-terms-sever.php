@@ -125,15 +125,18 @@ switch ( $step ) {
 	// ---- S2a: give alpha TWO sources -------------------------------------
 	case 's2a':
 		WP_CLI::log( 'S2a — add holder2 as a second source of alpha' );
-		// The seed gives holder2 no term of its own; this step needs one.
-		wp_set_object_terms( $HOLDER2, array( 'west' ), 'mc_topic' );
+		// The seed gives holder2 no term of its own; this step needs one. It must
+		// sit at the SAME depth as holder's coastal (region > east > coastal): the
+		// seeded restrict_terms_by_level (deepest_only) strips a shallower term
+		// such as `west` from alpha, which would fail the assertion below.
+		wp_set_object_terms( $HOLDER2, array( 'inland' ), 'mc_topic' );
 		$editor_save( 'mc_related_items', array( $ALPHA ), $HOLDER2 );
 		$editor_save( 'mc_parent_section', array( $HOLDER, $HOLDER2 ), $ALPHA );
 		wp_update_post( array( 'ID' => $HOLDER ) );
 		wp_update_post( array( 'ID' => $HOLDER2 ) );
 		$show( 'alpha', $ALPHA, 'mc_topic' );
 		$a = $slugs( $ALPHA, 'mc_topic' );
-		$assert( in_array( 'west', $a, true ), 'alpha has holder2 term (west)' );
+		$assert( in_array( 'inland', $a, true ), 'alpha has holder2 term (inland)' );
 		$assert( in_array( 'coastal', $a, true ), 'alpha has holder term (coastal)' );
 		break;
 
@@ -143,7 +146,7 @@ switch ( $step ) {
 		$editor_save( 'mc_parent_section', array( $HOLDER2 ), $ALPHA );
 		$a = $slugs( $ALPHA, 'mc_topic' );
 		$show( 'alpha after partial sever', $ALPHA, 'mc_topic' );
-		$assert( in_array( 'west', $a, true ), 'remaining source terms survive (west)' );
+		$assert( in_array( 'inland', $a, true ), 'remaining source terms survive (inland)' );
 		$assert( ! in_array( 'coastal', $a, true ), 'dropped source terms withdrawn (coastal)' );
 		break;
 
